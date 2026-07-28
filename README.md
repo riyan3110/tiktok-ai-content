@@ -1,6 +1,6 @@
 # TikTok AI Content
 
-Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **OpenAI Responses API**, merender tiga gambar 1080×1920 dengan Sharp, dan mengunggah photo post sebagai draft melalui **TikTok Content Posting API**.
+Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **Gemini, Groq, atau OpenAI**, merender tiga gambar 1080×1920 dengan Sharp, dan mengunggah photo post sebagai draft melalui **TikTok Content Posting API**.
 
 ## Fitur dan struktur
 
@@ -14,7 +14,7 @@ database/schema.sql        skema SQLite
 nginx/                     contoh reverse proxy
 public/                    dashboard dan hasil gambar
 src/app.js                 route Express
-src/services/              OpenAI, Sharp, dan TikTok
+src/services/              AI, Sharp, dan TikTok
 src/server.js              server serta cron
 test/                      integration test
 ecosystem.config.cjs       konfigurasi PM2
@@ -27,9 +27,26 @@ ecosystem.config.cjs       konfigurasi PM2
 3. Pastikan `PUBLIC_BASE_URL` merupakan origin HTTPS publik. TikTok harus dapat mengambil URL gambar di `/generated/...`.
 4. Jalankan `npm start`, kemudian buka `http://localhost:3000`.
 
-## Konfigurasi OpenAI
+## Konfigurasi penyedia AI
 
-Buat API key di proyek OpenAI dan isi `OPENAI_API_KEY`. Model dapat diganti lewat `OPENAI_MODEL`. Aplikasi memakai Responses API dengan JSON Schema agar output konsisten. Jangan commit `.env`.
+Aplikasi menggunakan library OpenAI JavaScript dan endpoint kompatibel OpenAI. Empat variable berikut wajib diisi; aplikasi akan menampilkan pesan yang menyebut variable yang belum lengkap atau provider yang tidak didukung:
+
+```dotenv
+AI_PROVIDER=gemini
+AI_API_KEY=masukkan-api-key
+AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+AI_MODEL=gemini-2.5-flash-lite
+```
+
+Pilih salah satu konfigurasi berikut. Model contoh merupakan model ringan; apabila penyedia menghentikan suatu model, ganti `AI_MODEL` dengan model aktif yang tersedia pada akun Anda.
+
+| Provider | `AI_PROVIDER` | `AI_BASE_URL` | Contoh `AI_MODEL` |
+|---|---|---|---|
+| Gemini | `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-2.5-flash-lite` |
+| Groq | `groq` | `https://api.groq.com/openai/v1` | `llama-3.1-8b-instant` |
+| OpenAI | `openai` | `https://api.openai.com/v1` | `gpt-4.1-mini` |
+
+Gunakan API key dari provider yang dipilih. Aplikasi meminta JSON Object melalui Chat Completions API, menyertakan schema dalam prompt, lalu memvalidasi hasilnya, sehingga struktur topik, hook, body, caption, hashtag, dan CTA tetap sama untuk semua provider. Jangan commit `.env` atau API key.
 
 ## Menghubungkan TikTok OAuth 2.0
 
