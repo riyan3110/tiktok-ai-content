@@ -1,0 +1,24 @@
+{
+  "name": "tiktok-ai-content",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generator carousel TikTok berbahasa Indonesia dengan OpenAI",
+  "main": "src/server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node --check src/server.js && find src test -name '*.js' -print0 | xargs -0 -n1 node --check",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "node-cron": "^4.1.0",
+    "openai": "^4.104.0",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": { "supertest": "^7.1.1" }
+}
