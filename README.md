@@ -1,6 +1,6 @@
 # TikTok AI Content
 
-Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **OpenAI Responses API**, merender tiga gambar 1080×1920 dengan Sharp, dan mengirim photo post ke **TikTok Content Posting API** dalam visibilitas `SELF_ONLY` (privat).
+Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **OpenAI Responses API**, merender tiga gambar 1080×1920 dengan Sharp, dan mengunggah photo post sebagai draft melalui **TikTok Content Posting API**.
 
 ## Fitur dan struktur
 
@@ -33,19 +33,19 @@ Buat API key di proyek OpenAI dan isi `OPENAI_API_KEY`. Model dapat diganti lewa
 
 ## Menghubungkan TikTok OAuth 2.0
 
-1. Buat aplikasi di TikTok for Developers, tambahkan produk **Login Kit** dan **Content Posting API**, lalu ajukan/aktifkan scope `user.info.basic`, `video.upload`, dan `video.publish` sesuai akses aplikasi Anda.
+1. Buat aplikasi di TikTok for Developers, tambahkan produk **Login Kit** dan **Content Posting API**, lalu aktifkan scope `user.info.basic` dan `video.upload`.
 2. Daftarkan URL redirect yang **persis sama** dengan `TIKTOK_REDIRECT_URI`, misalnya `https://konten.example.com/auth/tiktok/callback`.
 3. Isi client key/secret di `.env`, restart aplikasi, lalu tekan **Hubungkan TikTok**.
 4. Token disimpan di database lokal dan di-refresh otomatis. Lindungi server dan backup database karena token adalah data rahasia.
 
-TikTok mewajibkan audit untuk Direct Post publik. Implementasi ini sengaja menetapkan `privacy_level: SELF_ONLY`; kode tidak menyediakan opsi publik. Domain/URL media juga perlu diverifikasi pada konfigurasi Content Posting API. UI dan caption tetap harus mematuhi pedoman developer serta kebijakan TikTok.
+Implementasi ini menggunakan **Upload to TikTok** (`MEDIA_UPLOAD`) untuk membuat draft, bukan Direct Post. Pengguna menyelesaikan proses posting di TikTok. Domain/URL media juga perlu diverifikasi pada konfigurasi Content Posting API. UI dan caption tetap harus mematuhi pedoman developer serta kebijakan TikTok.
 
-## Menguji upload privat
+## Menguji upload draft
 
 1. Gunakan akun TikTok tester/sandbox yang diizinkan pada aplikasi developer dan selesaikan OAuth.
 2. Klik **Buat konten baru**, periksa semua slide, dan edit caption bila perlu.
-3. Klik **Kirim privat ke TikTok**. Respons awal memberi `publishId`.
-4. Klik **Cek status** sampai `PUBLISH_COMPLETE` atau lihat alasan kegagalan. Periksa post dengan visibilitas **Only you** di aplikasi TikTok. Jangan mengubah `SELF_ONLY` sebelum aplikasi lolos audit dan pengguna secara eksplisit memilih visibilitas.
+3. Klik **Upload draft ke TikTok**. Respons awal memberi `publishId`.
+4. Klik **Cek status** sampai upload selesai atau lihat alasan kegagalan, lalu lanjutkan proses posting draft di aplikasi TikTok.
 
 ## Instalasi VPS (Ubuntu)
 
@@ -74,7 +74,7 @@ Ganti `server_name` dan nilai `.env`; batasi izin `.env` (`chmod 600 .env`). Kar
 | GET | `/auth/tiktok` | Mulai OAuth |
 | GET | `/auth/tiktok/callback` | Callback dan penyimpanan token |
 | POST | `/generate` | Generate konten serta gambar |
-| POST | `/upload-tiktok` | Body `{id, caption}`; unggah privat |
+| POST | `/upload-tiktok` | Body `{id, caption}`; unggah sebagai draft |
 | GET | `/status/:publishId` | Ambil status TikTok |
 | GET | `/history` | Riwayat konten JSON |
 

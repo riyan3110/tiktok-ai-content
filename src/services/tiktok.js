@@ -3,7 +3,7 @@ const config = require('../config');
 const API = 'https://open.tiktokapis.com';
 
 function authorizationUrl(state) {
-  const p = new URLSearchParams({ client_key: config.tiktokClientKey, scope: 'user.info.basic,video.publish,video.upload', response_type: 'code', redirect_uri: config.tiktokRedirectUri, state });
+  const p = new URLSearchParams({ client_key: config.tiktokClientKey, scope: 'user.info.basic,video.upload', response_type: 'code', redirect_uri: config.tiktokRedirectUri, state });
   return `https://www.tiktok.com/v2/auth/authorize/?${p}`;
 }
 async function request(url, options) {
@@ -20,7 +20,7 @@ async function refresh(refreshToken) {
   return request(`${API}/v2/oauth/token/`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
 }
 async function publishPhotos(accessToken, imageUrls, caption) {
-  return request(`${API}/v2/post/publish/content/init/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ post_info: { title: caption.slice(0, 90), description: caption.slice(0, 2200), disable_comment: false, privacy_level: 'SELF_ONLY', auto_add_music: true }, source_info: { source: 'PULL_FROM_URL', photo_images: imageUrls, photo_cover_index: 0 }, post_mode: 'DIRECT_POST', media_type: 'PHOTO' }) });
+  return request(`${API}/v2/post/publish/content/init/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ post_info: { title: caption.slice(0, 90), description: caption.slice(0, 2200) }, source_info: { source: 'PULL_FROM_URL', photo_images: imageUrls, photo_cover_index: 0 }, post_mode: 'MEDIA_UPLOAD', media_type: 'PHOTO' }) });
 }
 async function status(accessToken, publishId) {
   return request(`${API}/v2/post/publish/status/fetch/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: publishId }) });
