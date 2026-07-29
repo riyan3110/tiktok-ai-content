@@ -18,6 +18,9 @@ function createDatabase(filename = config.databasePath) {
   if (!columns.has('content_format')) db.exec("ALTER TABLE contents ADD COLUMN content_format TEXT NOT NULL DEFAULT 'Tutorial langkah'");
   if (!columns.has('main_topic')) db.exec('ALTER TABLE contents ADD COLUMN main_topic TEXT');
   if (!columns.has('content_angle')) db.exec('ALTER TABLE contents ADD COLUMN content_angle TEXT');
+  if (!columns.has('primary_tool')) db.exec('ALTER TABLE contents ADD COLUMN primary_tool TEXT');
+  if (!columns.has('hook_pattern')) db.exec('ALTER TABLE contents ADD COLUMN hook_pattern TEXT');
+  if (!columns.has('similarity_score')) db.exec('ALTER TABLE contents ADD COLUMN similarity_score REAL NOT NULL DEFAULT 0');
   if (!columns.has('trend_reference_id')) db.exec('ALTER TABLE contents ADD COLUMN trend_reference_id INTEGER REFERENCES trend_reference_sets(id) ON DELETE SET NULL');
   if (!columns.has('trend_keywords_used')) db.exec("ALTER TABLE contents ADD COLUMN trend_keywords_used TEXT NOT NULL DEFAULT '[]'");
   if (!columns.has('trend_keywords_ignored')) db.exec("ALTER TABLE contents ADD COLUMN trend_keywords_ignored TEXT NOT NULL DEFAULT '[]'");

@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const sharp = require('sharp');
 const config = require('../config');
+const { normalizeSlides, validateSlides: validateContentSlides } = require('./content');
 
 const WIDTH = 1080;
 const HEIGHT = 1920;
@@ -155,6 +156,17 @@ function frame(inner, number, total) {
 }
 
 function buildSlideLayouts(content) {
+  if (Array.isArray(content.slides)) {
+    const errors = validateContentSlides(content.slides, { format: content.contentFormat });
+    if (errors.length) throw Object.assign(new Error(`Tahap layout: ${errors.join(' ')}`), { status: 422 });
+    const slides = normalizeSlides(content.slides);
+    return validateCarouselLayouts(slides.map((slide, index) => {
+      const text = [slide.title, slide.body, ...slide.points].filter(Boolean).join('\n');
+      const steps = parseSteps([slide.body, ...slide.points].filter(Boolean).join('\n'));
+      const isSteps = /LANGKAH/i.test(slide.section) && steps.length;
+      return { type: isSteps ? 'steps' : index === slides.length - 1 ? 'cta' : 'content', title: slide.section || slide.title || `SLIDE ${index + 1}`, fit: isSteps ? fitStepPage(steps) : adaptiveTextFit(text) };
+    }));
+  }
   const format = content.contentFormat || 'Tutorial langkah';
   const kind = contentKind(content.contentCategory, format);
   const hookText = limitWords(content.hook, 20);
@@ -213,7 +225,10 @@ function validateCarouselLayouts(layouts) {
   if (stepLayouts.some(({ fit }) => (fit.steps?.length || 0) > 2 || wordCount(fit.steps?.join(' ')) > 40)) {
     throw new Error('Isi slide melebihi batas dua poin atau 40 kata.');
   }
-  layouts.forEach(validateVisualLayout);
+  if (layouts.length < 3) throw Object.assign(new Error(`Tahap layout: hanya ${layouts.length} slide valid; minimal 3 slide.`), { status: 422 });
+  layouts.forEach((layout, index) => {
+    try { validateVisualLayout(layout); } catch (error) { throw Object.assign(new Error(`Slide ${index + 1} gagal pada tahap layout: ${error.message}`), { status: 422 }); }
+  });
   return layouts;
 }
 
@@ -340,7 +355,8 @@ async function createSlides(id, content) {
   let layouts;
   try {
     layouts = validateCarouselLayouts(buildSlideLayouts(content));
-  } catch {
+  } catch (error) {
+    if (Array.isArray(content.slides)) throw error;
     // One deterministic repair pass: normalize whitespace and point numbering,
     // then validate the complete carousel before writing even the first JPG.
     const repaired = { ...content, body: normalizePointSequence(parseSteps(content.body).flatMap(splitAtWordLimit).filter(Boolean)).join('\n') };
