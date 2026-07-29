@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS contents (
   downloaded_bytes INTEGER,
   trend_reference_id INTEGER REFERENCES trend_reference_sets(id) ON DELETE SET NULL,
   trend_keywords_used TEXT NOT NULL DEFAULT '[]',
+  trend_keywords_ignored TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS trend_reference_sets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL DEFAULT 'Referensi Tren Hari Ini',
   keywords TEXT NOT NULL,
+  keyword_categories TEXT NOT NULL DEFAULT '[]',
   trend_hooks TEXT NOT NULL DEFAULT '[]',
   trend_content_patterns TEXT NOT NULL DEFAULT '[]',
   source TEXT NOT NULL,

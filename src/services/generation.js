@@ -48,7 +48,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       date: new Date().toISOString().slice(0, 10),
       contentCategory,
       contentFormat,
-      trendReference: trendReference ? { keywords: trendReference.keywords, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null
+      trendReference: trendReference ? { keywords: trendReference.keywords, keyword_categories: trendReference.keyword_categories, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null
     });
     if (isDuplicate(db, generated.topic)) {
       if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
@@ -58,8 +58,9 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     try {
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
-      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,content_category,content_format,hook,body,caption,hashtags,cta,trend_reference_id,trend_keywords_used) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, angle, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, trendReference?.id || null, JSON.stringify(usedKeywords));
+      const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
+      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,content_category,content_format,hook,body,caption,hashtags,cta,trend_reference_id,trend_keywords_used,trend_keywords_ignored) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, angle, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords));
       const slides = await images.createSlides(result.lastInsertRowid, { ...generated, contentCategory, contentFormat });
       db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(slides), result.lastInsertRowid);
       return result.lastInsertRowid;

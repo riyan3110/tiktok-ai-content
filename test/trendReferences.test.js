@@ -39,3 +39,21 @@ test('referensi kedaluwarsa dan pilihan nonaktif per konten tidak digunakan', as
   const generated = await request(app).post('/generate').send({ useTrendReference: false }).expect(200);
   assert.equal(generated.body.trend_reference_id, null);
 });
+
+test('keyword dari beberapa kategori diparsing dan hasil terpilih serta diabaikan disimpan', async () => {
+  const db = createDatabase(':memory:');
+  let received;
+  const content = { generateContent: async (_, options) => { received = options; return { topic: 'Tidur Lebih Teratur', hook: 'Hook', body: 'Isi', caption: 'Caption', hashtags: [], cta: 'CTA', trendKeywordsUsed: ['tidur cukup'] }; } };
+  const app = createApp({ db, content, images: { createSlides: async () => [] } });
+  const keywords = '[TEKNOLOGI]\nAI tools\ntutorial AI\n\n[KESEHATAN]\ntidur cukup\npola hidup sehat\n\n[KEHIDUPAN]\nself improvement\nmanajemen waktu';
+  const saved = await request(app).post('/trend-references').send({ keywords, source: 'Google Trends' }).expect(201);
+  assert.deepEqual(saved.body.keyword_categories.slice(0, 3), [
+    { category: 'TEKNOLOGI', keyword: 'AI tools' },
+    { category: 'TEKNOLOGI', keyword: 'tutorial AI' },
+    { category: 'KESEHATAN', keyword: 'tidur cukup' }
+  ]);
+  const generated = await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Cara tidur cukup', contentCategory: 'Custom', customCategory: 'Kesehatan' }).expect(200);
+  assert.equal(received.trendReference.keyword_categories[2].category, 'KESEHATAN');
+  assert.deepEqual(generated.body.trend_keywords_used, ['tidur cukup']);
+  assert.deepEqual(generated.body.trend_keywords_ignored, ['AI tools', 'tutorial AI', 'pola hidup sehat', 'self improvement', 'manajemen waktu']);
+});

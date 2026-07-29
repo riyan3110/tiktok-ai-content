@@ -16,7 +16,7 @@ function renderTrend(item) {
   $('#trend-status').textContent = item ? `${item.keywords.length} keyword · ${item.trend_hooks.length} gaya hook · ${item.trend_content_patterns.length} pola konten ${usable ? 'aktif' : 'tersimpan'} · ${item.source} · ${item.region} · diperbarui ${trendTime(item.updated_at)} WIB` : 'Belum ada referensi tren.';
   $('#disable-trends').classList.toggle('hidden', !item || !item.is_active); $('#delete-trends').classList.toggle('hidden', !item);
   $('#save-trends').textContent = item ? 'Perbarui referensi' : 'Simpan referensi hari ini';
-  if (item) { $('#trend-keywords').value = item.keywords.join(', '); $('#trend-hooks').value = item.trend_hooks.join('\n'); document.querySelectorAll('.trend-pattern-options input').forEach(input => { input.checked = item.trend_content_patterns.includes(input.value); }); $('#trend-source').value = item.source; $('#trend-region').value = item.region; $('#trend-intensity').value = item.intensity; $('#trend-notes').value = item.notes || ''; }
+  if (item) { $('#trend-keywords').value = (item.keyword_categories || []).reduce((text, entry, index, values) => `${text}${index === 0 || values[index - 1].category !== entry.category ? `${index ? '\n\n' : ''}[${entry.category}]\n` : ''}${entry.keyword}\n`, '').trim(); $('#trend-hooks').value = item.trend_hooks.join('\n'); document.querySelectorAll('.trend-pattern-options input').forEach(input => { input.checked = item.trend_content_patterns.includes(input.value); }); $('#trend-source').value = item.source; $('#trend-region').value = item.region; $('#trend-intensity').value = item.intensity; $('#trend-notes').value = item.notes || ''; }
 }
 async function loadTrend() { renderTrend(await api('/trend-references/current')); }
 $('#edit-trends').onclick = () => { const opening = trendDetails.classList.contains('hidden'); trendDetails.classList.toggle('hidden', !opening); $('#edit-trends').textContent = opening ? 'Tutup' : 'Edit'; $('#edit-trends').setAttribute('aria-expanded', String(opening)); };
@@ -30,6 +30,7 @@ function show(item) {
   $('#slides').innerHTML = item.slides.map((x, i) => `<button class="slide-button" type="button" data-slide="${i}" aria-label="Perbesar slide ${i + 1}"><img src="${x}" alt="Slide ${i + 1}"></button>`).join('');
   document.querySelectorAll('[data-slide]').forEach((button, i) => { button.onclick = () => openSlide(item.slides[i], i); });
   $('#caption').value = item.caption;
+  $('#trend-reference-used').textContent = `Referensi tren yang digunakan: ${item.trend_keywords_used.length ? item.trend_keywords_used.join(', ') : 'tidak ada keyword relevan'}`;
   $('#status').textContent = item.publish_status;
 }
 function openSlide(src, index) {

@@ -43,7 +43,7 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.use((err, req, res, next) => { if (!err.status || err.status >= 500) console.error(err); res.status(err.status || 500).json({ error: err.message || 'Kesalahan internal' }); });
   return app;
 }
-function parseRecord(row) { if (!row) return null; return { ...row, slides: JSON.parse(row.slides), hashtags: JSON.parse(row.hashtags), trend_keywords_used: JSON.parse(row.trend_keywords_used || '[]') }; }
+function parseRecord(row) { if (!row) return null; return { ...row, slides: JSON.parse(row.slides), hashtags: JSON.parse(row.hashtags), trend_keywords_used: JSON.parse(row.trend_keywords_used || '[]'), trend_keywords_ignored: JSON.parse(row.trend_keywords_ignored || '[]') }; }
 function record(db, id) { return parseRecord(db.prepare('SELECT * FROM contents WHERE id=?').get(id)); }
 async function validToken(db, tiktok) { let token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get(); if (!token) return null; if (token.expires_at < Date.now() + 60000) { const next = await tiktok.refresh(token.refresh_token); db.prepare("UPDATE oauth_tokens SET access_token=?,refresh_token=?,expires_at=?,refresh_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE provider='tiktok'").run(next.access_token, next.refresh_token || token.refresh_token, Date.now() + next.expires_in * 1000, Date.now() + (next.refresh_expires_in || 0) * 1000); token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get(); } return token; }
 module.exports = { createApp };
