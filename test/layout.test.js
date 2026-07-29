@@ -12,8 +12,9 @@ test('responsive layout covers the required viewport classes', () => {
   assert.match(css, /@media\(max-width:767px\)/);
   assert.match(css, /@media\(min-width:768px\)/);
   assert.match(css, /@media\(min-width:1024px\)/);
-  assert.match(css, /1400px/);
-  assert.match(css, /grid-template-areas:"actions editor" "schedule schedule" "history history"/);
+  assert.match(css, /1360px/);
+  assert.match(css, /grid-template-areas:"trends trends" "actions editor" "schedule schedule" "history history"/);
+  assert.match(css, /grid-template-columns:minmax\(380px,2fr\) minmax\(0,3fr\)/);
 });
 
 test('wide-screen content remains bounded and slide previews are accessible', () => {
@@ -22,4 +23,6 @@ test('wide-screen content remains bounded and slide previews are accessible', ()
   assert.match(css, /object-fit:contain/);
   assert.match(html, /<dialog id="slide-preview"/);
   assert.match(html, /<div id="history"><\/div>/);
+  assert.match(html, /role="switch"/);
+  assert.match(html, /12 keyword aktif · TikTok Creative Center · Indonesia/);
 });

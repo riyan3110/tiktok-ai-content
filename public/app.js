@@ -2,6 +2,22 @@ let current;
 const $ = (s) => document.querySelector(s);
 async function api(url, options) { const r = await fetch(url, options); const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Permintaan gagal'); return data; }
 const sourceLabels = { manual: 'Manual', ai: 'AI', trending: 'Trending' };
+const trendReference = $('#trend-reference');
+const trendDetails = $('#trend-details');
+$('#edit-trends').onclick = () => {
+  const opening = trendDetails.classList.contains('hidden');
+  trendDetails.classList.toggle('hidden', !opening);
+  $('#edit-trends').textContent = opening ? 'Tutup' : 'Edit';
+  $('#edit-trends').setAttribute('aria-expanded', String(opening));
+};
+$('#save-trends').onclick = () => $('#edit-trends').click();
+$('#disable-trends').onclick = () => {
+  const disabled = $('#disable-trends').dataset.disabled !== 'true';
+  $('#disable-trends').dataset.disabled = String(disabled);
+  $('#disable-trends').textContent = disabled ? 'Aktifkan' : 'Nonaktifkan';
+  $('#trend-status').textContent = disabled ? '12 keyword nonaktif · TikTok Creative Center · Indonesia' : '12 keyword aktif · TikTok Creative Center · Indonesia';
+};
+$('#delete-trends').onclick = () => { if (window.confirm('Hapus referensi tren hari ini?')) trendReference.remove(); };
 function show(item) {
   current = item;
   $('#editor').classList.remove('hidden');
