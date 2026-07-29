@@ -61,7 +61,10 @@ function autoFitText(text, { maxWidth = SAFE_WIDTH, maxHeight, maxLines = Infini
 function parseSteps(body) {
   const value = String(body || '').trim();
   const matches = [...value.matchAll(/(?:^|\n|\s)(\d+[.)])\s*/g)];
-  if (!matches.length) return value ? [value] : [];
+  if (!matches.length) {
+    const lines = value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    return lines.length > 1 ? lines.map((line) => line.replace(/^[-•*]\s*/, '')) : value ? [value] : [];
+  }
   return matches.map((match, index) => {
     const start = match.index + match[0].length;
     const end = index + 1 < matches.length ? matches[index + 1].index : value.length;
@@ -110,12 +113,21 @@ function frame(inner, number, total) {
 function buildSlideLayouts(content) {
   const hook = autoFitText(content.hook, { maxHeight: 520, maxLines: 3, startSize: 72, minSize: 52, lineHeight: 1.15 });
   const hookLayouts = hook ? [hook] : paginatePlainText(content.hook, 3, 72, 52, 520, 1.15);
-  const stepLayouts = paginateSteps(parseSteps(content.body));
+  const format = content.contentFormat || 'Tutorial langkah';
+  const formatTitles = {
+    'Tutorial langkah': 'LANGKAH PRAKTIS', Listicle: 'DAFTAR PILIHAN',
+    'Fakta singkat': 'FAKTA UTAMA', 'Masalah dan solusi': 'MASALAH → SOLUSI',
+    'Before-after': 'BEFORE → AFTER', 'Tips cepat': 'TIPS CEPAT'
+  };
+  const points = parseSteps(content.body);
+  const stepLayouts = format === 'Fakta singkat'
+    ? points.flatMap((point) => paginateSteps([point]))
+    : paginateSteps(points);
   const ctaText = `${content.topic}\n${content.cta}`;
   const ctaLayouts = paginatePlainText(ctaText, 4, 72, 34, SAFE_HEIGHT * 0.6, 1.15);
   return [
     ...hookLayouts.map((fit) => ({ type: 'hook', title: 'HOOK', fit })),
-    ...stepLayouts.map((fit) => ({ type: 'steps', title: 'LANGKAH PRAKTIS', fit })),
+    ...stepLayouts.map((fit) => ({ type: 'steps', title: formatTitles[format] || 'ISI KONTEN', fit })),
     ...ctaLayouts.map((fit) => ({ type: 'cta', title: 'SIAP COBA?', fit }))
   ];
 }

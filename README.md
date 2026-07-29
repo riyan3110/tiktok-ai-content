@@ -4,7 +4,7 @@ Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **G
 
 ## Fitur dan struktur
 
-- Dashboard responsif: pilih topik manual, otomatis dari AI, atau trending; generate, preview, edit caption, upload, status, dan riwayat berlabel sumber topik.
+- Dashboard responsif: pilih kategori, format, dan topik manual/AI/trending; generate, preview, edit caption, upload, status, dan riwayat berlabel sumber, kategori, serta format.
 - Structured Output berisi topik, hook, tutorial, caption, hashtag, dan CTA; hingga 50 topik terakhir dikirim ke model untuk mencegah pengulangan.
 - Slide tersimpan sebagai JPEG RGB/sRGB 1080 x 1920 di `public/generated/`; metadata dan token OAuth disimpan di SQLite.
 - Scheduler `node-cron` opsional hanya membuat draft konten lokal, **tidak mengunggah otomatis**.
@@ -49,13 +49,15 @@ Pilih salah satu konfigurasi berikut. Model contoh merupakan model ringan; apabi
 
 Gunakan API key dari provider yang dipilih. Aplikasi meminta JSON Object melalui Chat Completions API, menyertakan schema dalam prompt, lalu memvalidasi hasilnya, sehingga struktur topik, hook, body, caption, hashtag, dan CTA tetap sama untuk semua provider. Jangan commit `.env` atau API key.
 
-## Sumber topik dan trending
+## Kategori, format, sumber topik, dan trending
+
+Kategori bawaan mencakup **Iklan & UGC, Tutorial AI, Tips bisnis, Produktivitas, Fakta unik, Edukasi teknologi, Motivasi**, dan **Konten kreator**. Pilihan **Custom** membuka input kategori sendiri. Format yang tersedia ialah Tutorial langkah, Listicle, Fakta singkat, Masalah dan solusi, Before-after, dan Tips cepat. Keduanya disimpan sebagai `content_category` dan `content_format`, ditampilkan pada Riwayat, serta menjadi arahan prompt dan tata isi slide.
 
 Pada dashboard, pilih salah satu **Sumber Topik** sebelum membuat konten:
 
 - **Topik manual** mewajibkan input pengguna. AI boleh membuat judul lebih menarik, tetapi prompt mengharuskannya mempertahankan inti topik. Input asli disimpan di `requested_topic`.
 - **Otomatis dari AI** memilih topik baru dan membandingkannya dengan riwayat secara case-insensitive serta mengabaikan spasi berlebih.
-- **Topik trending** mengambil daftar terbaru dari endpoint opsional, menyaring topik yang relevan dengan tutorial AI, video iklan, UGC, editing, konten kreator, TikTok, Canva, dan tools AI. Jika endpoint kosong atau gagal, AI membuat fallback tren berdasarkan tanggal saat ini.
+- **Topik trending** mengirim query parameter `category` ke endpoint opsional dan menyaring hasil yang relevan dengan kategori pilihan. Jika endpoint kosong atau gagal, AI membuat fallback tren kategori tersebut berdasarkan tanggal saat ini.
 
 Endpoint trending boleh mengembalikan array langsung atau array pada field `topics`, `data`, atau `results`; setiap item dapat berupa string atau object dengan `topic`, `title`, atau `name`.
 
@@ -113,7 +115,7 @@ Ganti `server_name` dan nilai `.env`; batasi izin `.env` (`chmod 600 .env`). Kar
 |---|---|---|
 | GET | `/auth/tiktok` | Mulai OAuth |
 | GET | `/auth/tiktok/callback` | Callback dan penyimpanan token |
-| POST | `/generate` | Generate konten serta gambar; body `{topicSource, requestedTopic?}` |
+| POST | `/generate` | Generate konten serta gambar; body `{topicSource, requestedTopic?, contentCategory, customCategory?, contentFormat}` |
 | POST | `/upload-tiktok` | Body `{id, caption}`; unggah sebagai draft |
 | GET | `/status/:publishId` | Ambil status TikTok |
 | GET | `/history` | Riwayat konten JSON |

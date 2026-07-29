@@ -9,3 +9,7 @@ test('trendingTopics menerima beberapa bentuk payload dan menyaring niche', () =
     'Strategi UGC untuk TikTok'
   ] }), ['Tutorial Canva AI terbaru', 'Strategi UGC untuk TikTok']);
 });
+test('trendingTopics menyaring tren berdasarkan kategori pilihan', () => {
+  assert.deepEqual(relevantTopics(['Tips fokus kerja', 'Strategi iklan produk'], 'Produktivitas'), ['Tips fokus kerja']);
+  assert.deepEqual(relevantTopics(['Fakta sains laut', 'Tutorial Canva'], 'Fakta unik'), ['Fakta sains laut']);
+});

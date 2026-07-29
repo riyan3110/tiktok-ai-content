@@ -72,3 +72,16 @@ test('teks sangat panjang dibagi menjadi slide tambahan tanpa dipotong', () => {
   assert.ok(ctaSlides.length > 1);
   assert.ok(ctaSlides.every(({ fit }) => fit.lines.length <= 4 && fit.height <= 1480 * 0.6));
 });
+
+test('format fakta singkat membuat satu fakta utama per slide isi', () => {
+  const layouts = images.buildSlideLayouts({
+    hook: 'Tiga fakta menarik',
+    body: '- Fakta pertama\n- Fakta kedua\n- Fakta ketiga',
+    topic: 'Fakta alam',
+    cta: 'Simpan',
+    contentFormat: 'Fakta singkat'
+  });
+  const facts = layouts.filter(({ type }) => type === 'steps');
+  assert.equal(facts.length, 3);
+  assert.ok(facts.every(({ title, fit }) => title === 'FAKTA UTAMA' && fit.steps.length === 1));
+});
