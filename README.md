@@ -4,10 +4,11 @@ Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **G
 
 ## Fitur dan struktur
 
-- Dashboard responsif: generate, preview, edit caption, upload, status, dan riwayat.
+- Dashboard responsif: pilih topik manual, otomatis dari AI, atau trending; generate, preview, edit caption, upload, status, dan riwayat berlabel sumber topik.
 - Structured Output berisi topik, hook, tutorial, caption, hashtag, dan CTA; hingga 50 topik terakhir dikirim ke model untuk mencegah pengulangan.
 - Gambar tersimpan di `public/generated/`; metadata dan token OAuth disimpan di SQLite.
 - Scheduler `node-cron` opsional hanya membuat draft konten lokal, **tidak mengunggah otomatis**.
+- Topik dibandingkan tanpa membedakan kapital dan spasi berlebih. Mode AI/trending mencoba ulang maksimal tiga kali agar `UNIQUE` topic tetap aman.
 
 ```text
 database/schema.sql        skema SQLite
@@ -47,6 +48,28 @@ Pilih salah satu konfigurasi berikut. Model contoh merupakan model ringan; apabi
 | OpenAI | `openai` | `https://api.openai.com/v1` | `gpt-4.1-mini` |
 
 Gunakan API key dari provider yang dipilih. Aplikasi meminta JSON Object melalui Chat Completions API, menyertakan schema dalam prompt, lalu memvalidasi hasilnya, sehingga struktur topik, hook, body, caption, hashtag, dan CTA tetap sama untuk semua provider. Jangan commit `.env` atau API key.
+
+## Sumber topik dan trending
+
+Pada dashboard, pilih salah satu **Sumber Topik** sebelum membuat konten:
+
+- **Topik manual** mewajibkan input pengguna. AI boleh membuat judul lebih menarik, tetapi prompt mengharuskannya mempertahankan inti topik. Input asli disimpan di `requested_topic`.
+- **Otomatis dari AI** memilih topik baru dan membandingkannya dengan riwayat secara case-insensitive serta mengabaikan spasi berlebih.
+- **Topik trending** mengambil daftar terbaru dari endpoint opsional, menyaring topik yang relevan dengan tutorial AI, video iklan, UGC, editing, konten kreator, TikTok, Canva, dan tools AI. Jika endpoint kosong atau gagal, AI membuat fallback tren berdasarkan tanggal saat ini.
+
+Endpoint trending boleh mengembalikan array langsung atau array pada field `topics`, `data`, atau `results`; setiap item dapat berupa string atau object dengan `topic`, `title`, atau `name`.
+
+```dotenv
+TRENDING_API_URL=https://trending.example.com/topics
+TRENDING_API_KEY=key-opsional
+```
+
+Untuk pembuatan terjadwal, atur sumber dengan nilai `manual`, `ai`, atau `trending`. Mode manual juga membutuhkan topik:
+
+```dotenv
+DAILY_TOPIC_MODE=ai
+DAILY_MANUAL_TOPIC=
+```
 
 ## Menghubungkan TikTok OAuth 2.0
 
@@ -90,7 +113,7 @@ Ganti `server_name` dan nilai `.env`; batasi izin `.env` (`chmod 600 .env`). Kar
 |---|---|---|
 | GET | `/auth/tiktok` | Mulai OAuth |
 | GET | `/auth/tiktok/callback` | Callback dan penyimpanan token |
-| POST | `/generate` | Generate konten serta gambar |
+| POST | `/generate` | Generate konten serta gambar; body `{topicSource, requestedTopic?}` |
 | POST | `/upload-tiktok` | Body `{id, caption}`; unggah sebagai draft |
 | GET | `/status/:publishId` | Ambil status TikTok |
 | GET | `/history` | Riwayat konten JSON |

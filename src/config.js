@@ -4,6 +4,7 @@ require('dotenv').config();
 const root = path.resolve(__dirname, '..');
 
 const supportedAiProviders = ['gemini', 'groq', 'openai'];
+const supportedTopicModes = ['manual', 'ai', 'trending'];
 
 function validateAiConfig(config) {
   const missing = [
@@ -38,7 +39,15 @@ const config = {
   sessionSecret: process.env.SESSION_SECRET || 'development-only-change-me',
   cronSchedule: process.env.CRON_SCHEDULE || '0 9 * * *',
   cronTimezone: process.env.CRON_TIMEZONE || 'Asia/Jakarta',
-  enableCron: process.env.ENABLE_CRON === 'true'
+  enableCron: process.env.ENABLE_CRON === 'true',
+  dailyTopicMode: (process.env.DAILY_TOPIC_MODE || 'ai').toLowerCase(),
+  dailyManualTopic: process.env.DAILY_MANUAL_TOPIC || '',
+  trendingApiUrl: process.env.TRENDING_API_URL || '',
+  trendingApiKey: process.env.TRENDING_API_KEY || ''
 };
+
+if (!supportedTopicModes.includes(config.dailyTopicMode)) {
+  throw new Error(`DAILY_TOPIC_MODE tidak valid: "${config.dailyTopicMode}". Gunakan salah satu: ${supportedTopicModes.join(', ')}`);
+}
 
 module.exports = { ...config, validateAiConfig: () => validateAiConfig(config), validateAiConfigValues: validateAiConfig };
