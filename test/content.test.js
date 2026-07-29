@@ -43,3 +43,17 @@ test('generate memberi pesan jelas ketika provider mengembalikan JSON invalid', 
   const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: 'bukan JSON' } }] }) } } };
   await assert.rejects(() => generateContent([], client), /mengembalikan JSON yang tidak valid/);
 });
+
+test('percobaan ulang memberi instruksi tegas untuk membuat topic berbeda', async () => {
+  let request;
+  const output = { topic: 'Topik Baru', hook: 'Hook', body: '1. Langkah', caption: 'Caption', hashtags: ['#AI'], cta: 'Coba' };
+  const client = { chat: { completions: { create: async (value) => {
+    request = value;
+    return { choices: [{ message: { content: JSON.stringify(output) } }] };
+  } } } };
+
+  await generateContent(['Topik Lama'], client, { attempt: 2, duplicateTopic: 'Topik Lama' });
+
+  assert.match(request.messages[1].content, /Percobaan ulang ke-2/);
+  assert.match(request.messages[1].content, /WAJIB membuat topic yang benar-benar berbeda/);
+});

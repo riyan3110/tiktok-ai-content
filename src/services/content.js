@@ -10,14 +10,17 @@ const schema = {
   required: ['topic', 'hook', 'body', 'caption', 'hashtags', 'cta']
 };
 
-async function generateContent(previousTopics, client) {
+async function generateContent(previousTopics, client, retry = {}) {
   if (!client) config.validateAiConfig();
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const retryInstruction = retry.attempt
+    ? ` Percobaan ulang ke-${retry.attempt}: topic "${retry.duplicateTopic}" sudah ada. Anda WAJIB membuat topic yang benar-benar berbeda secara makna dan redaksi, bukan sekadar mengubah huruf besar, tanda baca, atau spasi.`
+    : '';
   const response = await openai.chat.completions.create({
     model: config.aiModel,
     messages: [
       { role: 'system', content: 'Anda adalah kreator TikTok Indonesia. Tulis ringkas, praktis, akurat, tanpa klaim berlebihan.' },
-      { role: 'user', content: `Buat konten carousel bertema tutorial membuat video iklan menggunakan AI. Hindari topik yang pernah dipakai: ${previousTopics.join(' | ') || 'belum ada'}. Body harus berupa langkah bernomor dan muat dalam satu slide. Hashtag masing-masing diawali #. Kembalikan hanya JSON yang mengikuti schema ini: ${JSON.stringify(schema)}` }
+      { role: 'user', content: `Buat konten carousel bertema tutorial membuat video iklan menggunakan AI. Hindari topik yang pernah dipakai: ${previousTopics.join(' | ') || 'belum ada'}.${retryInstruction} Body harus berupa langkah bernomor dan muat dalam satu slide. Hashtag masing-masing diawali #. Kembalikan hanya JSON yang mengikuti schema ini: ${JSON.stringify(schema)}` }
     ],
     response_format: { type: 'json_object' }
   });
