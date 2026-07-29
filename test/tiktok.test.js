@@ -19,11 +19,13 @@ test('upload foto membuat draft dengan MEDIA_UPLOAD, bukan Direct Post', async (
   };
   t.after(() => { global.fetch = originalFetch; });
 
-  await tiktok.publishPhotos('access-token', ['https://example.com/slide.png'], 'Caption');
+  await tiktok.publishPhotos('access-token', ['https://example.com/slide.jpg'], 'Caption');
 
   const body = JSON.parse(request.options.body);
   assert.equal(request.url, 'https://open.tiktokapis.com/v2/post/publish/content/init/');
   assert.equal(body.post_mode, 'MEDIA_UPLOAD');
   assert.equal(body.media_type, 'PHOTO');
+  assert.deepEqual(body.source_info.photo_images, ['https://example.com/slide.jpg']);
+  assert.equal(body.source_info.source, 'PULL_FROM_URL');
   assert.equal(body.post_info.privacy_level, undefined);
 });

@@ -69,7 +69,7 @@ test('generateAndSave menyimpan hasil unik dari retry sebelum batas tiga kali', 
   const id = await generateAndSave({
     db,
     content: { generateContent: async () => generatedContent(topics[calls++]) },
-    images: { createSlides: async () => ['/generated/slide.png'] }
+    images: { createSlides: async () => ['/generated/slide.jpg'] }
   });
 
   assert.equal(calls, MAX_GENERATION_ATTEMPTS);
