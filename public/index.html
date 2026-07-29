@@ -20,7 +20,7 @@
         <div class="trend-actions"><button id="edit-trends" class="outline" type="button" aria-expanded="false" aria-controls="trend-details">Edit</button><button id="disable-trends" class="outline" type="button">Nonaktifkan</button><button id="delete-trends" class="danger" type="button">Hapus</button></div>
       </div>
       <div id="trend-details" class="trend-details hidden">
-        <label class="trend-keywords">Keyword atau hashtag tren (pisahkan koma/baris baru, maks. 30)<textarea id="trend-keywords" rows="4" maxlength="2430" required></textarea></label>
+        <label class="trend-keywords">Keyword atau hashtag tren per kategori (maks. 30)<textarea id="trend-keywords" rows="10" maxlength="2430" placeholder="[TEKNOLOGI]&#10;AI tools&#10;tutorial AI&#10;&#10;[KESEHATAN]&#10;tidur cukup&#10;pola hidup sehat" required></textarea></label>
         <label class="trend-keywords">Gaya hook tren (satu pola per baris, maks. 15)<textarea id="trend-hooks" rows="5" placeholder="Ternyata selama ini...&#10;Kesalahan pemula saat...&#10;Cara paling gampang untuk...&#10;Jangan lakukan ini sebelum..."></textarea></label>
         <fieldset class="trend-patterns"><legend>Pola konten tren</legend><div class="trend-pattern-options"><label><input type="checkbox" value="Tutorial langkah"> Tutorial langkah</label><label><input type="checkbox" value="Masalah dan solusi"> Masalah dan solusi</label><label><input type="checkbox" value="Listicle"> Listicle</label><label><input type="checkbox" value="Fakta singkat"> Fakta singkat</label><label><input type="checkbox" value="Tips cepat"> Tips cepat</label><label><input type="checkbox" value="Before-after"> Before-after</label><label><input type="checkbox" value="Storytelling"> Storytelling</label></div></fieldset>
         <label>Sumber tren<select id="trend-source"><option>TikTok Creative Center</option><option>Google Trends</option><option>Instagram</option><option>X / Twitter</option><option>Sumber lain</option></select></label>
@@ -52,7 +52,7 @@
     </section>
 
     <section id="schedule-dashboard"><div class="history-heading"><h2>Jadwal Otomatis Hari Ini</h2><div><button id="pause-all" class="outline">Jeda semua</button> <button id="resume-all" class="outline">Lanjutkan</button> <button id="cancel-all" class="danger">Batalkan semua</button></div></div><div id="schedules"><p>Belum ada jadwal hari ini.</p></div></section>
-    <section id="editor" class="hidden"><h2>Preview terbaru</h2><p class="preview-help">Pilih slide untuk melihat ukuran besar.</p><div id="slides" class="slides"></div><label>Caption<textarea id="caption" rows="5"></textarea></label><button id="upload">Upload draft ke TikTok</button><p id="status"></p></section>
+    <section id="editor" class="hidden"><h2>Preview terbaru</h2><p class="preview-help">Pilih slide untuk melihat ukuran besar.</p><p id="trend-reference-used"></p><div id="slides" class="slides"></div><label>Caption<textarea id="caption" rows="5"></textarea></label><button id="upload">Upload draft ke TikTok</button><p id="status"></p></section>
     <section class="history-section"><div class="history-heading"><h2>Riwayat</h2><button id="delete-all" class="danger">Hapus semua riwayat</button></div><div id="history"></div></section>
   </div>
 
