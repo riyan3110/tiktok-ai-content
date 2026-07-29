@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { createDatabase } = require('../src/db');
-const { normalizeSlides, validateSlides } = require('../src/services/content');
+const { generateContent, normalizeSlides, validateSlides } = require('../src/services/content');
 const { generateAndSave, similarityToHistory } = require('../src/services/generation');
 
 const slide = (section, body, extra = {}) => ({ section, title: extra.title || '', body, points: extra.points || [] });
@@ -31,6 +31,61 @@ test('validator menolak nomor langkah tidak berurutan dan label yang tidak sesua
   const input = [slide('PEMBUKA', 'Mulai'), slide('LANGKAH 1', '1. Pertama'), slide('LANGKAH 2', '3. Ketiga')];
   const message = validateSlides(input, { format: 'Tutorial langkah' }).join(' ');
   assert.match(message, /label LANGKAH 2 tidak sesuai dengan nomor isi 3/);
+});
+
+const sentence = count => Array.from({ length: count }, (_, index) => `kata${index + 1}`).join(' ');
+const carousel = middle => [
+  slide('PEMBUKA', '', { title: 'Hook singkat' }),
+  middle,
+  slide('PENUTUP', 'Simpan panduan ini')
+];
+
+test('slide isi pendek 36 kata dilaporkan dengan nomor, jumlah, dan batas adaptif', () => {
+  const errors = validateSlides(carousel(slide('ISI', sentence(36))));
+  assert.ok(errors.includes('Slide 2 memiliki 36 kata, batas maksimal 35 kata.'));
+});
+
+test('slide penjelasan tepat 45 kata diterima', () => {
+  assert.deepEqual(validateSlides(carousel(slide('PENJELASAN', sentence(45)))), []);
+});
+
+test('slide 60 kata ditolak dan label, nomor, footer, serta metadata tidak ikut dihitung', () => {
+  const errors = validateSlides(carousel(slide('LANGKAH 1', `LANGKAH 1: ${sentence(60)}\nFooter: akun\nMetadata: kampanye`)));
+  assert.ok(errors.includes('Slide 2 memiliki 60 kata, batas maksimal 45 kata.'));
+  assert.deepEqual(validateSlides(carousel(slide('ISI', `Nomor slide: 2\n${sentence(35)}\nFooter: akun`))), []);
+});
+
+test('validator memastikan hasil akhir tetap 3–5 slide', () => {
+  assert.deepEqual(validateSlides(carousel(slide('ISI', 'Isi'))), []);
+  assert.match(validateSlides([slide('PEMBUKA', 'Hook'), slide('PENUTUP', 'CTA')]).join(' '), /minimal 3 slide/);
+  assert.match(validateSlides(Array.from({ length: 6 }, (_, index) => slide(index ? 'ISI' : 'PEMBUKA', 'Isi'))).join(' '), /maksimal 5 slide/);
+});
+
+test('perbaikan otomatis meringkas slide terlalu panjang', async () => {
+  const base = { focus: { masalah: 'Lambat', penyebab: 'Manual', solusi: 'Ringkas', hasil: 'Cepat' }, topic: 'Topik', hook: 'Hook singkat', body: 'Tulis poin praktis', caption: 'Panduan singkat.', hashtags: ['#Tips'], cta: 'Simpan', trendKeywordsUsed: [] };
+  const responses = [
+    { ...base, slides: carousel(slide('ISI', sentence(36))) },
+    { ...base, slides: carousel(slide('ISI', sentence(35))) }
+  ];
+  let calls = 0;
+  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(responses[calls++]) } }] }) } } };
+  const result = await generateContent([], {}, client);
+  assert.equal(calls, 2);
+  assert.equal(result.slides.length, 3);
+});
+
+test('perbaikan otomatis dapat memindahkan poin kedua ke slide berikutnya', async () => {
+  const base = { focus: { masalah: 'Lambat', penyebab: 'Manual', solusi: 'Bagi poin', hasil: 'Jelas' }, topic: 'Topik', hook: 'Hook singkat', body: 'Bagi dua tindakan', caption: 'Dua tindakan praktis.', hashtags: ['#Tips'], cta: 'Simpan', trendKeywordsUsed: [] };
+  const responses = [
+    { ...base, slides: carousel(slide('ISI', sentence(60))) },
+    { ...base, slides: [slide('PEMBUKA', '', { title: 'Hook singkat' }), slide('ISI', sentence(30)), slide('ISI', sentence(30)), slide('PENUTUP', 'Simpan panduan ini')] }
+  ];
+  let calls = 0;
+  const requests = [];
+  const client = { chat: { completions: { create: async request => { requests.push(request); return { choices: [{ message: { content: JSON.stringify(responses[calls++]) } }] }; } } } };
+  const result = await generateContent([], {}, client);
+  assert.equal(result.slides.length, 4);
+  assert.match(requests[1].messages.at(-1).content, /pindahkan poin kedua ke slide berikutnya/i);
 });
 
 test('similarity membandingkan angle, tool, hook, langkah, dan CTA', () => {
