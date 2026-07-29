@@ -43,7 +43,12 @@ const config = {
   dailyTopicMode: (process.env.DAILY_TOPIC_MODE || 'ai').toLowerCase(),
   dailyManualTopic: process.env.DAILY_MANUAL_TOPIC || '',
   trendingApiUrl: process.env.TRENDING_API_URL || '',
-  trendingApiKey: process.env.TRENDING_API_KEY || ''
+  trendingApiKey: process.env.TRENDING_API_KEY || '',
+  watermarkEnabled: process.env.WATERMARK_ENABLED !== 'false',
+  watermarkText: process.env.WATERMARK_TEXT || 'AI ADS LAB',
+  watermarkOpacity: Number(process.env.WATERMARK_OPACITY || 0.4),
+  watermarkPosition: process.env.WATERMARK_POSITION || 'top-left',
+  watermarkFontSize: Number(process.env.WATERMARK_FONT_SIZE || 28)
 };
 
 if (!supportedTopicModes.includes(config.dailyTopicMode)) {

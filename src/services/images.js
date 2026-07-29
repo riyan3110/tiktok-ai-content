@@ -16,6 +16,8 @@ const SAFE_HEIGHT = HEIGHT - SAFE_AREA.top - SAFE_AREA.bottom;
 const LABEL_Y = 360;
 const CONTENT_TOP = 460;
 const CONTENT_BOTTOM = HEIGHT - SAFE_AREA.bottom;
+const WATERMARK_Y = 270;
+const WATERMARK_INTENSITIES = Object.freeze({ low: 0.22, medium: 0.4, high: 0.65 });
 
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 
@@ -151,8 +153,26 @@ function contentKind(category = '', format = '') {
 
 function resolveFooter() { return ''; }
 
-function frame(inner, number, total) {
-  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#15122d"/><stop offset="1" stop-color="#5b21b6"/></linearGradient><filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#090617" flood-opacity=".7"/></filter></defs><rect width="1080" height="1920" fill="url(#g)"/><circle cx="940" cy="190" r="260" fill="#ec4899" opacity=".28"/>${inner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="#f9a8d4" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
+function normalizeWatermarkOptions(options = {}) {
+  const requestedPosition = ['top-left', 'top-center'].includes(options.position) ? options.position : config.watermarkPosition;
+  return {
+    enabled: typeof options.enabled === 'boolean' ? options.enabled : config.watermarkEnabled,
+    text: String(options.text || config.watermarkText).trim() || 'AI ADS LAB',
+    opacity: WATERMARK_INTENSITIES[options.intensity] ?? config.watermarkOpacity,
+    position: requestedPosition === 'top-center' ? 'top-center' : 'top-left',
+    fontSize: config.watermarkFontSize
+  };
+}
+
+function watermarkElement(options) {
+  const watermark = normalizeWatermarkOptions(options);
+  if (!watermark.enabled) return '';
+  const centered = watermark.position === 'top-center';
+  return `<text data-role="watermark" x="${centered ? WIDTH / 2 : 80}" y="${WATERMARK_Y}" fill="#fce7f3" fill-opacity="${watermark.opacity}" font-family="Arial,sans-serif" font-size="${watermark.fontSize}" font-weight="600" letter-spacing="1.5" text-anchor="${centered ? 'middle' : 'start'}">${escapeXml(watermark.text)}</text>`;
+}
+
+function frame(inner, number, total, watermark) {
+  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#15122d"/><stop offset="1" stop-color="#5b21b6"/></linearGradient><filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#090617" flood-opacity=".7"/></filter></defs><rect width="1080" height="1920" fill="url(#g)"/><circle cx="940" cy="190" r="260" fill="#ec4899" opacity=".28"/>${watermarkElement(watermark)}${inner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="#f9a8d4" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
 }
 
 function buildSlideLayouts(content) {
@@ -333,7 +353,7 @@ function validateVisualLayout(layout) {
   return true;
 }
 
-function renderLayout(layout, number, total) {
+function renderLayout(layout, number, total, watermark) {
   validateVisualLayout(layout);
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
   const startY = contentY(layout.fit);
@@ -344,9 +364,9 @@ function renderLayout(layout, number, total) {
       y += lines.length * layout.fit.fontSize * layout.fit.lineHeight + 24;
       return element;
     }).join('');
-    return frame(heading + elements, number, total);
+    return frame(heading + elements, number, total, watermark);
   }
-  return frame(heading + textElement(layout.fit.lines, { y: startY, fontSize: layout.fit.fontSize, lineHeight: layout.fit.lineHeight }), number, total);
+  return frame(heading + textElement(layout.fit.lines, { y: startY, fontSize: layout.fit.fontSize, lineHeight: layout.fit.lineHeight }), number, total, watermark);
 }
 
 async function createSlides(id, content) {
@@ -365,7 +385,7 @@ async function createSlides(id, content) {
   const files = [];
   for (let i = 0; i < layouts.length; i++) {
     const name = `${id}-${i + 1}.jpg`;
-    await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY }).toFile(path.join(dir, name));
+    await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY }).toFile(path.join(dir, name));
     files.push(`/generated/${name}`);
   }
   return files;
@@ -386,4 +406,4 @@ async function validateSlides(files) {
 
 function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
 
-module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY };
+module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y };
