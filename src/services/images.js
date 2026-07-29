@@ -159,6 +159,7 @@ function buildSlideLayouts(content) {
     }
   }
   const rawPoints = parseSteps(content.body).flatMap(splitAtWordLimit).filter(Boolean);
+  if (kind === 'tutorial') return buildTutorialLayouts(content, hookText, rawPoints);
   const desiredBodySlides = kind === 'tutorial' ? 3 : 2;
   const longContent = rawPoints.reduce((sum, point) => sum + wordCount(point), 0) > 105;
   const bodySlideCount = Math.min(longContent ? 4 : desiredBodySlides, rawPoints.length);
@@ -180,6 +181,45 @@ function buildSlideLayouts(content) {
     ...stepLayouts,
     { type: 'cta', title: kind === 'fact' ? 'KESIMPULAN' : kind === 'tutorial' ? 'HASIL / CTA' : 'KESIMPULAN / CTA', fit: finalFit }
   ];
+}
+
+// Tutorials are deliberately denser than other formats: the hook promises the
+// outcome, related numbered actions share a practical-steps page, and the last
+// page closes with the outcome, one useful note, and the CTA.
+function buildTutorialLayouts(content, hookText, points) {
+  const numbered = points.map((point, index) => point.replace(/^\d+[.)]\s*/, `${index + 1}. `));
+  const totalWords = numbered.reduce((sum, point) => sum + wordCount(point), 0);
+  const stepPageCount = numbered.length <= 5 && totalWords <= 45 ? 1
+    : numbered.length <= 7 && totalWords <= 90 ? 2 : 3;
+  const groups = groupTutorialSteps(numbered, Math.min(stepPageCount, numbered.length || 1));
+  const result = limitWords(content.result || content.focus?.hasil || content.topic || 'Terapkan langkahnya dan periksa hasil akhir.', 14);
+  const tip = limitWords(content.tip || content.focus?.solusi || content.caption || 'Bandingkan hasil sebelum dan sesudah agar perbaikannya terlihat.', 14);
+  const hookFit = autoFitText(`${hookText}\nHASIL: ${result}`, { maxHeight: 720, maxLines: 7, startSize: 72, minSize: 42, lineHeight: 1.15 });
+  const stepLayouts = groups.map((steps, index) => ({
+    type: 'steps',
+    title: groups.length === 1 ? 'LANGKAH PRAKTIS' : `LANGKAH ${index + 1}`,
+    fit: { steps, ...fitStepPage(steps) }
+  }));
+  const cta = limitWords(content.cta || 'Simpan panduan ini untuk dipraktikkan.', 9);
+  const closing = `HASIL AKHIR: ${result}\nTIP: ${tip}\nCTA: ${cta}`;
+  const closingFit = autoFitText(closing, { maxHeight: 850, maxLines: 9, startSize: 58, minSize: 34, lineHeight: 1.2 });
+  return [{ type: 'hook', title: 'HOOK & HASIL', fit: hookFit }, ...stepLayouts, { type: 'cta', title: 'HASIL / TIPS / CTA', fit: closingFit }];
+}
+
+function groupTutorialSteps(points, count) {
+  if (!points.length) return [['1. Ikuti petunjuk praktis sesuai urutan, lalu periksa hasil sebelum menyimpan perubahan.']];
+  const groups = Array.from({ length: count }, () => []);
+  points.forEach((point, index) => groups[Math.min(count - 1, Math.floor(index * count / points.length))].push(point));
+  return groups.map((group) => {
+    const kept = [];
+    let words = 0;
+    for (const point of group) {
+      if (kept.length && words + wordCount(point) > 45) break;
+      kept.push(point);
+      words += wordCount(point);
+    }
+    return kept;
+  });
 }
 
 function wordCount(text) { return String(text || '').trim().split(/\s+/).filter(Boolean).length; }
