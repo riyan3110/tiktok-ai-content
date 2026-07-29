@@ -1,6 +1,45 @@
-<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Ads Lab</title><link rel="stylesheet" href="/style.css"></head><body><main><header><div><small>CONTENT STUDIO</small><h1>AI Ads Lab</h1><p>Buat carousel TikTok untuk berbagai kategori, lalu unggah sebagai draft.</p></div><div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div></header>
-<section class="actions"><h2>Mode Posting</h2><label class="switch-row"><input id="automation-toggle" type="checkbox"> <span>Aktifkan posting otomatis</span></label><p id="mode-help">Mode manual: konten dibuat dan diunggah hanya melalui tombol.</p>
-<div id="manual-settings"><fieldset class="topic-source"><legend>Sumber Topik</legend><label><input type="radio" name="topic-source" value="manual"> Topik manual</label><label><input type="radio" name="topic-source" value="ai" checked> Otomatis dari AI</label><label><input type="radio" name="topic-source" value="trending"> Topik trending</label></fieldset><div class="option-grid"><label>Kategori Konten<select id="content-category"><option>Iklan &amp; UGC</option><option>Tutorial AI</option><option>Tips bisnis</option><option>Produktivitas</option><option>Fakta unik</option><option>Edukasi teknologi</option><option>Motivasi</option><option>Konten kreator</option><option>Custom</option></select></label><label>Format Konten<select id="content-format"><option>Tutorial langkah</option><option>Listicle</option><option>Fakta singkat</option><option>Masalah dan solusi</option><option>Before-after</option><option>Tips cepat</option></select></label></div><label id="custom-category-field" class="hidden">Kategori sendiri<input id="custom-category" type="text" maxlength="80" placeholder="Contoh: crypto, game, kesehatan, otomotif, kuliner"></label><label id="manual-topic-field" class="hidden">Topik yang ingin dibuat<input id="manual-topic" type="text" placeholder="Contoh: Tutorial membuat video iklan produk sepatu"></label><div class="generate-row"><button id="generate">✦ Buat konten baru</button><span id="message" role="status"></span></div></div>
-<div id="automation-settings" class="hidden"><div class="option-grid"><label>Topik utama<input id="auto-topic" placeholder="Tips membuat konten dengan AI"></label><label>Jumlah konten hari ini<select id="auto-count"><option value="1">1 konten</option><option value="2">2 konten</option><option value="3" selected>3 konten (default maks.)</option><option value="4">4 konten</option><option value="5">5 konten</option></select></label><label>Kategori konten<select id="auto-category"><option>Iklan &amp; UGC</option><option>Tutorial AI</option><option>Tips bisnis</option><option>Produktivitas</option><option>Konten kreator</option></select></label><label>Format konten<select id="auto-format"><option>Tutorial langkah</option><option>Listicle</option><option>Fakta singkat</option><option>Masalah dan solusi</option><option>Before-after</option><option>Tips cepat</option></select></label></div><p>Zona waktu: <b>Asia/Jakarta</b></p><div id="auto-times"></div><p id="auto-warning" class="warning hidden">Terlalu banyak draft dapat terkena pembatasan TikTok.</p><div class="generate-row"><button id="activate-schedule">Aktifkan jadwal hari ini</button><button id="stop-schedule" class="danger">Hentikan jadwal</button><span id="auto-message" role="status"></span></div></div></section>
-<section id="schedule-dashboard"><div class="history-heading"><h2>Jadwal Otomatis Hari Ini</h2><div><button id="pause-all" class="outline">Jeda semua</button> <button id="resume-all" class="outline">Lanjutkan</button> <button id="cancel-all" class="danger">Batalkan semua</button></div></div><div id="schedules"><p>Belum ada jadwal hari ini.</p></div></section>
-<section id="editor" class="hidden"><h2>Preview terbaru</h2><div id="slides" class="slides"></div><label>Caption<textarea id="caption" rows="5"></textarea></label><button id="upload">Upload draft ke TikTok</button><p id="status"></p></section><section><div class="history-heading"><h2>Riwayat</h2><button id="delete-all" class="danger">Hapus semua riwayat</button></div><div id="history"></div></section><footer><span>© AI Ads Lab</span><nav aria-label="Legal"><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a></nav></footer></main><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Ads Lab</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <div><small>CONTENT STUDIO</small><h1>AI Ads Lab</h1><p>Buat carousel TikTok untuk berbagai kategori, lalu unggah sebagai draft.</p></div>
+    <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div>
+  </header>
+
+  <div class="content-layout">
+    <section class="actions">
+      <h2>Mode Posting</h2>
+      <label class="switch-row"><input id="automation-toggle" type="checkbox"> <span>Aktifkan posting otomatis</span></label>
+      <p id="mode-help">Mode manual: konten dibuat dan diunggah hanya melalui tombol.</p>
+      <div id="manual-settings">
+        <fieldset class="topic-source"><legend>Sumber Topik</legend><label><input type="radio" name="topic-source" value="manual"> Topik manual</label><label><input type="radio" name="topic-source" value="ai" checked> Otomatis dari AI</label><label><input type="radio" name="topic-source" value="trending"> Topik trending</label></fieldset>
+        <div class="option-grid"><label>Kategori Konten<select id="content-category"><option>Iklan &amp; UGC</option><option>Tutorial AI</option><option>Tips bisnis</option><option>Produktivitas</option><option>Fakta unik</option><option>Edukasi teknologi</option><option>Motivasi</option><option>Konten kreator</option><option>Custom</option></select></label><label>Format Konten<select id="content-format"><option>Tutorial langkah</option><option>Listicle</option><option>Fakta singkat</option><option>Masalah dan solusi</option><option>Before-after</option><option>Tips cepat</option></select></label></div>
+        <label id="custom-category-field" class="hidden">Kategori sendiri<input id="custom-category" type="text" maxlength="80" placeholder="Contoh: crypto, game, kesehatan, otomotif, kuliner"></label>
+        <label id="manual-topic-field" class="hidden">Topik yang ingin dibuat<input id="manual-topic" type="text" placeholder="Contoh: Tutorial membuat video iklan produk sepatu"></label>
+        <div class="generate-row"><button id="generate">✦ Buat konten baru</button><span id="message" role="status"></span></div>
+      </div>
+      <div id="automation-settings" class="hidden">
+        <div class="option-grid"><label>Topik utama<input id="auto-topic" placeholder="Tips membuat konten dengan AI"></label><label>Jumlah konten hari ini<select id="auto-count"><option value="1">1 konten</option><option value="2">2 konten</option><option value="3" selected>3 konten (default maks.)</option><option value="4">4 konten</option><option value="5">5 konten</option></select></label><label>Kategori konten<select id="auto-category"><option>Iklan &amp; UGC</option><option>Tutorial AI</option><option>Tips bisnis</option><option>Produktivitas</option><option>Konten kreator</option></select></label><label>Format konten<select id="auto-format"><option>Tutorial langkah</option><option>Listicle</option><option>Fakta singkat</option><option>Masalah dan solusi</option><option>Before-after</option><option>Tips cepat</option></select></label></div>
+        <p>Zona waktu: <b>Asia/Jakarta</b></p><div id="auto-times"></div><p id="auto-warning" class="warning hidden">Terlalu banyak draft dapat terkena pembatasan TikTok.</p>
+        <div class="generate-row"><button id="activate-schedule">Aktifkan jadwal hari ini</button><button id="stop-schedule" class="danger">Hentikan jadwal</button><span id="auto-message" role="status"></span></div>
+      </div>
+    </section>
+
+    <section id="schedule-dashboard"><div class="history-heading"><h2>Jadwal Otomatis Hari Ini</h2><div><button id="pause-all" class="outline">Jeda semua</button> <button id="resume-all" class="outline">Lanjutkan</button> <button id="cancel-all" class="danger">Batalkan semua</button></div></div><div id="schedules"><p>Belum ada jadwal hari ini.</p></div></section>
+    <section id="editor" class="hidden"><h2>Preview terbaru</h2><p class="preview-help">Pilih slide untuk melihat ukuran besar.</p><div id="slides" class="slides"></div><label>Caption<textarea id="caption" rows="5"></textarea></label><button id="upload">Upload draft ke TikTok</button><p id="status"></p></section>
+    <section class="history-section"><div class="history-heading"><h2>Riwayat</h2><button id="delete-all" class="danger">Hapus semua riwayat</button></div><div id="history"></div></section>
+  </div>
+
+  <footer><span>© AI Ads Lab</span><nav aria-label="Legal"><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a></nav></footer>
+</main>
+<dialog id="slide-preview" aria-labelledby="slide-preview-title"><div class="dialog-heading"><h2 id="slide-preview-title">Preview slide</h2><button id="close-preview" class="outline" aria-label="Tutup preview">✕</button></div><img id="slide-preview-image" alt=""><p id="slide-preview-label"></p></dialog>
+<script src="/app.js"></script>
+</body>
+</html>
