@@ -56,7 +56,7 @@ test('judul sedang auto-fit maksimal tiga baris di dalam safe area', () => {
   assert.ok(fit.lines.every((line) => images.measureTextWidth(line, fit.fontSize, true) <= 770));
 });
 
-test('teks tutorial sangat panjang dibatasi maksimal lima slide', () => {
+test('teks tutorial sangat panjang dibagi agar setiap slide maksimal tujuh baris', () => {
   const steps = Array.from({ length: 12 }, (_, index) => `${index + 1}. Lakukan langkah penting nomor ${index + 1} secara konsisten untuk memperoleh hasil terbaik`).join('\n');
   const layouts = images.buildSlideLayouts({
     hook: Array(30).fill('Judul sangat panjang').join(' '),
@@ -67,11 +67,11 @@ test('teks tutorial sangat panjang dibatasi maksimal lima slide', () => {
   const stepSlides = layouts.filter(({ type }) => type === 'steps');
   const ctaSlides = layouts.filter(({ type }) => type === 'cta');
   assert.equal(layouts.filter(({ type }) => type === 'hook').length, 1);
-  assert.equal(stepSlides.length, 3);
-  assert.ok(stepSlides.every(({ fit }) => fit.steps.length <= 5 && fit.fontSize >= 34));
+  assert.ok(stepSlides.length >= 3);
+  assert.ok(stepSlides.every(({ fit }) => fit.steps.length <= 5 && fit.fontSize >= 38 && fit.lineCount <= 7));
   assert.equal(ctaSlides.length, 1);
-  assert.equal(layouts.length, 5);
-  assert.ok(ctaSlides.every(({ fit }) => fit.lines.length <= 9 && fit.height <= 850));
+  assert.ok(layouts.length >= 5);
+  assert.ok(ctaSlides.every(({ fit }) => fit.lines.length <= 7 && fit.height <= 850));
 });
 
 test('format fakta singkat membuat satu fakta utama per slide isi', () => {
@@ -102,33 +102,61 @@ test('tutorial empat langkah menghasilkan tiga slide dan satu LANGKAH PRAKTIS', 
   assert.equal(layouts.at(-1).title, 'HASIL / TIPS / CTA');
 });
 
-test('tutorial tujuh langkah maksimal empat slide, padat, dan nomor tetap berurutan', () => {
+test('tutorial tujuh langkah tetap padat, aman, dan nomor berurutan', () => {
   const body = Array.from({ length: 7 }, (_, index) => `${index + 1}. Lakukan tindakan praktis ke-${index + 1} lalu periksa hasilnya`).join('\n');
   const layouts = images.buildSlideLayouts({
     hook: 'Selesaikan edit produk lebih cepat', body, topic: 'Foto produk siap unggah',
     focus: { hasil: 'Foto produk rapi dan siap dipublikasikan', solusi: 'Periksa tepi objek sebelum mengunduh hasil akhir' },
     cta: 'Simpan tutorial ini', contentCategory: 'Tutorial AI', contentFormat: 'Tutorial langkah'
   });
-  assert.equal(layouts.length, 4);
+  assert.ok(layouts.length >= 4);
   const main = layouts.filter(({ type }) => type !== 'hook');
   assert.ok(main.every(({ fit }) => images.wordCount(fit.steps?.join(' ') || fit.lines.join(' ')) >= 15));
-  const numbering = layouts.filter(({ type }) => type === 'steps').flatMap(({ fit }) => fit.steps.map((step) => Number(step.match(/^\d+/)[0])));
+  const numbering = layouts.filter(({ type }) => type === 'steps').flatMap(({ fit }) => fit.steps.filter((step) => /^\d+/.test(step)).map((step) => Number(step.match(/^\d+/)[0])));
   assert.deepEqual(numbering, [1, 2, 3, 4, 5, 6, 7]);
 });
 
-test('footer dinamis untuk fakta unik, tutorial, tips, motivasi, dan custom', () => {
-  const cases = [
-    ['Fakta unik', 'Fakta singkat', 'Baru tahu fakta ini? ✦'],
-    ['Tutorial AI', 'Tutorial langkah', 'Simpan untuk dicoba nanti ✦'],
-    ['Tips bisnis', 'Listicle', 'Simpan tips ini ✦'],
-    ['Motivasi', 'Listicle', 'Ingat pesan ini ✦'],
-    ['Kategori Buatan Sendiri', 'Listicle', 'Geser untuk lanjut ✦']
-  ];
-  for (const [contentCategory, contentFormat, expected] of cases) {
-    assert.equal(images.resolveFooter({ contentCategory, contentFormat }), expected);
-  }
-  assert.equal(images.resolveFooter({ contentCategory: 'Fakta unik', contentFormat: 'Fakta singkat' }, true), 'Follow untuk fakta unik lainnya!');
-  assert.equal(images.resolveFooter({ contentCategory: 'Tips bisnis', cta: 'Bagikan ke teman yang perlu tahu!' }, true), 'Bagikan ke teman yang perlu tahu!');
+test('footer kecil dihapus dari semua slide', () => {
+  assert.equal(images.resolveFooter({ contentCategory: 'Tips bisnis' }), '');
+  assert.doesNotMatch(images.renderLayout(images.buildSlideLayouts(content)[0], 1, 3), /Simpan tips ini|Geser untuk lanjut/);
+});
+
+test('safe area TikTok membatasi header, ikon kanan, dan caption bawah', () => {
+  assert.deepEqual(images.SAFE_AREA, { left: 90, right: 260, top: 280, bottom: 350 });
+  const layout = images.buildSlideLayouts(content)[0];
+  assert.equal(images.validateVisualLayout(layout), true);
+  assert.match(images.renderLayout(layout, 1, 3), /y="310"/);
+  assert.ok(layout.fit.lines.every((line) => images.measureTextWidth(line, layout.fit.fontSize, true) <= 730));
+});
+
+test('teks pendek memakai 58–68 px, maksimal empat baris, dan turun ke tengah atas', () => {
+  const fit = images.adaptiveTextFit('Tiga langkah praktis untuk hasil rapi');
+  assert.equal(fit.kind, 'short');
+  assert.ok(fit.fontSize >= 58 && fit.fontSize <= 68);
+  assert.ok(fit.lines.length <= 4);
+  assert.equal(images.contentY(fit), 540);
+});
+
+test('teks sedang memakai 46–56 px dan maksimal enam baris', () => {
+  const fit = images.adaptiveTextFit(Array(15).fill('strategi').join(' '));
+  assert.equal(fit.kind, 'medium');
+  assert.ok(fit.fontSize >= 46 && fit.fontSize <= 56);
+  assert.ok(fit.lines.length <= 6);
+});
+
+test('teks panjang memakai 38–46 px, line-height adaptif, dan maksimal tujuh baris', () => {
+  const fit = images.adaptiveTextFit(Array(25).fill('langkah').join(' '));
+  assert.equal(fit.kind, 'long');
+  assert.ok(fit.fontSize >= 38 && fit.fontSize <= 46);
+  assert.ok(fit.lineHeight >= 1.25 && fit.lineHeight <= 1.35);
+  assert.ok(fit.lines.length <= 7);
+});
+
+test('teks sangat panjang tidak dipaksakan ke satu slide', () => {
+  assert.equal(images.adaptiveTextFit(Array(100).fill('penjelasan').join(' ')), null);
+  const pages = images.paginateSteps([Array(100).fill('penjelasan').join(' ')]);
+  assert.ok(pages.length > 1);
+  assert.ok(pages.every(({ lineCount }) => lineCount <= 7));
 });
 
 test('slide menggabungkan poin pendek dan membatasi isi utama 35 kata', () => {
