@@ -28,9 +28,9 @@ async function generateContent(previousTopics, options = {}, client) {
     'Konten kreator': 'Berikan wawasan praktis untuk proses kreatif, produksi, atau pertumbuhan kreator.'
   };
   const formatDirections = {
-    'Tutorial langkah': 'Susun body sebagai langkah bernomor yang berurutan.',
+    'Tutorial langkah': 'Buat tepat 5 slide: slide 1 hook, slide 2–4 masing-masing langkah yang bermakna, dan slide 5 hasil/kesimpulan serta CTA.',
     Listicle: 'Susun body sebagai poin-poin singkat; satu gagasan jelas per poin.',
-    'Fakta singkat': 'Susun body sebagai beberapa fakta, dengan satu fakta utama per poin/slide.',
+    'Fakta singkat': 'Buat tepat 4 slide: slide 1 hook, slide 2 penjelasan utama, slide 3 fakta pendukung, dan slide 4 kesimpulan serta CTA.',
     'Masalah dan solusi': 'Susun body berurutan: Masalah, Penyebab, lalu Solusi.',
     'Before-after': 'Susun body dengan Kondisi awal (before), perubahan yang dilakukan, dan Hasil (after).',
     'Tips cepat': 'Susun body sebagai tips sangat pendek, praktis, dan mudah dibaca.'
@@ -44,7 +44,7 @@ async function generateContent(previousTopics, options = {}, client) {
     model: config.aiModel,
     messages: [
       { role: 'system', content: 'Anda adalah kreator TikTok Indonesia. Tulis ringkas, praktis, akurat, tanpa klaim berlebihan.' },
-      { role: 'user', content: `${direction} Apa pun sumber topiknya, ikuti arahan kategori ini: ${categoryDirection} Gunakan format "${format}": ${formatDirections[format]}. Jangan memaksakan isi menjadi video iklan kecuali kategorinya Iklan & UGC atau topik manual memang meminta iklan. Hindari topik yang pernah dipakai (bandingkan tanpa membedakan kapital dan spasi): ${previousTopics.join(' | ') || 'belum ada'}. Body harus ringkas dan setiap poin harus cocok dijadikan satu slide. Hashtag masing-masing diawali #. Kembalikan hanya JSON yang mengikuti schema ini: ${JSON.stringify(schema)}` }
+      { role: 'user', content: `${direction} Apa pun sumber topiknya, ikuti arahan kategori ini: ${categoryDirection} Gunakan format "${format}": ${formatDirections[format]}. Jangan memaksakan isi menjadi video iklan kecuali kategorinya Iklan & UGC atau topik manual memang meminta iklan. Hindari topik yang pernah dipakai (bandingkan tanpa membedakan kapital dan spasi): ${previousTopics.join(' | ') || 'belum ada'}. Rencanakan default 4 slide (minimal 3, maksimal 5); 6 hanya jika materinya benar-benar panjang dan jangan pernah 7 secara default. Setiap slide maksimal 35 kata, maksimal 5–6 baris utama, hanya memuat satu ide, dan mudah dibaca. Gabungkan poin pendek yang masih satu ide; jangan membuat slide baru hanya untuk satu kalimat pendek. Sesuaikan label bagian (misalnya HOOK, FAKTA, PENJELASAN, atau KESIMPULAN) dengan isi. Body harus ringkas dan setiap poin harus cocok dijadikan slide. CTA harus spesifik terhadap topik/kategori, misalnya ajakan follow, bagikan, atau simpan agar mudah ditemukan. Hashtag masing-masing diawali #. Kembalikan hanya JSON yang mengikuti schema ini: ${JSON.stringify(schema)}` }
     ],
     response_format: { type: 'json_object' }
   });

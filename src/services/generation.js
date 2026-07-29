@@ -55,7 +55,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     try {
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,content_category,content_format,hook,body,caption,hashtags,cta) VALUES(?,?,?,?,?,?,?,?,?,?)')
         .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta);
-      const slides = await images.createSlides(result.lastInsertRowid, { ...generated, contentFormat });
+      const slides = await images.createSlides(result.lastInsertRowid, { ...generated, contentCategory, contentFormat });
       db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(slides), result.lastInsertRowid);
       return result.lastInsertRowid;
     } catch (error) {

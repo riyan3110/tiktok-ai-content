@@ -56,7 +56,7 @@ test('judul sedang auto-fit maksimal tiga baris di dalam safe area', () => {
   assert.ok(fit.lines.every((line) => images.measureTextWidth(line, fit.fontSize, true) <= 770));
 });
 
-test('teks sangat panjang dibagi menjadi slide tambahan tanpa dipotong', () => {
+test('teks sangat panjang dibatasi enam slide dan tidak pernah tujuh secara default', () => {
   const steps = Array.from({ length: 12 }, (_, index) => `${index + 1}. Lakukan langkah penting nomor ${index + 1} secara konsisten untuk memperoleh hasil terbaik`).join('\n');
   const layouts = images.buildSlideLayouts({
     hook: Array(30).fill('Judul sangat panjang').join(' '),
@@ -66,11 +66,12 @@ test('teks sangat panjang dibagi menjadi slide tambahan tanpa dipotong', () => {
   });
   const stepSlides = layouts.filter(({ type }) => type === 'steps');
   const ctaSlides = layouts.filter(({ type }) => type === 'cta');
-  assert.ok(layouts.filter(({ type }) => type === 'hook').length > 1);
-  assert.equal(stepSlides.length, 3);
+  assert.equal(layouts.filter(({ type }) => type === 'hook').length, 1);
+  assert.equal(stepSlides.length, 4);
   assert.ok(stepSlides.every(({ fit }) => fit.steps.length <= 5 && fit.fontSize >= 34));
-  assert.ok(ctaSlides.length > 1);
-  assert.ok(ctaSlides.every(({ fit }) => fit.lines.length <= 4 && fit.height <= 1480 * 0.6));
+  assert.equal(ctaSlides.length, 1);
+  assert.equal(layouts.length, 6);
+  assert.ok(ctaSlides.every(({ fit }) => fit.lines.length <= 6 && fit.height <= 1480 * 0.6));
 });
 
 test('format fakta singkat membuat satu fakta utama per slide isi', () => {
@@ -82,6 +83,44 @@ test('format fakta singkat membuat satu fakta utama per slide isi', () => {
     contentFormat: 'Fakta singkat'
   });
   const facts = layouts.filter(({ type }) => type === 'steps');
-  assert.equal(facts.length, 3);
-  assert.ok(facts.every(({ title, fit }) => title === 'FAKTA UTAMA' && fit.steps.length === 1));
+  assert.equal(layouts.length, 4);
+  assert.equal(facts.length, 2);
+  assert.deepEqual(facts.map(({ title }) => title), ['PENJELASAN UTAMA', 'FAKTA PENDUKUNG']);
+  assert.equal(layouts.at(-1).title, 'KESIMPULAN');
+});
+
+test('tutorial memakai lima slide dengan tiga langkah dan hasil/CTA', () => {
+  const layouts = images.buildSlideLayouts({
+    hook: 'Buat gambar AI lebih menarik',
+    body: '1. Tentukan ide utama\n2. Tulis prompt yang jelas\n3. Pilih hasil terbaik',
+    topic: 'Gambar AI menarik', cta: 'Follow untuk tips AI lainnya!',
+    contentCategory: 'Tutorial AI', contentFormat: 'Tutorial langkah'
+  });
+  assert.equal(layouts.length, 5);
+  assert.deepEqual(layouts.slice(1, 4).map(({ title }) => title), ['LANGKAH 1', 'LANGKAH 2', 'LANGKAH 3']);
+  assert.equal(layouts.at(-1).title, 'HASIL / CTA');
+});
+
+test('footer dinamis untuk fakta unik, tutorial, tips, motivasi, dan custom', () => {
+  const cases = [
+    ['Fakta unik', 'Fakta singkat', 'Baru tahu fakta ini? ✦'],
+    ['Tutorial AI', 'Tutorial langkah', 'Simpan untuk dicoba nanti ✦'],
+    ['Tips bisnis', 'Listicle', 'Simpan tips ini ✦'],
+    ['Motivasi', 'Listicle', 'Ingat pesan ini ✦'],
+    ['Kategori Buatan Sendiri', 'Listicle', 'Geser untuk lanjut ✦']
+  ];
+  for (const [contentCategory, contentFormat, expected] of cases) {
+    assert.equal(images.resolveFooter({ contentCategory, contentFormat }), expected);
+  }
+  assert.equal(images.resolveFooter({ contentCategory: 'Fakta unik', contentFormat: 'Fakta singkat' }, true), 'Follow untuk fakta unik lainnya!');
+  assert.equal(images.resolveFooter({ contentCategory: 'Tips bisnis', cta: 'Bagikan ke teman yang perlu tahu!' }, true), 'Bagikan ke teman yang perlu tahu!');
+});
+
+test('slide menggabungkan poin pendek dan membatasi isi utama 35 kata', () => {
+  const body = Array.from({ length: 8 }, (_, index) => `${index + 1}. Tips ${index + 1}`).join('\n');
+  const layouts = images.buildSlideLayouts({ hook: 'Tips ringkas', body, topic: 'Tips', contentCategory: 'Tips bisnis', contentFormat: 'Tips cepat' });
+  assert.equal(layouts.length, 4);
+  const bodyLayouts = layouts.filter(({ type }) => type === 'steps');
+  assert.ok(bodyLayouts.every(({ fit }) => fit.steps.length > 1));
+  assert.ok(bodyLayouts.every(({ fit }) => images.wordCount(fit.steps.join(' ')) <= 35));
 });
