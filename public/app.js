@@ -3,7 +3,21 @@ const $ = (s) => document.querySelector(s);
 async function api(url, options) { const r = await fetch(url, options); const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Permintaan gagal'); return data; }
 const sourceLabels = { manual: 'Manual', ai: 'AI', trending: 'Trending' };
 function show(item) { current = item; $('#editor').classList.remove('hidden'); $('#slides').innerHTML = item.slides.map((x, i) => `<img src="${x}" alt="Slide ${i + 1}">`).join(''); $('#caption').value = item.caption; $('#status').textContent = item.publish_status; }
-async function history() { const rows = await api('/history'); $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span></article>`).join('') : '<p>Belum ada konten.</p>'; document.querySelectorAll('.history-item').forEach((el, i) => el.onclick = () => show(rows[i])); }
+async function history() {
+  const rows = await api('/history');
+  $('#delete-all').classList.toggle('hidden', !rows.length);
+  $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><div class="history-content"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span></div><button class="delete-item danger" aria-label="Hapus ${escapeHtml(x.topic)}">🗑 Hapus</button></article>`).join('') : '<p>Belum ada konten.</p>';
+  document.querySelectorAll('.history-content').forEach((el, i) => { el.onclick = () => show(rows[i]); });
+  document.querySelectorAll('.delete-item').forEach((button, i) => { button.onclick = async () => {
+    if (!window.confirm('Hapus konten ini beserta seluruh gambar slide-nya?')) return;
+    try {
+      const result = await api(`/history/${rows[i].id}`, { method: 'DELETE' });
+      if (current?.id === rows[i].id) { current = undefined; $('#editor').classList.add('hidden'); }
+      await history();
+      $('#message').textContent = result.tiktokWarning ? 'Konten berhasil dihapus. Proses TikTok yang sudah dikirim tidak bisa dibatalkan dari aplikasi.' : 'Konten berhasil dihapus.';
+    } catch (error) { $('#message').textContent = error.message; }
+  }; });
+}
 function escapeHtml(x) { const d = document.createElement('div'); d.textContent = x; return d.innerHTML; }
 async function connectionStatus() {
   const status = await api('/tiktok/connection-status');
@@ -39,6 +53,14 @@ async function pollDraft(publishId) {
   renderPublishStatus(lastData, 'TikTok belum berhasil mengunduh gambar. Periksa URL gambar dan coba lagi.');
 }
 $('#upload').onclick = async () => { try { $('#status').textContent = 'Mengirim…'; const r = await api('/upload-tiktok', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: current.id, caption: $('#caption').value }) }); renderPublishStatus(r); await pollDraft(r.publishId); } catch(e) { $('#status').textContent = e.message; } };
+$('#delete-all').onclick = async () => {
+  if (!window.confirm('Hapus seluruh riwayat?') || !window.confirm('Tindakan ini tidak dapat dibatalkan.')) return;
+  try {
+    const result = await api('/history', { method: 'DELETE' });
+    current = undefined; $('#editor').classList.add('hidden'); await history();
+    $('#message').textContent = result.tiktokWarning ? 'Konten berhasil dihapus. Proses TikTok yang sudah dikirim tidak bisa dibatalkan dari aplikasi.' : 'Konten berhasil dihapus.';
+  } catch (error) { $('#message').textContent = error.message; }
+};
 const params = new URLSearchParams(window.location.search);
 if (params.get('oauth') === 'success') $('#connection-message').textContent = 'Akun TikTok berhasil dihubungkan.';
 connectionStatus().catch(e => { $('#connection-message').textContent = `Status koneksi gagal dimuat: ${e.message}`; });

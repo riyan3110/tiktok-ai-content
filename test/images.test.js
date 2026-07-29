@@ -124,3 +124,10 @@ test('slide menggabungkan poin pendek dan membatasi isi utama 35 kata', () => {
   assert.ok(bodyLayouts.every(({ fit }) => fit.steps.length > 1));
   assert.ok(bodyLayouts.every(({ fit }) => images.wordCount(fit.steps.join(' ')) <= 35));
 });
+
+test('format masalah dan solusi menghasilkan tepat empat slide dengan urutan solusi', () => {
+  const layouts = images.buildSlideLayouts({ contentCategory: 'Tips bisnis', contentFormat: 'Masalah dan solusi', hook: 'Stok Lama Mengunci Modal', body: 'MASALAH: Stok tidak terjual 30 hari\nPENYEBAB: Perputaran tidak dicatat\nSOLUSI 1: Hitung umur stok\nSOLUSI 2: Bundel stok lambat\nLANGKAH PERTAMA: Ekspor laporan stok\nHASIL YANG DIHARAPKAN: Modal kembali bertahap', cta: 'Simpan panduan ini' });
+  assert.equal(layouts.length, 4);
+  assert.deepEqual(layouts.map(({ title }) => title), ['HOOK', 'MASALAH & PENYEBAB', 'SOLUSI', 'LANGKAH & HASIL']);
+  assert.match(layouts[2].fit.groups.flat().join(' '), /SOLUSI 1.*SOLUSI 2/);
+});

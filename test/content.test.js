@@ -25,7 +25,7 @@ test('validasi konfigurasi AI menolak provider yang tidak didukung', () => {
 
 test('generate memakai Chat Completions dan mempertahankan struktur JSON', async () => {
   let request;
-  const expected = { topic: 'Topik', hook: 'Hook', body: '1. Langkah', caption: 'Caption', hashtags: ['#AI'], cta: 'Coba' };
+  const expected = { focus: { masalah: 'Brief kabur', penyebab: 'Tujuan kosong', solusi: 'Tulis tujuan', hasil: 'Brief jelas' }, topic: 'Topik', hook: 'Brief Kabur Membuat Visual Salah Arah', body: '1. Tulis tujuan visual yang terukur', caption: 'Tulis tujuan agar brief lebih jelas.', hashtags: ['#AI'], cta: 'Coba sekarang' };
   const client = { chat: { completions: { create: async (value) => {
     request = value;
     return { choices: [{ message: { content: JSON.stringify(expected) } }] };
@@ -36,7 +36,7 @@ test('generate memakai Chat Completions dan mempertahankan struktur JSON', async
   assert.deepEqual(result, expected);
   assert.equal(request.model, 'gemini-2.5-flash-lite');
   assert.equal(request.response_format.type, 'json_object');
-  assert.match(request.messages[1].content, /"required":\["topic","hook","body","caption","hashtags","cta"\]/);
+  assert.match(request.messages[1].content, /"required":\["focus","topic","hook","body","caption","hashtags","cta"\]/);
 });
 
 test('generate memberi pesan jelas ketika provider mengembalikan JSON invalid', async () => {
@@ -45,12 +45,28 @@ test('generate memberi pesan jelas ketika provider mengembalikan JSON invalid', 
 });
 test('prompt mengikuti kategori, format, dan menjaga inti topik manual', async () => {
   let request;
-  const result = { topic: 'Blockchain untuk pemula', hook: 'Hook', body: 'Masalah: rumit\nSolusi: analogi', caption: 'Caption', hashtags: ['#Teknologi'], cta: 'Simpan' };
+  const result = { focus: { masalah: 'Istilah rumit', penyebab: 'Tanpa analogi', solusi: 'Pakai analogi', hasil: 'Konsep dipahami' }, topic: 'Blockchain untuk pemula', hook: 'Blockchain Terasa Rumit Karena Istilah Ini', body: 'MASALAH: Istilah blockchain sulit dipahami\nPENYEBAB: Penjelasan tanpa analogi\nSOLUSI 1: Bandingkan ledger dengan buku kas\nSOLUSI 2: Tunjukkan satu transaksi sederhana\nLANGKAH PERTAMA: Tulis contoh transfer dua orang\nHASIL YANG DIHARAPKAN: Pembaca memahami alur dasar', caption: 'Pahami blockchain lewat buku kas dan contoh transaksi.', hashtags: ['#Teknologi'], cta: 'Simpan panduan ini' };
   const client = { chat: { completions: { create: async (value) => { request = value; return { choices: [{ message: { content: JSON.stringify(result) } }] }; } } } };
   await generateContent([], { topicSource: 'manual', requestedTopic: 'Blockchain untuk pemula', contentCategory: 'Edukasi teknologi', contentFormat: 'Masalah dan solusi' }, client);
   const prompt = request.messages[1].content;
   assert.match(prompt, /jangan mengubah inti topiknya/i);
   assert.match(prompt, /bahasa sederhana/);
-  assert.match(prompt, /Masalah, Penyebab, lalu Solusi/);
+  assert.match(prompt, /MASALAH:/);
   assert.match(prompt, /Jangan memaksakan isi menjadi video iklan/);
+});
+
+test('validasi menolak urutan solusi yang tidak dimulai dari satu dan isi duplikat', () => {
+  const { validateContent } = require('../src/services/content');
+  const content = { focus: { masalah: 'Stok lama', penyebab: 'Tidak dihitung', solusi: 'Audit', hasil: 'Stok turun' }, topic: 'Audit stok', hook: 'Stok Lama Mengunci Uang Toko Anda', body: 'MASALAH: Stok lama tidak terjual\nPENYEBAB: Produk tidak pernah diaudit\nSOLUSI 2: Hitung stok selama 30 hari\nSOLUSI 3: Hitung stok selama 30 hari\nLANGKAH PERTAMA: Pisahkan produk lambat\nHASIL YANG DIHARAPKAN: Modal kembali bertahap', caption: 'Audit stok lama.', hashtags: ['#Bisnis'], cta: 'Simpan panduan ini' };
+  const errors = validateContent(content, { format: 'Masalah dan solusi' });
+  assert.ok(errors.some((error) => /Urutan solusi/i.test(error)));
+  assert.ok(errors.some((error) => /berulang/i.test(error)));
+});
+
+test('hasil gagal validasi diperbaiki AI tepat satu kali', async () => {
+  const valid = { focus: { masalah: 'Stok lama', penyebab: 'Tanpa audit', solusi: 'Pisahkan stok', hasil: 'Modal cair' }, topic: 'Audit stok', hook: 'Stok Lama Mengunci Modal Toko', body: 'MASALAH: Stok tidak terjual 30 hari\nPENYEBAB: Perputaran barang tidak dicatat\nSOLUSI 1: Hitung stok berumur 30 hari\nSOLUSI 2: Bundel barang yang lambat laku\nLANGKAH PERTAMA: Ekspor laporan stok hari ini\nHASIL YANG DIHARAPKAN: Modal kembali tanpa memangkas semua margin', caption: 'Audit stok, lalu bundel barang lambat agar modal kembali.', hashtags: ['#Bisnis'], cta: 'Simpan untuk audit stok' };
+  let calls = 0;
+  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(calls++ ? valid : { ...valid, body: valid.body.replace('SOLUSI 1', 'SOLUSI 2').replace('SOLUSI 2', 'SOLUSI 3') }) } }] }) } } };
+  assert.deepEqual(await generateContent([], { contentFormat: 'Masalah dan solusi' }, client), valid);
+  assert.equal(calls, 2);
 });
