@@ -16,7 +16,28 @@ async function connectionStatus() {
 }
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { $('#manual-topic-field').classList.toggle('hidden', input.value !== 'manual' || !input.checked); });
 $('#generate').onclick = async () => { try { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; if (topicSource === 'manual' && !requestedTopic.trim()) throw new Error('Topik manual wajib diisi'); $('#message').textContent = 'Sedang membuat…'; show(await api('/generate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ topicSource, requestedTopic }) })); await history(); $('#message').textContent = 'Selesai'; } catch (e) { $('#message').textContent = e.message; } };
-$('#upload').onclick = async () => { try { $('#status').textContent = 'Mengirim…'; const r = await api('/upload-tiktok', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: current.id, caption: $('#caption').value }) }); $('#status').innerHTML = `${r.status} • Draft TikTok <button id="refresh">Cek status</button>`; $('#refresh').onclick = async () => { const s = await api(`/status/${r.publishId}`); $('#status').textContent = s.status + (s.fail_reason ? `: ${s.fail_reason}` : ''); await history(); }; } catch(e) { $('#status').textContent = e.message; } };
+function renderPublishStatus(data, message = '') {
+  const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];
+  $('#status').textContent = message ? `${message} (${details.join(' • ')})` : details.join(' • ');
+}
+async function pollDraft(publishId) {
+  const startedAt = Date.now();
+  let lastData = { status: 'PROCESSING_UPLOAD', fail_reason: null, downloaded_bytes: null };
+  while (Date.now() - startedAt < 5 * 60 * 1000) {
+    await new Promise(resolve => setTimeout(resolve, 10 * 1000));
+    const data = await api(`/status/${encodeURIComponent(publishId)}`);
+    lastData = data;
+    renderPublishStatus(data);
+    await history();
+    if (data.status === 'SEND_TO_USER_INBOX') {
+      renderPublishStatus(data, 'Draft berhasil dikirim. Buka Inbox TikTok untuk melanjutkan.');
+      return;
+    }
+    if (data.status !== 'PROCESSING_DOWNLOAD' && data.status !== 'PROCESSING_UPLOAD') return;
+  }
+  renderPublishStatus(lastData, 'TikTok belum berhasil mengunduh gambar. Periksa URL gambar dan coba lagi.');
+}
+$('#upload').onclick = async () => { try { $('#status').textContent = 'Mengirim…'; const r = await api('/upload-tiktok', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: current.id, caption: $('#caption').value }) }); renderPublishStatus(r); await pollDraft(r.publishId); } catch(e) { $('#status').textContent = e.message; } };
 const params = new URLSearchParams(window.location.search);
 if (params.get('oauth') === 'success') $('#connection-message').textContent = 'Akun TikTok berhasil dihubungkan.';
 connectionStatus().catch(e => { $('#connection-message').textContent = `Status koneksi gagal dimuat: ${e.message}`; });

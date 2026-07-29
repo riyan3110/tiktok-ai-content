@@ -11,6 +11,8 @@ function createDatabase(filename = config.databasePath) {
   const columns = new Set(db.prepare('PRAGMA table_info(contents)').all().map(({ name }) => name));
   if (!columns.has('topic_source')) db.exec("ALTER TABLE contents ADD COLUMN topic_source TEXT NOT NULL DEFAULT 'ai'");
   if (!columns.has('requested_topic')) db.exec('ALTER TABLE contents ADD COLUMN requested_topic TEXT');
+  if (!columns.has('downloaded_bytes')) db.exec('ALTER TABLE contents ADD COLUMN downloaded_bytes INTEGER');
+  if (!columns.has('fail_reason')) db.exec('ALTER TABLE contents ADD COLUMN fail_reason TEXT');
   return db;
 }
 
