@@ -7,8 +7,9 @@ const tiktokService = require('./services/tiktok');
 const trendingService = require('./services/trendingTopics');
 const { generateAndSave } = require('./services/generation');
 const historyService = require('./services/history');
+const automationService = require('./services/automation');
 
-function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService } = {}) {
+function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, automation = automationService } = {}) {
   const app = express(); app.set('trust proxy', 1); app.use(express.json()); app.use(express.urlencoded({ extended: false }));
   app.use(session({ secret: config.sessionSecret, resave: false, saveUninitialized: false, cookie: { httpOnly: true, sameSite: 'lax', secure: config.publicBaseUrl.startsWith('https://'), maxAge: 10 * 60 * 1000 } }));
   app.use(express.static(`${config.root}/public`, { setHeaders: (res, file) => { if (/\.jpe?g$/i.test(file)) res.setHeader('Content-Type', 'image/jpeg'); } }));
@@ -23,6 +24,16 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.get('/history', (req, res) => res.json(db.prepare('SELECT * FROM contents ORDER BY id DESC').all().map(parseRecord)));
   app.delete('/history/:id', async (req, res, next) => { try { res.json(await historyService.deleteOne(db, req.params.id)); } catch (e) { next(e); } });
   app.delete('/history', async (req, res, next) => { try { res.json(await historyService.deleteAll(db)); } catch (e) { next(e); } });
+  app.post('/automation/schedules', async (req, res, next) => { try { res.status(201).json(await automation.createSchedule(db, req.body || {}, { content })); } catch (e) { next(e); } });
+  app.get('/automation/today', (req, res) => res.json(automation.listToday(db)));
+  app.post('/automation/schedules/:id/:action', (req, res, next) => { try { res.json(automation.scheduleAction(db, Number(req.params.id), req.params.action)); } catch (e) { next(e); } });
+  app.post('/automation/jobs/:id/:action', async (req, res, next) => { try {
+    const id = Number(req.params.id); const action = req.params.action;
+    if (action === 'cancel') automation.setJobStatus(db, id, 'CANCELLED');
+    else if (action === 'send-now' || action === 'retry') { db.prepare("UPDATE automation_jobs SET status='WAITING',scheduled_at=?,retry_at=NULL,error_message=NULL,attempt_count=CASE WHEN ?='retry' THEN 0 ELSE attempt_count END,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('WAITING','FAILED','MISSED')").run(Date.now(), action, id); await automation.tick(db, { content, images, tiktok }); }
+    else throw Object.assign(new Error('Aksi job tidak valid'), { status: 400 });
+    res.json(db.prepare('SELECT * FROM automation_jobs WHERE id=?').get(id));
+  } catch (e) { next(e); } });
   app.use((err, req, res, next) => { if (!err.status || err.status >= 500) console.error(err); res.status(err.status || 500).json({ error: err.message || 'Kesalahan internal' }); });
   return app;
 }

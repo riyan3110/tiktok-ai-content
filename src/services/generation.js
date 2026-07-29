@@ -20,7 +20,7 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, mainTopic = null, angle = null }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -53,8 +53,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       continue;
     }
     try {
-      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,content_category,content_format,hook,body,caption,hashtags,cta) VALUES(?,?,?,?,?,?,?,?,?,?)')
-        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta);
+      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,content_category,content_format,hook,body,caption,hashtags,cta) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, angle, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta);
       const slides = await images.createSlides(result.lastInsertRowid, { ...generated, contentCategory, contentFormat });
       db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(slides), result.lastInsertRowid);
       return result.lastInsertRowid;

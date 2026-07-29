@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS contents (
   topic TEXT NOT NULL UNIQUE,
   topic_source TEXT NOT NULL DEFAULT 'ai',
   requested_topic TEXT,
+  main_topic TEXT,
+  content_angle TEXT,
   content_category TEXT NOT NULL DEFAULT 'Iklan & UGC',
   content_format TEXT NOT NULL DEFAULT 'Tutorial langkah',
   hook TEXT NOT NULL,
@@ -30,3 +32,32 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   scope TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS automation_schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  main_topic TEXT NOT NULL,
+  category TEXT NOT NULL,
+  content_format TEXT NOT NULL,
+  total_contents INTEGER NOT NULL CHECK(total_contents BETWEEN 1 AND 5),
+  scheduled_date TEXT NOT NULL,
+  timezone TEXT NOT NULL DEFAULT 'Asia/Jakarta',
+  status TEXT NOT NULL DEFAULT 'ACTIVE',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS automation_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  schedule_id INTEGER NOT NULL REFERENCES automation_schedules(id) ON DELETE CASCADE,
+  content_id INTEGER REFERENCES contents(id) ON DELETE SET NULL,
+  angle TEXT NOT NULL,
+  scheduled_at INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'WAITING',
+  publish_id TEXT,
+  error_message TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  retry_at INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_automation_jobs_due ON automation_jobs(status, scheduled_at, retry_at);
