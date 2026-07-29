@@ -110,9 +110,9 @@ function contentKind(category = '', format = '') {
   const value = `${category} ${format}`.toLocaleLowerCase('id-ID');
   if (value.includes('fakta')) return 'fact';
   if (value.includes('tutorial')) return 'tutorial';
+  if (value.includes('masalah') && value.includes('solusi')) return 'solution';
   if (value.includes('tips')) return 'tips';
   if (value.includes('motivasi')) return 'motivation';
-  if (value.includes('masalah') && value.includes('solusi')) return 'solution';
   if (value.includes('before-after')) return 'beforeAfter';
   if (value.includes('edukasi')) return 'education';
   if (value.includes('iklan') || value.includes('ugc')) return 'ugc';
@@ -150,6 +150,14 @@ function buildSlideLayouts(content) {
   const kind = contentKind(content.contentCategory, format);
   const hookText = limitWords(content.hook, 35);
   const hook = autoFitText(hookText, { maxHeight: 620, maxLines: 6, startSize: 72, minSize: 42, lineHeight: 1.15 });
+  if (kind === 'solution') {
+    const sections = String(content.body || '').split(/(?=^(?:MASALAH|PENYEBAB|SOLUSI [12]|LANGKAH PERTAMA|HASIL YANG DIHARAPKAN)\s*:)/gim).map((part) => part.trim()).filter(Boolean);
+    if (sections.length >= 6) {
+      const groups = [sections.slice(0, 2), sections.slice(2, 4), [...sections.slice(4, 6), `CTA: ${content.cta}`]];
+      const titles = ['MASALAH & PENYEBAB', 'SOLUSI', 'LANGKAH & HASIL'];
+      return [{ type: 'hook', title: 'HOOK', fit: hook }, ...groups.map((steps, index) => ({ type: 'steps', title: titles[index], fit: fitStepPage(steps) }))];
+    }
+  }
   const rawPoints = parseSteps(content.body).flatMap(splitAtWordLimit).filter(Boolean);
   const desiredBodySlides = kind === 'tutorial' ? 3 : 2;
   const longContent = rawPoints.reduce((sum, point) => sum + wordCount(point), 0) > 105;

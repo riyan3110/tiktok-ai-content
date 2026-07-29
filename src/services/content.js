@@ -4,62 +4,108 @@ const config = require('../config');
 const schema = {
   type: 'object', additionalProperties: false,
   properties: {
+    focus: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        masalah: { type: 'string' }, penyebab: { type: 'string' },
+        solusi: { type: 'string' }, hasil: { type: 'string' }
+      },
+      required: ['masalah', 'penyebab', 'solusi', 'hasil']
+    },
     topic: { type: 'string' }, hook: { type: 'string' }, body: { type: 'string' },
     caption: { type: 'string' }, hashtags: { type: 'array', items: { type: 'string' } }, cta: { type: 'string' }
   },
-  required: ['topic', 'hook', 'body', 'caption', 'hashtags', 'cta']
+  required: ['focus', 'topic', 'hook', 'body', 'caption', 'hashtags', 'cta']
 };
 
+const words = (value) => String(value || '').trim().split(/\s+/).filter(Boolean);
+const normalizedLine = (value) => String(value || '').toLocaleLowerCase('id-ID').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+function numberedValues(body, label) {
+  const pattern = new RegExp(`(?:^|\\n)\\s*${label}\\s*(\\d+)\\s*[:.)-]`, 'gi');
+  return [...String(body || '').matchAll(pattern)].map((match) => Number(match[1]));
+}
+
+function validateContent(content, { format = 'Tutorial langkah' } = {}) {
+  const errors = [];
+  const strings = ['topic', 'hook', 'body', 'caption', 'cta'];
+  if (!content || strings.some((key) => typeof content[key] !== 'string' || !content[key].trim()) ||
+      !Array.isArray(content?.hashtags) || content.hashtags.some((tag) => typeof tag !== 'string')) {
+    return ['Ada kolom wajib atau slide yang kosong.'];
+  }
+  if (!content.focus || ['masalah', 'penyebab', 'solusi', 'hasil'].some((key) => !String(content.focus[key] || '').trim())) {
+    errors.push('Fokus utama (masalah, penyebab, solusi, hasil) belum lengkap.');
+  }
+  if (words(content.hook).length > 12) errors.push('Hook melebihi 12 kata.');
+
+  const nonEmptyLines = content.body.split('\n').map((line) => line.trim()).filter(Boolean);
+  const seen = new Set();
+  for (const line of [content.hook, ...nonEmptyLines]) {
+    const value = normalizedLine(line.replace(/^(?:solusi|langkah|penyebab)\s*\d*\s*[:.)-]?\s*/i, ''));
+    if (value.length >= 12 && seen.has(value)) errors.push('Isi mengandung poin yang berulang.');
+    seen.add(value);
+  }
+
+  for (const label of ['solusi', 'langkah']) {
+    const values = numberedValues(content.body, label);
+    values.forEach((value, index) => { if (value !== index + 1) errors.push(`Urutan ${label} harus dimulai dari 1 dan berurutan.`); });
+  }
+
+  if (format === 'Masalah dan solusi') {
+    const required = [/^MASALAH\s*:/im, /^PENYEBAB\s*:/im, /^SOLUSI 1\s*:/im, /^SOLUSI 2\s*:/im, /^LANGKAH PERTAMA\s*:/im, /^HASIL YANG DIHARAPKAN\s*:/im];
+    if (required.some((pattern) => !pattern.test(content.body))) errors.push('Struktur Masalah dan solusi belum lengkap atau urutan solusi tidak dimulai dari 1.');
+    const sections = content.body.split(/(?=^(?:MASALAH|PENYEBAB|SOLUSI [12]|LANGKAH PERTAMA|HASIL YANG DIHARAPKAN)\s*:)/gim);
+    const slideWords = [sections.slice(0, 2), sections.slice(2, 4), [...sections.slice(4), content.cta]].map((parts) => words(parts.join(' ')).length);
+    if (slideWords.some((count) => count > 35)) errors.push('Ada slide yang melebihi 35 kata.');
+  } else if (nonEmptyLines.some((line) => words(line).length > 35)) errors.push('Ada slide yang melebihi 35 kata.');
+
+  if (/tingkatkan strategi bisnis|gunakan pemasaran yang tepat|optimalkan penjualan/i.test(content.body)) {
+    errors.push('Solusi masih generik dan belum berupa tindakan konkret.');
+  }
+  return [...new Set(errors)];
+}
+
+function parseOutput(response) {
+  const output = response.choices?.[0]?.message?.content;
+  if (!output) throw new Error(`Provider AI ${config.aiProvider || 'yang dipilih'} tidak mengembalikan konten`);
+  try { return JSON.parse(output); } catch { throw new Error(`Provider AI ${config.aiProvider || 'yang dipilih'} mengembalikan JSON yang tidak valid atau strukturnya tidak sesuai`); }
+}
+
 async function generateContent(previousTopics, options = {}, client) {
-  // Backward compatibility for callers that passed the client as argument two.
   if (options?.chat) { client = options; options = {}; }
   if (!client) config.validateAiConfig();
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   const category = options.contentCategory || 'Iklan & UGC';
   const format = options.contentFormat || 'Tutorial langkah';
   const categoryDirections = {
-    'Iklan & UGC': 'Fokus pada iklan atau UGC seperti sistem lama: konsep, produksi, atau optimasi konten promosi.',
-    'Tutorial AI': 'Buat langkah nyata menggunakan tool AI; jangan berubah menjadi promosi tool.',
-    'Tips bisnis': 'Berikan saran bisnis yang spesifik, realistis, dan dapat diterapkan.',
-    Produktivitas: 'Berikan tips praktis yang membantu audiens bekerja atau belajar lebih efektif.',
-    'Fakta unik': 'Sajikan fakta singkat, menarik, akurat, dan hindari membuat klaim yang tidak dapat dipastikan.',
-    'Edukasi teknologi': 'Jelaskan konsep teknologi dengan bahasa sederhana dan contoh yang mudah dipahami.',
-    Motivasi: 'Buat motivasi yang membumi, tidak berlebihan, dan memiliki tindakan kecil yang jelas.',
-    'Konten kreator': 'Berikan wawasan praktis untuk proses kreatif, produksi, atau pertumbuhan kreator.'
+    'Tutorial AI': 'Buat langkah nyata menggunakan tool AI.', 'Tips bisnis': 'Berikan tindakan bisnis spesifik dan realistis.',
+    Produktivitas: 'Berikan tindakan kecil yang praktis.', 'Fakta unik': 'Gunakan fakta akurat tanpa klaim yang tidak pasti.',
+    'Edukasi teknologi': 'Gunakan bahasa sederhana dan satu contoh yang mudah dipahami.', Motivasi: 'Gunakan motivasi yang membumi.',
+    'Konten kreator': 'Berikan tindakan praktis untuk proses kreator.', 'Iklan & UGC': 'Fokus pada konsep atau produksi konten promosi.'
   };
-  const formatDirections = {
-    'Tutorial langkah': 'Buat tepat 5 slide: slide 1 hook, slide 2–4 masing-masing langkah yang bermakna, dan slide 5 hasil/kesimpulan serta CTA.',
-    Listicle: 'Susun body sebagai poin-poin singkat; satu gagasan jelas per poin.',
-    'Fakta singkat': 'Buat tepat 4 slide: slide 1 hook, slide 2 penjelasan utama, slide 3 fakta pendukung, dan slide 4 kesimpulan serta CTA.',
-    'Masalah dan solusi': 'Susun body berurutan: Masalah, Penyebab, lalu Solusi.',
-    'Before-after': 'Susun body dengan Kondisi awal (before), perubahan yang dilakukan, dan Hasil (after).',
-    'Tips cepat': 'Susun body sebagai tips sangat pendek, praktis, dan mudah dibaca.'
-  };
-  const categoryDirection = categoryDirections[category] || `Buat konten yang benar-benar relevan dengan kategori khusus "${category}".`;
-  let direction = `Pilih topik baru dalam kategori "${category}". ${categoryDirection}`;
-  if (options.topicSource === 'manual') direction = `Gunakan topik pengguna ini sebagai dasar wajib: "${options.requestedTopic}". Anda boleh memperbaiki judul agar menarik, tetapi jangan mengubah inti topiknya.`;
-  if (options.topicSource === 'trending' && options.requestedTopic) direction = `Buat konten berdasarkan topik trending ini: "${options.requestedTopic}". Pertahankan inti tren dan kaitkan secara alami dengan kategori "${category}".`;
-  if (options.topicSource === 'trending' && options.trendingFallback) direction = `Karena API tren tidak tersedia, pilih topik yang kemungkinan sedang tren pada tanggal ${options.date} khusus untuk kategori "${category}".`;
-  const response = await openai.chat.completions.create({
-    model: config.aiModel,
-    messages: [
-      { role: 'system', content: 'Anda adalah kreator TikTok Indonesia. Tulis ringkas, praktis, akurat, tanpa klaim berlebihan.' },
-      { role: 'user', content: `${direction} Apa pun sumber topiknya, ikuti arahan kategori ini: ${categoryDirection} Gunakan format "${format}": ${formatDirections[format]}. Jangan memaksakan isi menjadi video iklan kecuali kategorinya Iklan & UGC atau topik manual memang meminta iklan. Hindari topik yang pernah dipakai (bandingkan tanpa membedakan kapital dan spasi): ${previousTopics.join(' | ') || 'belum ada'}. Rencanakan default 4 slide (minimal 3, maksimal 5); 6 hanya jika materinya benar-benar panjang dan jangan pernah 7 secara default. Setiap slide maksimal 35 kata, maksimal 5–6 baris utama, hanya memuat satu ide, dan mudah dibaca. Gabungkan poin pendek yang masih satu ide; jangan membuat slide baru hanya untuk satu kalimat pendek. Sesuaikan label bagian (misalnya HOOK, FAKTA, PENJELASAN, atau KESIMPULAN) dengan isi. Body harus ringkas dan setiap poin harus cocok dijadikan slide. CTA harus spesifik terhadap topik/kategori, misalnya ajakan follow, bagikan, atau simpan agar mudah ditemukan. Hashtag masing-masing diawali #. Kembalikan hanya JSON yang mengikuti schema ini: ${JSON.stringify(schema)}` }
-    ],
-    response_format: { type: 'json_object' }
-  });
-  const output = response.choices?.[0]?.message?.content;
-  if (!output) throw new Error(`Provider AI ${config.aiProvider || 'yang dipilih'} tidak mengembalikan konten`);
-  try {
-    const content = JSON.parse(output);
-    const valid = schema.required.every((key) => Object.hasOwn(content, key)) &&
-      schema.required.filter((key) => key !== 'hashtags').every((key) => typeof content[key] === 'string') &&
-      Array.isArray(content.hashtags) && content.hashtags.every((value) => typeof value === 'string');
-    if (!valid) throw new Error('struktur tidak sesuai schema');
-    return content;
-  } catch {
-    throw new Error(`Provider AI ${config.aiProvider || 'yang dipilih'} mengembalikan JSON yang tidak valid atau strukturnya tidak sesuai`);
+  const source = options.topicSource === 'manual' ? `Gunakan topik pengguna: "${options.requestedTopic}" dan jangan mengubah inti topiknya.`
+    : options.topicSource === 'trending' && options.requestedTopic ? `Gunakan topik tren: "${options.requestedTopic}".`
+      : `Pilih topik baru dalam kategori "${category}".`;
+  const specialStructure = format === 'Masalah dan solusi'
+    ? 'Body wajib persis berurutan dengan label: MASALAH:, PENYEBAB: (maksimal dua penyebab), SOLUSI 1:, SOLUSI 2:, LANGKAH PERTAMA:, HASIL YANG DIHARAPKAN:. Ini akan menjadi slide 2, 3, dan 4; CTA singkat disimpan di kolom cta.'
+    : 'Body berisi poin slide yang berurutan; maksimal dua poin utama per slide.';
+  const prompt = `${source} Pertahankan inti topik dan kategori "${category}". ${categoryDirections[category] || 'Pastikan isi relevan dengan kategori khusus ini.'} Jangan memaksakan isi menjadi video iklan. Format "${format}". Sebelum menulis, tetapkan tepat satu fokus pada objek focus: satu masalah utama, penyebab utama, solusi utama, dan hasil yang diharapkan. Jangan campur masalah lain. ${specialStructure} Buat default tepat 4 slide, masing-masing satu tujuan, maksimal 35 kata. Hook adalah slide 1, spesifik, maksimal 12 kata. Gunakan kalimat langsung, mudah dipahami, tidak berulang, tanpa klaim berlebihan. Semua saran harus berupa tindakan konkret dan solusi harus menjawab masalah. Caption hanya merangkum slide tanpa klaim baru. Nomor selalu mulai 1 dan berurutan. Hindari topik lama: ${previousTopics.join(' | ') || 'belum ada'}. Hashtag diawali #. Kembalikan hanya JSON sesuai schema: ${JSON.stringify(schema)}`;
+  const messages = [
+    { role: 'system', content: 'Anda editor carousel TikTok Indonesia yang cermat. Utamakan satu fokus dan langkah konkret.' },
+    { role: 'user', content: prompt }
+  ];
+  let content = parseOutput(await openai.chat.completions.create({ model: config.aiModel, messages, response_format: { type: 'json_object' } }));
+  let errors = validateContent(content, { format });
+  if (errors.length) {
+    content = parseOutput(await openai.chat.completions.create({
+      model: config.aiModel,
+      messages: [...messages, { role: 'assistant', content: JSON.stringify(content) }, { role: 'user', content: `Hasil belum lolos validasi: ${errors.join(' ')} Perbaiki satu kali. Pastikan solusi benar-benar menjawab masalah dan caption tidak menambah klaim. Kembalikan JSON lengkap saja.` }],
+      response_format: { type: 'json_object' }
+    }));
+    errors = validateContent(content, { format });
   }
+  if (errors.length) throw Object.assign(new Error(`Konten AI tidak lolos validasi: ${errors.join(' ')}`), { status: 422 });
+  return content;
 }
 
-module.exports = { generateContent };
+module.exports = { generateContent, validateContent, numberedValues };

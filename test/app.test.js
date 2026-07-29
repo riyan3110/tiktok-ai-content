@@ -20,6 +20,23 @@ test('topik trending memakai topik relevan dari service', async () => { let opti
 test('topik trending fallback ke AI berdasarkan tanggal saat service gagal', async () => { let options; const content = { generateContent: async (topics, value) => { options = value; return { topic: 'Tren AI Hari Ini', hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }; } }; const { app } = setup({ content, trending: { getLatest: async () => { throw new Error('offline'); } } }); await request(app).post('/generate').send({ topicSource: 'trending' }).expect(200); assert.equal(options.trendingFallback, true); assert.match(options.date, /^\d{4}-\d{2}-\d{2}$/); });
 test('duplikat AI dibandingkan tanpa kapital dan spasi lalu generate ulang', async () => { let calls = 0; const content = { generateContent: async () => ({ topic: ++calls === 1 ? '  STORYBOARD   ai ' : 'Topik Unik', hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }) }; const { app, db } = setup({ content }); db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta) VALUES('Storyboard AI','H','B','C','[]','CTA')").run(); const r = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200); assert.equal(calls, 2); assert.equal(r.body.topic, 'Topik Unik'); });
 test('history mengembalikan konten terbaru', async () => { const { app } = setup(); await request(app).post('/generate'); const r = await request(app).get('/history').expect(200); assert.equal(r.body.length, 1); });
+test('hapus satu konten menolak ID invalid dan hanya menghapus item yang dipilih', async () => {
+  const { app, db } = setup();
+  await request(app).post('/generate');
+  db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta) VALUES('Tetap ada','H','B','C','[]','CTA')").run();
+  await request(app).delete('/history/abc').expect(400);
+  const response = await request(app).delete('/history/1').expect(200);
+  assert.equal(response.body.deleted, 1);
+  assert.deepEqual(db.prepare('SELECT topic FROM contents ORDER BY id').all(), [{ topic: 'Tetap ada' }]);
+});
+test('hapus seluruh riwayat mengosongkan database', async () => {
+  const { app, db } = setup();
+  await request(app).post('/generate');
+  db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta) VALUES('Konten dua','H','B','C','[]','CTA')").run();
+  const response = await request(app).delete('/history').expect(200);
+  assert.equal(response.body.deleted, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM contents').get().count, 0);
+});
 test('upload ditolak bila OAuth belum terhubung', async () => { const { app } = setup(); const c = await request(app).post('/generate'); const r = await request(app).post('/upload-tiktok').send({ id: c.body.id }).expect(401); assert.match(r.body.error, /Hubungkan/); });
 test('upload memvalidasi slide dan menampilkan pesan Indonesia sebelum mengirim ke TikTok', async () => {
   const images = {
