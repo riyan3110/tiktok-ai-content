@@ -4,12 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AI Ads Lab</title>
+  <link rel="icon" type="image/png" href="/assets/ai-ads-lab-logo.png">
+  <link rel="apple-touch-icon" href="/assets/ai-ads-lab-logo.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <main>
   <header>
-    <div><small>CONTENT STUDIO</small><h1>AI Ads Lab</h1><p>Buat carousel TikTok untuk berbagai kategori, lalu unggah sebagai draft.</p></div>
+    <div><small>CONTENT STUDIO</small><div class="brand"><img src="/assets/ai-ads-lab-logo.png" alt="Logo AI Ads Lab"><h1>AI Ads Lab</h1></div><p>Buat carousel TikTok untuk berbagai kategori, lalu unggah sebagai draft.</p></div>
     <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div>
   </header>
 
@@ -36,6 +38,7 @@
       <h2>Mode Posting</h2>
       <label class="switch-row"><input id="automation-toggle" type="checkbox" role="switch"><span class="switch-control" aria-hidden="true"></span><span>Aktifkan posting otomatis</span></label>
       <p id="mode-help" class="mode-help">Mode manual: konten dibuat dan diunggah hanya melalui tombol.</p>
+      <fieldset class="watermark-settings"><legend>Watermark slide</legend><label class="switch-row"><input id="watermark-enabled" type="checkbox" role="switch" checked><span class="switch-control" aria-hidden="true"></span><span>Tampilkan watermark</span></label><div class="option-grid"><label>Posisi<select id="watermark-position"><option value="top-left" selected>Kiri atas</option><option value="top-center">Tengah atas</option></select></label><label>Intensitas<select id="watermark-intensity"><option value="low">Rendah</option><option value="medium" selected>Sedang</option><option value="high">Tinggi</option></select></label></div></fieldset>
       <div id="manual-settings">
         <fieldset class="topic-source"><legend>Sumber Topik</legend><div class="segment-options"><label><input type="radio" name="topic-source" value="manual"><span>Topik manual</span></label><label><input type="radio" name="topic-source" value="ai" checked><span>Otomatis dari AI</span></label><label><input type="radio" name="topic-source" value="trending"><span>Topik trending</span></label></div></fieldset>
         <div class="option-grid"><label>Kategori Konten<select id="content-category"><option>Iklan &amp; UGC</option><option>Tutorial AI</option><option>Tips bisnis</option><option>Produktivitas</option><option>Fakta unik</option><option>Edukasi teknologi</option><option>Motivasi</option><option>Konten kreator</option><option>Custom</option></select></label><label>Format Konten<select id="content-format"><option>Tutorial langkah</option><option>Listicle</option><option>Fakta singkat</option><option>Masalah dan solusi</option><option>Before-after</option><option>Tips cepat</option></select></label></div>

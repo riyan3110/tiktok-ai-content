@@ -69,6 +69,7 @@ async function connectionStatus() {
 $('#content-category').onchange = () => $('#custom-category-field').classList.toggle('hidden', $('#content-category').value !== 'Custom');
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { $('#manual-topic-field').classList.toggle('hidden', input.value !== 'manual' || !input.checked); });
 let lastGenerationRequest;
+function watermarkSettings() { return { enabled: $('#watermark-enabled').checked, position: $('#watermark-position').value, intensity: $('#watermark-intensity').value }; }
 async function generate(request) {
   try {
     lastGenerationRequest = request;
@@ -80,7 +81,7 @@ async function generate(request) {
     $('#message').textContent = error.message; $('#retry-generate').classList.remove('hidden');
   }
 }
-$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); await generate({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false }); };
+$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); await generate({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false, watermark: watermarkSettings() }); };
 $('#retry-generate').onclick = () => generate({ ...lastGenerationRequest, forceNewAngle: true });
 function renderPublishStatus(data, message = '') {
   const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];
@@ -138,7 +139,7 @@ async function loadSchedules() {
   document.querySelectorAll('[data-view]').forEach(button => button.onclick = async () => { const rows = await api('/history'); const item = rows.find(x => x.id === Number(button.dataset.view)); if (item) show(item); });
   document.querySelectorAll('[data-job]').forEach(button => button.onclick = async () => { try { await api(`/automation/jobs/${button.dataset.job}/${button.dataset.action}`, { method: 'POST' }); await loadSchedules(); await history(); } catch (e) { $('#auto-message').textContent = e.message; } });
 }
-$('#activate-schedule').onclick = async () => { try { $('#auto-message').textContent = 'Menyusun sudut pembahasan…'; await api('/automation/schedules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ mainTopic: $('#auto-topic').value, totalContents: Number($('#auto-count').value), times: [...document.querySelectorAll('.auto-time')].map(x => x.value), category: $('#auto-category').value, contentFormat: $('#auto-format').value }) }); $('#auto-message').textContent = 'Jadwal aktif dan tersimpan.'; await loadSchedules(); } catch (e) { $('#auto-message').textContent = e.message; } };
+$('#activate-schedule').onclick = async () => { try { $('#auto-message').textContent = 'Menyusun sudut pembahasan…'; await api('/automation/schedules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ mainTopic: $('#auto-topic').value, totalContents: Number($('#auto-count').value), times: [...document.querySelectorAll('.auto-time')].map(x => x.value), category: $('#auto-category').value, contentFormat: $('#auto-format').value, watermark: watermarkSettings() }) }); $('#auto-message').textContent = 'Jadwal aktif dan tersimpan.'; await loadSchedules(); } catch (e) { $('#auto-message').textContent = e.message; } };
 async function allSchedules(action) { await Promise.all(todaySchedules.filter(s => action !== 'resume' || s.status === 'PAUSED').map(s => api(`/automation/schedules/${s.id}/${action}`, { method: 'POST' }))); await loadSchedules(); }
 $('#pause-all').onclick = () => allSchedules('pause'); $('#resume-all').onclick = () => allSchedules('resume'); $('#cancel-all').onclick = () => allSchedules('cancel'); $('#stop-schedule').onclick = () => allSchedules('cancel');
 loadSchedules().catch(e => $('#schedules').textContent = e.message);

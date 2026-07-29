@@ -39,6 +39,28 @@ test('validasi menolak PNG lama dengan pesan bahasa Indonesia', async () => {
   await assert.rejects(images.validateSlides(['/generated/slide-lama.png']), /bukan file JPG yang valid/);
 });
 
+test('watermark teks dirender ke area atas JPG final tanpa logo slide', async (t) => {
+  const id = `watermark-${process.pid}-${Date.now()}`;
+  const enabled = await images.createSlides(`${id}-on`, { ...content, watermark: { enabled: true, position: 'top-left', intensity: 'medium' } });
+  const disabled = await images.createSlides(`${id}-off`, { ...content, watermark: { enabled: false } });
+  t.after(async () => Promise.all([...enabled, ...disabled].map((file) => fs.rm(path.join(config.root, 'public', file), { force: true }))));
+
+  const enabledRegion = await sharp(path.join(config.root, 'public', enabled[0])).extract({ left: 70, top: 235, width: 230, height: 55 }).raw().toBuffer();
+  const disabledRegion = await sharp(path.join(config.root, 'public', disabled[0])).extract({ left: 70, top: 235, width: 230, height: 55 }).raw().toBuffer();
+  assert.notDeepEqual(enabledRegion, disabledRegion);
+  const svg = images.renderLayout(images.buildSlideLayouts(content)[0], 1, 3, { enabled: true });
+  assert.match(svg, /data-role="watermark"[^>]*x="80"[^>]*y="270"[^>]*font-size="28"[^>]*font-weight="600"[^>]*letter-spacing="1.5"[^>]*>AI ADS LAB<\/text>/);
+  assert.doesNotMatch(svg, /<image|ai-ads-lab-logo\.png/);
+});
+
+test('watermark bukan isi dan tidak memengaruhi auto-fit atau validasi slide', () => {
+  const plain = images.buildSlideLayouts(content);
+  const branded = images.buildSlideLayouts({ ...content, watermark: { enabled: true, text: 'AI ADS LAB' } });
+  assert.deepEqual(branded, plain);
+  assert.equal(images.wordCount('Hook'), 1);
+  assert.equal(images.validateVisualLayout(branded[0]), true);
+});
+
 test('wrapping menggunakan lebar piksel dan mempertahankan teks pendek', () => {
   assert.deepEqual(images.wrapText('Teks pendek', 770, 46), ['Teks pendek']);
   assert.ok(images.measureTextWidth('MMMM', 46) > images.measureTextWidth('iiii', 46));
