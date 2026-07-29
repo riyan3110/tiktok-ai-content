@@ -4,20 +4,26 @@ async function api(url, options) { const r = await fetch(url, options); const da
 const sourceLabels = { manual: 'Manual', ai: 'AI', trending: 'Trending' };
 const trendReference = $('#trend-reference');
 const trendDetails = $('#trend-details');
-$('#edit-trends').onclick = () => {
-  const opening = trendDetails.classList.contains('hidden');
-  trendDetails.classList.toggle('hidden', !opening);
-  $('#edit-trends').textContent = opening ? 'Tutup' : 'Edit';
-  $('#edit-trends').setAttribute('aria-expanded', String(opening));
-};
-$('#save-trends').onclick = () => $('#edit-trends').click();
-$('#disable-trends').onclick = () => {
-  const disabled = $('#disable-trends').dataset.disabled !== 'true';
-  $('#disable-trends').dataset.disabled = String(disabled);
-  $('#disable-trends').textContent = disabled ? 'Aktifkan' : 'Nonaktifkan';
-  $('#trend-status').textContent = disabled ? '12 keyword nonaktif · TikTok Creative Center · Indonesia' : '12 keyword aktif · TikTok Creative Center · Indonesia';
-};
-$('#delete-trends').onclick = () => { if (window.confirm('Hapus referensi tren hari ini?')) trendReference.remove(); };
+let activeTrend;
+function jakartaInput(date = new Date()) { const parts = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Jakarta', dateStyle: 'short', timeStyle: 'short' }).format(date); return parts.replace(' ', 'T'); }
+function trendTime(value) { return new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).format(new Date(value)).replace('.', ':'); }
+function renderTrend(item) {
+  activeTrend = item;
+  const usable = Boolean(item?.usable);
+  $('#use-trend-reference').disabled = !usable; $('#use-trend-reference').checked = usable;
+  $('#generation-trend-status').textContent = usable ? `Aktif — diperbarui hari ini pukul ${trendTime(item.updated_at)} WIB` : 'Tidak aktif';
+  $('#trend-state').classList.toggle('hidden', !item); if (item) $('#trend-state').textContent = item.status;
+  $('#trend-status').textContent = item ? `${item.keywords.length} keyword ${usable ? 'aktif' : 'tersimpan'} · ${item.source} · ${item.region} · diperbarui ${trendTime(item.updated_at)} WIB` : 'Belum ada referensi tren.';
+  $('#disable-trends').classList.toggle('hidden', !item || !item.is_active); $('#delete-trends').classList.toggle('hidden', !item);
+  $('#save-trends').textContent = item ? 'Perbarui referensi' : 'Simpan referensi hari ini';
+  if (item) { $('#trend-keywords').value = item.keywords.join(', '); $('#trend-source').value = item.source; $('#trend-region').value = item.region; $('#trend-intensity').value = item.intensity; $('#trend-notes').value = item.notes || ''; }
+}
+async function loadTrend() { renderTrend(await api('/trend-references/current')); }
+$('#edit-trends').onclick = () => { const opening = trendDetails.classList.contains('hidden'); trendDetails.classList.toggle('hidden', !opening); $('#edit-trends').textContent = opening ? 'Tutup' : 'Edit'; $('#edit-trends').setAttribute('aria-expanded', String(opening)); };
+$('#save-trends').onclick = async () => { try { $('#trend-message').textContent = 'Menyimpan…'; const body = { keywords: $('#trend-keywords').value, source: $('#trend-source').value, region: $('#trend-region').value, fetchedAt: new Date($('#trend-fetched-at').value + ':00+07:00').toISOString(), intensity: $('#trend-intensity').value, validity: $('#trend-validity').value, notes: $('#trend-notes').value }; const item = await api(activeTrend ? `/trend-references/${activeTrend.id}` : '/trend-references', { method: activeTrend ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }); renderTrend(item); $('#trend-message').textContent = 'Referensi tersimpan.'; } catch(e) { $('#trend-message').textContent = e.message; } };
+$('#disable-trends').onclick = async () => { if (activeTrend) renderTrend(await api(`/trend-references/${activeTrend.id}/disable`, { method: 'POST' })); };
+$('#delete-trends').onclick = async () => { if (activeTrend && window.confirm('Hapus referensi tren hari ini?')) { await api(`/trend-references/${activeTrend.id}`, { method: 'DELETE' }); renderTrend(null); } };
+$('#trend-fetched-at').value = jakartaInput();
 function show(item) {
   current = item;
   $('#editor').classList.remove('hidden');
@@ -37,7 +43,7 @@ $('#slide-preview').onclick = event => { if (event.target === $('#slide-preview'
 async function history() {
   const rows = await api('/history');
   $('#delete-all').classList.toggle('hidden', !rows.length);
-  $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><div class="history-content"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span></div><button class="delete-item danger" aria-label="Hapus ${escapeHtml(x.topic)}">🗑 Hapus</button></article>`).join('') : '<p>Belum ada konten.</p>';
+  $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><div class="history-content"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span>${x.trend_reference_id ? ` <span class="badge trend-badge">Tren Manual</span> ${x.trend_keywords_used.map(k => `<span class="badge">${escapeHtml(k)}</span>`).join('')} <small>Referensi ${new Date(x.created_at).toLocaleDateString('id-ID')}</small>` : ''}</div><button class="delete-item danger" aria-label="Hapus ${escapeHtml(x.topic)}">🗑 Hapus</button></article>`).join('') : '<p>Belum ada konten.</p>';
   document.querySelectorAll('.history-content').forEach((el, i) => { el.onclick = () => show(rows[i]); });
   document.querySelectorAll('.delete-item').forEach((button, i) => { button.onclick = async () => {
     if (!window.confirm('Hapus konten ini beserta seluruh gambar slide-nya?')) return;
@@ -61,7 +67,7 @@ async function connectionStatus() {
 }
 $('#content-category').onchange = () => $('#custom-category-field').classList.toggle('hidden', $('#content-category').value !== 'Custom');
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { $('#manual-topic-field').classList.toggle('hidden', input.value !== 'manual' || !input.checked); });
-$('#generate').onclick = async () => { try { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) throw new Error('Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) throw new Error('Topik manual wajib diisi'); $('#message').textContent = 'Sedang membuat…'; show(await api('/generate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat }) })); await history(); $('#message').textContent = 'Selesai'; } catch (e) { $('#message').textContent = e.message; } };
+$('#generate').onclick = async () => { try { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) throw new Error('Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) throw new Error('Topik manual wajib diisi'); $('#message').textContent = 'Sedang membuat…'; show(await api('/generate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, useTrendReference: $('#use-trend-reference').checked }) })); await history(); $('#message').textContent = 'Selesai'; } catch (e) { $('#message').textContent = e.message; } };
 function renderPublishStatus(data, message = '') {
   const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];
   $('#status').textContent = message ? `${message} (${details.join(' • ')})` : details.join(' • ');
@@ -96,6 +102,7 @@ const params = new URLSearchParams(window.location.search);
 if (params.get('oauth') === 'success') $('#connection-message').textContent = 'Akun TikTok berhasil dihubungkan.';
 connectionStatus().catch(e => { $('#connection-message').textContent = `Status koneksi gagal dimuat: ${e.message}`; });
 history().catch(e => $('#history').textContent = e.message);
+loadTrend().catch(e => $('#trend-message').textContent = e.message);
 
 const defaultTimes = ['09:00', '13:00', '19:00', '21:00', '22:00'];
 let todaySchedules = [];

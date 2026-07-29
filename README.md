@@ -120,11 +120,22 @@ Ganti `server_name` dan nilai `.env`; batasi izin `.env` (`chmod 600 .env`). Kar
 
 ## Endpoint
 
+## Referensi tren manual global
+
+Card **Referensi Tren Hari Ini** menyimpan hingga 30 keyword sekali untuk dipakai otomatis oleh semua pembuatan konten selama referensi aktif. Input dipisahkan koma/baris baru, dinormalisasi, dan dideduplikasi. Masa berlaku bawaan berakhir pukul 23.59 WIB, dengan opsi 24 jam, 3 hari, atau sampai dinonaktifkan. AI memilih nol sampai tiga keyword relevan tanpa mengubah inti topik; ID referensi dan keyword yang benar-benar dipakai dicatat pada `contents.trend_reference_id` dan `contents.trend_keywords_used`. Checkbox pada form dapat mengecualikan referensi untuk satu konten.
+
+Data global tersimpan di `trend_reference_sets`. Referensi yang kedaluwarsa atau dinonaktifkan tidak diteruskan ke AI. Riwayat hanya menampilkan badge **Tren Manual** dan keyword yang benar-benar digunakan.
+
 | Method | Path | Kegunaan |
 |---|---|---|
 | GET | `/auth/tiktok` | Mulai OAuth |
 | GET | `/auth/tiktok/callback` | Callback dan penyimpanan token |
 | POST | `/generate` | Generate konten serta gambar; body `{topicSource, requestedTopic?, contentCategory, customCategory?, contentFormat}` |
+| GET | `/trend-references/current` | Referensi terbaru beserta status masa berlakunya |
+| POST | `/trend-references` | Simpan referensi global baru |
+| PUT | `/trend-references/:id` | Perbarui dan aktifkan kembali referensi |
+| POST | `/trend-references/:id/disable` | Nonaktifkan referensi |
+| DELETE | `/trend-references/:id` | Hapus referensi |
 | POST | `/upload-tiktok` | Body `{id, caption}`; unggah sebagai draft |
 | GET | `/status/:publishId` | Ambil status TikTok |
 | GET | `/history` | Riwayat konten JSON |

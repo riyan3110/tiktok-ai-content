@@ -25,7 +25,7 @@ test('validasi konfigurasi AI menolak provider yang tidak didukung', () => {
 
 test('generate memakai Chat Completions dan mempertahankan struktur JSON', async () => {
   let request;
-  const expected = { focus: { masalah: 'Brief kabur', penyebab: 'Tujuan kosong', solusi: 'Tulis tujuan', hasil: 'Brief jelas' }, topic: 'Topik', hook: 'Brief Kabur Membuat Visual Salah Arah', body: '1. Tulis tujuan visual yang terukur', caption: 'Tulis tujuan agar brief lebih jelas.', hashtags: ['#AI'], cta: 'Coba sekarang' };
+  const expected = { focus: { masalah: 'Brief kabur', penyebab: 'Tujuan kosong', solusi: 'Tulis tujuan', hasil: 'Brief jelas' }, topic: 'Topik', hook: 'Brief Kabur Membuat Visual Salah Arah', body: '1. Tulis tujuan visual yang terukur', caption: 'Tulis tujuan agar brief lebih jelas.', hashtags: ['#AI'], cta: 'Coba sekarang', trendKeywordsUsed: [] };
   const client = { chat: { completions: { create: async (value) => {
     request = value;
     return { choices: [{ message: { content: JSON.stringify(expected) } }] };
@@ -36,7 +36,7 @@ test('generate memakai Chat Completions dan mempertahankan struktur JSON', async
   assert.deepEqual(result, expected);
   assert.equal(request.model, 'gemini-2.5-flash-lite');
   assert.equal(request.response_format.type, 'json_object');
-  assert.match(request.messages[1].content, /"required":\["focus","topic","hook","body","caption","hashtags","cta"\]/);
+  assert.match(request.messages[1].content, /"required":\["focus","topic","hook","body","caption","hashtags","cta","trendKeywordsUsed"\]/);
 });
 
 test('generate memberi pesan jelas ketika provider mengembalikan JSON invalid', async () => {

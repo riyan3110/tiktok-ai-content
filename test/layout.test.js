@@ -24,5 +24,6 @@ test('wide-screen content remains bounded and slide previews are accessible', ()
   assert.match(html, /<dialog id="slide-preview"/);
   assert.match(html, /<div id="history"><\/div>/);
   assert.match(html, /role="switch"/);
-  assert.match(html, /12 keyword aktif · TikTok Creative Center · Indonesia/);
+  assert.match(html, /Referensi Tren Hari Ini/);
+  assert.match(html, /Gunakan referensi tren hari ini/);
 });

@@ -18,6 +18,8 @@ function createDatabase(filename = config.databasePath) {
   if (!columns.has('content_format')) db.exec("ALTER TABLE contents ADD COLUMN content_format TEXT NOT NULL DEFAULT 'Tutorial langkah'");
   if (!columns.has('main_topic')) db.exec('ALTER TABLE contents ADD COLUMN main_topic TEXT');
   if (!columns.has('content_angle')) db.exec('ALTER TABLE contents ADD COLUMN content_angle TEXT');
+  if (!columns.has('trend_reference_id')) db.exec('ALTER TABLE contents ADD COLUMN trend_reference_id INTEGER REFERENCES trend_reference_sets(id) ON DELETE SET NULL');
+  if (!columns.has('trend_keywords_used')) db.exec("ALTER TABLE contents ADD COLUMN trend_keywords_used TEXT NOT NULL DEFAULT '[]'");
   return db;
 }
 
