@@ -68,7 +68,20 @@ async function connectionStatus() {
 }
 $('#content-category').onchange = () => $('#custom-category-field').classList.toggle('hidden', $('#content-category').value !== 'Custom');
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { $('#manual-topic-field').classList.toggle('hidden', input.value !== 'manual' || !input.checked); });
-$('#generate').onclick = async () => { try { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) throw new Error('Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) throw new Error('Topik manual wajib diisi'); $('#message').textContent = 'Sedang membuat…'; show(await api('/generate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, useTrendReference: $('#use-trend-reference').checked }) })); await history(); $('#message').textContent = 'Selesai'; } catch (e) { $('#message').textContent = e.message; } };
+let lastGenerationRequest;
+async function generate(request) {
+  try {
+    lastGenerationRequest = request;
+    $('#retry-generate').classList.add('hidden'); $('#message').textContent = 'Sedang membuat…';
+    const generated = await api('/generate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(request) });
+    show(generated); await history(); $('#message').textContent = 'Selesai';
+  } catch (error) {
+    // Do not call show() on failure: the last successful Preview stays intact.
+    $('#message').textContent = error.message; $('#retry-generate').classList.remove('hidden');
+  }
+}
+$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); await generate({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false }); };
+$('#retry-generate').onclick = () => generate({ ...lastGenerationRequest, forceNewAngle: true });
 function renderPublishStatus(data, message = '') {
   const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];
   $('#status').textContent = message ? `${message} (${details.join(' • ')})` : details.join(' • ');
