@@ -3,13 +3,23 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { createDatabase } = require('../src/db');
 const { createApp } = require('../src/app');
-const { normalizeKeywords } = require('../src/services/trendReferences');
+const { normalizeKeywords, normalizeHooks } = require('../src/services/trendReferences');
 
 const contentResult = (options) => ({ topic: 'Konten Tren', hook: 'Hook', body: 'Isi', caption: 'Caption', hashtags: [], cta: 'CTA', trendKeywordsUsed: options.trendReference ? ['#AI'] : [] });
 function setup() { const db = createDatabase(':memory:'); return { db, app: createApp({ db, content: { generateContent: async (_, options) => contentResult(options) }, images: { createSlides: async () => [] } }) }; }
 
 test('normalisasi keyword membuang duplikat, spasi, input kosong, dan hashtag ganda', () => {
   assert.deepEqual(normalizeKeywords('  ##AI , ai\n UMKM  , '), ['#AI', 'UMKM']);
+});
+
+test('gaya hook disimpan per baris dan pola konten divalidasi terpisah', async () => {
+  const { app } = setup();
+  assert.deepEqual(normalizeHooks(' Ternyata selama ini... \n\n Cara paling gampang untuk... '), ['Ternyata selama ini...', 'Cara paling gampang untuk...']);
+  const saved = await request(app).post('/trend-references').send({ keywords: '#AI', trend_hooks: 'Ternyata selama ini...\nCara paling gampang untuk...', trend_content_patterns: ['Tutorial langkah', 'Storytelling'], source: 'Google Trends' }).expect(201);
+  assert.deepEqual(saved.body.trend_hooks, ['Ternyata selama ini...', 'Cara paling gampang untuk...']);
+  assert.deepEqual(saved.body.trend_content_patterns, ['Tutorial langkah', 'Storytelling']);
+  await request(app).post('/trend-references').send({ keywords: '#AI', trend_hooks: Array.from({ length: 16 }, (_, i) => `Hook ${i}`).join('\n'), trend_content_patterns: [], source: 'Google Trends' }).expect(400);
+  await request(app).post('/trend-references').send({ keywords: '#AI', trend_content_patterns: ['Pola palsu'], source: 'Google Trends' }).expect(400);
 });
 
 test('referensi aktif otomatis diteruskan dan keyword yang dipakai tersimpan', async () => {

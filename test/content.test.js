@@ -55,6 +55,19 @@ test('prompt mengikuti kategori, format, dan menjaga inti topik manual', async (
   assert.match(prompt, /Jangan memaksakan isi menjadi video iklan/);
 });
 
+test('prompt memisahkan keyword, gaya hook, dan pola konten sesuai kegunaannya', async () => {
+  let request;
+  const result = { focus: { masalah: 'Waktu habis', penyebab: 'Proses manual', solusi: 'Otomasi', hasil: 'Lebih cepat' }, topic: 'Otomasi', hook: 'Kerja Manual Menghabiskan Waktu', body: '1. Otomatiskan satu tugas yang berulang setiap hari agar waktu kerja lebih terjaga', caption: 'Mulai dari satu otomasi sederhana.', hashtags: ['#AI'], cta: 'Coba hari ini', trendKeywordsUsed: ['#AI'] };
+  const client = { chat: { completions: { create: async value => { request = value; return { choices: [{ message: { content: JSON.stringify(result) } }] }; } } } };
+  await generateContent([], { trendReference: { keywords: ['#AI'], trend_hooks: ['Ternyata selama ini...'], trend_content_patterns: ['Listicle'], notes: '' } }, client);
+  const prompt = request.messages[1].content;
+  assert.match(prompt, /KEYWORD\/HASHTAG.*hanya untuk memilih istilah dan konteks/i);
+  assert.match(prompt, /GAYA HOOK.*hanya sebagai referensi kalimat pembuka/i);
+  assert.match(prompt, /POLA KONTEN.*hanya sebagai referensi struktur penyampaian/i);
+  assert.match(prompt, /Jangan mencampurkan ketiganya sebagai satu daftar/i);
+  assert.match(prompt, /buat variasi yang natural/i);
+});
+
 test('validasi menolak urutan solusi yang tidak dimulai dari satu dan isi duplikat', () => {
   const { validateContent } = require('../src/services/content');
   const content = { focus: { masalah: 'Stok lama', penyebab: 'Tidak dihitung', solusi: 'Audit', hasil: 'Stok turun' }, topic: 'Audit stok', hook: 'Stok Lama Mengunci Uang Toko Anda', body: 'MASALAH: Stok lama tidak terjual\nPENYEBAB: Produk tidak pernah diaudit\nSOLUSI 2: Hitung stok selama 30 hari\nSOLUSI 3: Hitung stok selama 30 hari\nLANGKAH PERTAMA: Pisahkan produk lambat\nHASIL YANG DIHARAPKAN: Modal kembali bertahap', caption: 'Audit stok lama.', hashtags: ['#Bisnis'], cta: 'Simpan panduan ini' };

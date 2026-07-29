@@ -21,6 +21,8 @@
       </div>
       <div id="trend-details" class="trend-details hidden">
         <label class="trend-keywords">Keyword atau hashtag tren (pisahkan koma/baris baru, maks. 30)<textarea id="trend-keywords" rows="4" maxlength="2430" required></textarea></label>
+        <label class="trend-keywords">Gaya hook tren (satu pola per baris, maks. 15)<textarea id="trend-hooks" rows="5" placeholder="Ternyata selama ini...&#10;Kesalahan pemula saat...&#10;Cara paling gampang untuk...&#10;Jangan lakukan ini sebelum..."></textarea></label>
+        <fieldset class="trend-patterns"><legend>Pola konten tren</legend><div class="trend-pattern-options"><label><input type="checkbox" value="Tutorial langkah"> Tutorial langkah</label><label><input type="checkbox" value="Masalah dan solusi"> Masalah dan solusi</label><label><input type="checkbox" value="Listicle"> Listicle</label><label><input type="checkbox" value="Fakta singkat"> Fakta singkat</label><label><input type="checkbox" value="Tips cepat"> Tips cepat</label><label><input type="checkbox" value="Before-after"> Before-after</label><label><input type="checkbox" value="Storytelling"> Storytelling</label></div></fieldset>
         <label>Sumber tren<select id="trend-source"><option>TikTok Creative Center</option><option>Google Trends</option><option>Instagram</option><option>X / Twitter</option><option>Sumber lain</option></select></label>
         <label>Wilayah<input id="trend-region" value="Indonesia" maxlength="80"></label>
         <label>Waktu pengambilan (Asia/Jakarta)<input id="trend-fetched-at" type="datetime-local"></label>
