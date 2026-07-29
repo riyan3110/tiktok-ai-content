@@ -56,7 +56,7 @@ test('judul sedang auto-fit maksimal tiga baris di dalam safe area', () => {
   assert.ok(fit.lines.every((line) => images.measureTextWidth(line, fit.fontSize, true) <= 770));
 });
 
-test('teks sangat panjang dibatasi enam slide dan tidak pernah tujuh secara default', () => {
+test('teks tutorial sangat panjang dibatasi maksimal lima slide', () => {
   const steps = Array.from({ length: 12 }, (_, index) => `${index + 1}. Lakukan langkah penting nomor ${index + 1} secara konsisten untuk memperoleh hasil terbaik`).join('\n');
   const layouts = images.buildSlideLayouts({
     hook: Array(30).fill('Judul sangat panjang').join(' '),
@@ -67,11 +67,11 @@ test('teks sangat panjang dibatasi enam slide dan tidak pernah tujuh secara defa
   const stepSlides = layouts.filter(({ type }) => type === 'steps');
   const ctaSlides = layouts.filter(({ type }) => type === 'cta');
   assert.equal(layouts.filter(({ type }) => type === 'hook').length, 1);
-  assert.equal(stepSlides.length, 4);
+  assert.equal(stepSlides.length, 3);
   assert.ok(stepSlides.every(({ fit }) => fit.steps.length <= 5 && fit.fontSize >= 34));
   assert.equal(ctaSlides.length, 1);
-  assert.equal(layouts.length, 6);
-  assert.ok(ctaSlides.every(({ fit }) => fit.lines.length <= 6 && fit.height <= 1480 * 0.6));
+  assert.equal(layouts.length, 5);
+  assert.ok(ctaSlides.every(({ fit }) => fit.lines.length <= 9 && fit.height <= 850));
 });
 
 test('format fakta singkat membuat satu fakta utama per slide isi', () => {
@@ -89,16 +89,31 @@ test('format fakta singkat membuat satu fakta utama per slide isi', () => {
   assert.equal(layouts.at(-1).title, 'KESIMPULAN');
 });
 
-test('tutorial memakai lima slide dengan tiga langkah dan hasil/CTA', () => {
+test('tutorial empat langkah menghasilkan tiga slide dan satu LANGKAH PRAKTIS', () => {
   const layouts = images.buildSlideLayouts({
     hook: 'Buat gambar AI lebih menarik',
-    body: '1. Tentukan ide utama\n2. Tulis prompt yang jelas\n3. Pilih hasil terbaik',
+    body: '1. Tentukan ide utama yang ingin ditampilkan\n2. Tulis prompt dengan detail visual utama\n3. Buat beberapa variasi gambar\n4. Pilih dan simpan hasil terbaik',
     topic: 'Gambar AI menarik', cta: 'Follow untuk tips AI lainnya!',
     contentCategory: 'Tutorial AI', contentFormat: 'Tutorial langkah'
   });
-  assert.equal(layouts.length, 5);
-  assert.deepEqual(layouts.slice(1, 4).map(({ title }) => title), ['LANGKAH 1', 'LANGKAH 2', 'LANGKAH 3']);
-  assert.equal(layouts.at(-1).title, 'HASIL / CTA');
+  assert.equal(layouts.length, 3);
+  assert.equal(layouts[1].title, 'LANGKAH PRAKTIS');
+  assert.equal(layouts[1].fit.steps.length, 4);
+  assert.equal(layouts.at(-1).title, 'HASIL / TIPS / CTA');
+});
+
+test('tutorial tujuh langkah maksimal empat slide, padat, dan nomor tetap berurutan', () => {
+  const body = Array.from({ length: 7 }, (_, index) => `${index + 1}. Lakukan tindakan praktis ke-${index + 1} lalu periksa hasilnya`).join('\n');
+  const layouts = images.buildSlideLayouts({
+    hook: 'Selesaikan edit produk lebih cepat', body, topic: 'Foto produk siap unggah',
+    focus: { hasil: 'Foto produk rapi dan siap dipublikasikan', solusi: 'Periksa tepi objek sebelum mengunduh hasil akhir' },
+    cta: 'Simpan tutorial ini', contentCategory: 'Tutorial AI', contentFormat: 'Tutorial langkah'
+  });
+  assert.equal(layouts.length, 4);
+  const main = layouts.filter(({ type }) => type !== 'hook');
+  assert.ok(main.every(({ fit }) => images.wordCount(fit.steps?.join(' ') || fit.lines.join(' ')) >= 15));
+  const numbering = layouts.filter(({ type }) => type === 'steps').flatMap(({ fit }) => fit.steps.map((step) => Number(step.match(/^\d+/)[0])));
+  assert.deepEqual(numbering, [1, 2, 3, 4, 5, 6, 7]);
 });
 
 test('footer dinamis untuk fakta unik, tutorial, tips, motivasi, dan custom', () => {

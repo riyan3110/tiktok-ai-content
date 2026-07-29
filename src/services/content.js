@@ -13,7 +13,8 @@ const schema = {
       required: ['masalah', 'penyebab', 'solusi', 'hasil']
     },
     topic: { type: 'string' }, hook: { type: 'string' }, body: { type: 'string' },
-    caption: { type: 'string' }, hashtags: { type: 'array', items: { type: 'string' } }, cta: { type: 'string' }
+    caption: { type: 'string' }, hashtags: { type: 'array', items: { type: 'string' } }, cta: { type: 'string' },
+    result: { type: 'string' }, tip: { type: 'string' }
   },
   required: ['focus', 'topic', 'hook', 'body', 'caption', 'hashtags', 'cta']
 };
@@ -88,8 +89,10 @@ async function generateContent(previousTopics, options = {}, client) {
       : `Pilih topik baru dalam kategori "${category}".`;
   const specialStructure = format === 'Masalah dan solusi'
     ? 'Body wajib persis berurutan dengan label: MASALAH:, PENYEBAB: (maksimal dua penyebab), SOLUSI 1:, SOLUSI 2:, LANGKAH PERTAMA:, HASIL YANG DIHARAPKAN:. Ini akan menjadi slide 2, 3, dan 4; CTA singkat disimpan di kolom cta.'
-    : 'Body berisi poin slide yang berurutan; maksimal dua poin utama per slide.';
-  const prompt = `${source} Pertahankan inti topik dan kategori "${category}". ${categoryDirections[category] || 'Pastikan isi relevan dengan kategori khusus ini.'} Jangan memaksakan isi menjadi video iklan. Format "${format}". Sebelum menulis, tetapkan tepat satu fokus pada objek focus: satu masalah utama, penyebab utama, solusi utama, dan hasil yang diharapkan. Jangan campur masalah lain. ${specialStructure} Buat default tepat 4 slide, masing-masing satu tujuan, maksimal 35 kata. Hook adalah slide 1, spesifik, maksimal 12 kata. Gunakan kalimat langsung, mudah dipahami, tidak berulang, tanpa klaim berlebihan. Semua saran harus berupa tindakan konkret dan solusi harus menjawab masalah. Caption hanya merangkum slide tanpa klaim baru. Nomor selalu mulai 1 dan berurutan. Hindari topik lama: ${previousTopics.join(' | ') || 'belum ada'}. Hashtag diawali #. Kembalikan hanya JSON sesuai schema: ${JSON.stringify(schema)}`;
+    : format === 'Tutorial langkah'
+      ? 'Gunakan default 3 slide: hook + hasil; satu slide LANGKAH PRAKTIS berisi 3–5 langkah bernomor dengan total maksimal 45 kata; lalu hasil akhir + tip relevan + CTA. Hanya pecah menjadi 4 slide untuk 6–7 langkah atau isi sedang, dan maksimal 5 untuk isi panjang. Gabungkan langkah terkait; jangan buat slide untuk satu kalimat pendek. Isi kolom result dan tip secara spesifik.'
+      : 'Body berisi poin slide yang berurutan dan gabungkan poin yang saling berkaitan.';
+  const prompt = `${source} Pertahankan inti topik dan kategori "${category}". ${categoryDirections[category] || 'Pastikan isi relevan dengan kategori khusus ini.'} Jangan memaksakan isi menjadi video iklan. Format "${format}". Sebelum menulis, tetapkan tepat satu fokus pada objek focus: satu masalah utama, penyebab utama, solusi utama, dan hasil yang diharapkan. Jangan campur masalah lain. ${specialStructure} Tentukan 3 slide untuk isi sangat singkat, 4 untuk isi sedang, dan maksimal 5 untuk isi panjang; jangan memakai 5 jika cukup 3–4. Isi utama tiap slide minimal 15 kata (kecuali hook), dan gabungkan bagian di bawah 20 kata dengan slide sebelah. Maksimal 45 kata per slide. Hook spesifik, maksimal 12 kata. Gunakan kalimat langsung, mudah dipahami, tidak berulang, tanpa klaim berlebihan. Semua saran harus berupa tindakan konkret dan solusi harus menjawab masalah. Caption hanya merangkum slide tanpa klaim baru. Nomor selalu mulai 1 dan berurutan. Hindari topik lama: ${previousTopics.join(' | ') || 'belum ada'}. Hashtag diawali #. Kembalikan hanya JSON sesuai schema: ${JSON.stringify(schema)}`;
   const messages = [
     { role: 'system', content: 'Anda editor carousel TikTok Indonesia yang cermat. Utamakan satu fokus dan langkah konkret.' },
     { role: 'user', content: prompt }
