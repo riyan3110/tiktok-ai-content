@@ -6,6 +6,7 @@ const config = require('./config');
 function createDatabase(filename = config.databasePath) {
   if (filename !== ':memory:') fs.mkdirSync(path.dirname(filename), { recursive: true });
   const db = new Database(filename);
+  db.pragma('foreign_keys = ON');
   db.pragma('journal_mode = WAL');
   db.exec(fs.readFileSync(path.join(config.root, 'database/schema.sql'), 'utf8'));
   const columns = new Set(db.prepare('PRAGMA table_info(contents)').all().map(({ name }) => name));
@@ -15,6 +16,8 @@ function createDatabase(filename = config.databasePath) {
   if (!columns.has('fail_reason')) db.exec('ALTER TABLE contents ADD COLUMN fail_reason TEXT');
   if (!columns.has('content_category')) db.exec("ALTER TABLE contents ADD COLUMN content_category TEXT NOT NULL DEFAULT 'Iklan & UGC'");
   if (!columns.has('content_format')) db.exec("ALTER TABLE contents ADD COLUMN content_format TEXT NOT NULL DEFAULT 'Tutorial langkah'");
+  if (!columns.has('main_topic')) db.exec('ALTER TABLE contents ADD COLUMN main_topic TEXT');
+  if (!columns.has('content_angle')) db.exec('ALTER TABLE contents ADD COLUMN content_angle TEXT');
   return db;
 }
 

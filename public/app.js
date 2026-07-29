@@ -65,3 +65,29 @@ const params = new URLSearchParams(window.location.search);
 if (params.get('oauth') === 'success') $('#connection-message').textContent = 'Akun TikTok berhasil dihubungkan.';
 connectionStatus().catch(e => { $('#connection-message').textContent = `Status koneksi gagal dimuat: ${e.message}`; });
 history().catch(e => $('#history').textContent = e.message);
+
+const defaultTimes = ['09:00', '13:00', '19:00', '21:00', '22:00'];
+let todaySchedules = [];
+function renderTimeFields() {
+  const count = Number($('#auto-count').value);
+  $('#auto-times').innerHTML = Array.from({ length: count }, (_, i) => `<label>Konten ${i + 1}<input class="auto-time" type="time" value="${defaultTimes[i]}"></label>`).join('');
+  $('#auto-warning').classList.toggle('hidden', count <= 3);
+}
+$('#automation-toggle').onchange = () => {
+  const enabled = $('#automation-toggle').checked;
+  $('#manual-settings').classList.toggle('hidden', enabled); $('#automation-settings').classList.toggle('hidden', !enabled);
+  $('#mode-help').textContent = enabled ? 'Mode otomatis: carousel dibuat dan dikirim sebagai draft secara bertahap.' : 'Mode manual: konten dibuat dan diunggah hanya melalui tombol.';
+};
+$('#auto-count').onchange = renderTimeFields; renderTimeFields();
+function localTime(timestamp) { return new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)); }
+async function loadSchedules() {
+  todaySchedules = await api('/automation/today');
+  $('#schedules').innerHTML = todaySchedules.length ? todaySchedules.map(s => `<article class="schedule-card"><h3>${escapeHtml(s.main_topic)}</h3><p>${s.progress.done} dari ${s.total_contents} selesai • ${s.progress.waiting} menunggu • ${s.progress.failed} gagal</p>${s.jobs.map(j => `<div class="job"><div><b>${localTime(j.scheduled_at)} — ${escapeHtml(j.angle)}</b><br><span class="badge">${escapeHtml(j.status)}</span>${j.publish_id ? ` <code>${escapeHtml(j.publish_id)}</code>` : ''}${j.error_message ? `<p class="error">${escapeHtml(j.error_message)}</p>` : ''}${j.status === 'SEND_TO_USER_INBOX' ? '<p>Draft berhasil dikirim ke Inbox TikTok. Buka aplikasi TikTok untuk meninjau dan mempostingnya.</p>' : ''}</div><div>${j.content_id ? `<button data-view="${j.content_id}" class="outline">Lihat konten</button>` : ''} <button data-job="${j.id}" data-action="send-now" class="outline">Kirim sekarang</button> <button data-job="${j.id}" data-action="cancel" class="danger">Batalkan</button> ${['FAILED','MISSED'].includes(j.status) ? `<button data-job="${j.id}" data-action="retry">Coba lagi</button>` : ''}</div></div>`).join('')}</article>`).join('') : '<p>Belum ada jadwal hari ini.</p>';
+  document.querySelectorAll('[data-view]').forEach(button => button.onclick = async () => { const rows = await api('/history'); const item = rows.find(x => x.id === Number(button.dataset.view)); if (item) show(item); });
+  document.querySelectorAll('[data-job]').forEach(button => button.onclick = async () => { try { await api(`/automation/jobs/${button.dataset.job}/${button.dataset.action}`, { method: 'POST' }); await loadSchedules(); await history(); } catch (e) { $('#auto-message').textContent = e.message; } });
+}
+$('#activate-schedule').onclick = async () => { try { $('#auto-message').textContent = 'Menyusun sudut pembahasan…'; await api('/automation/schedules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ mainTopic: $('#auto-topic').value, totalContents: Number($('#auto-count').value), times: [...document.querySelectorAll('.auto-time')].map(x => x.value), category: $('#auto-category').value, contentFormat: $('#auto-format').value }) }); $('#auto-message').textContent = 'Jadwal aktif dan tersimpan.'; await loadSchedules(); } catch (e) { $('#auto-message').textContent = e.message; } };
+async function allSchedules(action) { await Promise.all(todaySchedules.filter(s => action !== 'resume' || s.status === 'PAUSED').map(s => api(`/automation/schedules/${s.id}/${action}`, { method: 'POST' }))); await loadSchedules(); }
+$('#pause-all').onclick = () => allSchedules('pause'); $('#resume-all').onclick = () => allSchedules('resume'); $('#cancel-all').onclick = () => allSchedules('cancel'); $('#stop-schedule').onclick = () => allSchedules('cancel');
+loadSchedules().catch(e => $('#schedules').textContent = e.message);
+setInterval(() => loadSchedules().catch(() => {}), 30000);

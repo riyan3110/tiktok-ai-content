@@ -7,7 +7,8 @@ Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **G
 - Dashboard responsif: pilih kategori, format, dan topik manual/AI/trending; generate, preview, edit caption, upload, status, dan riwayat berlabel sumber, kategori, serta format.
 - Structured Output berisi topik, hook, tutorial, caption, hashtag, dan CTA; hingga 50 topik terakhir dikirim ke model untuk mencegah pengulangan.
 - Slide tersimpan sebagai JPEG RGB/sRGB 1080 x 1920 di `public/generated/`; metadata dan token OAuth disimpan di SQLite.
-- Scheduler `node-cron` opsional hanya membuat draft konten lokal, **tidak mengunggah otomatis**.
+- Mode posting manual tetap tersedia, sedangkan mode otomatis membuat 1–5 carousel bersudut pembahasan unik dan mengirimkannya bertahap sebagai draft TikTok.
+- Scheduler server menyimpan jadwal/job di SQLite, memakai klaim status atomik, memulihkan jadwal setelah restart, dan memproses keterlambatan maksimal 30 menit.
 - Topik dibandingkan tanpa membedakan kapital dan spasi berlebih. Mode AI/trending mencoba ulang maksimal tiga kali agar `UNIQUE` topic tetap aman.
 
 ```text
@@ -89,6 +90,14 @@ Implementasi ini menggunakan **Upload to TikTok** (`MEDIA_UPLOAD`) untuk membuat
 3. Klik **Upload draft ke TikTok**. Respons awal memberi `publishId`.
 4. Klik **Cek status** sampai upload selesai atau lihat alasan kegagalan, lalu lanjutkan proses posting draft di aplikasi TikTok.
 
+## Posting otomatis
+
+Aktifkan **Mode Posting → Aktifkan posting otomatis**, isi satu topik utama, jumlah konten (default aman maksimal tiga), kategori, format, serta satu jam untuk setiap konten. Semua waktu menggunakan `Asia/Jakarta` dan wajib berjarak minimal 60 menit. Pilihan empat atau lima konten menampilkan peringatan risiko pembatasan TikTok.
+
+AI terlebih dahulu menyusun sudut pembahasan berbeda, lalu scheduler membuat JPG, memvalidasi URL tanpa redirect, menyegarkan token bila perlu, dan tetap menggunakan `MEDIA_UPLOAD`—bukan `DIRECT_POST`. Keberhasilan `SEND_TO_USER_INBOX` berarti draft sudah masuk Inbox TikTok dan **belum diposting**. Job gagal dicoba ulang sekali setelah 10 menit, kecuali risiko spam, token dicabut, atau izin tidak tersedia. Job yang terlambat lebih dari 30 menit menjadi `MISSED` dan dapat dijalankan dengan **Kirim sekarang**.
+
+Jadwal dan relasi topik/sudut/konten berada di tabel `automation_schedules`, `automation_jobs`, serta kolom `main_topic`/`content_angle` pada `contents`. Dashboard menyediakan tindakan per job dan kontrol jeda, lanjutkan, atau batalkan semua. SQLite harus disimpan pada volume persisten dan PM2 harus dikonfigurasi dengan satu instance agar state bertahan setelah restart/reboot.
+
 ## Instalasi VPS (Ubuntu)
 
 ```bash
@@ -119,6 +128,10 @@ Ganti `server_name` dan nilai `.env`; batasi izin `.env` (`chmod 600 .env`). Kar
 | POST | `/upload-tiktok` | Body `{id, caption}`; unggah sebagai draft |
 | GET | `/status/:publishId` | Ambil status TikTok |
 | GET | `/history` | Riwayat konten JSON |
+| POST | `/automation/schedules` | Buat jadwal otomatis hari ini |
+| GET | `/automation/today` | Dashboard jadwal hari ini |
+| POST | `/automation/jobs/:id/:action` | `send-now`, `cancel`, atau `retry` satu job |
+| POST | `/automation/schedules/:id/:action` | `pause`, `resume`, atau `cancel` jadwal |
 
 ## Pemeriksaan
 
