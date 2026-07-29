@@ -25,4 +25,26 @@ async function publishPhotos(accessToken, imageUrls, caption) {
 async function status(accessToken, publishId) {
   return request(`${API}/v2/post/publish/status/fetch/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: publishId }) });
 }
-module.exports = { authorizationUrl, exchangeCode, refresh, publishPhotos, status, randomState: () => crypto.randomBytes(24).toString('hex') };
+async function validateImageUrls(imageUrls, verifiedPrefix) {
+  const prefix = new URL(verifiedPrefix.endsWith('/') ? verifiedPrefix : `${verifiedPrefix}/`);
+  for (const imageUrl of imageUrls) {
+    let url;
+    try { url = new URL(imageUrl); } catch { throw invalidImageUrl(`URL gambar tidak valid: ${imageUrl}`); }
+    if (url.origin !== prefix.origin || !url.pathname.startsWith(prefix.pathname)) {
+      throw invalidImageUrl(`URL gambar harus memakai prefix domain yang sudah diverifikasi: ${verifiedPrefix}`);
+    }
+    let response;
+    try { response = await fetch(url, { method: 'GET', redirect: 'manual' }); } catch {
+      throw invalidImageUrl(`URL gambar tidak dapat diakses: ${imageUrl}`);
+    }
+    if (response.status >= 300 && response.status < 400) throw invalidImageUrl(`URL gambar tidak boleh redirect: ${imageUrl}`);
+    if (response.status !== 200) throw invalidImageUrl(`URL gambar harus merespons HTTP 200: ${imageUrl}`);
+    if ((response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase() !== 'image/jpeg') {
+      throw invalidImageUrl(`Content-Type URL gambar harus image/jpeg: ${imageUrl}`);
+    }
+    const bytes = (await response.arrayBuffer()).byteLength;
+    if (bytes === 0) throw invalidImageUrl(`Ukuran file gambar tidak boleh 0: ${imageUrl}`);
+  }
+}
+function invalidImageUrl(message) { return Object.assign(new Error(message), { status: 400 }); }
+module.exports = { authorizationUrl, exchangeCode, refresh, publishPhotos, status, validateImageUrls, randomState: () => crypto.randomBytes(24).toString('hex') };

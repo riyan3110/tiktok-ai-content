@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS contents (
   publish_id TEXT,
   publish_status TEXT NOT NULL DEFAULT 'generated',
   publish_error TEXT,
+  fail_reason TEXT,
+  downloaded_bytes INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createDatabase } = require('../src/db');
 const { createApp } = require('../src/app');
 
@@ -8,7 +10,7 @@ function setup(overrides = {}) {
   const db = createDatabase(':memory:');
   const content = overrides.content || { generateContent: async (topics, options) => ({ topic: options.requestedTopic || (topics.length ? 'Topik Baru' : 'Storyboard AI'), hook: 'Hook kuat', body: '1. Tulis brief\n2. Buat visual', caption: 'Coba cara ini', hashtags: ['#AIAds'], cta: 'Simpan dan ikuti' }) };
   const images = overrides.images || { createSlides: async (id) => [`/generated/${id}-1.jpg`, `/generated/${id}-2.jpg`, `/generated/${id}-3.jpg`], validateSlides: async () => {} };
-  const tiktok = { randomState: () => 'state', authorizationUrl: () => 'https://example.com/oauth', publishPhotos: async () => ({ data: { publish_id: 'pub-1' } }), status: async () => ({ data: { status: 'PUBLISH_COMPLETE' } }) };
+  const tiktok = overrides.tiktok || { randomState: () => 'state', authorizationUrl: () => 'https://example.com/oauth', validateImageUrls: async () => {}, publishPhotos: async () => ({ data: { publish_id: 'pub-1' } }), status: async () => ({ data: { status: 'SEND_TO_USER_INBOX' } }) };
   return { db, app: createApp({ db, content, images, tiktok, trending: overrides.trending || { getLatest: async () => [] } }) };
 }
 test('generate menyimpan struktur konten dan tiga slide', async () => { const { app } = setup(); const r = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200); assert.equal(r.body.topic, 'Storyboard AI'); assert.equal(r.body.topic_source, 'ai'); assert.equal(r.body.slides.length, 3); assert.deepEqual(r.body.hashtags, ['#AIAds']); });
@@ -30,8 +32,39 @@ test('upload memvalidasi slide dan menampilkan pesan Indonesia sebelum mengirim 
   const r = await request(app).post('/upload-tiktok').send({ id: c.body.id }).expect(400);
   assert.match(r.body.error, /bukan JPEG asli/);
 });
+test('upload memeriksa URL publik sebelum mengirim draft ke TikTok', async () => {
+  const calls = [];
+  const tiktok = { randomState: () => 'state', authorizationUrl: () => '', validateImageUrls: async (urls, prefix) => calls.push({ urls, prefix }), publishPhotos: async () => ({ data: { publish_id: 'draft-1' } }) };
+  const { app, db } = setup({ tiktok });
+  db.prepare("INSERT INTO oauth_tokens(provider,access_token,expires_at) VALUES('tiktok','token',?)").run(Date.now() + 3600000);
+  const content = await request(app).post('/generate');
+  const response = await request(app).post('/upload-tiktok').send({ id: content.body.id }).expect(200);
+  assert.equal(response.body.publishId, 'draft-1');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].prefix, 'http://localhost:3000/generated/');
+  assert.ok(calls[0].urls.every(url => url.startsWith(calls[0].prefix)));
+});
+test('status draft menyimpan status, fail_reason, dan downloaded_bytes', async () => {
+  const tiktok = { randomState: () => 'state', authorizationUrl: () => '', status: async () => ({ data: { status: 'PROCESSING_DOWNLOAD', fail_reason: 'download pending', downloaded_bytes: 1234 } }) };
+  const { app, db } = setup({ tiktok });
+  db.prepare("INSERT INTO oauth_tokens(provider,access_token,expires_at) VALUES('tiktok','token',?)").run(Date.now() + 3600000);
+  db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta,publish_id) VALUES('T','H','B','C','[]','CTA','pub-1')").run();
+  const response = await request(app).get('/status/pub-1').expect(200);
+  assert.deepEqual(response.body, { status: 'PROCESSING_DOWNLOAD', fail_reason: 'download pending', downloaded_bytes: 1234 });
+  const saved = db.prepare("SELECT publish_status,fail_reason,downloaded_bytes FROM contents WHERE publish_id='pub-1'").get();
+  assert.deepEqual(saved, { publish_status: 'PROCESSING_DOWNLOAD', fail_reason: 'download pending', downloaded_bytes: 1234 });
+});
 test('OAuth dimulai dengan redirect', async () => { const { app } = setup(); await request(app).get('/auth/tiktok').expect(302).expect('Location', 'https://example.com/oauth'); });
 test('status koneksi TikTok belum terhubung saat token tidak tersedia', async () => { const { app } = setup(); const r = await request(app).get('/tiktok/connection-status').expect(200); assert.deepEqual(r.body, { connected: false, message: 'TikTok belum terhubung' }); });
 test('status koneksi TikTok terhubung saat token tersedia', async () => { const { app, db } = setup(); db.prepare("INSERT INTO oauth_tokens(provider,access_token,expires_at) VALUES('tiktok','token',?)").run(Date.now() + 3600000); const r = await request(app).get('/tiktok/connection-status').expect(200); assert.deepEqual(r.body, { connected: true, message: 'TikTok terhubung' }); });
 test('halaman legal publik dapat diakses', async () => { const { app } = setup(); const terms = await request(app).get('/terms').expect(200).expect('Content-Type', /html/); assert.match(terms.text, /Terms of Service/); const privacy = await request(app).get('/privacy').expect(200).expect('Content-Type', /html/); assert.match(privacy.text, /Privacy Policy/); });
 test('halaman utama menampilkan tautan legal di footer', async () => { const { app } = setup(); const r = await request(app).get('/').expect(200); assert.match(r.text, /<footer>/); assert.match(r.text, /href="\/terms"/); assert.match(r.text, /href="\/privacy"/); });
+test('browser melakukan polling draft tiap 10 detik selama maksimal 5 menit dengan pesan yang tepat', () => {
+  const script = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
+  assert.match(script, /setTimeout\(resolve, 10 \* 1000\)/);
+  assert.match(script, /Date\.now\(\) - startedAt < 5 \* 60 \* 1000/);
+  assert.match(script, /data\.status === 'SEND_TO_USER_INBOX'/);
+  assert.match(script, /Draft berhasil dikirim\. Buka Inbox TikTok untuk melanjutkan\./);
+  assert.match(script, /TikTok belum berhasil mengunduh gambar\. Periksa URL gambar dan coba lagi\./);
+  assert.doesNotMatch(script, /data\.status === 'PUBLISH_COMPLETE'/);
+});
