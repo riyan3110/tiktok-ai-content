@@ -6,9 +6,15 @@ const config = require('../config');
 const WIDTH = 1080;
 const HEIGHT = 1920;
 const JPEG_QUALITY = 90;
-const SAFE_AREA = Object.freeze({ left: 90, right: 220, top: 180, bottom: 240 });
+// TikTok overlays occupy the search/header region, the action rail at the
+// right, and the caption/navigation region at the bottom. Keep all meaningful
+// copy inside this deliberately asymmetric canvas.
+const SAFE_AREA = Object.freeze({ left: 90, right: 260, top: 280, bottom: 350 });
 const SAFE_WIDTH = WIDTH - SAFE_AREA.left - SAFE_AREA.right;
 const SAFE_HEIGHT = HEIGHT - SAFE_AREA.top - SAFE_AREA.bottom;
+const LABEL_Y = 310;
+const CONTENT_TOP = 390;
+const CONTENT_BOTTOM = HEIGHT - SAFE_AREA.bottom;
 
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 
@@ -58,6 +64,20 @@ function autoFitText(text, { maxWidth = SAFE_WIDTH, maxHeight, maxLines = Infini
   return null;
 }
 
+function adaptiveTextFit(text, maxWidth = SAFE_WIDTH) {
+  const value = String(text || '').trim();
+  const bands = [
+    { kind: 'short', startSize: 68, minSize: 58, maxLines: 4, lineHeight: 1.25 },
+    { kind: 'medium', startSize: 56, minSize: 46, maxLines: 6, lineHeight: 1.28 },
+    { kind: 'long', startSize: 46, minSize: 38, maxLines: 7, lineHeight: 1.3 }
+  ];
+  for (const band of bands) {
+    const fit = autoFitText(value, { maxWidth, maxHeight: SAFE_HEIGHT - 110, ...band });
+    if (fit) return { ...fit, kind: band.kind };
+  }
+  return null;
+}
+
 function parseSteps(body) {
   const value = String(body || '').trim();
   const matches = [...value.matchAll(/(?:^|\n|\s)(\d+[.)])\s*/g)];
@@ -73,11 +93,18 @@ function parseSteps(body) {
 }
 
 function fitStepPage(steps) {
-  const availableHeight = 1090;
-  for (let fontSize = 46; fontSize >= 34; fontSize--) {
-    const groups = steps.map((step) => wrapText(step, SAFE_WIDTH, fontSize, false));
-    const height = groups.reduce((sum, lines) => sum + lines.length * fontSize * 1.3, 0) + Math.max(0, groups.length - 1) * 22;
-    if (height <= availableHeight) return { fontSize, groups, height };
+  const value = steps.join('\n');
+  for (const band of [
+    { kind: 'short', start: 68, min: 58, maxLines: 4, lineHeight: 1.25 },
+    { kind: 'medium', start: 56, min: 46, maxLines: 6, lineHeight: 1.28 },
+    { kind: 'long', start: 46, min: 38, maxLines: 7, lineHeight: 1.3 }
+  ]) {
+    for (let fontSize = band.start; fontSize >= band.min; fontSize--) {
+      const groups = steps.map((step) => wrapText(step, SAFE_WIDTH, fontSize, false));
+      const lineCount = groups.reduce((sum, lines) => sum + lines.length, 0);
+      const height = groups.reduce((sum, lines) => sum + lines.length * fontSize * band.lineHeight, 0) + Math.max(0, groups.length - 1) * 24;
+      if (lineCount <= band.maxLines && height <= SAFE_HEIGHT - 130) return { fontSize, groups, height, lineHeight: band.lineHeight, lineCount, kind: band.kind };
+    }
   }
   return null;
 }
@@ -91,10 +118,12 @@ function paginateSteps(steps) {
     let page = remaining.splice(0, count);
     let fitted = fitStepPage(page);
     if (!fitted) {
-      const lines = wrapText(page[0], SAFE_WIDTH, 34);
-      const maxLines = Math.floor(1090 / (34 * 1.3));
-      page = [lines.slice(0, maxLines).join(' ')];
-      remaining.unshift(lines.slice(maxLines).join(' '));
+      const words = page[0].split(/\s+/);
+      let cut = words.length - 1;
+      while (cut > 1 && !fitStepPage([words.slice(0, cut).join(' ')])) cut--;
+      page = [words.slice(0, cut).join(' ')];
+      const rest = words.slice(cut).join(' ');
+      if (rest) remaining.unshift(rest);
       fitted = fitStepPage(page);
     }
     pages.push({ steps: page, ...fitted });
@@ -119,37 +148,17 @@ function contentKind(category = '', format = '') {
   return 'custom';
 }
 
-function resolveFooter(content, isLast = false) {
-  const kind = contentKind(content.contentCategory, content.contentFormat);
-  if (isLast) {
-    const defaults = {
-      fact: 'Follow untuk fakta unik lainnya!', tutorial: 'Follow untuk tips AI lainnya!',
-      tips: 'Simpan agar mudah ditemukan lagi!', motivation: 'Bagikan ke teman yang perlu tahu!',
-      solution: 'Simpan agar mudah ditemukan lagi!', beforeAfter: 'Bagikan ke teman yang perlu tahu!',
-      education: 'Simpan agar mudah ditemukan lagi!', ugc: 'Follow untuk inspirasi konten lainnya!',
-      custom: 'Bagikan ke teman yang perlu tahu!'
-    };
-    const supplied = String(content.cta || '').trim();
-    return supplied.length >= 12 ? supplied : defaults[kind];
-  }
-  return ({
-    tutorial: 'Simpan untuk dicoba nanti ✦', tips: 'Simpan tips ini ✦',
-    fact: 'Baru tahu fakta ini? ✦', education: 'Simpan biar nggak lupa ✦',
-    motivation: 'Ingat pesan ini ✦', solution: 'Simpan solusi ini ✦',
-    beforeAfter: 'Geser untuk lihat hasilnya ✦', ugc: 'Simpan untuk referensi konten ✦',
-    custom: 'Geser untuk lanjut ✦'
-  })[kind];
-}
+function resolveFooter() { return ''; }
 
-function frame(inner, number, total, footer) {
-  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#15122d"/><stop offset="1" stop-color="#5b21b6"/></linearGradient><filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#090617" flood-opacity=".7"/></filter></defs><rect width="1080" height="1920" fill="url(#g)"/><circle cx="940" cy="190" r="260" fill="#ec4899" opacity=".28"/><text x="${SAFE_AREA.left}" y="${SAFE_AREA.top + 30}" fill="#f9a8d4" font-family="Arial,sans-serif" font-size="30" font-weight="700">AI ADS LAB • ${number}/${total}</text>${inner}<text x="${SAFE_AREA.left}" y="${HEIGHT - SAFE_AREA.bottom - 40}" fill="#ddd6fe" font-family="Arial,sans-serif" font-size="30">${escapeXml(footer)}</text></svg>`;
+function frame(inner, number, total) {
+  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#15122d"/><stop offset="1" stop-color="#5b21b6"/></linearGradient><filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#090617" flood-opacity=".7"/></filter></defs><rect width="1080" height="1920" fill="url(#g)"/><circle cx="940" cy="190" r="260" fill="#ec4899" opacity=".28"/>${inner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="#f9a8d4" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
 }
 
 function buildSlideLayouts(content) {
   const format = content.contentFormat || 'Tutorial langkah';
   const kind = contentKind(content.contentCategory, format);
-  const hookText = limitWords(content.hook, 35);
-  const hook = autoFitText(hookText, { maxHeight: 620, maxLines: 6, startSize: 72, minSize: 42, lineHeight: 1.15 });
+  const hookText = limitWords(content.hook, 20);
+  const hook = adaptiveTextFit(hookText);
   if (kind === 'solution') {
     const sections = String(content.body || '').split(/(?=^(?:MASALAH|PENYEBAB|SOLUSI [12]|LANGKAH PERTAMA|HASIL YANG DIHARAPKAN)\s*:)/gim).map((part) => part.trim()).filter(Boolean);
     if (sections.length >= 6) {
@@ -175,7 +184,7 @@ function buildSlideLayouts(content) {
     ...paginateSteps(steps)[0]
   })).map(({ type, title, ...fit }) => ({ type, title, fit }));
   const finalText = limitWords(content.topic || 'Sudah siap menerapkannya?', 35);
-  const finalFit = autoFitText(finalText, { maxHeight: SAFE_HEIGHT * 0.6, maxLines: 6, startSize: 68, minSize: 34, lineHeight: 1.15 });
+  const finalFit = adaptiveTextFit(finalText);
   return [
     { type: 'hook', title: 'HOOK', fit: hook },
     ...stepLayouts,
@@ -194,15 +203,21 @@ function buildTutorialLayouts(content, hookText, points) {
   const groups = groupTutorialSteps(numbered, Math.min(stepPageCount, numbered.length || 1));
   const result = limitWords(content.result || content.focus?.hasil || content.topic || 'Terapkan langkahnya dan periksa hasil akhir.', 14);
   const tip = limitWords(content.tip || content.focus?.solusi || content.caption || 'Bandingkan hasil sebelum dan sesudah agar perbaikannya terlihat.', 14);
-  const hookFit = autoFitText(`${hookText}\nHASIL: ${result}`, { maxHeight: 720, maxLines: 7, startSize: 72, minSize: 42, lineHeight: 1.15 });
-  const stepLayouts = groups.map((steps, index) => ({
+  const hookFit = adaptiveTextFit(`${hookText}\nHASIL: ${result}`);
+  const fittedGroups = groups.flatMap((steps) => paginateSteps(steps)).map((fit) => {
+    if (fit.steps.length !== 1 || wordCount(fit.steps[0]) >= 15) return fit;
+    const enriched = [fit.steps[0], `Hasil: ${result}`];
+    const enrichedFit = fitStepPage(enriched);
+    return enrichedFit ? { steps: enriched, ...enrichedFit } : fit;
+  });
+  const stepLayouts = fittedGroups.map((fit, index) => ({
     type: 'steps',
-    title: groups.length === 1 ? 'LANGKAH PRAKTIS' : `LANGKAH ${index + 1}`,
-    fit: { steps, ...fitStepPage(steps) }
+    title: fittedGroups.length === 1 ? 'LANGKAH PRAKTIS' : `LANGKAH ${index + 1}`,
+    fit: { steps: fit.steps, fontSize: fit.fontSize, groups: fit.groups, height: fit.height, lineHeight: fit.lineHeight, lineCount: fit.lineCount, kind: fit.kind }
   }));
   const cta = limitWords(content.cta || 'Simpan panduan ini untuk dipraktikkan.', 9);
   const closing = `HASIL AKHIR: ${result}\nTIP: ${tip}\nCTA: ${cta}`;
-  const closingFit = autoFitText(closing, { maxHeight: 850, maxLines: 9, startSize: 58, minSize: 34, lineHeight: 1.2 });
+  const closingFit = adaptiveTextFit(closing);
   return [{ type: 'hook', title: 'HOOK & HASIL', fit: hookFit }, ...stepLayouts, { type: 'cta', title: 'HASIL / TIPS / CTA', fit: closingFit }];
 }
 
@@ -263,18 +278,43 @@ function paginatePlainText(text, maxLines, startSize, minSize, maxHeight, lineHe
   return pages.length ? pages : [{ fontSize: startSize, lines: [], height: 0, lineHeight }];
 }
 
-function renderLayout(layout, number, total, content = {}) {
-  const heading = textElement([layout.title], { y: 310, fontSize: 38, lineHeight: 1.15, fill: '#f9a8d4' });
+function contentY(fit) {
+  if (fit.kind === 'short') return 540;
+  if (fit.kind === 'medium') return 450;
+  return CONTENT_TOP;
+}
+
+function validateVisualLayout(layout) {
+  if (!layout?.fit) throw new Error('Layout slide tidak memiliki isi.');
+  const fit = layout.fit;
+  const lineCount = fit.lineCount ?? fit.lines?.length ?? fit.groups?.reduce((sum, lines) => sum + lines.length, 0) ?? 0;
+  const y = contentY(fit);
+  const bottom = y + fit.height;
+  if (LABEL_Y < SAFE_AREA.top || y < CONTENT_TOP) throw new Error('Teks tertutup search bar TikTok.');
+  if (bottom > CONTENT_BOTTOM) throw new Error('Teks tertutup caption bawah TikTok.');
+  if (lineCount > 7) throw new Error('Isi slide melebihi tujuh baris.');
+  const allLines = fit.lines || fit.groups?.flat() || [];
+  if (allLines.some((line) => measureTextWidth(line, fit.fontSize, layout.type !== 'steps') > SAFE_WIDTH + 1)) throw new Error('Teks masuk ke area ikon kanan TikTok.');
+  // Short slides sit lower in the upper-middle; this prevents a small block at
+  // the very top from making most of the composition look unintentionally empty.
+  if (fit.kind === 'short' && y < 500) throw new Error('Slide memiliki area kosong berlebihan.');
+  return true;
+}
+
+function renderLayout(layout, number, total) {
+  validateVisualLayout(layout);
+  const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
+  const startY = contentY(layout.fit);
   if (layout.type === 'steps') {
-    let y = 430;
+    let y = startY;
     const elements = layout.fit.groups.map((lines) => {
-      const element = textElement(lines, { y, fontSize: layout.fit.fontSize, lineHeight: 1.3, weight: 600 });
-      y += lines.length * layout.fit.fontSize * 1.3 + 22;
+      const element = textElement(lines, { y, fontSize: layout.fit.fontSize, lineHeight: layout.fit.lineHeight, weight: 600 });
+      y += lines.length * layout.fit.fontSize * layout.fit.lineHeight + 24;
       return element;
     }).join('');
-    return frame(heading + elements, number, total, resolveFooter(content, number === total));
+    return frame(heading + elements, number, total);
   }
-  return frame(heading + textElement(layout.fit.lines, { y: 430, fontSize: layout.fit.fontSize, lineHeight: layout.fit.lineHeight }), number, total, resolveFooter(content, number === total));
+  return frame(heading + textElement(layout.fit.lines, { y: startY, fontSize: layout.fit.fontSize, lineHeight: layout.fit.lineHeight }), number, total);
 }
 
 async function createSlides(id, content) {
@@ -305,4 +345,4 @@ async function validateSlides(files) {
 
 function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
 
-module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, parseSteps, paginateSteps, buildSlideLayouts, resolveFooter, renderLayout, wordCount, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY };
+module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY };
