@@ -16,14 +16,18 @@
   <div class="content-layout">
     <section id="trend-reference" class="trend-reference">
       <div class="trend-summary">
-        <div class="trend-copy"><small>REFERENSI TREN</small><h2>Referensi Tren Hari Ini</h2><p id="trend-status">12 keyword aktif · TikTok Creative Center · Indonesia</p></div>
+        <div class="trend-copy"><small>REFERENSI TREN</small><h2>Referensi Tren Hari Ini</h2><p id="trend-status">Belum ada referensi tren.</p><span id="trend-state" class="badge hidden"></span></div>
         <div class="trend-actions"><button id="edit-trends" class="outline" type="button" aria-expanded="false" aria-controls="trend-details">Edit</button><button id="disable-trends" class="outline" type="button">Nonaktifkan</button><button id="delete-trends" class="danger" type="button">Hapus</button></div>
       </div>
       <div id="trend-details" class="trend-details hidden">
-        <label>Sumber referensi<select id="trend-source"><option>TikTok Creative Center</option></select></label>
-        <label>Wilayah<select id="trend-region"><option>Indonesia</option></select></label>
-        <label class="trend-keywords">Keyword aktif<textarea rows="3">AI marketing, UGC, TikTok Ads, konten viral, hook video, jualan online, affiliate, UMKM, video produk, content creator, copywriting, ide konten</textarea></label>
-        <button id="save-trends" type="button">Simpan perubahan</button>
+        <label class="trend-keywords">Keyword atau hashtag tren (pisahkan koma/baris baru, maks. 30)<textarea id="trend-keywords" rows="4" maxlength="2430" required></textarea></label>
+        <label>Sumber tren<select id="trend-source"><option>TikTok Creative Center</option><option>Google Trends</option><option>Instagram</option><option>X / Twitter</option><option>Sumber lain</option></select></label>
+        <label>Wilayah<input id="trend-region" value="Indonesia" maxlength="80"></label>
+        <label>Waktu pengambilan (Asia/Jakarta)<input id="trend-fetched-at" type="datetime-local"></label>
+        <label>Intensitas<select id="trend-intensity"><option>Rendah</option><option selected>Sedang</option><option>Tinggi</option></select></label>
+        <label>Masa berlaku<select id="trend-validity"><option value="today">Sampai 23.59 WIB hari ini</option><option value="24h">24 jam</option><option value="3d">3 hari</option><option value="never">Sampai dinonaktifkan</option></select></label>
+        <label class="trend-keywords">Catatan opsional<textarea id="trend-notes" rows="2" maxlength="500"></textarea></label>
+        <div><button id="save-trends" type="button">Simpan referensi hari ini</button> <span id="trend-message" role="status"></span></div>
       </div>
     </section>
     <section class="actions">
@@ -35,6 +39,7 @@
         <div class="option-grid"><label>Kategori Konten<select id="content-category"><option>Iklan &amp; UGC</option><option>Tutorial AI</option><option>Tips bisnis</option><option>Produktivitas</option><option>Fakta unik</option><option>Edukasi teknologi</option><option>Motivasi</option><option>Konten kreator</option><option>Custom</option></select></label><label>Format Konten<select id="content-format"><option>Tutorial langkah</option><option>Listicle</option><option>Fakta singkat</option><option>Masalah dan solusi</option><option>Before-after</option><option>Tips cepat</option></select></label></div>
         <label id="custom-category-field" class="hidden">Kategori sendiri<input id="custom-category" type="text" maxlength="80" placeholder="Contoh: crypto, game, kesehatan, otomotif, kuliner"></label>
         <label id="manual-topic-field" class="hidden">Topik yang ingin dibuat<input id="manual-topic" type="text" placeholder="Contoh: Tutorial membuat video iklan produk sepatu"></label>
+        <div class="trend-use"><p>Referensi tren: <b id="generation-trend-status">Tidak aktif</b></p><label><input id="use-trend-reference" type="checkbox" disabled> Gunakan referensi tren hari ini</label></div>
         <div class="generate-row"><button id="generate">✦ Buat konten baru</button><span id="message" role="status"></span></div>
       </div>
       <div id="automation-settings" class="hidden">

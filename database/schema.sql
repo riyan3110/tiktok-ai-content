@@ -18,6 +18,23 @@ CREATE TABLE IF NOT EXISTS contents (
   publish_error TEXT,
   fail_reason TEXT,
   downloaded_bytes INTEGER,
+  trend_reference_id INTEGER REFERENCES trend_reference_sets(id) ON DELETE SET NULL,
+  trend_keywords_used TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS trend_reference_sets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL DEFAULT 'Referensi Tren Hari Ini',
+  keywords TEXT NOT NULL,
+  source TEXT NOT NULL,
+  region TEXT NOT NULL DEFAULT 'Indonesia',
+  intensity TEXT NOT NULL DEFAULT 'Sedang',
+  notes TEXT,
+  fetched_at TEXT NOT NULL,
+  expires_at TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

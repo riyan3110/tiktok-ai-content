@@ -2,6 +2,7 @@ const defaultContent = require('./content');
 const defaultImages = require('./images');
 const defaultTrending = require('./trendingTopics');
 const { resolveCategory, resolveFormat } = require('./contentOptions');
+const trendReferences = require('./trendReferences');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -20,10 +21,11 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, mainTopic = null, angle = null }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, mainTopic = null, angle = null, useTrendReference = true }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
+  const trendReference = useTrendReference ? trendReferences.usable(db) : null;
   const manualTopic = String(requestedTopic || '').trim().replace(/\s+/g, ' ');
   if (mode === 'manual' && !manualTopic) throw Object.assign(new Error('Topik manual wajib diisi'), { status: 400 });
   if (mode === 'manual' && isDuplicate(db, manualTopic)) throw Object.assign(new Error('Topik tersebut sudah pernah dibuat'), { status: 409 });
@@ -45,7 +47,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       trendingFallback: mode === 'trending' && (!basis || trendingFallback),
       date: new Date().toISOString().slice(0, 10),
       contentCategory,
-      contentFormat
+      contentFormat,
+      trendReference: trendReference ? { keywords: trendReference.keywords, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null
     });
     if (isDuplicate(db, generated.topic)) {
       if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
@@ -53,8 +56,10 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       continue;
     }
     try {
-      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,content_category,content_format,hook,body,caption,hashtags,cta) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, angle, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta);
+      const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
+      const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
+      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,content_category,content_format,hook,body,caption,hashtags,cta,trend_reference_id,trend_keywords_used) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, angle, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, trendReference?.id || null, JSON.stringify(usedKeywords));
       const slides = await images.createSlides(result.lastInsertRowid, { ...generated, contentCategory, contentFormat });
       db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(slides), result.lastInsertRowid);
       return result.lastInsertRowid;
