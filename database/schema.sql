@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS contents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   topic TEXT NOT NULL UNIQUE,
+  topic_source TEXT NOT NULL DEFAULT 'ai',
+  requested_topic TEXT,
   hook TEXT NOT NULL,
   body TEXT NOT NULL,
   caption TEXT NOT NULL,
