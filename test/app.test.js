@@ -68,3 +68,24 @@ test('browser melakukan polling draft tiap 10 detik selama maksimal 5 menit deng
   assert.match(script, /TikTok belum berhasil mengunduh gambar\. Periksa URL gambar dan coba lagi\./);
   assert.doesNotMatch(script, /data\.status === 'PUBLISH_COMPLETE'/);
 });
+test('generate menyimpan kategori dan format serta meneruskannya ke AI', async () => {
+  let options;
+  const content = { generateContent: async (topics, value) => { options = value; return { topic: 'Teknik Pomodoro', hook: 'Fokus', body: '- Mulai singkat\n- Istirahat', caption: 'Praktikkan', hashtags: ['#Produktivitas'], cta: 'Simpan' }; } };
+  const { app } = setup({ content });
+  const r = await request(app).post('/generate').send({ topicSource: 'ai', contentCategory: 'Produktivitas', contentFormat: 'Tips cepat' }).expect(200);
+  assert.equal(r.body.content_category, 'Produktivitas');
+  assert.equal(r.body.content_format, 'Tips cepat');
+  assert.equal(options.contentCategory, 'Produktivitas');
+  assert.equal(options.contentFormat, 'Tips cepat');
+});
+test('kategori custom wajib diisi dan nilai custom disimpan', async () => {
+  const { app } = setup();
+  await request(app).post('/generate').send({ contentCategory: 'Custom', contentFormat: 'Listicle' }).expect(400);
+  const r = await request(app).post('/generate').send({ contentCategory: 'Custom', customCategory: '  kesehatan mental ', contentFormat: 'Listicle' }).expect(200);
+  assert.equal(r.body.content_category, 'kesehatan mental');
+});
+test('kategori dan format yang tidak dikenal ditolak', async () => {
+  const { app } = setup();
+  await request(app).post('/generate').send({ contentCategory: 'Tidak valid', contentFormat: 'Listicle' }).expect(400);
+  await request(app).post('/generate').send({ contentCategory: 'Motivasi', contentFormat: 'Tidak valid' }).expect(400);
+});

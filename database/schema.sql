@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS contents (
   topic TEXT NOT NULL UNIQUE,
   topic_source TEXT NOT NULL DEFAULT 'ai',
   requested_topic TEXT,
+  content_category TEXT NOT NULL DEFAULT 'Iklan & UGC',
+  content_format TEXT NOT NULL DEFAULT 'Tutorial langkah',
   hook TEXT NOT NULL,
   body TEXT NOT NULL,
   caption TEXT NOT NULL,

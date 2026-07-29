@@ -43,3 +43,14 @@ test('generate memberi pesan jelas ketika provider mengembalikan JSON invalid', 
   const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: 'bukan JSON' } }] }) } } };
   await assert.rejects(() => generateContent([], client), /mengembalikan JSON yang tidak valid/);
 });
+test('prompt mengikuti kategori, format, dan menjaga inti topik manual', async () => {
+  let request;
+  const result = { topic: 'Blockchain untuk pemula', hook: 'Hook', body: 'Masalah: rumit\nSolusi: analogi', caption: 'Caption', hashtags: ['#Teknologi'], cta: 'Simpan' };
+  const client = { chat: { completions: { create: async (value) => { request = value; return { choices: [{ message: { content: JSON.stringify(result) } }] }; } } } };
+  await generateContent([], { topicSource: 'manual', requestedTopic: 'Blockchain untuk pemula', contentCategory: 'Edukasi teknologi', contentFormat: 'Masalah dan solusi' }, client);
+  const prompt = request.messages[1].content;
+  assert.match(prompt, /jangan mengubah inti topiknya/i);
+  assert.match(prompt, /bahasa sederhana/);
+  assert.match(prompt, /Masalah, Penyebab, lalu Solusi/);
+  assert.match(prompt, /Jangan memaksakan isi menjadi video iklan/);
+});

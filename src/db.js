@@ -13,6 +13,8 @@ function createDatabase(filename = config.databasePath) {
   if (!columns.has('requested_topic')) db.exec('ALTER TABLE contents ADD COLUMN requested_topic TEXT');
   if (!columns.has('downloaded_bytes')) db.exec('ALTER TABLE contents ADD COLUMN downloaded_bytes INTEGER');
   if (!columns.has('fail_reason')) db.exec('ALTER TABLE contents ADD COLUMN fail_reason TEXT');
+  if (!columns.has('content_category')) db.exec("ALTER TABLE contents ADD COLUMN content_category TEXT NOT NULL DEFAULT 'Iklan & UGC'");
+  if (!columns.has('content_format')) db.exec("ALTER TABLE contents ADD COLUMN content_format TEXT NOT NULL DEFAULT 'Tutorial langkah'");
   return db;
 }
 
