@@ -6,7 +6,7 @@ Aplikasi Node.js 20 untuk membuat konten carousel berbahasa Indonesia dengan **G
 
 - Dashboard responsif: pilih topik manual, otomatis dari AI, atau trending; generate, preview, edit caption, upload, status, dan riwayat berlabel sumber topik.
 - Structured Output berisi topik, hook, tutorial, caption, hashtag, dan CTA; hingga 50 topik terakhir dikirim ke model untuk mencegah pengulangan.
-- Gambar tersimpan di `public/generated/`; metadata dan token OAuth disimpan di SQLite.
+- Slide tersimpan sebagai JPEG RGB/sRGB 1080 x 1920 di `public/generated/`; metadata dan token OAuth disimpan di SQLite.
 - Scheduler `node-cron` opsional hanya membuat draft konten lokal, **tidak mengunggah otomatis**.
 - Topik dibandingkan tanpa membedakan kapital dan spasi berlebih. Mode AI/trending mencoba ulang maksimal tiga kali agar `UNIQUE` topic tetap aman.
 

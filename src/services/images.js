@@ -3,6 +3,10 @@ const path = require('node:path');
 const sharp = require('sharp');
 const config = require('../config');
 
+const WIDTH = 1080;
+const HEIGHT = 1920;
+const JPEG_QUALITY = 90;
+
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 function wrap(text, max = 28) {
   const words = String(text).split(/\s+/); const lines = []; let line = '';
@@ -20,8 +24,36 @@ async function createSlides(id, content) {
   const values = [['HOOK', content.hook], ['LANGKAH PRAKTIS', content.body], ['SIAP COBA?', `${content.topic}\n\n${content.cta}`]];
   const files = [];
   for (let i = 0; i < values.length; i++) {
-    const name = `${id}-${i + 1}.png`; await sharp(Buffer.from(svg(...values[i], i + 1))).png().toFile(path.join(dir, name)); files.push(`/generated/${name}`);
+    const name = `${id}-${i + 1}.jpg`;
+    await sharp(Buffer.from(svg(...values[i], i + 1)))
+      .resize(WIDTH, HEIGHT)
+      .flatten({ background: '#ffffff' })
+      .toColourspace('srgb')
+      .removeAlpha()
+      .jpeg({ quality: JPEG_QUALITY })
+      .toFile(path.join(dir, name));
+    files.push(`/generated/${name}`);
   }
   return files;
 }
-module.exports = { createSlides, wrap };
+
+async function validateSlides(files) {
+  if (!Array.isArray(files) || !files.length) throw invalidImage('Daftar file slide kosong. Buat ulang konten sebelum mengunggah.');
+  for (const file of files) {
+    if (typeof file !== 'string' || !file.startsWith('/generated/') || !file.toLowerCase().endsWith('.jpg')) {
+      throw invalidImage(`Slide "${file}" bukan file JPG yang valid. Buat ulang konten sebelum mengunggah.`);
+    }
+    const diskPath = path.join(config.root, 'public', file);
+    let metadata;
+    try { metadata = await sharp(diskPath).metadata(); } catch {
+      throw invalidImage(`File slide "${file}" tidak dapat dibaca. Buat ulang konten sebelum mengunggah.`);
+    }
+    if (metadata.format !== 'jpeg') throw invalidImage(`File slide "${file}" bukan JPEG asli. Buat ulang konten sebelum mengunggah.`);
+    if (metadata.width !== WIDTH || metadata.height !== HEIGHT) throw invalidImage(`Ukuran slide "${file}" harus ${WIDTH} x ${HEIGHT} piksel.`);
+    if (metadata.channels !== 3 || metadata.hasAlpha || metadata.space !== 'srgb') throw invalidImage(`Mode warna slide "${file}" harus RGB/sRGB tanpa transparansi.`);
+  }
+}
+
+function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
+
+module.exports = { createSlides, validateSlides, wrap, WIDTH, HEIGHT, JPEG_QUALITY };
