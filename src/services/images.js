@@ -9,11 +9,11 @@ const JPEG_QUALITY = 90;
 // TikTok overlays occupy the search/header region, the action rail at the
 // right, and the caption/navigation region at the bottom. Keep all meaningful
 // copy inside this deliberately asymmetric canvas.
-const SAFE_AREA = Object.freeze({ left: 90, right: 260, top: 280, bottom: 350 });
+const SAFE_AREA = Object.freeze({ left: 90, right: 250, top: 340, bottom: 340 });
 const SAFE_WIDTH = WIDTH - SAFE_AREA.left - SAFE_AREA.right;
 const SAFE_HEIGHT = HEIGHT - SAFE_AREA.top - SAFE_AREA.bottom;
-const LABEL_Y = 310;
-const CONTENT_TOP = 390;
+const LABEL_Y = 360;
+const CONTENT_TOP = 460;
 const CONTENT_BOTTOM = HEIGHT - SAFE_AREA.bottom;
 
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
@@ -113,7 +113,7 @@ function paginateSteps(steps) {
   const pages = [];
   let remaining = [...steps];
   while (remaining.length) {
-    let count = Math.min(5, remaining.length);
+    let count = Math.min(2, remaining.length);
     while (count > 1 && !fitStepPage(remaining.slice(0, count))) count--;
     let page = remaining.splice(0, count);
     let fitted = fitStepPage(page);
@@ -167,7 +167,9 @@ function buildSlideLayouts(content) {
       return [{ type: 'hook', title: 'HOOK', fit: hook }, ...groups.map((steps, index) => ({ type: 'steps', title: titles[index], fit: fitStepPage(steps) }))];
     }
   }
-  const rawPoints = parseSteps(content.body).flatMap(splitAtWordLimit).filter(Boolean);
+  // Numbers supplied by an AI are not trusted. Rebuild them once, before any
+  // pagination, so numbering can never restart or skip between slides.
+  const rawPoints = normalizePointSequence(parseSteps(content.body).flatMap(splitAtWordLimit).filter(Boolean));
   if (kind === 'tutorial') return buildTutorialLayouts(content, hookText, rawPoints);
   const desiredBodySlides = kind === 'tutorial' ? 3 : 2;
   const longContent = rawPoints.reduce((sum, point) => sum + wordCount(point), 0) > 105;
@@ -177,26 +179,49 @@ function buildSlideLayouts(content) {
     tips: 'TIPS', motivation: 'PESAN', solution: 'MASALAH → SOLUSI',
     beforeAfter: 'BEFORE → AFTER', education: 'PENJELASAN', ugc: 'IDE KONTEN', custom: 'PENJELASAN'
   }[kind];
-  const stepLayouts = groups.map((steps, index) => ({
+  const stepLayouts = groups.flatMap((steps) => paginateSteps(steps)).map((fit, index, pages) => ({
     type: 'steps',
-    title: kind === 'fact' ? (index === 0 ? 'PENJELASAN UTAMA' : 'FAKTA PENDUKUNG')
-      : kind === 'tutorial' ? `LANGKAH ${index + 1}` : formatTitle,
-    ...paginateSteps(steps)[0]
-  })).map(({ type, title, ...fit }) => ({ type, title, fit }));
+    title: semanticSlideLabel(kind, index, pages.length, formatTitle),
+    fit
+  }));
   const finalText = limitWords(content.topic || 'Sudah siap menerapkannya?', 35);
   const finalFit = adaptiveTextFit(finalText);
-  return [
+  return validateCarouselLayouts([
     { type: 'hook', title: 'HOOK', fit: hook },
     ...stepLayouts,
     { type: 'cta', title: kind === 'fact' ? 'KESIMPULAN' : kind === 'tutorial' ? 'HASIL / CTA' : 'KESIMPULAN / CTA', fit: finalFit }
-  ];
+  ]);
+}
+
+function normalizePointSequence(points) {
+  return points.map((point, index) => `${index + 1}. ${String(point).replace(/^\s*\d+[.)]\s*/, '').trim()}`);
+}
+
+function semanticSlideLabel(kind, index, total, fallback) {
+  if (kind !== 'fact' && kind !== 'education' && kind !== 'custom') return fallback;
+  if (index === 0) return 'PENJELASAN UTAMA';
+  if (index === total - 1 && total > 2) return 'DAMPAK';
+  return 'FAKTA PENDUKUNG';
+}
+
+function validateCarouselLayouts(layouts) {
+  const stepLayouts = layouts.filter(({ type }) => type === 'steps');
+  const numbers = stepLayouts.flatMap(({ fit }) => fit.steps || []).map((step) => Number(String(step).match(/^(\d+)[.)]/)?.[1])).filter(Number.isFinite);
+  if (numbers.some((number, index) => number !== index + 1) || new Set(numbers).size !== numbers.length) {
+    throw new Error('Urutan nomor poin carousel tidak valid.');
+  }
+  if (stepLayouts.some(({ fit }) => (fit.steps?.length || 0) > 2 || wordCount(fit.steps?.join(' ')) > 40)) {
+    throw new Error('Isi slide melebihi batas dua poin atau 40 kata.');
+  }
+  layouts.forEach(validateVisualLayout);
+  return layouts;
 }
 
 // Tutorials are deliberately denser than other formats: the hook promises the
 // outcome, related numbered actions share a practical-steps page, and the last
 // page closes with the outcome, one useful note, and the CTA.
 function buildTutorialLayouts(content, hookText, points) {
-  const numbered = points.map((point, index) => point.replace(/^\d+[.)]\s*/, `${index + 1}. `));
+  const numbered = normalizePointSequence(points);
   const totalWords = numbered.reduce((sum, point) => sum + wordCount(point), 0);
   const stepPageCount = numbered.length <= 5 && totalWords <= 45 ? 1
     : numbered.length <= 7 && totalWords <= 90 ? 2 : 3;
@@ -218,23 +243,12 @@ function buildTutorialLayouts(content, hookText, points) {
   const cta = limitWords(content.cta || 'Simpan panduan ini untuk dipraktikkan.', 9);
   const closing = `HASIL AKHIR: ${result}\nTIP: ${tip}\nCTA: ${cta}`;
   const closingFit = adaptiveTextFit(closing);
-  return [{ type: 'hook', title: 'HOOK & HASIL', fit: hookFit }, ...stepLayouts, { type: 'cta', title: 'HASIL / TIPS / CTA', fit: closingFit }];
+  return validateCarouselLayouts([{ type: 'hook', title: 'HOOK & HASIL', fit: hookFit }, ...stepLayouts, { type: 'cta', title: 'HASIL / TIPS / CTA', fit: closingFit }]);
 }
 
 function groupTutorialSteps(points, count) {
   if (!points.length) return [['1. Ikuti petunjuk praktis sesuai urutan, lalu periksa hasil sebelum menyimpan perubahan.']];
-  const groups = Array.from({ length: count }, () => []);
-  points.forEach((point, index) => groups[Math.min(count - 1, Math.floor(index * count / points.length))].push(point));
-  return groups.map((group) => {
-    const kept = [];
-    let words = 0;
-    for (const point of group) {
-      if (kept.length && words + wordCount(point) > 45) break;
-      kept.push(point);
-      words += wordCount(point);
-    }
-    return kept;
-  });
+  return groupSequentialPoints(points, 40);
 }
 
 function wordCount(text) { return String(text || '').trim().split(/\s+/).filter(Boolean).length; }
@@ -254,18 +268,18 @@ function splitAtWordLimit(point) {
 // short points instead of wasting a slide on a single short sentence.
 function groupPoints(points, count) {
   if (!points.length) return [['Konten sedang disiapkan.']];
-  const groups = Array.from({ length: Math.min(count, points.length) }, () => []);
-  points.forEach((point, index) => groups[Math.min(groups.length - 1, Math.floor(index * groups.length / points.length))].push(point));
-  return groups.map((group) => {
-    const result = [];
-    let words = 0;
-    for (const point of group) {
-      if (words + wordCount(point) > 35) break;
-      result.push(point);
-      words += wordCount(point);
-    }
-    return result.length ? result : [limitWords(group[0], 35)];
-  });
+  return groupSequentialPoints(points, 40);
+}
+
+function groupSequentialPoints(points, wordLimit) {
+  const groups = [];
+  for (const original of points) {
+    const point = limitWords(original, wordLimit);
+    const current = groups.at(-1);
+    if (!current || current.length === 2 || wordCount(current.join(' ')) + wordCount(point) > wordLimit) groups.push([point]);
+    else current.push(point);
+  }
+  return groups;
 }
 
 function paginatePlainText(text, maxLines, startSize, minSize, maxHeight, lineHeight) {
@@ -279,9 +293,12 @@ function paginatePlainText(text, maxLines, startSize, minSize, maxHeight, lineHe
 }
 
 function contentY(fit) {
-  if (fit.kind === 'short') return 540;
-  if (fit.kind === 'medium') return 450;
-  return CONTENT_TOP;
+  if (fit.kind === 'short') return Math.round(Math.max(720, Math.min(900, (HEIGHT - fit.height) / 2)));
+  // Keep the end of medium/long blocks at or below 55% of the canvas. This
+  // retains breathing room while preventing an unintentional empty lower half.
+  const balancedY = Math.round(HEIGHT * 0.55 - fit.height);
+  if (fit.kind === 'medium') return Math.max(540, balancedY);
+  return Math.max(CONTENT_TOP, balancedY);
 }
 
 function validateVisualLayout(layout) {
@@ -320,7 +337,15 @@ function renderLayout(layout, number, total) {
 async function createSlides(id, content) {
   const dir = path.join(config.root, 'public/generated');
   await fs.mkdir(dir, { recursive: true });
-  const layouts = buildSlideLayouts(content);
+  let layouts;
+  try {
+    layouts = validateCarouselLayouts(buildSlideLayouts(content));
+  } catch {
+    // One deterministic repair pass: normalize whitespace and point numbering,
+    // then validate the complete carousel before writing even the first JPG.
+    const repaired = { ...content, body: normalizePointSequence(parseSteps(content.body).flatMap(splitAtWordLimit).filter(Boolean)).join('\n') };
+    layouts = validateCarouselLayouts(buildSlideLayouts(repaired));
+  }
   const files = [];
   for (let i = 0; i < layouts.length; i++) {
     const name = `${id}-${i + 1}.jpg`;
@@ -345,4 +370,4 @@ async function validateSlides(files) {
 
 function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
 
-module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY };
+module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY };

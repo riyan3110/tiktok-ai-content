@@ -89,16 +89,16 @@ test('format fakta singkat membuat satu fakta utama per slide isi', () => {
   assert.equal(layouts.at(-1).title, 'KESIMPULAN');
 });
 
-test('tutorial empat langkah menghasilkan tiga slide dan satu LANGKAH PRAKTIS', () => {
+test('tutorial empat langkah menghasilkan urutan 1,2,3,4 dalam dua slide isi', () => {
   const layouts = images.buildSlideLayouts({
     hook: 'Buat gambar AI lebih menarik',
     body: '1. Tentukan ide utama yang ingin ditampilkan\n2. Tulis prompt dengan detail visual utama\n3. Buat beberapa variasi gambar\n4. Pilih dan simpan hasil terbaik',
     topic: 'Gambar AI menarik', cta: 'Follow untuk tips AI lainnya!',
     contentCategory: 'Tutorial AI', contentFormat: 'Tutorial langkah'
   });
-  assert.equal(layouts.length, 3);
-  assert.equal(layouts[1].title, 'LANGKAH PRAKTIS');
-  assert.equal(layouts[1].fit.steps.length, 4);
+  assert.equal(layouts.length, 4);
+  assert.deepEqual(layouts.filter(({ type }) => type === 'steps').flatMap(({ fit }) => fit.steps.map((step) => Number(step.match(/^\d+/)[0]))), [1, 2, 3, 4]);
+  assert.ok(layouts.filter(({ type }) => type === 'steps').every(({ fit }) => fit.steps.length === 2));
   assert.equal(layouts.at(-1).title, 'HASIL / TIPS / CTA');
 });
 
@@ -122,11 +122,11 @@ test('footer kecil dihapus dari semua slide', () => {
 });
 
 test('safe area TikTok membatasi header, ikon kanan, dan caption bawah', () => {
-  assert.deepEqual(images.SAFE_AREA, { left: 90, right: 260, top: 280, bottom: 350 });
+  assert.deepEqual(images.SAFE_AREA, { left: 90, right: 250, top: 340, bottom: 340 });
   const layout = images.buildSlideLayouts(content)[0];
   assert.equal(images.validateVisualLayout(layout), true);
-  assert.match(images.renderLayout(layout, 1, 3), /y="310"/);
-  assert.ok(layout.fit.lines.every((line) => images.measureTextWidth(line, layout.fit.fontSize, true) <= 730));
+  assert.match(images.renderLayout(layout, 1, 3), /y="360"/);
+  assert.ok(layout.fit.lines.every((line) => images.measureTextWidth(line, layout.fit.fontSize, true) <= 740));
 });
 
 test('teks pendek memakai 58–68 px, maksimal empat baris, dan turun ke tengah atas', () => {
@@ -134,7 +134,7 @@ test('teks pendek memakai 58–68 px, maksimal empat baris, dan turun ke tengah 
   assert.equal(fit.kind, 'short');
   assert.ok(fit.fontSize >= 58 && fit.fontSize <= 68);
   assert.ok(fit.lines.length <= 4);
-  assert.equal(images.contentY(fit), 540);
+  assert.ok(images.contentY(fit) >= 720 && images.contentY(fit) <= 900);
 });
 
 test('teks sedang memakai 46–56 px dan maksimal enam baris', () => {
@@ -159,13 +159,13 @@ test('teks sangat panjang tidak dipaksakan ke satu slide', () => {
   assert.ok(pages.every(({ lineCount }) => lineCount <= 7));
 });
 
-test('slide menggabungkan poin pendek dan membatasi isi utama 35 kata', () => {
+test('slide menggabungkan maksimal dua poin pendek dan membatasi isi utama 40 kata', () => {
   const body = Array.from({ length: 8 }, (_, index) => `${index + 1}. Tips ${index + 1}`).join('\n');
   const layouts = images.buildSlideLayouts({ hook: 'Tips ringkas', body, topic: 'Tips', contentCategory: 'Tips bisnis', contentFormat: 'Tips cepat' });
-  assert.equal(layouts.length, 4);
+  assert.equal(layouts.length, 6);
   const bodyLayouts = layouts.filter(({ type }) => type === 'steps');
   assert.ok(bodyLayouts.every(({ fit }) => fit.steps.length > 1));
-  assert.ok(bodyLayouts.every(({ fit }) => images.wordCount(fit.steps.join(' ')) <= 35));
+  assert.ok(bodyLayouts.every(({ fit }) => images.wordCount(fit.steps.join(' ')) <= 40));
 });
 
 test('format masalah dan solusi menghasilkan tepat empat slide dengan urutan solusi', () => {
@@ -173,4 +173,30 @@ test('format masalah dan solusi menghasilkan tepat empat slide dengan urutan sol
   assert.equal(layouts.length, 4);
   assert.deepEqual(layouts.map(({ title }) => title), ['HOOK', 'MASALAH & PENYEBAB', 'SOLUSI', 'LANGKAH & HASIL']);
   assert.match(layouts[2].fit.groups.flat().join(' '), /SOLUSI 1.*SOLUSI 2/);
+});
+
+test('nomor lompat dan ganda diperbaiki menjadi urutan global tanpa reset antar-slide', () => {
+  const layouts = images.buildSlideLayouts({
+    hook: 'Empat fakta penting', body: '1. Fakta pertama\n3. Fakta kedua\n3. Fakta ketiga\n8. Fakta keempat',
+    topic: 'Ringkasan fakta', contentFormat: 'Fakta singkat'
+  });
+  const points = layouts.filter(({ type }) => type === 'steps').flatMap(({ fit }) => fit.steps);
+  assert.deepEqual(points.map((point) => Number(point.match(/^\d+/)[0])), [1, 2, 3, 4]);
+  assert.ok(layouts.filter(({ type }) => type === 'steps').every(({ fit }) => fit.steps.length <= 2));
+});
+
+test('label isi mengikuti peran penjelasan, fakta pendukung, dampak, dan kesimpulan', () => {
+  const layouts = images.buildSlideLayouts({
+    hook: 'Enam fakta', body: '1. Satu\n2. Dua\n3. Tiga\n4. Empat\n5. Lima\n6. Enam',
+    topic: 'Kesimpulan fakta', contentFormat: 'Fakta singkat'
+  });
+  assert.deepEqual(layouts.map(({ title }) => title), ['HOOK', 'PENJELASAN UTAMA', 'FAKTA PENDUKUNG', 'DAMPAK', 'KESIMPULAN']);
+});
+
+test('isi pendek lebih ke tengah dan isi panjang tetap di safe area', () => {
+  const short = images.adaptiveTextFit('Isi singkat yang mudah dipahami');
+  const long = images.adaptiveTextFit(Array(25).fill('langkah').join(' '));
+  assert.ok(images.contentY(short) >= 720);
+  assert.ok(images.contentY(long) >= images.SAFE_AREA.top);
+  assert.ok(images.contentY(long) + long.height <= images.HEIGHT - images.SAFE_AREA.bottom);
 });
