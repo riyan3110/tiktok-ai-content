@@ -1,0 +1,25 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const css = fs.readFileSync(path.join(__dirname, '../public/style.css'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+
+test('responsive layout covers the required viewport classes', () => {
+  // 360x800 uses the base/mobile rules, 768x1024 the tablet rules, and both
+  // 1366x768 and 1920x1080 the desktop rules.
+  assert.match(css, /@media\(max-width:767px\)/);
+  assert.match(css, /@media\(min-width:768px\)/);
+  assert.match(css, /@media\(min-width:1024px\)/);
+  assert.match(css, /1400px/);
+  assert.match(css, /grid-template-areas:"actions editor" "schedule schedule" "history history"/);
+});
+
+test('wide-screen content remains bounded and slide previews are accessible', () => {
+  assert.match(css, /overflow-x:hidden/);
+  assert.match(css, /aspect-ratio:9\/16/);
+  assert.match(css, /object-fit:contain/);
+  assert.match(html, /<dialog id="slide-preview"/);
+  assert.match(html, /<div id="history"><\/div>/);
+});

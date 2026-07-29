@@ -2,7 +2,22 @@ let current;
 const $ = (s) => document.querySelector(s);
 async function api(url, options) { const r = await fetch(url, options); const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Permintaan gagal'); return data; }
 const sourceLabels = { manual: 'Manual', ai: 'AI', trending: 'Trending' };
-function show(item) { current = item; $('#editor').classList.remove('hidden'); $('#slides').innerHTML = item.slides.map((x, i) => `<img src="${x}" alt="Slide ${i + 1}">`).join(''); $('#caption').value = item.caption; $('#status').textContent = item.publish_status; }
+function show(item) {
+  current = item;
+  $('#editor').classList.remove('hidden');
+  $('#slides').innerHTML = item.slides.map((x, i) => `<button class="slide-button" type="button" data-slide="${i}" aria-label="Perbesar slide ${i + 1}"><img src="${x}" alt="Slide ${i + 1}"></button>`).join('');
+  document.querySelectorAll('[data-slide]').forEach((button, i) => { button.onclick = () => openSlide(item.slides[i], i); });
+  $('#caption').value = item.caption;
+  $('#status').textContent = item.publish_status;
+}
+function openSlide(src, index) {
+  $('#slide-preview-image').src = src;
+  $('#slide-preview-image').alt = `Slide ${index + 1}`;
+  $('#slide-preview-label').textContent = `Slide ${index + 1}`;
+  $('#slide-preview').showModal();
+}
+$('#close-preview').onclick = () => $('#slide-preview').close();
+$('#slide-preview').onclick = event => { if (event.target === $('#slide-preview')) $('#slide-preview').close(); };
 async function history() {
   const rows = await api('/history');
   $('#delete-all').classList.toggle('hidden', !rows.length);
