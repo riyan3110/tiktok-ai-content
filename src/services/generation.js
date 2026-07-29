@@ -3,7 +3,12 @@ const defaultImages = require('./images');
 const defaultTrending = require('./trendingTopics');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
+const MAX_GENERATION_ATTEMPTS = 3;
 const normalizeTopic = (topic) => String(topic || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('id-ID');
+
+function duplicateTopicError() {
+  return Object.assign(new Error(`Topik duplikat setelah ${MAX_GENERATION_ATTEMPTS} percobaan`), { status: 409 });
+}
 
 function previousTopics(db) {
   return db.prepare('SELECT topic FROM contents ORDER BY id DESC LIMIT 50').all().map(({ topic }) => topic);
@@ -27,7 +32,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, content = defa
     if (!trends.length) trendingFallback = true;
   }
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
     const used = previousTopics(db);
     const availableTrend = trends.find((topic) => !used.some((old) => normalizeTopic(old) === normalizeTopic(topic)));
     const basis = mode === 'manual' ? manualTopic : mode === 'trending' ? availableTrend : undefined;
@@ -38,7 +43,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, content = defa
       date: new Date().toISOString().slice(0, 10)
     });
     if (isDuplicate(db, generated.topic)) {
-      if (mode === 'manual' || attempt === 3) throw Object.assign(new Error('Topik duplikat setelah 3 percobaan'), { status: 409 });
+      if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
       trends = trends.filter((topic) => normalizeTopic(topic) !== normalizeTopic(basis));
       continue;
     }
@@ -49,9 +54,11 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, content = defa
       db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(slides), result.lastInsertRowid);
       return result.lastInsertRowid;
     } catch (error) {
-      if (!String(error.code || error.message).includes('UNIQUE') || mode === 'manual' || attempt === 3) throw error;
+      const isUniqueConflict = String(error.code || error.message).includes('UNIQUE');
+      if (!isUniqueConflict) throw error;
+      if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
     }
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, MAX_GENERATION_ATTEMPTS };
