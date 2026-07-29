@@ -48,7 +48,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       date: new Date().toISOString().slice(0, 10),
       contentCategory,
       contentFormat,
-      trendReference: trendReference ? { keywords: trendReference.keywords, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null
+      trendReference: trendReference ? { keywords: trendReference.keywords, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null
     });
     if (isDuplicate(db, generated.topic)) {
       if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();

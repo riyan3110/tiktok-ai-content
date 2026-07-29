@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS trend_reference_sets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL DEFAULT 'Referensi Tren Hari Ini',
   keywords TEXT NOT NULL,
+  trend_hooks TEXT NOT NULL DEFAULT '[]',
+  trend_content_patterns TEXT NOT NULL DEFAULT '[]',
   source TEXT NOT NULL,
   region TEXT NOT NULL DEFAULT 'Indonesia',
   intensity TEXT NOT NULL DEFAULT 'Sedang',
