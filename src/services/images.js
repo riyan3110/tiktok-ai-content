@@ -15,7 +15,9 @@ const SAFE_WIDTH = WIDTH - SAFE_AREA.left - SAFE_AREA.right;
 const SAFE_HEIGHT = HEIGHT - SAFE_AREA.top - SAFE_AREA.bottom;
 const LABEL_Y = 425;
 const CONTENT_TOP = 580;
-const CONTENT_BOTTOM = HEIGHT - SAFE_AREA.bottom;
+const BOTTOM_SAFE_AREA = SAFE_AREA.bottom;
+const CONTENT_BOTTOM = HEIGHT - BOTTOM_SAFE_AREA;
+const OVERFLOW_TOLERANCE = 8;
 const WATERMARK_Y = 270;
 
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
@@ -64,6 +66,28 @@ function autoFitText(text, { maxWidth = SAFE_WIDTH, maxHeight, maxLines = Infini
     if (lines.length <= maxLines && height <= maxHeight) return { fontSize, lines, height, lineHeight };
   }
   return null;
+}
+
+// Height validation is always performed in pixels on the original 1080x1920
+// canvas. Browser preview dimensions intentionally are not accepted here.
+function layoutHeightMetrics(fit, slideIndex) {
+  const textHeight = Number(fit?.height || 0);
+  const availableHeight = HEIGHT - CONTENT_TOP - BOTTOM_SAFE_AREA;
+  const isOverflowing = textHeight > availableHeight + OVERFLOW_TOLERANCE;
+  return {
+    slideIndex,
+    textHeight,
+    availableHeight,
+    contentTop: CONTENT_TOP,
+    bottomSafeArea: BOTTOM_SAFE_AREA,
+    fontSize: fit?.fontSize ?? fit?.pointSize ?? fit?.titleFit?.fontSize,
+    lineHeight: fit?.lineHeight ?? fit?.bodyFit?.lineHeight ?? 1.22,
+    isOverflowing
+  };
+}
+
+function isTextHeightValid(textHeight, availableHeight, tolerance = OVERFLOW_TOLERANCE) {
+  return Number(textHeight) <= Number(availableHeight) + Number(tolerance);
 }
 
 function adaptiveTextFit(text, maxWidth = SAFE_WIDTH) {
@@ -222,9 +246,23 @@ function repairStructuredSlides(input) {
   return repaired;
 }
 
+function fitStructuredSlides(input, format = '') {
+  const normalized = normalizeSlides(input);
+  const canKeepOriginal = normalized.every((slide, index) => {
+    if (slide.points.length > 3) return false;
+    try {
+      return validateVisualLayout(buildStructuredLayout(slide, index, normalized.length, format));
+    } catch {
+      return false;
+    }
+  });
+  return canKeepOriginal ? normalized : repairStructuredSlides(input);
+}
+
 function buildSlideLayouts(content) {
   if (Array.isArray(content.slides)) {
-    const slides = repairStructuredSlides(content.slides);
+    // Do not summarize or bulletize copy that already fits the native canvas.
+    const slides = fitStructuredSlides(content.slides, content.contentFormat);
     const errors = validateContentSlides(slides, { format: content.contentFormat });
     if (errors.length) throw Object.assign(new Error(`Tahap layout: ${errors.join(' ')}`), { status: 422 });
     return validateCarouselLayouts(slides.map((slide, index) => buildStructuredLayout(slide, index, slides.length, content.contentFormat)));
@@ -289,7 +327,12 @@ function validateCarouselLayouts(layouts) {
   }
   if (layouts.length < 3) throw Object.assign(new Error(`Tahap layout: hanya ${layouts.length} slide valid; minimal 3 slide.`), { status: 422 });
   layouts.forEach((layout, index) => {
-    try { validateVisualLayout(layout); } catch (error) { throw Object.assign(new Error(`Slide ${index + 1} gagal pada tahap layout: ${error.message}`), { status: 422 }); }
+    try { validateVisualLayout(layout, { slideIndex: index + 1 }); } catch (error) {
+      const message = error.code === 'TEXT_OVERFLOW'
+        ? `Slide ${index + 1} ${error.message}`
+        : `Slide ${index + 1} gagal pada tahap layout: ${error.message}`;
+      throw Object.assign(new Error(message), { status: 422 });
+    }
   });
   return layouts;
 }
@@ -378,15 +421,18 @@ function contentY(fit) {
   return Math.max(CONTENT_TOP, balancedY);
 }
 
-function validateVisualLayout(layout) {
+function validateVisualLayout(layout, { slideIndex } = {}) {
   if (!layout?.fit) throw new Error('Layout slide tidak memiliki isi.');
   const fit = layout.fit;
-  const lineCount = fit.lineCount ?? fit.lines?.length ?? fit.groups?.reduce((sum, lines) => sum + lines.length, 0) ?? 0;
   const y = contentY(fit);
-  const bottom = y + fit.height;
+  const metrics = layoutHeightMetrics(fit, slideIndex);
+  console.debug(metrics);
   if (LABEL_Y < SAFE_AREA.top || y < CONTENT_TOP) throw new Error('Teks tertutup search bar TikTok.');
-  if (bottom > CONTENT_BOTTOM) throw new Error('Teks tertutup caption bawah TikTok.');
-  if (lineCount > 9) throw new Error(`Isi masih terlalu panjang setelah diringkas. Tinggi teks ${Math.round(fit.height)} px, area tersedia ${CONTENT_BOTTOM - CONTENT_TOP} px.`);
+  if (metrics.isOverflowing) {
+    const error = new Error(`tidak muat: tinggi teks ${Math.round(metrics.textHeight)} px, area tersedia ${metrics.availableHeight} px.`);
+    error.code = 'TEXT_OVERFLOW';
+    throw error;
+  }
   const allLines = layout.type === 'structured'
     ? [fit.titleFit?.lines, fit.bodyFit?.lines, ...(layout.content?.points || []).map(point => point.lines)].flat().filter(Boolean)
     : fit.lines || fit.groups?.flat() || [];
@@ -469,4 +515,4 @@ async function validateSlides(files) {
 
 function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
 
-module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, buildStructuredLayout, repairStructuredSlides, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y, LABEL_Y, CONTENT_TOP };
+module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, buildStructuredLayout, repairStructuredSlides, fitStructuredSlides, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, layoutHeightMetrics, isTextHeightValid, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y, LABEL_Y, CONTENT_TOP, BOTTOM_SAFE_AREA, OVERFLOW_TOLERANCE };

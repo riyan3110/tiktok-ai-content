@@ -89,6 +89,53 @@ test('wrapping menggunakan lebar piksel dan mempertahankan teks pendek', () => {
   assert.ok(images.wrapText('Strategi konten sedang yang perlu dibungkus dengan rapi', 360, 46).length > 1);
 });
 
+test('validasi tinggi teks memakai batas piksel dan toleransi delapan piksel', () => {
+  assert.equal(images.isTextHeightValid(594, 1000), true);
+  assert.equal(images.isTextHeightValid(1000, 1000), true);
+  assert.equal(images.isTextHeightValid(1006, 1000, 8), true);
+  assert.equal(images.isTextHeightValid(1009, 1000, 8), false);
+});
+
+test('metrik layout selalu memakai canvas asli, bukan ukuran preview browser', () => {
+  const fit = { height: 594, fontSize: 46, lineHeight: 1.3 };
+  const nativeMetrics = images.layoutHeightMetrics(fit, 2);
+  // A CSS preview may be 270x480, but it reuses this native layout result.
+  const previewMetrics = images.layoutHeightMetrics(fit, 2);
+  assert.deepEqual(previewMetrics, nativeMetrics);
+  assert.deepEqual(nativeMetrics, {
+    slideIndex: 2,
+    textHeight: 594,
+    availableHeight: 1000,
+    contentTop: 580,
+    bottomSafeArea: 340,
+    fontSize: 46,
+    lineHeight: 1.3,
+    isOverflowing: false
+  });
+  assert.equal(images.WIDTH, 1080);
+  assert.equal(images.HEIGHT, 1920);
+});
+
+test('overflow sembilan piksel menghasilkan pesan gagal yang akurat', () => {
+  const overflowing = { type: 'hook', title: 'HOOK', fit: { kind: 'long', height: 1009, fontSize: 38, lineHeight: 1.3, lines: ['Teks'] } };
+  const valid = { type: 'cta', title: 'CTA', fit: { kind: 'long', height: 1000, fontSize: 38, lineHeight: 1.3, lines: ['Teks'] } };
+  assert.throws(
+    () => images.validateCarouselLayouts([valid, overflowing, valid]),
+    /Slide 2 tidak muat: tinggi teks 1009 px, area tersedia 1000 px\./
+  );
+});
+
+test('teks terstruktur yang sudah muat tidak diringkas ulang', () => {
+  const slides = [
+    { section: 'PEMBUKA', title: 'Mulai Fokus', body: 'fokus fokus membantu ritme kerja tetap stabil.', points: [] },
+    { section: 'ISI', title: 'Jaga Ritme', body: 'Kerjakan satu tugas penting sebelum berpindah.', points: [] },
+    { section: 'CTA', title: 'Coba Hari Ini', body: '', points: [] }
+  ];
+  const fitted = images.fitStructuredSlides(slides, 'Tips cepat');
+  assert.equal(fitted[0].body, slides[0].body);
+  assert.equal(fitted.length, slides.length);
+});
+
 test('judul sedang auto-fit maksimal tiga baris di dalam safe area', () => {
   const fit = images.autoFitText(
     'Cara membuat iklan TikTok yang menarik perhatian audiens dalam beberapa detik',
