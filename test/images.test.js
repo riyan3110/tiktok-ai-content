@@ -61,6 +61,28 @@ test('watermark bukan isi dan tidak memengaruhi auto-fit atau validasi slide', (
   assert.equal(images.validateVisualLayout(branded[0]), true);
 });
 
+test('watermark, label, nomor, dan isi memakai satu layout aman untuk preview dan JPG', () => {
+  const layout = images.buildSlideLayouts(content)[0];
+  const svg = images.renderLayout(layout, 1, 3, { enabled: true, position: 'top-center', intensity: 'high' });
+  const watermarkY = Number(svg.match(/data-role="watermark"[^>]*y="(\d+)"/)?.[1]);
+  const labelMatch = svg.match(/<text x="90" y="(\d+)"[^>]*font-size="34"/);
+  const labelY = Number(labelMatch?.[1]);
+  const numberY = Number(svg.match(/<text x="830" y="(\d+)"[^>]*font-size="28"/)?.[1]);
+  assert.ok(watermarkY >= 260 && watermarkY <= 290);
+  assert.ok(labelY >= 350 && labelY <= 390);
+  assert.ok(labelY - watermarkY >= 65);
+  assert.equal(numberY, labelY);
+  assert.ok(images.contentY(layout.fit) >= 520);
+  assert.match(svg, /data-role="watermark"[^>]*x="80"[^>]*fill-opacity="0\.4"/);
+});
+
+test('watermark nonaktif tidak dirender dan opsi posisi atau intensitas lama tidak mengubah layout tetap', () => {
+  assert.equal(images.watermarkElement({ enabled: false }), '');
+  const fixed = images.watermarkElement({ enabled: true, position: 'top-center', intensity: 'high' });
+  assert.match(fixed, /x="80" y="270"[^>]*fill-opacity="0\.4"/);
+  assert.doesNotMatch(fixed, /text-anchor="middle"/);
+});
+
 test('wrapping menggunakan lebar piksel dan mempertahankan teks pendek', () => {
   assert.deepEqual(images.wrapText('Teks pendek', 770, 46), ['Teks pendek']);
   assert.ok(images.measureTextWidth('MMMM', 46) > images.measureTextWidth('iiii', 46));

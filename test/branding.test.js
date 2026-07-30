@@ -16,10 +16,17 @@ test('header dan metadata memakai satu file logo yang sudah tersedia', () => {
   assert.match(css, /\.brand img\{[^}]*object-fit:contain/);
 });
 
-test('dashboard menyediakan default watermark aktif, kiri atas, dan sedang', () => {
+test('dashboard hanya menyediakan switch watermark setelah switch posting otomatis', () => {
   assert.match(html, /id="watermark-enabled"[^>]*checked/);
-  assert.match(html, /id="watermark-position"[\s\S]*?<option value="top-left" selected>Kiri atas<\/option>[\s\S]*?<option value="top-center">Tengah atas<\/option>/);
-  assert.match(html, /id="watermark-intensity"[\s\S]*?<option value="low">Rendah<\/option>[\s\S]*?<option value="medium" selected>Sedang<\/option>[\s\S]*?<option value="high">Tinggi<\/option>/);
+  assert.doesNotMatch(html, /id="watermark-position"|id="watermark-intensity"/);
+  assert.ok(html.indexOf('id="automation-toggle"') < html.indexOf('id="watermark-enabled"'));
+  assert.ok(html.indexOf('id="watermark-enabled"') < html.indexOf('id="mode-help"'));
+});
+
+test('status referensi tren berada setelah tombol dan status proses tetap di baris tombol', () => {
+  const generateRow = html.match(/<div class="generate-row">[\s\S]*?<\/div>/)?.[0] || '';
+  assert.match(generateRow, /id="generate"[\s\S]*id="message"/);
+  assert.ok(html.indexOf('id="generate"') < html.indexOf('class="trend-use"'));
 });
 
 test('perubahan tidak menambahkan file PNG atau ICO baru', () => {
