@@ -13,8 +13,8 @@ const JPEG_QUALITY = 90;
 const SAFE_AREA = Object.freeze({ left: 90, right: 250, top: 340, bottom: 340 });
 const SAFE_WIDTH = WIDTH - SAFE_AREA.left - SAFE_AREA.right;
 const SAFE_HEIGHT = HEIGHT - SAFE_AREA.top - SAFE_AREA.bottom;
-const LABEL_Y = 360;
-const CONTENT_TOP = 520;
+const LABEL_Y = 425;
+const CONTENT_TOP = 580;
 const CONTENT_BOTTOM = HEIGHT - SAFE_AREA.bottom;
 const WATERMARK_Y = 270;
 
@@ -172,17 +172,32 @@ function frame(inner, number, total, watermark) {
   return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#15122d"/><stop offset="1" stop-color="#5b21b6"/></linearGradient><filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#090617" flood-opacity=".7"/></filter></defs><rect width="1080" height="1920" fill="url(#g)"/><circle cx="940" cy="190" r="260" fill="#ec4899" opacity=".28"/>${watermarkElement(watermark)}${inner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="#f9a8d4" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
 }
 
+function buildStructuredLayout(slide, index, total, format = '') {
+  const tutorial = /tutorial/i.test(format) || /LANGKAH/i.test(slide.section);
+  const titleFit = slide.title ? autoFitText(slide.title, { maxWidth: SAFE_WIDTH, maxHeight: 250, maxLines: 3, startSize: 76, minSize: 52, lineHeight: 1.1 }) : null;
+  const bodyFit = slide.body ? autoFitText(slide.body, { maxWidth: SAFE_WIDTH, maxHeight: 180, maxLines: 3, startSize: 42, minSize: 34, lineHeight: 1.32 }) : null;
+  const points = slide.points.slice(0, 3).map((point, pointIndex) => {
+    const clean = String(point).replace(/^[-•*\d.)\s]+/, '').trim();
+    const prefix = tutorial ? `${pointIndex + 1}.` : '•';
+    return { text: `${prefix} ${clean}`, lines: wrapText(`${prefix} ${clean}`, SAFE_WIDTH, 38, false) };
+  });
+  if (slide.title && !titleFit) throw new Error('Judul tidak muat dalam maksimal tiga baris.');
+  if (slide.body && !bodyFit) throw new Error('Body tidak muat dalam area isi.');
+  const height = (titleFit?.height || 0) + (bodyFit ? bodyFit.height + 30 : 0) + points.reduce((sum, point) => sum + point.lines.length * 38 * 1.3 + 18, 0);
+  return {
+    type: 'structured', title: slide.section || `SLIDE ${index + 1}`,
+    content: { title: slide.title, body: slide.body, points },
+    fit: { kind: height < 320 ? 'short' : height < 560 ? 'medium' : 'long', height, lineCount: (titleFit?.lines.length || 0) + (bodyFit?.lines.length || 0) + points.reduce((sum, point) => sum + point.lines.length, 0), titleFit, bodyFit, lines: [] },
+    isOnlyTitle: Boolean(slide.title && !slide.body && !points.length), total
+  };
+}
+
 function buildSlideLayouts(content) {
   if (Array.isArray(content.slides)) {
     const errors = validateContentSlides(content.slides, { format: content.contentFormat });
     if (errors.length) throw Object.assign(new Error(`Tahap layout: ${errors.join(' ')}`), { status: 422 });
     const slides = normalizeSlides(content.slides);
-    return validateCarouselLayouts(slides.map((slide, index) => {
-      const text = [slide.title, slide.body, ...slide.points].filter(Boolean).join('\n');
-      const steps = parseSteps([slide.body, ...slide.points].filter(Boolean).join('\n'));
-      const isSteps = /LANGKAH/i.test(slide.section) && steps.length;
-      return { type: isSteps ? 'steps' : index === slides.length - 1 ? 'cta' : 'content', title: slide.section || slide.title || `SLIDE ${index + 1}`, fit: isSteps ? fitStepPage(steps) : adaptiveTextFit(text) };
-    }));
+    return validateCarouselLayouts(slides.map((slide, index) => buildStructuredLayout(slide, index, slides.length, content.contentFormat)));
   }
   const format = content.contentFormat || 'Tutorial langkah';
   const kind = contentKind(content.contentCategory, format);
@@ -329,7 +344,7 @@ function contentY(fit) {
   // Keep the end of medium/long blocks at or below 55% of the canvas. This
   // retains breathing room while preventing an unintentional empty lower half.
   const balancedY = Math.round(HEIGHT * 0.55 - fit.height);
-  if (fit.kind === 'medium') return Math.max(540, balancedY);
+  if (fit.kind === 'medium') return Math.max(CONTENT_TOP, balancedY);
   return Math.max(CONTENT_TOP, balancedY);
 }
 
@@ -342,7 +357,9 @@ function validateVisualLayout(layout) {
   if (LABEL_Y < SAFE_AREA.top || y < CONTENT_TOP) throw new Error('Teks tertutup search bar TikTok.');
   if (bottom > CONTENT_BOTTOM) throw new Error('Teks tertutup caption bawah TikTok.');
   if (lineCount > 7) throw new Error('Isi slide melebihi tujuh baris.');
-  const allLines = fit.lines || fit.groups?.flat() || [];
+  const allLines = layout.type === 'structured'
+    ? [fit.titleFit?.lines, fit.bodyFit?.lines, ...(layout.content?.points || []).map(point => point.lines)].flat().filter(Boolean)
+    : fit.lines || fit.groups?.flat() || [];
   if (allLines.some((line) => measureTextWidth(line, fit.fontSize, layout.type !== 'steps') > SAFE_WIDTH + 1)) throw new Error('Teks masuk ke area ikon kanan TikTok.');
   // Short slides sit lower in the upper-middle; this prevents a small block at
   // the very top from making most of the composition look unintentionally empty.
@@ -354,6 +371,25 @@ function renderLayout(layout, number, total, watermark) {
   validateVisualLayout(layout);
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
   const startY = contentY(layout.fit);
+  if (layout.type === 'structured') {
+    let y = layout.isOnlyTitle ? Math.round(Math.max(CONTENT_TOP, (CONTENT_TOP + CONTENT_BOTTOM - layout.fit.height) / 2)) : startY;
+    const parts = [];
+    if (layout.fit.titleFit) {
+      parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.1, weight: 700 }));
+      y += layout.fit.titleFit.height;
+    }
+    if (layout.fit.bodyFit) {
+      y += 30;
+      parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: 1.32, weight: 400, fill: '#f3e8ff' }));
+      y += layout.fit.bodyFit.height;
+    }
+    for (const point of layout.content.points) {
+      y += 28;
+      parts.push(textElement(point.lines, { y, fontSize: 38, lineHeight: 1.3, weight: 600 }));
+      y += point.lines.length * 38 * 1.3;
+    }
+    return frame(heading + parts.join(''), number, total, watermark);
+  }
   if (layout.type === 'steps') {
     let y = startY;
     const elements = layout.fit.groups.map((lines) => {
@@ -403,4 +439,4 @@ async function validateSlides(files) {
 
 function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
 
-module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y };
+module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, buildStructuredLayout, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y, LABEL_Y, CONTENT_TOP };
