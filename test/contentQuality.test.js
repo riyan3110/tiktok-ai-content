@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { createDatabase } = require('../src/db');
-const { generateContent, normalizeSlides, validateSlides } = require('../src/services/content');
+const { generateContent, normalizeSlides, normalizeProblemSolutionSlides, validateContent, validateSlides } = require('../src/services/content');
 const { generateAndSave, similarityToHistory } = require('../src/services/generation');
 
 const slide = (section, body, extra = {}) => ({ section, title: extra.title || '', body, points: extra.points || [] });
@@ -29,13 +29,53 @@ test('body multi-line memindahkan baris pendek menjadi maksimal tiga points', ()
 });
 
 test('validator membatasi title, body, dan panjang point secara terpisah', () => {
-  const slides = carousel(slide('ISI', sentence(23), {
+  const slides = carousel(slide('ISI', sentence(25), {
     title: sentence(13), points: ['satu dua tiga empat lima enam tujuh delapan']
   }));
   const message = validateSlides(slides).join(' ');
   assert.match(message, /title maksimal 12 kata/);
-  assert.match(message, /body maksimal 22 kata/);
+  assert.match(message, /body maksimal 24 kata/);
   assert.match(message, /point 1 maksimal 7 kata/);
+});
+
+test('body tepat 24 kata tetap valid', () => {
+  assert.deepEqual(validateSlides(carousel(slide('PENJELASAN', sentence(24)))), []);
+});
+
+test('solusi bullet tanpa numbering valid', () => {
+  const slides = [slide('MASALAH', 'Penjualan melambat', { title: 'Masalah toko' }), slide('SOLUSI', '', { title: 'Solusi', points: ['Audit produk', 'Perbaiki penawaran'] }), slide('PENUTUP', 'Simpan')];
+  assert.deepEqual(validateSlides(slides, { format: 'Masalah dan solusi' }), []);
+});
+
+test('solusi nomor dua dinormalisasi dan daftar body dipindahkan ke points', () => {
+  const normalized = normalizeProblemSolutionSlides([
+    slide('MASALAH', 'Stok lama menumpuk', { title: 'Masalah stok' }),
+    slide('Solusi 2', '2. Audit stok\n3. Buat bundel', { title: 'Tindakan' }),
+    slide('PENUTUP', 'Simpan')
+  ]);
+  assert.equal(normalized[0].section, 'MASALAH');
+  assert.deepEqual(normalized[1].points, ['Audit stok', 'Buat bundel']);
+  assert.equal(normalized[1].body, '');
+});
+
+test('slide masalah tanpa solusi gagal dengan satu pesan spesifik', () => {
+  const errors = validateSlides([slide('MASALAH', 'Stok lama'), slide('ISI', 'Dampak modal'), slide('PENUTUP', 'Simpan')], { format: 'Masalah dan solusi' });
+  assert.deepEqual(errors, ['Format Masalah dan solusi tidak memiliki slide SOLUSI.']);
+});
+
+test('error validasi akhir tidak menggabungkan dua masalah', async () => {
+  const invalid = { focus: { masalah: 'A', penyebab: 'B', solusi: 'C', hasil: 'D' }, topic: 'Topik', hook: sentence(19), body: 'Isi', caption: 'Caption', hashtags: [], cta: 'Simpan', trendKeywordsUsed: [], slides: carousel(slide('ISI', sentence(25))) };
+  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(invalid) } }] }) } } };
+  await assert.rejects(() => generateContent([], {}, client), error => error.validationErrors.length > 1 && !error.message.includes(error.validationErrors[1]));
+});
+
+test('hook 19 kata diperbaiki menjadi maksimal 18 kata', async () => {
+  const base = { focus: { masalah: 'A', penyebab: 'B', solusi: 'C', hasil: 'D' }, topic: 'Topik', body: 'Isi', caption: 'Caption', hashtags: [], cta: 'Simpan', trendKeywordsUsed: [], slides: carousel(slide('ISI', 'Isi')) };
+  let calls = 0;
+  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify({ ...base, hook: sentence(++calls === 1 ? 19 : 18) }) } }] }) } } };
+  const result = await generateContent([], {}, client);
+  assert.equal(result.hook.split(/\s+/).length, 18);
+  assert.equal(calls, 2);
 });
 
 test('validator melaporkan satu slide kosong dan menghapusnya saat normalisasi', () => {

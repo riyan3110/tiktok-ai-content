@@ -51,7 +51,7 @@ test('prompt mengikuti kategori, format, dan menjaga inti topik manual', async (
   const prompt = request.messages[1].content;
   assert.match(prompt, /jangan mengubah inti topiknya/i);
   assert.match(prompt, /bahasa sederhana/);
-  assert.match(prompt, /MASALAH:/);
+  assert.match(prompt, /section MASALAH/);
   assert.match(prompt, /Jangan memaksakan isi menjadi video iklan/);
 });
 
@@ -68,18 +68,18 @@ test('prompt memisahkan keyword, gaya hook, dan pola konten sesuai kegunaannya',
   assert.match(prompt, /buat variasi yang natural/i);
 });
 
-test('validasi menolak urutan solusi yang tidak dimulai dari satu dan isi duplikat', () => {
+test('validasi masalah-solusi tidak memaksa numbering tetapi tetap menolak isi duplikat', () => {
   const { validateContent } = require('../src/services/content');
   const content = { focus: { masalah: 'Stok lama', penyebab: 'Tidak dihitung', solusi: 'Audit', hasil: 'Stok turun' }, topic: 'Audit stok', hook: 'Stok Lama Mengunci Uang Toko Anda', body: 'MASALAH: Stok lama tidak terjual\nPENYEBAB: Produk tidak pernah diaudit\nSOLUSI 2: Hitung stok selama 30 hari\nSOLUSI 3: Hitung stok selama 30 hari\nLANGKAH PERTAMA: Pisahkan produk lambat\nHASIL YANG DIHARAPKAN: Modal kembali bertahap', caption: 'Audit stok lama.', hashtags: ['#Bisnis'], cta: 'Simpan panduan ini' };
   const errors = validateContent(content, { format: 'Masalah dan solusi' });
-  assert.ok(errors.some((error) => /Urutan solusi/i.test(error)));
+  assert.ok(!errors.some((error) => /Urutan solusi/i.test(error)));
   assert.ok(errors.some((error) => /berulang/i.test(error)));
 });
 
-test('hasil gagal validasi diperbaiki AI tepat satu kali', async () => {
+test('numbering solusi lama tidak memicu pembuatan ulang AI', async () => {
   const valid = { focus: { masalah: 'Stok lama', penyebab: 'Tanpa audit', solusi: 'Pisahkan stok', hasil: 'Modal cair' }, topic: 'Audit stok', hook: 'Stok Lama Mengunci Modal Toko', body: 'MASALAH: Stok tidak terjual 30 hari\nPENYEBAB: Perputaran barang tidak dicatat\nSOLUSI 1: Hitung stok berumur 30 hari\nSOLUSI 2: Bundel barang yang lambat laku\nLANGKAH PERTAMA: Ekspor laporan stok hari ini\nHASIL YANG DIHARAPKAN: Modal kembali tanpa memangkas semua margin', caption: 'Audit stok, lalu bundel barang lambat agar modal kembali.', hashtags: ['#Bisnis'], cta: 'Simpan untuk audit stok' };
   let calls = 0;
   const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(calls++ ? valid : { ...valid, body: valid.body.replace('SOLUSI 1', 'SOLUSI 2').replace('SOLUSI 2', 'SOLUSI 3') }) } }] }) } } };
   assert.deepEqual(await generateContent([], { contentFormat: 'Masalah dan solusi' }, client), valid);
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
 });
