@@ -279,3 +279,32 @@ test('preview SVG adalah sumber layout yang sama dengan JPG final', async (t) =>
   assert.equal(files.length, layouts.length);
   assert.equal((await sharp(path.join(config.root, 'public', files[0])).metadata()).format, 'jpeg');
 });
+
+test('repair layout mengubah body delapan baris menjadi struktur adaptif', () => {
+  const { repairStructuredSlides } = require('../src/services/images');
+  const slides = repairStructuredSlides([{ section: 'ISI', title: 'Rutinitas kerja', body: Array.from({ length: 8 }, (_, i) => `Kalimat ${i + 1} yang singkat`).join('\n'), points: [] }]);
+  assert.ok(slides.length >= 1);
+  assert.ok(slides.every(slide => !slide.body.includes('\n')));
+  assert.ok(slides.every(slide => slide.points.length <= 3 && slide.points.every(point => point.split(/\s+/).length <= 7)));
+});
+
+test('repair layout memindahkan bullet berlebih ke slide lanjutan tanpa mengubah urutan', () => {
+  const { repairStructuredSlides } = require('../src/services/images');
+  const points = ['poin satu', 'poin dua', 'poin tiga', 'poin empat', 'poin lima'];
+  const slides = repairStructuredSlides([{ section: 'LANGKAH 1', title: 'Kerjakan secara urut', body: '', points }]);
+  assert.equal(slides.length, 2);
+  assert.deepEqual(slides.flatMap(slide => slide.points), points);
+  assert.equal(slides[1].section, 'LANJUTAN');
+});
+
+test('structured auto-fit menjaga batas title, body, total visual, dan font minimum', () => {
+  const { buildStructuredLayout, validateVisualLayout } = require('../src/services/images');
+  const layout = buildStructuredLayout({ section: 'LANGKAH 1', title: 'Bangun pola kerja yang konsisten setiap hari', body: 'Tentukan waktu dan urutan kerja yang sama setiap hari agar mudah dilakukan.', points: ['Mulai dari jadwal kecil', 'Gunakan pengingat harian', 'Evaluasi setiap minggu'] }, 1, 3, 'Tutorial langkah');
+  assert.ok(layout.fit.titleFit.lines.length <= 3);
+  assert.ok(layout.fit.bodyFit.lines.length <= 4);
+  assert.ok(layout.fit.lineCount <= 9);
+  assert.ok(layout.fit.titleFit.fontSize >= 46);
+  assert.ok(layout.fit.bodyFit.fontSize >= 34);
+  assert.ok(layout.fit.pointSize >= 32);
+  assert.equal(validateVisualLayout(layout), true);
+});
