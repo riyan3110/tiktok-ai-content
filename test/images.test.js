@@ -69,10 +69,10 @@ test('watermark, label, nomor, dan isi memakai satu layout aman untuk preview da
   const labelY = Number(labelMatch?.[1]);
   const numberY = Number(svg.match(/<text x="830" y="(\d+)"[^>]*font-size="28"/)?.[1]);
   assert.ok(watermarkY >= 260 && watermarkY <= 290);
-  assert.ok(labelY >= 350 && labelY <= 390);
-  assert.ok(labelY - watermarkY >= 65);
+  assert.ok(labelY >= 410 && labelY <= 440);
+  assert.ok(labelY - watermarkY >= 100);
   assert.equal(numberY, labelY);
-  assert.ok(images.contentY(layout.fit) >= 520);
+  assert.ok(images.contentY(layout.fit) >= 580);
   assert.match(svg, /data-role="watermark"[^>]*x="80"[^>]*fill-opacity="0\.4"/);
 });
 
@@ -169,7 +169,7 @@ test('safe area TikTok membatasi header, ikon kanan, dan caption bawah', () => {
   assert.deepEqual(images.SAFE_AREA, { left: 90, right: 250, top: 340, bottom: 340 });
   const layout = images.buildSlideLayouts(content)[0];
   assert.equal(images.validateVisualLayout(layout), true);
-  assert.match(images.renderLayout(layout, 1, 3), /y="360"/);
+  assert.match(images.renderLayout(layout, 1, 3), /y="425"/);
   assert.ok(layout.fit.lines.every((line) => images.measureTextWidth(line, layout.fit.fontSize, true) <= 740));
 });
 
@@ -243,4 +243,39 @@ test('isi pendek lebih ke tengah dan isi panjang tetap di safe area', () => {
   assert.ok(images.contentY(short) >= 720);
   assert.ok(images.contentY(long) >= images.SAFE_AREA.top);
   assert.ok(images.contentY(long) + long.height <= images.HEIGHT - images.SAFE_AREA.bottom);
+});
+
+test('title, body, dan points memakai elemen serta hierarki visual terpisah', () => {
+  const layouts = images.buildSlideLayouts({ contentFormat: 'Tips cepat', slides: [
+    { section: 'PEMBUKA', title: 'Pagi Sibuk Bikin Hilang Fokus?', body: 'Rutinitas kacau memengaruhi fokus sepanjang hari.', points: ['Bangun terburu-buru', 'Langsung mengecek handphone', 'Mulai tanpa rencana'] },
+    { section: 'TIPS', title: 'Mulai dengan Tenang', body: '', points: ['Siapkan agenda malam hari'] },
+    { section: 'CTA', title: 'Coba Besok Pagi', body: '', points: [] }
+  ] });
+  const first = layouts[0];
+  assert.equal(first.type, 'structured');
+  assert.ok(first.fit.titleFit.lines.length <= 3);
+  assert.equal(first.content.points.length, 3);
+  const svg = images.renderLayout(first, 1, 3, { enabled: true });
+  assert.match(svg, /font-size="7[0-6]"[^>]*font-weight="700"/);
+  assert.match(svg, /font-size="4[0-2]"[^>]*font-weight="400"/);
+  assert.match(svg, /• Bangun terburu-buru/);
+  assert.equal((svg.match(/data-role="watermark"/g) || []).length, 1);
+  assert.match(svg, /y="425"/);
+  assert.ok(images.contentY(first.fit) >= 580);
+});
+
+test('preview SVG adalah sumber layout yang sama dengan JPG final', async (t) => {
+  const contentWithSlides = { slides: [
+    { section: 'PEMBUKA', title: 'Satu Judul Jelas', body: 'Satu penjelasan singkat.', points: ['Poin pertama'] },
+    { section: 'ISI', title: 'Isi Utama', body: '', points: ['Poin kedua'] },
+    { section: 'CTA', title: 'Simpan Sekarang', body: '', points: [] }
+  ] };
+  const id = `structured-${process.pid}-${Date.now()}`;
+  const layouts = images.buildSlideLayouts(contentWithSlides);
+  const preview = images.renderLayout(layouts[0], 1, layouts.length, contentWithSlides.watermark);
+  assert.match(preview, /Satu Judul Jelas/);
+  const files = await images.createSlides(id, contentWithSlides);
+  t.after(async () => Promise.all(files.map(file => fs.rm(path.join(config.root, 'public', file), { force: true }))));
+  assert.equal(files.length, layouts.length);
+  assert.equal((await sharp(path.join(config.root, 'public', files[0])).metadata()).format, 'jpeg');
 });

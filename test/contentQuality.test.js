@@ -17,6 +17,27 @@ test('normalisasi menerima response AI dengan field body dan content', () => {
   ]);
 });
 
+test('body multi-line memindahkan baris pendek menjadi maksimal tiga points', () => {
+  assert.deepEqual(normalizeSlides([{
+    section: 'PEMBUKA', title: 'Pagi yang Sibuk',
+    body: 'Pagi yang kacau bisa menurunkan fokus.\nBangun buru-buru\nCek handphone\nTanpa rencana'
+  }]), [{
+    section: 'PEMBUKA', title: 'Pagi yang Sibuk',
+    body: 'Pagi yang kacau bisa menurunkan fokus.',
+    points: ['Bangun buru-buru', 'Cek handphone', 'Tanpa rencana']
+  }]);
+});
+
+test('validator membatasi title, body, dan panjang point secara terpisah', () => {
+  const slides = carousel(slide('ISI', sentence(23), {
+    title: sentence(13), points: ['satu dua tiga empat lima enam tujuh delapan']
+  }));
+  const message = validateSlides(slides).join(' ');
+  assert.match(message, /title maksimal 12 kata/);
+  assert.match(message, /body maksimal 22 kata/);
+  assert.match(message, /point 1 maksimal 7 kata/);
+});
+
 test('validator melaporkan satu slide kosong dan menghapusnya saat normalisasi', () => {
   const input = [slide('PEMBUKA', 'Ada isi'), {}, slide('PENUTUP', 'Ada isi')];
   assert.match(validateSlides(input).join(' '), /Slide 2.*title, body, atau points/);
@@ -45,14 +66,14 @@ test('slide isi pendek 36 kata dilaporkan dengan nomor, jumlah, dan batas adapti
   assert.ok(errors.includes('Slide 2 memiliki 36 kata, batas maksimal 35 kata.'));
 });
 
-test('slide penjelasan tepat 45 kata diterima', () => {
-  assert.deepEqual(validateSlides(carousel(slide('PENJELASAN', sentence(45)))), []);
+test('slide penjelasan tepat 22 kata diterima', () => {
+  assert.deepEqual(validateSlides(carousel(slide('PENJELASAN', sentence(22)))), []);
 });
 
 test('slide 60 kata ditolak dan label, nomor, footer, serta metadata tidak ikut dihitung', () => {
   const errors = validateSlides(carousel(slide('LANGKAH 1', `LANGKAH 1: ${sentence(60)}\nFooter: akun\nMetadata: kampanye`)));
   assert.ok(errors.includes('Slide 2 memiliki 60 kata, batas maksimal 45 kata.'));
-  assert.deepEqual(validateSlides(carousel(slide('ISI', `Nomor slide: 2\n${sentence(35)}\nFooter: akun`))), []);
+  assert.deepEqual(validateSlides(carousel(slide('ISI', `Nomor slide: 2\n${sentence(22)}\nFooter: akun`))), []);
 });
 
 test('validator memastikan hasil akhir tetap 3–5 slide', () => {
@@ -65,7 +86,7 @@ test('perbaikan otomatis meringkas slide terlalu panjang', async () => {
   const base = { focus: { masalah: 'Lambat', penyebab: 'Manual', solusi: 'Ringkas', hasil: 'Cepat' }, topic: 'Topik', hook: 'Hook singkat', body: 'Tulis poin praktis', caption: 'Panduan singkat.', hashtags: ['#Tips'], cta: 'Simpan', trendKeywordsUsed: [] };
   const responses = [
     { ...base, slides: carousel(slide('ISI', sentence(36))) },
-    { ...base, slides: carousel(slide('ISI', sentence(35))) }
+    { ...base, slides: carousel(slide('ISI', sentence(22))) }
   ];
   let calls = 0;
   const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(responses[calls++]) } }] }) } } };
@@ -78,7 +99,7 @@ test('perbaikan otomatis dapat memindahkan poin kedua ke slide berikutnya', asyn
   const base = { focus: { masalah: 'Lambat', penyebab: 'Manual', solusi: 'Bagi poin', hasil: 'Jelas' }, topic: 'Topik', hook: 'Hook singkat', body: 'Bagi dua tindakan', caption: 'Dua tindakan praktis.', hashtags: ['#Tips'], cta: 'Simpan', trendKeywordsUsed: [] };
   const responses = [
     { ...base, slides: carousel(slide('ISI', sentence(60))) },
-    { ...base, slides: [slide('PEMBUKA', '', { title: 'Hook singkat' }), slide('ISI', sentence(30)), slide('ISI', sentence(30)), slide('PENUTUP', 'Simpan panduan ini')] }
+    { ...base, slides: [slide('PEMBUKA', '', { title: 'Hook singkat' }), slide('ISI', sentence(22)), slide('ISI', sentence(22)), slide('PENUTUP', 'Simpan panduan ini')] }
   ];
   let calls = 0;
   const requests = [];
