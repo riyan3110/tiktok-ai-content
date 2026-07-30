@@ -14,10 +14,9 @@ const SAFE_AREA = Object.freeze({ left: 90, right: 250, top: 340, bottom: 340 })
 const SAFE_WIDTH = WIDTH - SAFE_AREA.left - SAFE_AREA.right;
 const SAFE_HEIGHT = HEIGHT - SAFE_AREA.top - SAFE_AREA.bottom;
 const LABEL_Y = 360;
-const CONTENT_TOP = 460;
+const CONTENT_TOP = 520;
 const CONTENT_BOTTOM = HEIGHT - SAFE_AREA.bottom;
 const WATERMARK_Y = 270;
-const WATERMARK_INTENSITIES = Object.freeze({ low: 0.22, medium: 0.4, high: 0.65 });
 
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 
@@ -154,12 +153,11 @@ function contentKind(category = '', format = '') {
 function resolveFooter() { return ''; }
 
 function normalizeWatermarkOptions(options = {}) {
-  const requestedPosition = ['top-left', 'top-center'].includes(options.position) ? options.position : config.watermarkPosition;
   return {
     enabled: typeof options.enabled === 'boolean' ? options.enabled : config.watermarkEnabled,
     text: String(options.text || config.watermarkText).trim() || 'AI ADS LAB',
-    opacity: WATERMARK_INTENSITIES[options.intensity] ?? config.watermarkOpacity,
-    position: requestedPosition === 'top-center' ? 'top-center' : 'top-left',
+    opacity: config.watermarkOpacity,
+    position: 'top-left',
     fontSize: config.watermarkFontSize
   };
 }
@@ -167,8 +165,7 @@ function normalizeWatermarkOptions(options = {}) {
 function watermarkElement(options) {
   const watermark = normalizeWatermarkOptions(options);
   if (!watermark.enabled) return '';
-  const centered = watermark.position === 'top-center';
-  return `<text data-role="watermark" x="${centered ? WIDTH / 2 : 80}" y="${WATERMARK_Y}" fill="#fce7f3" fill-opacity="${watermark.opacity}" font-family="Arial,sans-serif" font-size="${watermark.fontSize}" font-weight="600" letter-spacing="1.5" text-anchor="${centered ? 'middle' : 'start'}">${escapeXml(watermark.text)}</text>`;
+  return `<text data-role="watermark" x="80" y="${WATERMARK_Y}" fill="#fce7f3" fill-opacity="${watermark.opacity}" font-family="Arial,sans-serif" font-size="${watermark.fontSize}" font-weight="600" letter-spacing="1.5" text-anchor="start">${escapeXml(watermark.text)}</text>`;
 }
 
 function frame(inner, number, total, watermark) {
