@@ -174,29 +174,59 @@ function frame(inner, number, total, watermark) {
 
 function buildStructuredLayout(slide, index, total, format = '') {
   const tutorial = /tutorial/i.test(format) || /LANGKAH/i.test(slide.section);
-  const titleFit = slide.title ? autoFitText(slide.title, { maxWidth: SAFE_WIDTH, maxHeight: 250, maxLines: 3, startSize: 76, minSize: 52, lineHeight: 1.1 }) : null;
-  const bodyFit = slide.body ? autoFitText(slide.body, { maxWidth: SAFE_WIDTH, maxHeight: 180, maxLines: 3, startSize: 42, minSize: 34, lineHeight: 1.32 }) : null;
-  const points = slide.points.slice(0, 3).map((point, pointIndex) => {
-    const clean = String(point).replace(/^[-•*\d.)\s]+/, '').trim();
-    const prefix = tutorial ? `${pointIndex + 1}.` : '•';
-    return { text: `${prefix} ${clean}`, lines: wrapText(`${prefix} ${clean}`, SAFE_WIDTH, 38, false) };
-  });
+  const titleFit = slide.title ? autoFitText(slide.title, { maxWidth: SAFE_WIDTH, maxHeight: 250, maxLines: 3, startSize: 76, minSize: 46, lineHeight: 1.08 }) : null;
+  const bodyFit = slide.body ? autoFitText(slide.body, { maxWidth: SAFE_WIDTH, maxHeight: 220, maxLines: 4, startSize: 42, minSize: 34, lineHeight: 1.24 }) : null;
   if (slide.title && !titleFit) throw new Error('Judul tidak muat dalam maksimal tiga baris.');
-  if (slide.body && !bodyFit) throw new Error('Body tidak muat dalam area isi.');
-  const height = (titleFit?.height || 0) + (bodyFit ? bodyFit.height + 30 : 0) + points.reduce((sum, point) => sum + point.lines.length * 38 * 1.3 + 18, 0);
+  if (slide.body && !bodyFit) throw new Error('Body tidak muat dalam maksimal empat baris.');
+  let pointSize = 39; let pointSpacing = 19; let points; let height; let lineCount;
+  do {
+    pointSize--;
+    pointSpacing = Math.max(12, pointSpacing - 1);
+    points = slide.points.slice(0, 3).map((point, pointIndex) => {
+      const clean = String(point).replace(/^[-•*\d.)\s]+/, '').trim();
+      const prefix = tutorial ? `${pointIndex + 1}.` : '•';
+      return { text: `${prefix} ${clean}`, lines: wrapText(`${prefix} ${clean}`, SAFE_WIDTH, pointSize, false) };
+    });
+    lineCount = (titleFit?.lines.length || 0) + (bodyFit?.lines.length || 0) + points.reduce((sum, point) => sum + point.lines.length, 0);
+    height = (titleFit?.height || 0) + (bodyFit ? bodyFit.height + pointSpacing : 0) + points.reduce((sum, point) => sum + point.lines.length * pointSize * 1.22 + pointSpacing, 0);
+  } while ((lineCount > 9 || height > CONTENT_BOTTOM - CONTENT_TOP) && pointSize > 32);
   return {
     type: 'structured', title: slide.section || `SLIDE ${index + 1}`,
     content: { title: slide.title, body: slide.body, points },
-    fit: { kind: height < 320 ? 'short' : height < 560 ? 'medium' : 'long', height, lineCount: (titleFit?.lines.length || 0) + (bodyFit?.lines.length || 0) + points.reduce((sum, point) => sum + point.lines.length, 0), titleFit, bodyFit, lines: [] },
+    fit: { kind: height < 320 ? 'short' : height < 560 ? 'medium' : 'long', height, lineCount, titleFit, bodyFit, pointSize, pointSpacing, lines: [] },
     isOnlyTitle: Boolean(slide.title && !slide.body && !points.length), total
   };
 }
 
+function wordChunks(value, maximum) {
+  const values = String(value || '').trim().split(/\s+/).filter(Boolean);
+  return Array.from({ length: Math.ceil(values.length / maximum) }, (_, index) => values.slice(index * maximum, (index + 1) * maximum).join(' '));
+}
+
+// Final deterministic repair after the model's editorial passes: remove exact
+// repetition, turn overflow into concise bullets, and move remaining bullets to
+// continuation slides without changing their order.
+function repairStructuredSlides(input) {
+  const repaired = [];
+  for (const [slideIndex, original] of normalizeSlides(input).entries()) {
+    const slide = { ...original, points: [...original.points] };
+    slide.body = slide.body.replace(/\b(\w+)(?:\s+\1\b)+/gi, '$1').replace(/\s+/g, ' ').trim();
+    const bodyParts = wordChunks(slide.body, 22);
+    slide.body = bodyParts.shift() || '';
+    const supplied = Array.isArray(input[slideIndex]?.points) ? input[slideIndex].points : slide.points;
+    const overflow = [...bodyParts.flatMap(value => wordChunks(value, 7)), ...supplied.flatMap(value => wordChunks(value, 7))];
+    slide.points = overflow.splice(0, 3);
+    repaired.push(slide);
+    while (overflow.length) repaired.push({ section: 'LANJUTAN', title: `Lanjutan: ${wordChunks(slide.title, 11)[0] || 'Penjelasan'}`, body: '', points: overflow.splice(0, 3) });
+  }
+  return repaired;
+}
+
 function buildSlideLayouts(content) {
   if (Array.isArray(content.slides)) {
-    const errors = validateContentSlides(content.slides, { format: content.contentFormat });
+    const slides = repairStructuredSlides(content.slides);
+    const errors = validateContentSlides(slides, { format: content.contentFormat });
     if (errors.length) throw Object.assign(new Error(`Tahap layout: ${errors.join(' ')}`), { status: 422 });
-    const slides = normalizeSlides(content.slides);
     return validateCarouselLayouts(slides.map((slide, index) => buildStructuredLayout(slide, index, slides.length, content.contentFormat)));
   }
   const format = content.contentFormat || 'Tutorial langkah';
@@ -356,7 +386,7 @@ function validateVisualLayout(layout) {
   const bottom = y + fit.height;
   if (LABEL_Y < SAFE_AREA.top || y < CONTENT_TOP) throw new Error('Teks tertutup search bar TikTok.');
   if (bottom > CONTENT_BOTTOM) throw new Error('Teks tertutup caption bawah TikTok.');
-  if (lineCount > 7) throw new Error('Isi slide melebihi tujuh baris.');
+  if (lineCount > 9) throw new Error(`Isi masih terlalu panjang setelah diringkas. Tinggi teks ${Math.round(fit.height)} px, area tersedia ${CONTENT_BOTTOM - CONTENT_TOP} px.`);
   const allLines = layout.type === 'structured'
     ? [fit.titleFit?.lines, fit.bodyFit?.lines, ...(layout.content?.points || []).map(point => point.lines)].flat().filter(Boolean)
     : fit.lines || fit.groups?.flat() || [];
@@ -379,14 +409,14 @@ function renderLayout(layout, number, total, watermark) {
       y += layout.fit.titleFit.height;
     }
     if (layout.fit.bodyFit) {
-      y += 30;
-      parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: 1.32, weight: 400, fill: '#f3e8ff' }));
+      y += layout.fit.pointSpacing;
+      parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
       y += layout.fit.bodyFit.height;
     }
     for (const point of layout.content.points) {
-      y += 28;
-      parts.push(textElement(point.lines, { y, fontSize: 38, lineHeight: 1.3, weight: 600 }));
-      y += point.lines.length * 38 * 1.3;
+      y += layout.fit.pointSpacing;
+      parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
+      y += point.lines.length * layout.fit.pointSize * 1.22;
     }
     return frame(heading + parts.join(''), number, total, watermark);
   }
@@ -439,4 +469,4 @@ async function validateSlides(files) {
 
 function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
 
-module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, buildStructuredLayout, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y, LABEL_Y, CONTENT_TOP };
+module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, buildStructuredLayout, repairStructuredSlides, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y, LABEL_Y, CONTENT_TOP };
