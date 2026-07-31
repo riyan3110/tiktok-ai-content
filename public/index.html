@@ -19,6 +19,7 @@
       <a class="active" href="#projects" data-workspace-view="projects"><span aria-hidden="true">▦</span><span>Projects</span></a>
       <a href="#templates" data-placeholder-view="Templates"><span aria-hidden="true">◇</span><span>Templates</span></a>
       <a href="#prompt-library" data-placeholder-view="Prompt Library"><span aria-hidden="true">⌘</span><span>Prompt Library</span></a>
+      <a href="#consistency" data-workspace-view="consistency"><span aria-hidden="true">◎</span><span>Consistency</span></a>
       <a href="#assets" data-placeholder-view="Assets"><span aria-hidden="true">□</span><span>Assets</span></a>
       <a href="#analytics" data-placeholder-view="Analytics"><span aria-hidden="true">↗</span><span>Analytics</span></a>
       <a href="#settings" data-placeholder-view="Settings"><span aria-hidden="true">⚙</span><span>Settings</span></a>
@@ -66,6 +67,11 @@
       </section>
       <section id="workspace-placeholder" class="workspace-placeholder hidden" aria-labelledby="placeholder-title">
         <span class="state-icon" aria-hidden="true">✦</span><span class="eyebrow">WORKSPACE MODULE</span><h1 id="placeholder-title"></h1><p>Modul ini sudah disiapkan di navigasi dan akan dikembangkan pada milestone berikutnya.</p><button class="outline" data-back-projects type="button">Kembali ke Projects</button>
+      </section>
+      <section id="consistency-engine" class="consistency-engine hidden" aria-labelledby="consistency-title">
+        <div class="consistency-heading"><div><span class="eyebrow">CONSISTENCY ENGINE</span><h1 id="consistency-title">Your creative DNA, in one place.</h1><p>Keep every AI production aligned with the same people, products, visual direction, and voice.</p></div><div class="engine-status"><i></i><span><b>Local workspace</b><small>Saved automatically</small></span></div></div>
+        <nav class="consistency-tabs" role="tablist" aria-label="Consistency libraries"><button class="active" type="button" role="tab" data-consistency-tab="characters">Characters</button><button type="button" role="tab" data-consistency-tab="products">Products</button><button type="button" role="tab" data-consistency-tab="styles">Styles</button><button type="button" role="tab" data-consistency-tab="voice">Voice</button><button type="button" role="tab" data-consistency-tab="settings">Settings</button></nav>
+        <div id="consistency-content" aria-live="polite"></div>
       </section>
       <div id="legacy-studio" class="hidden">
       <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Buat konten yang<br><em>layak dihentikan.</em></h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
@@ -138,8 +144,12 @@
   </form>
 </dialog>
 <dialog id="slide-preview" aria-labelledby="slide-preview-title"><div class="dialog-heading"><h2 id="slide-preview-title">Preview slide</h2><button id="close-preview" class="outline" aria-label="Tutup preview">✕</button></div><img id="slide-preview-image" alt=""><p id="slide-preview-label"></p></dialog>
+<dialog id="consistency-dialog" class="project-dialog consistency-dialog" aria-labelledby="consistency-dialog-title"><form id="consistency-form" method="dialog"><div class="dialog-heading"><div><span class="eyebrow">CONSISTENCY LIBRARY</span><h2 id="consistency-dialog-title"></h2></div><button class="icon-button" data-close-consistency type="button" aria-label="Close">✕</button></div><div id="consistency-fields"></div><div class="dialog-actions"><button class="outline" data-close-consistency type="button">Cancel</button><button type="submit">Save to library</button></div></form></dialog>
+<dialog id="consistency-confirm" class="project-dialog confirm-dialog"><form method="dialog"><span class="confirm-icon">!</span><h2>Delete this item?</h2><p>This action cannot be undone. Your other library items won't be affected.</p><div class="dialog-actions"><button class="outline" value="cancel">Cancel</button><button class="danger" value="confirm">Delete item</button></div></form></dialog>
+<div id="consistency-toast" class="consistency-toast" role="status" aria-live="polite"></div><input id="consistency-import" class="hidden" type="file" accept="application/json">
 <script src="/prompt-studio.js"></script>
 <script src="/workspace.js"></script>
+<script src="/consistency.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
