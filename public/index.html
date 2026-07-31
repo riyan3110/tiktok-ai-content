@@ -9,13 +9,33 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<main>
-  <header>
-    <div><small>CONTENT STUDIO</small><div class="brand"><img src="/assets/ai-ads-lab-logo.png" alt="Logo AI Ads Lab"><h1>AI Ads Lab</h1></div><p>Buat carousel TikTok untuk berbagai kategori, lalu unggah sebagai draft.</p></div>
-    <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div>
-  </header>
-
-  <div class="content-layout">
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar" aria-label="Navigasi utama">
+    <a class="sidebar-brand" href="#studio" aria-label="AI Ads Lab — beranda">
+      <img src="/assets/ai-ads-lab-logo.png" alt="Logo AI Ads Lab">
+      <span><strong>AI Ads Lab</strong><small>CONTENT STUDIO</small></span>
+    </a>
+    <nav class="side-nav">
+      <a class="active" href="#studio"><span aria-hidden="true">✦</span><span>Content Studio</span></a>
+      <a href="#trend-reference"><span aria-hidden="true">⌁</span><span>Referensi Tren</span></a>
+      <a href="#schedule-dashboard"><span aria-hidden="true">◷</span><span>Jadwal</span></a>
+      <a href="#history-section"><span aria-hidden="true">▤</span><span>Riwayat</span></a>
+    </nav>
+    <div class="sidebar-note"><span class="status-dot"></span><div><strong>Workspace siap</strong><small>Semua sistem operasional</small></div></div>
+  </aside>
+  <div class="mobile-backdrop" id="mobile-backdrop"></div>
+  <main>
+    <header class="topbar">
+      <button class="icon-button menu-button" id="menu-toggle" type="button" aria-label="Buka navigasi" aria-controls="sidebar" aria-expanded="false">☰</button>
+      <div class="topbar-title"><small>WORKSPACE</small><strong>Dashboard Konten</strong></div>
+      <div class="topbar-actions">
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Gunakan tema terang" title="Ganti tema"><span aria-hidden="true">☀</span></button>
+        <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div>
+      </div>
+    </header>
+    <div class="page-content">
+      <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Buat konten yang<br><em>layak dihentikan.</em></h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
+      <div class="content-layout">
     <section id="trend-reference" class="trend-reference">
       <div class="trend-summary">
         <div class="trend-copy"><small>REFERENSI TREN</small><h2>Referensi Tren Hari Ini</h2><p id="trend-status">Belum ada referensi tren.</p><span id="trend-state" class="badge hidden"></span></div>
@@ -34,7 +54,7 @@
         <div><button id="save-trends" type="button">Simpan referensi hari ini</button> <span id="trend-message" role="status"></span></div>
       </div>
     </section>
-    <section class="actions">
+    <section class="actions" id="content-generator"><div class="section-kicker">01 · CREATE</div>
       <h2>Mode Posting</h2>
       <label class="switch-row"><input id="automation-toggle" type="checkbox" role="switch"><span class="switch-control" aria-hidden="true"></span><span>Aktifkan posting otomatis</span></label>
       <label class="switch-row"><input id="watermark-enabled" type="checkbox" role="switch" checked><span class="switch-control" aria-hidden="true"></span><span>Tampilkan watermark</span></label>
@@ -54,13 +74,15 @@
       </div>
     </section>
 
-    <section id="schedule-dashboard"><div class="history-heading"><h2>Jadwal Otomatis Hari Ini</h2><div><button id="pause-all" class="outline">Jeda semua</button> <button id="resume-all" class="outline">Lanjutkan</button> <button id="cancel-all" class="danger">Batalkan semua</button></div></div><div id="schedules"><p>Belum ada jadwal hari ini.</p></div></section>
-    <section id="editor" class="hidden"><h2>Preview terbaru</h2><p class="preview-help">Pilih slide untuk melihat ukuran besar.</p><p id="trend-reference-used"></p><div id="slides" class="slides"></div><label>Caption<textarea id="caption" rows="5"></textarea></label><button id="upload">Upload draft ke TikTok</button><p id="status"></p></section>
-    <section class="history-section"><div class="history-heading"><h2>Riwayat</h2><button id="delete-all" class="danger">Hapus semua riwayat</button></div><div id="history"></div></section>
-  </div>
+    <section id="schedule-dashboard"><div class="section-kicker">02 · SCHEDULE</div><div class="history-heading"><h2>Jadwal Otomatis Hari Ini</h2><div><button id="pause-all" class="outline">Jeda semua</button> <button id="resume-all" class="outline">Lanjutkan</button> <button id="cancel-all" class="danger">Batalkan semua</button></div></div><div id="schedules" aria-live="polite"><div class="loading-state"><span class="spinner"></span><p>Memuat jadwal…</p></div></div></section>
+    <section id="editor" class="hidden"><div class="section-kicker">PREVIEW</div><h2>Preview terbaru</h2><p class="preview-help">Pilih slide untuk melihat ukuran besar.</p><p id="trend-reference-used"></p><div id="slides" class="slides"></div><label>Caption<textarea id="caption" rows="5"></textarea></label><button id="upload">Upload draft ke TikTok</button><p id="status"></p></section>
+    <section class="history-section" id="history-section"><div class="section-kicker">03 · LIBRARY</div><div class="history-heading"><h2>Riwayat</h2><button id="delete-all" class="danger">Hapus semua riwayat</button></div><div id="history"></div></section>
+      </div>
+    </div>
 
-  <footer><span>© AI Ads Lab</span><nav aria-label="Legal"><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a></nav></footer>
-</main>
+    <footer><span>© AI Ads Lab</span><nav aria-label="Legal"><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a></nav></footer>
+  </main>
+</div>
 <dialog id="slide-preview" aria-labelledby="slide-preview-title"><div class="dialog-heading"><h2 id="slide-preview-title">Preview slide</h2><button id="close-preview" class="outline" aria-label="Tutup preview">✕</button></div><img id="slide-preview-image" alt=""><p id="slide-preview-label"></p></dialog>
 <script src="/app.js"></script>
 </body>
