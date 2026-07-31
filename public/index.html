@@ -11,15 +11,22 @@
 <body>
 <div class="app-shell">
   <aside class="sidebar" id="sidebar" aria-label="Navigasi utama">
-    <a class="sidebar-brand" href="#studio" aria-label="AI Ads Lab — beranda">
+    <a class="sidebar-brand" href="#projects" data-workspace-view="projects" aria-label="AI Ads Lab — beranda">
       <img src="/assets/ai-ads-lab-logo.png" alt="Logo AI Ads Lab">
       <span><strong>AI Ads Lab</strong><small>CONTENT STUDIO</small></span>
     </a>
     <nav class="side-nav">
-      <a class="active" href="#studio"><span aria-hidden="true">✦</span><span>Content Studio</span></a>
-      <a href="#trend-reference"><span aria-hidden="true">⌁</span><span>Referensi Tren</span></a>
-      <a href="#schedule-dashboard"><span aria-hidden="true">◷</span><span>Jadwal</span></a>
-      <a href="#history-section"><span aria-hidden="true">▤</span><span>Riwayat</span></a>
+      <a class="active" href="#projects" data-workspace-view="projects"><span aria-hidden="true">▦</span><span>Projects</span></a>
+      <a href="#templates" data-placeholder-view="Templates"><span aria-hidden="true">◇</span><span>Templates</span></a>
+      <a href="#prompt-library" data-placeholder-view="Prompt Library"><span aria-hidden="true">⌘</span><span>Prompt Library</span></a>
+      <a href="#assets" data-placeholder-view="Assets"><span aria-hidden="true">□</span><span>Assets</span></a>
+      <a href="#analytics" data-placeholder-view="Analytics"><span aria-hidden="true">↗</span><span>Analytics</span></a>
+      <a href="#settings" data-placeholder-view="Settings"><span aria-hidden="true">⚙</span><span>Settings</span></a>
+      <div class="nav-divider"></div>
+      <a href="#studio" data-workspace-view="studio"><span aria-hidden="true">✦</span><span>Content Studio</span><small>Legacy</small></a>
+      <a href="#trend-reference" data-workspace-view="studio"><span aria-hidden="true">⌁</span><span>Referensi Tren</span></a>
+      <a href="#schedule-dashboard" data-workspace-view="studio"><span aria-hidden="true">◷</span><span>Jadwal</span></a>
+      <a href="#history-section" data-workspace-view="studio"><span aria-hidden="true">▤</span><span>Riwayat</span></a>
     </nav>
     <div class="sidebar-note"><span class="status-dot"></span><div><strong>Workspace siap</strong><small>Semua sistem operasional</small></div></div>
   </aside>
@@ -34,6 +41,33 @@
       </div>
     </header>
     <div class="page-content">
+      <section id="project-workspace" class="project-workspace" aria-labelledby="projects-title">
+        <div class="workspace-heading">
+          <div><span class="eyebrow">AI CONTENT WORKSPACE</span><h1 id="projects-title">Projects</h1><p>Kelola ide, prompt, dan aset konten brand Anda dalam satu workspace.</p></div>
+          <button id="create-project-button" type="button">＋ Create Project</button>
+        </div>
+        <div class="project-toolbar" aria-label="Cari dan filter project">
+          <label class="project-search"><span aria-hidden="true">⌕</span><span class="sr-only">Cari project</span><input id="project-search" type="search" placeholder="Cari nama project, brand, atau produk…"></label>
+          <button id="toggle-project-filters" class="outline filter-toggle" type="button" aria-expanded="false" aria-controls="project-filters">☷ Filter <span id="active-filter-count" class="filter-count hidden">0</span></button>
+        </div>
+        <div id="project-filters" class="project-filters hidden">
+          <label>Status<select id="filter-status"><option value="">Semua status</option><option>Draft</option><option>Aktif</option><option>Selesai</option><option>Diarsipkan</option></select></label>
+          <label>Kategori<select id="filter-category"><option value="">Semua kategori</option></select></label>
+          <label>Brand<select id="filter-brand"><option value="">Semua brand</option></select></label>
+          <label>Tanggal dibuat<input id="filter-date" type="date"></label>
+          <button id="reset-project-filters" class="text-button" type="button">Reset filter</button>
+        </div>
+        <p id="project-results-label" class="results-label" aria-live="polite"></p>
+        <div id="project-list" class="project-grid" aria-live="polite"></div>
+      </section>
+      <section id="project-detail" class="project-detail hidden" aria-labelledby="project-detail-title">
+        <button id="back-to-projects" class="text-button back-button" type="button">← Kembali ke Projects</button>
+        <div id="project-detail-content"></div>
+      </section>
+      <section id="workspace-placeholder" class="workspace-placeholder hidden" aria-labelledby="placeholder-title">
+        <span class="state-icon" aria-hidden="true">✦</span><span class="eyebrow">WORKSPACE MODULE</span><h1 id="placeholder-title"></h1><p>Modul ini sudah disiapkan di navigasi dan akan dikembangkan pada milestone berikutnya.</p><button class="outline" data-back-projects type="button">Kembali ke Projects</button>
+      </section>
+      <div id="legacy-studio" class="hidden">
       <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Buat konten yang<br><em>layak dihentikan.</em></h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
       <div class="content-layout">
     <section id="trend-reference" class="trend-reference">
@@ -78,12 +112,25 @@
     <section id="editor" class="hidden"><div class="section-kicker">PREVIEW</div><h2>Preview terbaru</h2><p class="preview-help">Pilih slide untuk melihat ukuran besar.</p><p id="trend-reference-used"></p><div id="slides" class="slides"></div><label>Caption<textarea id="caption" rows="5"></textarea></label><button id="upload">Upload draft ke TikTok</button><p id="status"></p></section>
     <section class="history-section" id="history-section"><div class="section-kicker">03 · LIBRARY</div><div class="history-heading"><h2>Riwayat</h2><button id="delete-all" class="danger">Hapus semua riwayat</button></div><div id="history"></div></section>
       </div>
+      </div>
     </div>
 
     <footer><span>© AI Ads Lab</span><nav aria-label="Legal"><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a></nav></footer>
   </main>
 </div>
+<dialog id="project-dialog" class="project-dialog" aria-labelledby="project-dialog-title">
+  <form id="project-form" method="dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">NEW WORKSPACE</span><h2 id="project-dialog-title">Create Project</h2></div><button id="close-project-dialog" class="icon-button" type="button" aria-label="Tutup">✕</button></div>
+    <p>Buat ruang kerja terpusat untuk semua kebutuhan konten produk Anda.</p>
+    <label>Nama Project <span class="required">*</span><input id="project-name" name="name" maxlength="80" required placeholder="Contoh: Ramadan Launch Campaign"></label>
+    <div class="form-grid"><label>Brand <span class="required">*</span><input id="project-brand" name="brand" maxlength="80" required placeholder="Nama brand"></label><label>Produk <span class="required">*</span><input id="project-product" name="product" maxlength="80" required placeholder="Nama produk"></label></div>
+    <label>Kategori <span class="required">*</span><select id="project-category" name="category" required><option value="">Pilih kategori</option><option>Fashion</option><option>Beauty</option><option>Food & Beverage</option><option>Technology</option><option>Health & Wellness</option><option>Home & Living</option><option>Education</option><option>Services</option><option>Lainnya</option></select></label>
+    <label>Deskripsi<textarea id="project-description" name="description" rows="4" maxlength="500" placeholder="Tujuan campaign, target audiens, atau catatan singkat…"></textarea><small class="field-hint"><span id="description-count">0</span>/500</small></label>
+    <div class="dialog-actions"><button id="cancel-project" class="outline" type="button">Batal</button><button type="submit">Buat Project</button></div>
+  </form>
+</dialog>
 <dialog id="slide-preview" aria-labelledby="slide-preview-title"><div class="dialog-heading"><h2 id="slide-preview-title">Preview slide</h2><button id="close-preview" class="outline" aria-label="Tutup preview">✕</button></div><img id="slide-preview-image" alt=""><p id="slide-preview-label"></p></dialog>
+<script src="/workspace.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
