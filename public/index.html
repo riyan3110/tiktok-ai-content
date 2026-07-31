@@ -129,7 +129,16 @@
     <div class="dialog-actions"><button id="cancel-project" class="outline" type="button">Batal</button><button type="submit">Buat Project</button></div>
   </form>
 </dialog>
+<dialog id="prompt-dialog" class="project-dialog" aria-labelledby="prompt-dialog-title">
+  <form id="prompt-form" method="dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">PROMPT STUDIO</span><h2 id="prompt-dialog-title">Create Prompt</h2></div><button id="close-prompt-dialog" class="icon-button" type="button" aria-label="Tutup">✕</button></div>
+    <label>Judul <span class="required">*</span><input id="prompt-title" name="title" maxlength="100" required placeholder="Contoh: Hero product cinematic"></label>
+    <div class="form-grid"><label>Kategori<select id="prompt-category" name="category"></select></label><label>Target AI<select id="prompt-target" name="target"></select></label></div>
+    <div class="dialog-actions"><button id="cancel-prompt" class="outline" type="button">Batal</button><button type="submit">Create Prompt</button></div>
+  </form>
+</dialog>
 <dialog id="slide-preview" aria-labelledby="slide-preview-title"><div class="dialog-heading"><h2 id="slide-preview-title">Preview slide</h2><button id="close-preview" class="outline" aria-label="Tutup preview">✕</button></div><img id="slide-preview-image" alt=""><p id="slide-preview-label"></p></dialog>
+<script src="/prompt-studio.js"></script>
 <script src="/workspace.js"></script>
 <script src="/app.js"></script>
 </body>

@@ -87,10 +87,17 @@
     const project = projects.find(item => item.id === id); if (!project) return;
     const modules = [['▤','Storyboards'],['⌘','Prompt'],['♙','Character'],['◇','Product'],['▧','Image'],['▶','Video'],['◉','Voice'],['□','Assets'],['≡','Notes'],['↺','Riwayat']];
     $('#project-detail-content').innerHTML = `<div class="detail-hero"><div class="detail-thumbnail">${safe(initials(project.name))}</div><div><span class="status-pill status-${safe(project.status.toLowerCase())}"><i></i>${safe(project.status)}</span><h1 id="project-detail-title">${safe(project.name)}</h1><p><strong>${safe(project.brand)}</strong> · ${safe(project.product)} · ${safe(project.category)}</p></div><button class="outline" type="button" data-open-studio>✦ Buka Content Studio</button></div>
-      <div class="project-overview"><div><small>DESKRIPSI</small><p>${safe(project.description) || 'Belum ada deskripsi untuk project ini.'}</p></div><div class="overview-dates"><span><small>DIBUAT</small>${dateLabel(project.createdAt)}</span><span><small>TERAKHIR DIUBAH</small>${relativeLabel(project.updatedAt)}</span></div></div>
+      <div class="project-tabs" role="tablist" aria-label="Navigasi project"><button class="project-tab active" role="tab" aria-selected="true" data-project-tab="overview">Overview</button><button class="project-tab" role="tab" aria-selected="false" data-project-tab="prompts">Prompt Studio</button></div>
+      <div id="project-overview-panel"><div class="project-overview"><div><small>DESKRIPSI</small><p>${safe(project.description) || 'Belum ada deskripsi untuk project ini.'}</p></div><div class="overview-dates"><span><small>DIBUAT</small>${dateLabel(project.createdAt)}</span><span><small>TERAKHIR DIUBAH</small>${relativeLabel(project.updatedAt)}</span></div></div>
       <div class="module-heading"><div><span class="eyebrow">PROJECT SPACE</span><h2>Ruang Kerja</h2></div><p>Semua kebutuhan produksi konten project ini akan tersedia di sini.</p></div>
-      <div class="module-grid">${modules.map(([icon, name]) => `<article class="module-card"><span aria-hidden="true">${icon}</span><div><h3>${name}</h3><p>Siap untuk milestone berikutnya</p></div><small>0</small></article>`).join('')}</div>`;
+      <div class="module-grid">${modules.map(([icon, name]) => `<article class="module-card"><span aria-hidden="true">${icon}</span><div><h3>${name}</h3><p>Siap untuk milestone berikutnya</p></div><small>0</small></article>`).join('')}</div></div><div id="prompt-studio-panel" class="hidden"></div>`;
     $('[data-open-studio]').onclick = () => { showView('studio'); location.hash = 'studio'; };
+    document.querySelectorAll('[data-project-tab]').forEach(tab => tab.onclick = () => {
+      const prompts = tab.dataset.projectTab === 'prompts';
+      document.querySelectorAll('[data-project-tab]').forEach(item => { item.classList.toggle('active', item === tab); item.setAttribute('aria-selected', String(item === tab)); });
+      $('#project-overview-panel').classList.toggle('hidden', prompts); $('#prompt-studio-panel').classList.toggle('hidden', !prompts);
+      if (prompts) window.PromptStudio.mount(project.id, $('#prompt-studio-panel'), count => { project.promptCount = count; project.updatedAt = new Date().toISOString(); saveProjects(); });
+    });
     showView('detail', project.name); location.hash = `project-${id}`;
   }
 
