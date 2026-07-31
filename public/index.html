@@ -20,6 +20,7 @@
       <a href="#templates" data-placeholder-view="Templates"><span aria-hidden="true">◇</span><span>Templates</span></a>
       <a href="#prompt-library" data-placeholder-view="Prompt Library"><span aria-hidden="true">⌘</span><span>Prompt Library</span></a>
       <a href="#consistency" data-workspace-view="consistency"><span aria-hidden="true">◎</span><span>Consistency</span></a>
+      <a href="#prompt-generator" data-workspace-view="generator"><span aria-hidden="true">✧</span><span>Prompt Generator</span></a>
       <a href="#assets" data-placeholder-view="Assets"><span aria-hidden="true">□</span><span>Assets</span></a>
       <a href="#analytics" data-placeholder-view="Analytics"><span aria-hidden="true">↗</span><span>Analytics</span></a>
       <a href="#settings" data-placeholder-view="Settings"><span aria-hidden="true">⚙</span><span>Settings</span></a>
@@ -72,6 +73,14 @@
         <div class="consistency-heading"><div><span class="eyebrow">CONSISTENCY ENGINE</span><h1 id="consistency-title">Your creative DNA, in one place.</h1><p>Keep every AI production aligned with the same people, products, visual direction, and voice.</p></div><div class="engine-status"><i></i><span><b>Local workspace</b><small>Saved automatically</small></span></div></div>
         <nav class="consistency-tabs" role="tablist" aria-label="Consistency libraries"><button class="active" type="button" role="tab" data-consistency-tab="characters">Characters</button><button type="button" role="tab" data-consistency-tab="products">Products</button><button type="button" role="tab" data-consistency-tab="styles">Styles</button><button type="button" role="tab" data-consistency-tab="voice">Voice</button><button type="button" role="tab" data-consistency-tab="settings">Settings</button></nav>
         <div id="consistency-content" aria-live="polite"></div>
+      </section>
+      <section id="prompt-generator" class="prompt-generator hidden" aria-labelledby="generator-title">
+        <div class="generator-heading"><div><span class="eyebrow">PROMPT GENERATOR ENGINE</span><h1 id="generator-title">Build production-ready prompts.</h1><p>Rangkai creative DNA menjadi prompt modular untuk setiap AI—tanpa mengirim data ke API.</p></div><div class="autosave-state"><i></i><span><b>Auto Save</b><small id="generator-save-state">Tersimpan lokal</small></span></div></div>
+        <div class="generator-layout">
+          <aside class="generator-panel generator-inputs" aria-label="Prompt configuration"><div class="panel-title"><span>01</span><div><h2>Configuration</h2><p>Creative inputs</p></div></div><div id="generator-fields" class="generator-fields"><div class="loading-state"><span class="spinner"></span><p>Memuat library…</p></div></div></aside>
+          <section class="generator-panel prompt-canvas"><div class="panel-title editor-title"><span>02</span><div><h2>Live Prompt Editor</h2><p id="editor-metrics">0 words · ~0 tokens</p></div><div class="editor-actions"><button class="icon-button" data-generator-action="undo" title="Undo">↶</button><button class="icon-button" data-generator-action="redo" title="Redo">↷</button><button class="outline" data-generator-action="fold" aria-pressed="false">Fold</button><button class="outline" data-generator-action="copy">Copy</button></div></div><div id="module-toggles" class="module-toggles"></div><div class="syntax-editor"><pre id="prompt-highlight" aria-hidden="true"></pre><textarea id="generated-prompt" spellcheck="false" aria-label="Generated prompt"></textarea></div><div class="canvas-footer"><button class="text-button" data-generator-action="clear">Clear</button><div><button class="outline" data-generator-action="txt">TXT</button><button class="outline" data-generator-action="markdown">Markdown</button><button class="outline" data-generator-action="json">JSON</button><button data-generator-action="preset">Save Preset</button></div></div></section>
+          <aside class="generator-panel generator-analysis"><div class="panel-title"><span>03</span><div><h2>Live Preview</h2><p>Quality analysis</p></div></div><div id="prompt-preview" class="prompt-preview"></div><div id="quality-analysis"></div><div class="preset-library"><div class="mini-heading"><h3>Prompt Presets</h3><span id="preset-count">0</span></div><div id="preset-list"></div></div></aside>
+        </div>
       </section>
       <div id="legacy-studio" class="hidden">
       <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Buat konten yang<br><em>layak dihentikan.</em></h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
@@ -150,6 +159,7 @@
 <script src="/prompt-studio.js"></script>
 <script src="/workspace.js"></script>
 <script src="/consistency.js"></script>
+<script src="/prompt-generator.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
