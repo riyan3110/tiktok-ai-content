@@ -7,6 +7,7 @@
   const studio = $('#legacy-studio');
   const consistency = $('#consistency-engine');
   const generator = $('#prompt-generator');
+  const providers = $('#ai-providers');
   const dialog = $('#project-dialog');
   const form = $('#project-form');
   const filters = ['#filter-status', '#filter-category', '#filter-brand', '#filter-date'].map($);
@@ -79,10 +80,11 @@
     placeholder.classList.toggle('hidden', view !== 'placeholder');
     consistency.classList.toggle('hidden', view !== 'consistency');
     generator.classList.toggle('hidden', view !== 'generator');
+    providers.classList.toggle('hidden', view !== 'providers');
     if (view === 'placeholder') $('#placeholder-title').textContent = title;
-    const heading = view === 'projects' ? 'Project Workspace' : view === 'studio' ? 'Dashboard Konten' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : title || 'Project Detail';
+    const heading = view === 'projects' ? 'Project Workspace' : view === 'studio' ? 'Dashboard Konten' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : title || 'Project Detail';
     document.querySelector('.topbar-title strong').textContent = heading;
-    document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', (view === 'projects' && link.dataset.workspaceView === 'projects') || (view === 'consistency' && link.dataset.workspaceView === 'consistency') || (view === 'generator' && link.dataset.workspaceView === 'generator') || (view === 'placeholder' && link.dataset.placeholderView === title)));
+    document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', (view === 'projects' && link.dataset.workspaceView === 'projects') || (view === 'consistency' && link.dataset.workspaceView === 'consistency') || (view === 'generator' && link.dataset.workspaceView === 'generator') || (view === 'providers' && link.dataset.workspaceView === 'providers') || (view === 'placeholder' && link.dataset.placeholderView === title)));
   }
   function openDialog() { form.reset(); $('#description-count').textContent = '0'; dialog.showModal(); setTimeout(() => $('#project-name').focus(), 0); }
   function closeDialog() { dialog.close(); }
@@ -124,5 +126,5 @@
   document.querySelectorAll('[data-back-projects]').forEach(button => button.onclick = () => { showView('projects'); location.hash = 'projects'; });
   document.querySelectorAll('[data-workspace-view]').forEach(link => link.addEventListener('click', () => showView(link.dataset.workspaceView)));
   document.querySelectorAll('[data-placeholder-view]').forEach(link => link.addEventListener('click', () => showView('placeholder', link.dataset.placeholderView)));
-  renderProjects(); showView(location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : 'projects');
+  renderProjects(); showView(location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : 'projects');
 })();
