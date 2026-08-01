@@ -84,7 +84,7 @@
   function showView(view, title) {
     workspace.classList.toggle('hidden', view !== 'projects');
     detail.classList.toggle('hidden', view !== 'detail');
-    studio.classList.add('hidden');
+    studio.classList.toggle('hidden', view !== 'legacy');
     contentStudio.classList.toggle('hidden', view !== 'studio');
     placeholder.classList.toggle('hidden', view !== 'placeholder');
     consistency.classList.toggle('hidden', view !== 'consistency');
@@ -98,9 +98,11 @@
     document.querySelector('#asset-manager').classList.toggle('hidden', view !== 'assets');
     document.querySelector('#storage-settings').classList.toggle('hidden', view !== 'storage');
     if (view === 'placeholder') $('#placeholder-title').textContent = title;
-    const heading = view === 'assets' ? 'Asset Manager' : view === 'storage' ? 'Storage Settings' : view === 'templates' ? 'Template Manager' : view === 'projects' ? 'Project Workspace' : view === 'profile' ? 'Workspace Profile' : view === 'studio' ? 'Dashboard Konten' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
+    const legacyHeadings = { 'trend-reference': 'Referensi Tren', 'schedule-dashboard': 'Jadwal', 'history-section': 'Riwayat' };
+    const heading = view === 'assets' ? 'Asset Manager' : view === 'storage' ? 'Storage Settings' : view === 'templates' ? 'Template Manager' : view === 'projects' ? 'Project Workspace' : view === 'profile' ? 'Workspace Profile' : view === 'studio' ? 'Dashboard Konten' : view === 'legacy' ? legacyHeadings[title] || 'Content Studio' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
     document.querySelector('.topbar-title strong').textContent = heading;
-    document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', link.dataset.workspaceView === view || (view === 'placeholder' && link.dataset.placeholderView === title)));
+    document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', (link.dataset.workspaceView === view && (view !== 'legacy' || link.dataset.legacySection === title)) || (view === 'placeholder' && link.dataset.placeholderView === title)));
+    if (view === 'legacy' && title) requestAnimationFrame(() => document.getElementById(title)?.scrollIntoView({ block: 'start' }));
   }
   function openDialog() { form.reset(); $('#description-count').textContent = '0'; dialog.showModal(); setTimeout(() => $('#project-name').focus(), 0); }
   function closeDialog() { dialog.close(); }
@@ -140,9 +142,11 @@
   $('#project-search').oninput = renderProjects; filters.forEach(input => input.onchange = renderProjects);
   $('#back-to-projects').onclick = () => { showView('projects'); renderProjects(); location.hash = 'projects'; };
   document.querySelectorAll('[data-back-projects]').forEach(button => button.onclick = () => { showView('projects'); location.hash = 'projects'; });
-  document.querySelectorAll('[data-workspace-view]').forEach(link => link.addEventListener('click', () => showView(link.dataset.workspaceView)));
+  document.querySelectorAll('[data-workspace-view]').forEach(link => link.addEventListener('click', () => showView(link.dataset.workspaceView, link.dataset.legacySection)));
   document.querySelectorAll('[data-placeholder-view]').forEach(link => link.addEventListener('click', () => showView('placeholder', link.dataset.placeholderView)));
-  const viewFromHash = () => location.hash === '#assets' ? 'assets' : location.hash === '#storage' ? 'storage' : location.hash === '#templates' ? 'templates' : ['#profile', '#settings'].includes(location.hash) ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
-  window.addEventListener('hashchange', () => showView(viewFromHash()));
-  renderProjects(); showView(viewFromHash());
+  const legacyHash = () => ['trend-reference', 'schedule-dashboard', 'history-section'].find(id => location.hash === `#${id}`);
+  const viewFromHash = () => legacyHash() ? 'legacy' : location.hash === '#assets' ? 'assets' : location.hash === '#storage' ? 'storage' : location.hash === '#templates' ? 'templates' : ['#profile', '#settings'].includes(location.hash) ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
+  const showHashView = () => showView(viewFromHash(), legacyHash());
+  window.addEventListener('hashchange', showHashView);
+  renderProjects(); showHashView();
 })();
