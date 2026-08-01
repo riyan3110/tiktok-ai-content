@@ -1,51 +1,58 @@
 const { joinGatewayUrl } = require('../providers/NineRouterProvider');
-const CACHE_TTL = 10 * 60 * 1000;
-const COMBOS_PATH = '/api/combos';
-const MODELS_PATH = '/v1/models';
-const CAPABILITIES = ['text', 'image', 'video'];
-const fields = ['capability', 'capabilities', 'modality', 'modalities', 'type', 'service', 'service_type', 'service_kind', 'endpoint', 'input_modalities', 'output_modalities'];
-const values = value => Array.isArray(value) ? value : value && typeof value === 'object' ? Object.entries(value).filter(([, enabled]) => enabled).map(([name]) => name) : value == null ? [] : [value];
-const idOf = item => String(typeof item === 'string' ? item : item?.id || item?.name || item?.model || '').trim();
 
-function capabilitiesFromMetadata(item = {}) {
-  const sources = [item, item.architecture, item.config, item.service].filter(value => value && typeof value === 'object');
-  const result = new Set();
-  for (const value of sources.flatMap(source => fields.flatMap(field => values(source[field]))).map(String).map(value => value.toLowerCase())) {
-    if (/text|chat|language|completion/.test(value)) result.add('text');
-    if (/image/.test(value)) result.add('image');
-    if (/video/.test(value)) result.add('video');
+const CACHE_TTL = 10 * 60 * 1000;
+const CATALOG_PATHS = Object.freeze({
+  text: '/v1/models',
+  image: '/v1/models/image',
+  video: '/v1/models/video'
+});
+const CAPABILITIES = Object.keys(CATALOG_PATHS);
+const idOf = item => String(typeof item === 'string' ? item : item?.id || '').trim();
+
+function payloadItems(payload) {
+  if (!payload || !Array.isArray(payload.data)) throw new Error('Respons katalog 9Router tidak valid');
+  return payload.data;
+}
+
+function normalizeCatalog(payload) {
+  const result = { combos: [], directModels: [] };
+  for (const item of payloadItems(payload)) {
+    const id = idOf(item);
+    if (!id) continue;
+    result[item?.owned_by === 'combo' ? 'combos' : 'directModels'].push(id);
   }
+  result.combos = [...new Set(result.combos)].sort();
+  result.directModels = [...new Set(result.directModels)].sort();
   return result;
 }
-function registryCapabilities(id) {
-  const value = String(id).toLowerCase();
-  if (/(^|\/)(sora|veo|kling|vidu|hailuo|wan[^/]*video|runway|luma|minimax-video)/.test(value)) return new Set(['video']);
-  if (/(^|\/)(gpt-image|dall-e|imagen|flux|ideogram|recraft|stable-diffusion|sdxl|qwen-image)/.test(value)) return new Set(['image']);
-  if (/(deepseek|(^|\/)(openai\/)?gpt-|qwen[^/]*(chat|coder|instruct)|claude|gemini|llama|mistral)/.test(value)) return new Set(['text']);
-  return new Set();
-}
-function modelCapabilities(model) { const official = capabilitiesFromMetadata(model); return official.size ? official : registryCapabilities(idOf(model)); }
-function payloadItems(payload, keys) { if (Array.isArray(payload)) return payload; for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key]; if (payload?.data && !Array.isArray(payload.data)) for (const key of keys) if (Array.isArray(payload.data[key])) return payload.data[key]; throw new Error('Respons katalog 9Router tidak valid'); }
-function normalized(result) { for (const key of Object.keys(result)) result[key] = [...new Set(result[key])].sort(); return result; }
+
+// Kept for the connection check, which reports the text catalog size.
 function normalizeModels(payload) {
-  const result = { text: [], image: [], video: [], unknown: [] };
-  for (const model of payloadItems(payload, ['data', 'models', 'items'])) { const id = idOf(model); if (!id) continue; const capabilities = modelCapabilities(model); if (!capabilities.size) result.unknown.push(id); for (const capability of capabilities) result[capability].push(id); }
-  return normalized(result);
+  const catalog = normalizeCatalog(payload);
+  return { text: [...catalog.combos, ...catalog.directModels], image: [], video: [], unknown: [] };
 }
-function comboMembers(combo) { return ['models', 'members', 'routes', 'targets', 'candidates'].flatMap(key => values(combo?.[key])).flatMap(member => typeof member === 'string' ? [member] : [member?.model, member?.model_id, member?.id, member?.target].filter(Boolean)).map(String); }
-function normalizeCombos(payload, directPayload) {
-  const directItems = payloadItems(directPayload, ['data', 'models', 'items']); const directById = new Map(directItems.map(item => [idOf(item), item]));
-  const result = { text: [], image: [], video: [], unknown: [] };
-  for (const combo of payloadItems(payload, ['data', 'combos', 'routers', 'items'])) { const id = idOf(combo); if (!id) continue; let capabilities = capabilitiesFromMetadata(combo); if (!capabilities.size) { capabilities = new Set(); for (const memberId of comboMembers(combo)) for (const capability of modelCapabilities(directById.get(memberId) || { id: memberId })) capabilities.add(capability); } if (!capabilities.size) result.unknown.push(id); for (const capability of capabilities) result[capability].push(id); }
-  return normalized(result);
+
+function discovery(payloads) {
+  const result = Object.fromEntries(CAPABILITIES.map(type => [type, normalizeCatalog(payloads[type])]));
+  result.capabilities = CAPABILITIES.filter(type => result[type].combos.length || result[type].directModels.length);
+  result.counts = Object.fromEntries(CAPABILITIES.map(type => [type, result[type].combos.length + result[type].directModels.length]));
+  result.endpoints = { ...CATALOG_PATHS };
+  return result;
 }
-function discovery(combos, direct) {
-  const result = {}; for (const capability of CAPABILITIES) result[capability] = { combos: combos[capability], directModels: direct[capability] };
-  result.unknown = { combos: combos.unknown, directModels: direct.unknown }; result.capabilities = CAPABILITIES.filter(type => result[type].combos.length || result[type].directModels.length); result.counts = Object.fromEntries(CAPABILITIES.map(type => [type, result[type].combos.length + result[type].directModels.length])); result.endpoints = { combos: COMBOS_PATH, directModels: MODELS_PATH }; return result;
-}
+
 class NineRouterModels {
   constructor({ db, connector, transport = fetch, ttl = CACHE_TTL }) { this.db = db; this.connector = connector; this.transport = transport; this.ttl = ttl; this.cached = null; }
   async fetchJson(config, path, headers) { const response = await this.transport(joinGatewayUrl(config.base_url, path), { headers }); if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status }); try { return await response.json(); } catch { throw Object.assign(new Error('Respons katalog 9Router tidak valid'), { status: 502 }); } }
-  async get({ refresh = false } = {}) { if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value; const config = this.connector.configured(this.connector.setting(this.db, '9router')); const headers = { Accept: 'application/json' }; if (config.api_key) headers.Authorization = `Bearer ${config.api_key}`; const [combos, direct] = await Promise.all([this.fetchJson(config, COMBOS_PATH, headers), this.fetchJson(config, MODELS_PATH, headers)]); const value = discovery(normalizeCombos(combos, direct), normalizeModels(direct)); this.cached = { at: Date.now(), value }; return value; }
+  async get({ refresh = false } = {}) {
+    if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value;
+    const config = this.connector.configured(this.connector.setting(this.db, '9router'));
+    const headers = { Accept: 'application/json' };
+    if (config.api_key) headers.Authorization = `Bearer ${config.api_key}`;
+    const responses = await Promise.all(CAPABILITIES.map(type => this.fetchJson(config, CATALOG_PATHS[type], headers)));
+    const value = discovery(Object.fromEntries(CAPABILITIES.map((type, index) => [type, responses[index]])));
+    this.cached = { at: Date.now(), value };
+    return value;
+  }
 }
-module.exports = { NineRouterModels, normalizeModels, normalizeCombos, modelCapabilities, discovery, COMBOS_PATH, MODELS_PATH, CACHE_TTL };
+
+module.exports = { NineRouterModels, normalizeCatalog, normalizeModels, discovery, CATALOG_PATHS, CACHE_TTL };
