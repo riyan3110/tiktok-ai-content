@@ -22,10 +22,43 @@ class LocalStorageAdapter extends StorageAdapter {
 }
 class TencentCosAdapter extends StorageAdapter {
   constructor(options, transport = fetch) { super(); this.options = options; this.transport = transport; }
-  host() { return this.options.endpoint || `${this.options.bucket}.cos.${this.options.region}.myqcloud.com`; }
-  url(key, query = '') { return `${this.options.useHttps === false ? 'http' : 'https'}://${this.host()}/${String(key).replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}${query ? `?${query}` : ''}`; }
-  authorization(method, key, query = '', expires = 3600) { const now = Math.floor(Date.now() / 1000); const period = `${now - 60};${now + expires}`; const httpString = `${method.toLowerCase()}\n/${String(key).replace(/^\/+/, '')}\n${query}\nhost=${this.host()}\n`; const sha1 = value => crypto.createHash('sha1').update(value).digest('hex'); const signKey = crypto.createHmac('sha1', this.options.secretKey).update(period).digest('hex'); const signature = crypto.createHmac('sha1', signKey).update(`sha1\n${period}\n${sha1(httpString)}\n`).digest('hex'); return `q-sign-algorithm=sha1&q-ak=${encodeURIComponent(this.options.secretId)}&q-sign-time=${period}&q-key-time=${period}&q-header-list=host&q-url-param-list=&q-signature=${signature}`; }
-  async request(method, key, { data, query = '', headers = {} } = {}) { const response = await this.transport(this.url(key, query), { method, body: data, headers: { Host: this.host(), Authorization: this.authorization(method, key, query), ...headers } }); if (!response.ok) throw Object.assign(new Error(`Tencent COS ${method} failed (${response.status})`), { status: response.status }); return response; }
+  endpoint() {
+    const bucket = String(this.options.bucket || '').trim();
+    const region = String(this.options.region || '').trim().toLowerCase();
+    const configured = String(this.options.endpoint || '').trim();
+    const scheme = this.options.useHttps === false ? 'http:' : 'https:';
+    const endpoint = configured ? new URL(configured.includes('://') ? configured : `${scheme}//${configured}`) : new URL(`${scheme}//${bucket}.cos.${region}.myqcloud.com`);
+    return { origin: endpoint.origin, host: endpoint.host.toLowerCase() };
+  }
+  host() { return this.endpoint().host; }
+  encode(value) { return encodeURIComponent(value).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`); }
+  pathname(key) { return `/${String(key || '').replace(/^\/+/, '').split('/').map(part => this.encode(part)).join('/')}`; }
+  canonicalQuery(query = '') {
+    return [...new URLSearchParams(String(query).replace(/^\?/, '')).entries()]
+      .map(([name, value]) => [this.encode(name.toLowerCase()), this.encode(value)])
+      .sort(([leftName, leftValue], [rightName, rightValue]) => leftName.localeCompare(rightName) || leftValue.localeCompare(rightValue))
+      .map(parts => parts.join('='))
+      .join('&');
+  }
+  url(key, query = '') { const canonicalQuery = this.canonicalQuery(query); return `${this.endpoint().origin}${this.pathname(key)}${canonicalQuery ? `?${canonicalQuery}` : ''}`; }
+  authorization(method, key, query = '', expires = 3600) {
+    // COS XML API uses its q-sign HMAC-SHA1 scheme. TC3-HMAC-SHA256 is for
+    // Tencent Cloud API 3.0 endpoints and is not accepted by COS bucket hosts.
+    const now = Math.floor(Date.now() / 1000);
+    const period = `${now - 60};${now + expires}`;
+    const canonicalQuery = this.canonicalQuery(query);
+    const httpString = `${method.toLowerCase()}\n${this.pathname(key)}\n${canonicalQuery}\nhost=${this.host()}\n`;
+    const sha1 = value => crypto.createHash('sha1').update(value).digest('hex');
+    const signKey = crypto.createHmac('sha1', this.options.secretKey).update(period).digest('hex');
+    const signature = crypto.createHmac('sha1', signKey).update(`sha1\n${period}\n${sha1(httpString)}\n`).digest('hex');
+    const authorization = `q-sign-algorithm=sha1&q-ak=${this.encode(String(this.options.secretId || '').trim())}&q-sign-time=${period}&q-key-time=${period}&q-header-list=host&q-url-param-list=${canonicalQuery ? canonicalQuery.split('&').map(item => item.split('=')[0]).join(';') : ''}&q-signature=${signature}`;
+    return this.options.securityToken ? `${authorization}&x-cos-security-token=${this.encode(this.options.securityToken)}` : authorization;
+  }
+  async request(method, key, { data, query = '', headers = {} } = {}) {
+    const response = await this.transport(this.url(key, query), { method, body: data, headers: { Host: this.host(), Authorization: this.authorization(method, key, query), ...headers } });
+    if (!response.ok) { const details = typeof response.text === 'function' ? await response.text() : ''; const requestId = response.headers?.get?.('x-cos-request-id'); throw Object.assign(new Error(`Tencent COS ${method} failed (${response.status})${requestId ? ` [request-id: ${requestId}]` : ''}${details ? `: ${details}` : ''}`), { status: response.status }); }
+    return response;
+  }
   async upload(key, data, metadata = {}) { await this.request('PUT', key, { data, headers: { 'Content-Type': metadata.mimeType || 'application/octet-stream', ...(this.options.encryption ? { 'x-cos-server-side-encryption': 'AES256' } : {}) } }); return { key, size: data.length, checksum: crypto.createHash('sha256').update(data).digest('hex'), url: this.publicUrl(key) }; }
   async delete(key) { await this.request('DELETE', key); return { deleted: true, key }; }
   async copy(source, target) { await this.request('PUT', target, { headers: { 'x-cos-copy-source': `/${this.options.bucket}/${source}` } }); return { key: target, url: this.publicUrl(target) }; }
