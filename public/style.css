@@ -147,6 +147,7 @@ dialog{max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
 .form-section summary{display:flex;align-items:center;gap:8px;min-height:50px;padding:12px 14px;color:var(--text);font-weight:750;cursor:pointer;list-style:none}
 .form-section summary::-webkit-details-marker{display:none}.form-section summary::after{content:"⌄";margin-left:auto;color:var(--muted);transition:transform .18s}.form-section[open] summary::after{transform:rotate(180deg)}
 .form-section summary small{color:var(--muted);font-size:.72rem;font-weight:500}.form-section-body{display:grid;gap:14px;padding:2px 14px 14px;border-top:1px solid var(--border)}.form-section-body>.form-grid,.form-section-body>.prompt-source,.form-section-body>.studio-assets{margin-top:14px;margin-bottom:0}
+.provider-empty-warning{margin-top:14px;padding:14px;border:1px solid rgba(245,158,11,.48);border-radius:12px;background:rgba(245,158,11,.09);color:var(--text)}.provider-empty-warning strong{display:block;margin-bottom:6px;color:#fbbf24}.provider-empty-warning p{margin:0 0 12px;color:var(--muted);line-height:1.55}.provider-empty-warning button{min-height:36px}
 
 @media(max-width:1023px){
   .sidebar-brand{position:sticky;top:calc(-1 * max(24px,env(safe-area-inset-top)));z-index:2;margin:-24px -16px 8px;padding:24px 24px 16px;background:#0d0d0f;border-bottom:1px solid var(--border)}
