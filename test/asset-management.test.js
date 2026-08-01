@@ -47,14 +47,40 @@ test('Tencent COS uploads stay in COS and persist the returned key and URL', asy
   const uploaded = await request(app).post('/api/assets/upload').send(payload).expect(201);
   assert.equal(uploaded.body.storage_provider, 'tencent-cos');
   assert.match(uploaded.body.storage_key, /^\d{4}-\d{2}-\d{2}\/[\w-]+\.png$/);
-  assert.equal(uploaded.body.storage_url, `https://cdn.example.com/assets/${uploaded.body.storage_key}`);
+  const uploadedUrl = new URL(uploaded.body.storage_url);
+  assert.equal(uploadedUrl.origin, 'https://asset-bucket-123.cos.ap-singapore.myqcloud.com');
+  assert.equal(uploadedUrl.pathname, `/${uploaded.body.storage_key}`);
+  assert.equal(uploadedUrl.searchParams.get('q-ak'), 'AKIDEXAMPLE');
   assert.equal(calls.length, 1);
   assert.equal(calls[0].init.method, 'PUT');
   assert.equal(calls[0].url, `https://asset-bucket-123.cos.ap-singapore.myqcloud.com/${uploaded.body.storage_key}`);
   assert.deepEqual(Buffer.from(calls[0].init.body), Buffer.from('cos-content'));
 
   const listed = await request(app).get('/api/assets?provider=tencent-cos').expect(200);
-  assert.equal(listed.body[0].storage_url, uploaded.body.storage_url);
+  assert.equal(listed.body[0].url, listed.body[0].storage_url);
+  assert.equal(new URL(listed.body[0].url).searchParams.get('q-sign-algorithm'), 'sha1');
+  assert.notEqual(db.prepare('SELECT storage_url FROM assets WHERE id=?').get(uploaded.body.id).storage_url, uploaded.body.storage_url);
+  db.close();
+});
+
+test('Asset Manager refreshes signed COS GET URLs without issuing a download request', async () => {
+  const calls = [];
+  const db = createDatabase(':memory:');
+  const app = createApp({ db, storageTransport: async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, status: 200, headers: new Headers(), text: async () => '' };
+  } });
+  await request(app).put('/api/storage/settings').send({ provider: 'tencent-cos', secretId: 'id', secretKey: 'key', bucket: 'private-123', region: 'ap-singapore', signedUrlExpiration: 900 }).expect(200);
+  const uploaded = await request(app).post('/api/assets/upload').send({ name: 'preview.jpg', mimeType: 'image/jpeg', data: Buffer.from('image').toString('base64') }).expect(201);
+
+  const asset = await request(app).get(`/api/assets/${uploaded.body.id}`).expect(200);
+  const url = new URL(asset.body.url);
+  const [starts, expires] = url.searchParams.get('q-sign-time').split(';').map(Number);
+  assert.equal(expires - starts, 960);
+  assert.equal(url.searchParams.get('q-ak'), 'id');
+  assert.equal(asset.body.storage_url, asset.body.url);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.method, 'PUT');
   db.close();
 });
 

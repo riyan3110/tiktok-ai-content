@@ -29,9 +29,9 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.get('/api/storage/settings', (req, res) => res.json(storage.publicSettings()));
   app.put('/api/storage/settings', (req, res, next) => { try { res.json(storage.saveSettings(req.body || {})); } catch (e) { next(e); } });
   app.post('/api/storage/test', async (req, res, next) => { try { res.json(await storage.test()); } catch (e) { next(e); } });
-  app.get('/api/assets', (req, res) => res.json(storage.repository.list(req.query)));
-  app.get('/api/assets/:id', async (req, res, next) => { try { const asset = storage.repository.get(req.params.id); if (!asset) return res.status(404).json({ error: 'Asset tidak ditemukan' }); res.json({ ...asset, url: await storage.url(asset, req.query.signed === 'true') }); } catch (e) { next(e); } });
-  app.post('/api/assets/upload', async (req, res, next) => { try { const body = req.body || {}; res.status(201).json(await storage.upload({ ...body, data: body.data })); } catch (e) { next(e); } });
+  app.get('/api/assets', async (req, res, next) => { try { res.json(await storage.accessibleList(req.query)); } catch (e) { next(e); } });
+  app.get('/api/assets/:id', async (req, res, next) => { try { const asset = storage.repository.get(req.params.id); if (!asset) return res.status(404).json({ error: 'Asset tidak ditemukan' }); res.json(await storage.accessible(asset)); } catch (e) { next(e); } });
+  app.post('/api/assets/upload', async (req, res, next) => { try { const body = req.body || {}; const asset = await storage.upload({ ...body, data: body.data }); res.status(201).json(await storage.accessible(asset)); } catch (e) { next(e); } });
   app.patch('/api/assets/:id', async (req, res, next) => { try { res.json(await storage.move(req.params.id, req.body || {})); } catch (e) { next(e); } });
   app.post('/api/assets/:id/copy', async (req, res, next) => { try { res.status(201).json(await storage.copy(req.params.id)); } catch (e) { next(e); } });
   app.delete('/api/assets/:id', (req, res) => { const changes = req.query.permanent === 'true' ? storage.repository.remove(req.params.id) : storage.repository.trash(req.params.id); res.status(changes ? 200 : 404).json({ deleted: Boolean(changes), permanent: req.query.permanent === 'true' }); });
