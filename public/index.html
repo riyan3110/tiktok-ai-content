@@ -23,6 +23,7 @@
       <a href="#prompt-generator" data-workspace-view="generator"><span aria-hidden="true">✧</span><span>Prompt Generator</span></a>
       <a href="#ai-providers" data-workspace-view="providers"><span aria-hidden="true">⬡</span><span>AI Providers</span></a>
       <a href="#generation-queue" data-workspace-view="queue"><span aria-hidden="true">≋</span><span>Generation Queue</span></a>
+      <a href="#ai-integration" data-workspace-view="integration"><span aria-hidden="true">⇄</span><span>AI Integration</span></a>
       <a href="#assets" data-placeholder-view="Assets"><span aria-hidden="true">□</span><span>Assets</span></a>
       <a href="#analytics" data-placeholder-view="Analytics"><span aria-hidden="true">↗</span><span>Analytics</span></a>
       <a href="#settings" data-placeholder-view="Settings"><span aria-hidden="true">⚙</span><span>Settings</span></a>
@@ -100,6 +101,15 @@
         <div id="queue-settings" class="queue-settings hidden"></div>
         <div class="queue-table-wrap"><table class="queue-table"><thead><tr><th>Job ID</th><th>Project</th><th>Provider</th><th>Model</th><th>Prompt Type</th><th>Priority</th><th>Progress</th><th>Status</th><th>Started</th><th>Finished</th><th>Duration</th><th>Action</th></tr></thead><tbody id="queue-jobs"></tbody></table><div id="queue-empty" class="empty-state hidden"><span class="state-icon">≋</span><strong>Queue is empty</strong><p>Add a prompt from Prompt Generator to start the mock worker.</p></div></div>
         <aside id="job-detail" class="job-detail hidden" aria-live="polite"></aside>
+      </section>
+      <section id="ai-integration" class="ai-integration hidden" aria-labelledby="integration-title">
+        <div class="integration-heading"><div><span class="eyebrow">AI INTEGRATION LAYER</span><h1 id="integration-title">One pipeline. Every provider.</h1><p>A provider-agnostic, local simulation of the future backend boundary.</p></div><span class="local-badge">● Mock transport only</span></div>
+        <div class="integration-grid">
+          <aside class="integration-card integration-overview"><div class="integration-card-title"><span>01</span><div><h2>Registered Providers</h2><p>Backend readiness</p></div></div><div id="integration-providers"></div><dl class="integration-facts"><div><dt>Backend Status</dt><dd>Mock Adapter</dd></div><div><dt>Credential Status</dt><dd>Placeholder only</dd></div><div><dt>API Version</dt><dd>v1-preview</dd></div></dl><button id="integration-health-check" class="outline" type="button">Run health check</button></aside>
+          <section class="integration-card integration-pipeline"><div class="integration-card-title"><span>02</span><div><h2>Integration Pipeline</h2><p>Normalized request lifecycle</p></div></div><div id="integration-flow" class="integration-flow" aria-label="Integration pipeline"></div><form id="integration-form"><label>Prompt<textarea id="integration-prompt" rows="4" required placeholder="Describe a campaign concept…"></textarea></label><div class="integration-fields"><label>Provider<select id="integration-provider"></select></label><label>Model<input id="integration-model" value="mock-v1"></label><label>Temperature<input id="integration-temperature" type="number" min="0" max="2" step="0.1" value="0.7"></label><label>Top P<input id="integration-top-p" type="number" min="0" max="1" step="0.1" value="1"></label><label>Top K<input id="integration-top-k" type="number" min="0" value="40"></label><label>Seed<input id="integration-seed" type="number" placeholder="Auto"></label></div><label>System Prompt<textarea id="integration-system-prompt" rows="2" placeholder="Optional behavior and constraints"></textarea></label><div class="integration-actions"><button id="integration-run" type="submit">✦ Run mock pipeline</button><button id="integration-cancel" class="outline" type="button" disabled>Cancel</button></div></form><div id="integration-error" class="integration-error hidden" role="alert"></div><div id="integration-result" class="integration-result"><span>◇</span><p>Normalized response will appear here.</p></div></section>
+          <aside class="integration-card live-monitor"><div class="integration-card-title"><span>03</span><div><h2>Live Monitor</h2><p>Transport telemetry</p></div></div><div id="integration-stream" class="stream-state">Idle</div><dl id="integration-monitor"></dl><div class="monitor-note"><b>Secure by design</b><p>No real credential is accepted or stored. Production secrets belong in a backend secret manager.</p></div></aside>
+        </div>
+        <section class="integration-card integration-logs"><div class="logs-heading"><div><span class="eyebrow">OBSERVABILITY</span><h2>Integration Logs</h2></div><button id="integration-clear-logs" class="outline" type="button">Clear logs</button></div><div class="integration-log-table"><table><thead><tr><th>Timestamp</th><th>Provider</th><th>Duration</th><th>Request Size</th><th>Response Size</th><th>Status</th></tr></thead><tbody id="integration-log-rows"></tbody></table><div id="integration-log-empty" class="empty-state">No pipeline runs yet.</div></div></section>
       </section>
       <div id="legacy-studio" class="hidden">
       <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Buat konten yang<br><em>layak dihentikan.</em></h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
@@ -181,6 +191,7 @@
 <script src="/prompt-generator.js"></script>
 <script src="/ai-providers.js"></script>
 <script src="/generation-queue.js"></script>
+<script src="/ai-integration.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
