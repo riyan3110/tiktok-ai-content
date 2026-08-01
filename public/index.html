@@ -17,6 +17,7 @@
       <img src="/assets/ai-ads-lab-logo.png" alt="Logo AI Ads Lab">
       <span><strong>AI Ads Lab</strong><small>CONTENT STUDIO</small></span>
     </a>
+    <a class="drawer-tiktok outline" href="/auth/tiktok" aria-label="Hubungkan akun TikTok"><span aria-hidden="true">♪</span><span>Hubungkan TikTok</span></a>
     <nav class="side-nav">
       <a class="active" href="#projects" data-workspace-view="projects"><span aria-hidden="true">▦</span><span>Projects</span></a>
       <a href="#workflow" data-workspace-view="workflow"><span aria-hidden="true">⇥</span><span>Workflow</span></a>
@@ -50,6 +51,7 @@
         <button class="icon-button notification-button" id="notification-toggle" type="button" aria-label="Buka notifikasi">♢<span id="notification-count" class="notification-count hidden">0</span></button>
         <button class="account-button" id="account-button" type="button"><span class="account-avatar">?</span><span>Masuk</span></button>
         <button class="icon-button" id="theme-toggle" type="button" aria-label="Gunakan tema terang" title="Ganti tema"><span aria-hidden="true">☀</span></button>
+        <a class="icon-button mobile-tiktok-connect" href="/auth/tiktok" aria-label="Hubungkan akun TikTok" title="Hubungkan TikTok"><span aria-hidden="true">♪</span></a>
         <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div>
       </div>
     </header>
@@ -172,13 +174,11 @@
         <div id="studio-create-panel" class="studio-grid">
           <form id="studio-generate-form" class="studio-card">
             <div class="card-title"><div><span class="eyebrow">GENERATION SETUP</span><h2 id="studio-form-title">Generate Image</h2></div><span id="studio-kind-pill" class="status-pill status-active">IMAGE</span></div>
-            <div class="form-grid"><label>Provider<select id="studio-provider" required></select></label><label>Model<input id="studio-model" placeholder="Default provider model"></label></div>
-            <fieldset class="prompt-source"><legend>Prompt source</legend><label><input type="radio" name="studio-prompt-source" value="manual" checked> Manual input</label><label><input type="radio" name="studio-prompt-source" value="generator"> Prompt Generator</label></fieldset>
-            <label>Prompt *<textarea id="studio-prompt" rows="7" required placeholder="Describe the creative, subject, composition, lighting, and style…"></textarea></label>
-            <label>Negative Prompt<textarea id="studio-negative-prompt" rows="3" placeholder="Elements to avoid…"></textarea></label>
-            <div class="form-grid"><label>Resolution<select id="studio-resolution"><option>1024×1024</option><option>1080×1920</option><option>1920×1080</option><option>1080p</option><option>4K</option></select></label><label id="studio-batch-field" class="hidden">Batch size<input id="studio-batch-count" type="number" min="2" max="10" value="3"></label></div>
-            <div class="studio-assets"><div><b>Reference assets</b><small>Dipilih langsung dari Asset Manager dan otomatis dikirim ke provider.</small></div><button id="studio-load-assets" class="outline" type="button">＋ Choose assets</button><div id="studio-asset-choices" class="asset-choice-list hidden"></div><div id="studio-selected-assets" class="selected-assets"></div></div>
-            <div class="studio-submit"><button id="studio-generate" type="submit">✦ Generate Image</button><span id="studio-generate-message" role="status"></span></div>
+            <details class="form-section" open><summary><span>Basic</span><small>Provider and model</small></summary><div class="form-section-body"><div class="form-grid"><label>Provider<select id="studio-provider" required></select></label><label>Model<input id="studio-model" placeholder="Default provider model"></label></div></div></details>
+            <details class="form-section" open><summary><span>Prompt</span><small>Source and creative direction</small></summary><div class="form-section-body"><fieldset class="prompt-source"><legend>Prompt source</legend><label><input type="radio" name="studio-prompt-source" value="manual" checked> Manual input</label><label><input type="radio" name="studio-prompt-source" value="generator"> Prompt Generator</label></fieldset><label>Prompt *<textarea id="studio-prompt" rows="7" required placeholder="Describe the creative, subject, composition, lighting, and style…"></textarea></label></div></details>
+            <details class="form-section"><summary><span>Reference Assets</span><small>Optional managed media</small></summary><div class="form-section-body"><div class="studio-assets"><div><b>Reference assets</b><small>Dipilih langsung dari Asset Manager dan otomatis dikirim ke provider.</small></div><button id="studio-load-assets" class="outline" type="button">＋ Choose assets</button><div id="studio-asset-choices" class="asset-choice-list hidden"></div><div id="studio-selected-assets" class="selected-assets"></div></div></div></details>
+            <details class="form-section"><summary><span>Advanced</span><small>Exclusions and batch controls</small></summary><div class="form-section-body"><label>Negative Prompt<textarea id="studio-negative-prompt" rows="3" placeholder="Elements to avoid…"></textarea></label><label id="studio-batch-field" class="hidden">Batch size<input id="studio-batch-count" type="number" min="2" max="10" value="3"></label></div></details>
+            <details class="form-section" open><summary><span>Output</span><small>Size and generation</small></summary><div class="form-section-body"><label>Resolution<select id="studio-resolution"><option>1024×1024</option><option>1080×1920</option><option>1920×1080</option><option>1080p</option><option>4K</option></select></label><div class="studio-submit"><button id="studio-generate" type="submit">✦ Generate Image</button><span id="studio-generate-message" role="status"></span></div></div></details>
           </form>
           <aside class="studio-card live-jobs"><div class="card-title"><div><span class="eyebrow">REALTIME QUEUE</span><h2>Active Jobs</h2></div><button id="studio-refresh" class="icon-button" type="button" aria-label="Refresh">↻</button></div><div id="studio-active-jobs" aria-live="polite"></div></aside>
         </div>
