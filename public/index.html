@@ -22,6 +22,7 @@
       <a href="#consistency" data-workspace-view="consistency"><span aria-hidden="true">◎</span><span>Consistency</span></a>
       <a href="#prompt-generator" data-workspace-view="generator"><span aria-hidden="true">✧</span><span>Prompt Generator</span></a>
       <a href="#ai-providers" data-workspace-view="providers"><span aria-hidden="true">⬡</span><span>AI Providers</span></a>
+      <a href="#generation-queue" data-workspace-view="queue"><span aria-hidden="true">≋</span><span>Generation Queue</span></a>
       <a href="#assets" data-placeholder-view="Assets"><span aria-hidden="true">□</span><span>Assets</span></a>
       <a href="#analytics" data-placeholder-view="Analytics"><span aria-hidden="true">↗</span><span>Analytics</span></a>
       <a href="#settings" data-placeholder-view="Settings"><span aria-hidden="true">⚙</span><span>Settings</span></a>
@@ -79,7 +80,7 @@
         <div class="generator-heading"><div><span class="eyebrow">PROMPT GENERATOR ENGINE</span><h1 id="generator-title">Build production-ready prompts.</h1><p>Rangkai creative DNA menjadi prompt modular untuk setiap AI—tanpa mengirim data ke API.</p></div><div class="autosave-state"><i></i><span><b>Auto Save</b><small id="generator-save-state">Tersimpan lokal</small></span></div></div>
         <div class="generator-layout">
           <aside class="generator-panel generator-inputs" aria-label="Prompt configuration"><div class="panel-title"><span>01</span><div><h2>Configuration</h2><p>Creative inputs</p></div></div><div id="generator-fields" class="generator-fields"><div class="loading-state"><span class="spinner"></span><p>Memuat library…</p></div></div></aside>
-          <section class="generator-panel prompt-canvas"><div class="panel-title editor-title"><span>02</span><div><h2>Live Prompt Editor</h2><p id="editor-metrics">0 words · ~0 tokens</p></div><div class="editor-actions"><button class="icon-button" data-generator-action="undo" title="Undo">↶</button><button class="icon-button" data-generator-action="redo" title="Redo">↷</button><button class="outline" data-generator-action="fold" aria-pressed="false">Fold</button><button class="outline" data-generator-action="copy">Copy</button></div></div><div id="module-toggles" class="module-toggles"></div><div class="syntax-editor"><pre id="prompt-highlight" aria-hidden="true"></pre><textarea id="generated-prompt" spellcheck="false" aria-label="Generated prompt"></textarea></div><div class="canvas-footer"><button class="text-button" data-generator-action="clear">Clear</button><div><button class="outline" data-generator-action="txt">TXT</button><button class="outline" data-generator-action="markdown">Markdown</button><button class="outline" data-generator-action="json">JSON</button><button data-generator-action="preset">Save Preset</button></div></div></section>
+          <section class="generator-panel prompt-canvas"><div class="panel-title editor-title"><span>02</span><div><h2>Live Prompt Editor</h2><p id="editor-metrics">0 words · ~0 tokens</p></div><div class="editor-actions"><button class="icon-button" data-generator-action="undo" title="Undo">↶</button><button class="icon-button" data-generator-action="redo" title="Redo">↷</button><button class="outline" data-generator-action="fold" aria-pressed="false">Fold</button><button class="outline" data-generator-action="copy">Copy</button></div></div><div id="module-toggles" class="module-toggles"></div><div class="syntax-editor"><pre id="prompt-highlight" aria-hidden="true"></pre><textarea id="generated-prompt" spellcheck="false" aria-label="Generated prompt"></textarea></div><div class="canvas-footer"><button class="text-button" data-generator-action="clear">Clear</button><div><button class="outline" data-generator-action="txt">TXT</button><button class="outline" data-generator-action="markdown">Markdown</button><button class="outline" data-generator-action="json">JSON</button><button data-generator-action="preset">Save Preset</button><button data-generator-action="generate">✦ Add to Queue</button></div></div></section>
           <aside class="generator-panel generator-analysis"><div class="panel-title"><span>03</span><div><h2>Live Preview</h2><p>Quality analysis</p></div></div><div id="prompt-preview" class="prompt-preview"></div><div id="quality-analysis"></div><div class="preset-library"><div class="mini-heading"><h3>Prompt Presets</h3><span id="preset-count">0</span></div><div id="preset-list"></div></div></aside>
         </div>
       </section>
@@ -91,6 +92,14 @@
           <div id="provider-detail" class="provider-detail" aria-live="polite"></div>
         </div>
         <section class="pipeline-card"><div class="pipeline-title"><div><span class="eyebrow">MOCK PLAYGROUND</span><h2>Prompt Pipeline</h2></div><span class="local-badge">● Local only</span></div><div class="pipeline-flow" aria-label="Pipeline"><span>Prompt Generator</span><i>→</i><span>Provider Adapter</span><i>→</i><span>Request Builder</span><i>→</i><span>Response Parser</span><i>→</i><span>History</span></div><label>Prompt<textarea id="provider-prompt" rows="3" placeholder="Describe the content you want to create…"></textarea></label><div class="pipeline-actions"><button id="mock-generate" type="button">✦ Generate with Mock</button><div id="pipeline-progress" class="pipeline-progress" role="status"></div></div><div id="provider-history" class="provider-history"></div></section>
+      </section>
+      <section id="generation-queue" class="generation-queue hidden" aria-labelledby="queue-title">
+        <div class="queue-heading"><div><span class="eyebrow">MOCK JOB MANAGER</span><h1 id="queue-title">Generation Queue</h1><p>Orchestrate every generation job locally. No AI request leaves this browser.</p></div><span id="queue-worker-state" class="local-badge">● Worker active</span></div>
+        <div id="queue-summary" class="queue-summary" aria-label="Queue Summary"></div>
+        <div class="queue-toolbar"><div><button id="queue-pause" class="outline">Pause Queue</button><button id="queue-resume" class="outline hidden">Resume Queue</button><button id="queue-retry-failed" class="outline">Retry All Failed</button></div><div><button id="queue-clear-completed" class="outline">Clear Completed</button><button id="queue-clear-failed" class="outline">Clear Failed</button><button id="queue-cancel-all" class="danger">Cancel All</button><button id="queue-settings-toggle" class="outline">⚙ Settings</button></div></div>
+        <div id="queue-settings" class="queue-settings hidden"></div>
+        <div class="queue-table-wrap"><table class="queue-table"><thead><tr><th>Job ID</th><th>Project</th><th>Provider</th><th>Model</th><th>Prompt Type</th><th>Priority</th><th>Progress</th><th>Status</th><th>Started</th><th>Finished</th><th>Duration</th><th>Action</th></tr></thead><tbody id="queue-jobs"></tbody></table><div id="queue-empty" class="empty-state hidden"><span class="state-icon">≋</span><strong>Queue is empty</strong><p>Add a prompt from Prompt Generator to start the mock worker.</p></div></div>
+        <aside id="job-detail" class="job-detail hidden" aria-live="polite"></aside>
       </section>
       <div id="legacy-studio" class="hidden">
       <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Buat konten yang<br><em>layak dihentikan.</em></h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
@@ -171,6 +180,7 @@
 <script src="/consistency.js"></script>
 <script src="/prompt-generator.js"></script>
 <script src="/ai-providers.js"></script>
+<script src="/generation-queue.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
