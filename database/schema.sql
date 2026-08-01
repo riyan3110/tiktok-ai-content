@@ -138,6 +138,14 @@ CREATE TABLE IF NOT EXISTS ai_provider_defaults (
   provider TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ai_provider_model_capabilities (
+  provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  capability TEXT NOT NULL CHECK(capability IN ('text','image','video','ignore')),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(provider, model_id)
+);
+
 CREATE TABLE IF NOT EXISTS ai_generations (
   id TEXT PRIMARY KEY,
   provider TEXT NOT NULL,
