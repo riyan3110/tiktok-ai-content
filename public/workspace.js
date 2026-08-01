@@ -93,8 +93,10 @@
     integration.classList.toggle('hidden', view !== 'integration');
     profile.classList.toggle('hidden', view !== 'profile');
     templates.classList.toggle('hidden', view !== 'templates');
+    document.querySelector('#asset-manager').classList.toggle('hidden', view !== 'assets');
+    document.querySelector('#storage-settings').classList.toggle('hidden', view !== 'storage');
     if (view === 'placeholder') $('#placeholder-title').textContent = title;
-    const heading = view === 'templates' ? 'Template Manager' : view === 'projects' ? 'Project Workspace' : view === 'profile' ? 'Workspace Profile' : view === 'studio' ? 'Dashboard Konten' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
+    const heading = view === 'assets' ? 'Asset Manager' : view === 'storage' ? 'Storage Settings' : view === 'templates' ? 'Template Manager' : view === 'projects' ? 'Project Workspace' : view === 'profile' ? 'Workspace Profile' : view === 'studio' ? 'Dashboard Konten' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
     document.querySelector('.topbar-title strong').textContent = heading;
     document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', link.dataset.workspaceView === view || (view === 'placeholder' && link.dataset.placeholderView === title)));
   }
@@ -138,7 +140,7 @@
   document.querySelectorAll('[data-back-projects]').forEach(button => button.onclick = () => { showView('projects'); location.hash = 'projects'; });
   document.querySelectorAll('[data-workspace-view]').forEach(link => link.addEventListener('click', () => showView(link.dataset.workspaceView)));
   document.querySelectorAll('[data-placeholder-view]').forEach(link => link.addEventListener('click', () => showView('placeholder', link.dataset.placeholderView)));
-  const viewFromHash = () => location.hash === '#templates' ? 'templates' : ['#profile', '#settings'].includes(location.hash) ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
+  const viewFromHash = () => location.hash === '#assets' ? 'assets' : location.hash === '#storage' ? 'storage' : location.hash === '#templates' ? 'templates' : ['#profile', '#settings'].includes(location.hash) ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
   window.addEventListener('hashchange', () => showView(viewFromHash()));
   renderProjects(); showView(viewFromHash());
 })();

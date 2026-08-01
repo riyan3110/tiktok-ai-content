@@ -208,3 +208,28 @@ CREATE TABLE IF NOT EXISTS template_runs (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_template_runs_history ON template_runs(template_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS storage_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1), provider TEXT NOT NULL DEFAULT 'local',
+  secret_id_encrypted TEXT, secret_key_encrypted TEXT, bucket TEXT, region TEXT,
+  endpoint TEXT, use_https INTEGER NOT NULL DEFAULT 1, signed_url_expiration INTEGER NOT NULL DEFAULT 3600,
+  public_url TEXT, encryption INTEGER NOT NULL DEFAULT 1, storage_quota INTEGER NOT NULL DEFAULT 10737418240,
+  auto_delete_days INTEGER NOT NULL DEFAULT 0, retention_days INTEGER NOT NULL DEFAULT 30,
+  versioning INTEGER NOT NULL DEFAULT 0, duplicate_detection INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO storage_settings(id) VALUES(1);
+
+CREATE TABLE IF NOT EXISTS asset_folders (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT REFERENCES asset_folders(id) ON DELETE CASCADE,
+  is_favorite INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS assets (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, mime_type TEXT NOT NULL,
+  storage_provider TEXT NOT NULL, storage_key TEXT NOT NULL, folder_id TEXT REFERENCES asset_folders(id) ON DELETE SET NULL,
+  size INTEGER NOT NULL, checksum TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', metadata TEXT NOT NULL DEFAULT '{}',
+  is_favorite INTEGER NOT NULL DEFAULT 0, is_generated INTEGER NOT NULL DEFAULT 0, deleted_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_assets_library ON assets(deleted_at, type, storage_provider, folder_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_assets_checksum ON assets(checksum);
