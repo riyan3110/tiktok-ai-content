@@ -12,9 +12,11 @@ const trendReferences = require('./services/trendReferences');
 const aiConnector = require('./ai/connector');
 const { ProviderFactory } = require('./ai/adapters');
 const { normalizeError } = require('./ai/errors');
+const { MediaGenerationWorker } = require('./ai/mediaWorker');
 
 function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, automation = automationService, aiTransport } = {}) {
   const app = express(); app.set('trust proxy', 1); app.use(express.json()); app.use(express.urlencoded({ extended: false }));
+  const mediaWorker = new MediaGenerationWorker({ db, transport: aiTransport });
   app.use(session({ secret: config.sessionSecret, resave: false, saveUninitialized: false, cookie: { httpOnly: true, sameSite: 'lax', secure: config.publicBaseUrl.startsWith('https://'), maxAge: 10 * 60 * 1000 } }));
   app.use(express.static(`${config.root}/public`, { setHeaders: (res, file) => { if (/\.jpe?g$/i.test(file)) res.setHeader('Content-Type', 'image/jpeg'); } }));
   app.get('/terms', (req, res) => res.sendFile(`${config.root}/public/terms.html`));
@@ -30,6 +32,12 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.post('/api/ai/generations', async (req, res, next) => { try { res.status(202).json(await aiConnector.execute(db, req.body || {}, aiTransport)); } catch (e) { next(e); } });
   app.post('/api/ai/generations/stream', async (req, res) => { res.setHeader('Content-Type', 'application/x-ndjson'); res.setHeader('Cache-Control', 'no-cache'); res.flushHeaders(); const emit = (status, id) => res.write(`${JSON.stringify({ type: 'progress', status, id })}\n`); try { const result = await aiConnector.execute(db, { ...req.body, stream: true }, aiTransport, emit); res.write(`${JSON.stringify({ type: 'result', data: result })}\n`); } catch (error) { res.write(`${JSON.stringify({ type: 'error', error: error.type || 'Unknown Error', message: error.message, id: error.generationId })}\n`); } finally { res.end(); } });
   app.post('/api/ai/generations/:id/cancel', (req, res) => { const cancelled = aiConnector.cancel(req.params.id); res.status(cancelled ? 202 : 404).json({ cancelled }); });
+  app.post('/api/ai/generations/batch', (req, res, next) => { try { const jobs = Array.isArray(req.body?.jobs) ? req.body.jobs : []; if (!jobs.length || jobs.length > 20) throw Object.assign(new Error('jobs must contain 1 to 20 generation requests'), { status: 422 }); const ids = mediaWorker.enqueueMany(jobs); res.status(202).json({ ids, status: 'Pending' }); } catch (e) { next(e); } });
+  app.get('/api/ai/generations/:id', (req, res) => { const item = aiConnector.generation(db, req.params.id); if (!item) return res.status(404).json({ error: 'Generation not found' }); res.json(parseGeneration(item)); });
+  app.post('/api/ai/generations/:id/retry', (req, res, next) => { try { const old = aiConnector.generation(db, req.params.id); if (!old) return res.status(404).json({ error: 'Generation not found' }); const id = mediaWorker.enqueue({ provider: old.provider, model: old.model, prompt: old.prompt, mediaType: old.media_type, assets: JSON.parse(old.assets || '[]'), metadata: { retryOf: old.id } }); res.status(202).json({ id, status: 'Pending' }); } catch (e) { next(e); } });
+  app.post('/api/ai/generations/:id/continue', (req, res) => { const continued = mediaWorker.continue(req.params.id); res.status(continued ? 202 : 409).json({ continued }); });
+  app.post('/api/ai/jobs', (req, res) => { const id = mediaWorker.enqueue(req.body || {}); res.status(202).json({ id, status: 'Pending' }); });
+  app.post('/api/ai/jobs/:id/cancel', (req, res) => { const cancelled = mediaWorker.cancel(req.params.id); res.status(cancelled ? 202 : 404).json({ cancelled }); });
   app.get('/api/ai/generations', (req, res) => res.json(db.prepare('SELECT * FROM ai_generations ORDER BY created_at DESC LIMIT 100').all()));
   app.get('/api/ai/health', (req, res) => res.json(db.prepare('SELECT * FROM ai_provider_health ORDER BY provider').all()));
   app.post('/trend-references', (req, res, next) => { try { res.status(201).json(trendReferences.save(db, req.body || {})); } catch (e) { next(e); } });
@@ -57,5 +65,6 @@ function createApp({ db, content = contentService, images = imageService, tiktok
 }
 function parseRecord(row) { if (!row) return null; return { ...row, slides: JSON.parse(row.slides), hashtags: JSON.parse(row.hashtags), trend_keywords_used: JSON.parse(row.trend_keywords_used || '[]'), trend_keywords_ignored: JSON.parse(row.trend_keywords_ignored || '[]') }; }
 function record(db, id) { return parseRecord(db.prepare('SELECT * FROM contents WHERE id=?').get(id)); }
+function parseGeneration(row) { if (!row) return null; return { ...row, assets: JSON.parse(row.assets || '[]'), media: JSON.parse(row.media || '[]'), metadata: JSON.parse(row.metadata || '{}') }; }
 async function validToken(db, tiktok) { let token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get(); if (!token) return null; if (token.expires_at < Date.now() + 60000) { const next = await tiktok.refresh(token.refresh_token); db.prepare("UPDATE oauth_tokens SET access_token=?,refresh_token=?,expires_at=?,refresh_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE provider='tiktok'").run(next.access_token, next.refresh_token || token.refresh_token, Date.now() + next.expires_in * 1000, Date.now() + (next.refresh_expires_in || 0) * 1000); token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get(); } return token; }
 module.exports = { createApp };
