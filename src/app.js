@@ -30,6 +30,7 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.put('/api/storage/settings', (req, res, next) => { try { res.json(storage.saveSettings(req.body || {})); } catch (e) { next(e); } });
   app.post('/api/storage/test', async (req, res, next) => { try { res.json(await storage.test()); } catch (e) { next(e); } });
   app.get('/api/assets', async (req, res, next) => { try { res.json(await storage.accessibleList(req.query)); } catch (e) { next(e); } });
+  app.post('/api/assets/resolve', async (req, res, next) => { try { res.json(await storage.resolveIds(req.body?.assetIds)); } catch (e) { next(e); } });
   app.get('/api/assets/:id', async (req, res, next) => { try { const asset = storage.repository.get(req.params.id); if (!asset) return res.status(404).json({ error: 'Asset tidak ditemukan' }); res.json(await storage.accessible(asset)); } catch (e) { next(e); } });
   app.get('/api/assets/:id/preview', async (req, res, next) => { try { const asset = storage.repository.get(req.params.id); if (!asset) return res.status(404).json({ error: 'Asset tidak ditemukan' }); const preview = await storage.preview(asset); res.set({ 'Content-Type': preview.mimeType, 'Content-Disposition': 'inline', 'Cache-Control': 'private, max-age=300' }).send(preview.data); } catch (e) { next(e); } });
   app.post('/api/assets/upload', async (req, res, next) => { try { const body = req.body || {}; const asset = await storage.upload({ ...body, data: body.data }); res.status(201).json(await storage.accessible(asset)); } catch (e) { next(e); } });
