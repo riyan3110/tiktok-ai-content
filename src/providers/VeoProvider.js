@@ -1,0 +1,3 @@
+const BaseProvider = require('./BaseProvider');
+class VeoProvider extends BaseProvider { headers() { return { 'Content-Type': 'application/json', 'x-goog-api-key': this.config.api_key }; } requestPath(input = {}) { return `/v1beta/models/${encodeURIComponent(input.model || this.config.default_model)}:predictLongRunning`; } buildRequest(input) { return { instances: [{ prompt: input.prompt }], parameters: { aspectRatio: input.parameters?.aspectRatio, durationSeconds: input.parameters?.duration, negativePrompt: input.parameters?.negativePrompt, resolution: input.parameters?.resolution, seed: input.parameters?.seed } }; } }
+module.exports = VeoProvider;
