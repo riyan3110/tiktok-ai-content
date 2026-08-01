@@ -28,3 +28,9 @@ Perubahan field disimpan sebagai snapshot pada undo stack in-memory (maksimal 50
 ## Batas Integrasi
 
 Orchestrator tidak memanggil backend dan tidak mengubah storage key Milestone 1–8. Integrasi modul nyata berikutnya dapat menggunakan `window.WorkflowOrchestrator.getState()` dan event browser tanpa mengubah kontrak server.
+
+## Milestone 18 — Unified Workflow Engine
+
+Workflow Builder sekarang memakai event browser `aiads:assets-selected`, `aiads:prompt-generated`, dan `aiads:queue-updated` untuk menghubungkan modul yang sudah ada tanpa reload atau kontrak API baru. Pemilihan project mengisi metadata campaign dan default creative library; satu pemilihan asset dibagikan sebagai ID terkelola ke tahap consistency, studio, generator, dan provider tanpa upload ulang.
+
+Eksekusi memakai `AIProviderConnector` serta `GenerationQueue` yang sudah ada, dengan lifecycle Draft, Ready, Running, Completed, dan Failed. Snapshot workflow menyimpan prompt, provider, asset, hasil, status, serta timestamp ke history lokal. Kegagalan dapat dicoba ulang pada state yang sama, sedangkan Result Viewer memberi preview image/video, download, copy prompt, dan copy URL.
