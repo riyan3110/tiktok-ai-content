@@ -65,6 +65,29 @@ test('OrcaRouter uses capability-specific image endpoint, model, and response fo
   assert.equal(result.media[0].b64_json, 'aGVsbG8=');
 });
 
+test('OrcaRouter image removes unsupported options and parses every documented response shape', async () => {
+  const payloads = [
+    { data: [{ url: 'https://cdn.test/a.png' }] },
+    { output: [{ url: 'https://cdn.test/b.png' }] },
+    { output: { url: 'https://cdn.test/c.png' } },
+    { images: [{ url: 'https://cdn.test/d.png' }] },
+    { result_url: 'https://cdn.test/e.png' },
+    { data: [{ b64_json: 'aGVsbG8=', mime_type: 'image/png' }] }
+  ];
+  for (const payload of payloads) {
+    let body;
+    const adapter = ProviderFactory.create({ provider: 'orcarouter', base_url: 'https://api.orcarouter.ai/v1', image_model: 'vendor/verified-image', api_key: 'never-log-me' }, async (url, options) => { assert.equal(url, 'https://api.orcarouter.ai/v1/images/generations'); body = JSON.parse(options.body); return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json', 'x-request-id': 'req-image-1' } }); });
+    const result = await adapter.execute({ mediaType: 'image', prompt: 'poster', parameters: { resolution: '1024x1024', style: 'vivid', negativePrompt: 'text' } });
+    assert.deepEqual(body, { model: 'vendor/verified-image', prompt: 'poster' }); assert.equal(result.providerRequestId, 'req-image-1'); assert.equal(result.media.length, 1);
+  }
+});
+
+test('OrcaRouter image exposes 4xx/5xx details and rejects empty successful responses', async () => {
+  for (const status of [400, 502]) { const adapter = ProviderFactory.create({ provider: 'orcarouter', base_url: 'https://api.orcarouter.ai', image_model: 'openai/gpt-image-1', api_key: 'secret' }, async () => new Response(JSON.stringify({ error: { message: `upstream ${status}` } }), { status, headers: { 'content-type': 'application/json', 'x-request-id': `req-${status}` } })); await assert.rejects(adapter.execute({ mediaType: 'image', prompt: 'x' }), error => error.status === status && error.message === `upstream ${status}` && error.providerRequestId === `req-${status}`); }
+  const empty = ProviderFactory.create({ provider: 'orcarouter', base_url: 'https://api.orcarouter.ai', image_model: 'openai/gpt-image-1', api_key: 'secret' }, async () => new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }));
+  await assert.rejects(empty.execute({ mediaType: 'image', prompt: 'x' }), /Response image kosong/);
+});
+
 test('OrcaRouter polls video tasks through SUCCESS and records result_url', async () => {
   const calls = []; let polls = 0;
   const adapter = ProviderFactory.create({ provider: 'orcarouter', base_url: 'https://api.orcarouter.ai', default_model: 'orcarouter/auto', video_model: 'kling/kling-v2-6', video_poll_interval_ms: 1, api_key: 'one-key' }, async (url, options) => {

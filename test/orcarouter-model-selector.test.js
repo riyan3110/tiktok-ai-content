@@ -33,12 +33,12 @@ test('selected OrcaRouter image model is sent unchanged and persisted in generat
   const db = createDatabase(':memory:'); enable(db); const bodies = [];
   const app = createApp({ db, aiTransport: async (url, options = {}) => {
     if (url.endsWith('/v1/models')) return new Response(JSON.stringify(modelPayload));
-    bodies.push(JSON.parse(options.body)); return new Response(JSON.stringify({ data: [{ url: 'data:image/png;base64,iVBORw0KGgo=' }] }));
+    bodies.push(JSON.parse(options.body)); return new Response(JSON.stringify({ data: [{ url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' }] }));
   } });
   const generated = (await request(app).post('/api/content-studio/generate').send({ provider: 'orcarouter', mediaType: 'image', model: 'openai/gpt-image-1.5', prompt: 'poster' }).expect(202)).body;
   for (let tries = 0; tries < 30 && !bodies.length; tries += 1) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(bodies[0].model, 'openai/gpt-image-1.5');
-  const history = (await request(app).get(`/api/content-studio/jobs/${generated.ids[0]}`).expect(200)).body;
+  let history; for (let tries = 0; tries < 50; tries += 1) { history = (await request(app).get(`/api/content-studio/jobs/${generated.ids[0]}`).expect(200)).body; if (['Completed','Failed'].includes(history.status)) break; await new Promise(resolve => setTimeout(resolve, 10)); }
   assert.equal(history.model, 'openai/gpt-image-1.5'); db.close();
 });
 
