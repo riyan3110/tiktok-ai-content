@@ -187,7 +187,9 @@ test('permanent delete invokes Tencent COS DELETE before removing its row', asyn
 test('Asset Manager UI exposes modal preview and complete multi-selection actions', () => {
   const html = require('node:fs').readFileSync(require.resolve('../public/index.html'), 'utf8');
   const source = require('node:fs').readFileSync(require.resolve('../public/assets.js'), 'utf8');
-  for (const id of ['asset-preview-modal', 'asset-select-all', 'asset-clear-selection', 'asset-delete-selected', 'asset-download-selected', 'asset-move-selected', 'asset-copy-selected']) assert.match(html, new RegExp(`id="${id}"`));
+  for (const id of ['asset-preview-modal', 'asset-preview-rename', 'asset-select-all', 'asset-clear-selection', 'asset-delete-selected', 'asset-download-selected', 'asset-move-selected', 'asset-copy-selected']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(source, /asset-preview-rename/);
+  assert.match(source, /method: 'PATCH'/);
   assert.match(source, /previewDialog\.showModal\(\)/);
   assert.match(source, /assets\.forEach\(asset => managerSelected\.add\(asset\.id\)\)/);
   assert.match(source, /api\/assets\/bulk-delete/);
