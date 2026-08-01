@@ -16,9 +16,37 @@ syncThemeButton();
 const sidebar = document.querySelector('#sidebar');
 const menuToggle = document.querySelector('#menu-toggle');
 const backdrop = document.querySelector('#mobile-backdrop');
-function closeMenu() { sidebar.classList.remove('open'); backdrop.classList.remove('open'); menuToggle.setAttribute('aria-expanded', 'false'); }
-menuToggle.onclick = () => { const open = !sidebar.classList.contains('open'); sidebar.classList.toggle('open', open); backdrop.classList.toggle('open', open); menuToggle.setAttribute('aria-expanded', String(open)); };
+const drawerMedia = window.matchMedia('(max-width: 1023px)');
+const drawerStorageKey = 'ai-ads-lab-drawer-open';
+function setMenu(open, remember = true) {
+  const shouldOpen = Boolean(open && drawerMedia.matches);
+  sidebar.classList.toggle('open', shouldOpen);
+  backdrop.classList.toggle('open', shouldOpen);
+  backdrop.setAttribute('aria-hidden', String(!shouldOpen));
+  menuToggle.setAttribute('aria-expanded', String(shouldOpen));
+  document.body.classList.toggle('drawer-open', shouldOpen);
+  if (remember) localStorage.setItem(drawerStorageKey, String(shouldOpen));
+}
+function closeMenu() { setMenu(false); }
+menuToggle.onclick = () => setMenu(!sidebar.classList.contains('open'));
 backdrop.onclick = closeMenu;
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && sidebar.classList.contains('open')) { closeMenu(); menuToggle.focus(); } });
+drawerMedia.addEventListener('change', event => setMenu(event.matches && localStorage.getItem(drawerStorageKey) === 'true', false));
+let drawerTouchStart;
+document.addEventListener('touchstart', event => {
+  const touch = event.changedTouches[0];
+  if (sidebar.classList.contains('open') || touch.clientX <= 24) drawerTouchStart = { x: touch.clientX, y: touch.clientY };
+}, { passive: true });
+document.addEventListener('touchend', event => {
+  if (!drawerTouchStart || !drawerMedia.matches) return;
+  const touch = event.changedTouches[0];
+  const dx = touch.clientX - drawerTouchStart.x;
+  const dy = Math.abs(touch.clientY - drawerTouchStart.y);
+  if (dy < 70 && dx < -60) closeMenu();
+  else if (dy < 70 && dx > 70 && drawerTouchStart.x <= 24) setMenu(true);
+  drawerTouchStart = undefined;
+}, { passive: true });
+setMenu(drawerMedia.matches && localStorage.getItem(drawerStorageKey) === 'true', false);
 document.querySelectorAll('.side-nav a').forEach(link => link.onclick = () => { document.querySelectorAll('.side-nav a').forEach(item => item.classList.remove('active')); link.classList.add('active'); closeMenu(); });
 const loadingState = label => `<div class="loading-state"><span class="spinner" aria-hidden="true"></span><p>${label}</p></div>`;
 const emptyState = (title, detail) => `<div class="empty-state"><span class="state-icon" aria-hidden="true">✦</span><strong>${title}</strong><p>${detail}</p></div>`;
