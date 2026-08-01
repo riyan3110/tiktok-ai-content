@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS templates (
   duration INTEGER,
   resolution TEXT,
   aspect_ratio TEXT,
+  platform TEXT,
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
   seed INTEGER,
@@ -186,6 +187,14 @@ CREATE TABLE IF NOT EXISTS templates (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_templates_library ON templates(is_archived, is_favorite, category, folder);
+
+CREATE TABLE IF NOT EXISTS active_template_drafts (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  destination TEXT NOT NULL,
+  snapshot TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS template_versions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
