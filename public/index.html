@@ -25,9 +25,10 @@
       <a href="#ai-providers" data-workspace-view="providers"><span aria-hidden="true">⬡</span><span>AI Providers</span></a>
       <a href="#generation-queue" data-workspace-view="queue"><span aria-hidden="true">≋</span><span>Generation Queue</span></a>
       <a href="#ai-integration" data-workspace-view="integration"><span aria-hidden="true">⇄</span><span>AI Integration</span></a>
-      <a href="#assets" data-placeholder-view="Assets"><span aria-hidden="true">□</span><span>Assets</span></a>
+      <a href="#assets" data-workspace-view="assets"><span aria-hidden="true">□</span><span>Assets</span></a>
       <a href="#analytics" data-placeholder-view="Analytics"><span aria-hidden="true">↗</span><span>Analytics</span></a>
       <a href="#settings" data-workspace-view="profile"><span aria-hidden="true">⚙</span><span>Settings</span></a>
+      <a href="#storage" data-workspace-view="storage"><span aria-hidden="true">☁</span><span>Storage</span></a>
       <div class="nav-divider"></div>
       <a href="#studio" data-workspace-view="studio"><span aria-hidden="true">✦</span><span>Content Studio</span><small>Legacy</small></a>
       <a href="#trend-reference" data-workspace-view="studio"><span aria-hidden="true">⌁</span><span>Referensi Tren</span></a>
@@ -50,6 +51,12 @@
       </div>
     </header>
     <div class="page-content">
+      <section id="asset-manager" class="asset-manager hidden" aria-labelledby="assets-title">
+        <header class="asset-heading"><div><span class="eyebrow">ASSET MANAGEMENT</span><h1 id="assets-title">Assets</h1><p>Kelola media upload dan hasil generasi AI dari satu library.</p></div><button id="asset-browse" type="button">＋ Upload Assets</button><input id="asset-input" class="hidden" type="file" multiple></header>
+        <div class="asset-toolbar"><label class="project-search"><span>⌕</span><input id="asset-search" type="search" placeholder="Cari nama atau tag…"></label><select id="asset-type"><option value="">Semua tipe</option><option value="image">Image</option><option value="video">Video</option><option value="audio">Audio</option><option value="storyboard">Storyboard</option><option value="reference-character">Reference Character</option><option value="reference-product">Reference Product</option><option value="prompt-attachment">Prompt Attachment</option><option value="generated-media">Generated Media</option></select><select id="asset-provider"><option value="">Semua provider</option><option value="local">Local</option><option value="tencent-cos">Tencent COS</option></select><button id="asset-trash" class="outline">Trash</button></div>
+        <div class="asset-layout"><aside><h2>Folders</h2><button id="folder-create" class="outline">＋ Folder</button><button data-asset-scope="recent" class="text-button">◷ Recent</button><button data-asset-scope="favorite" class="text-button">★ Favorite</button><div id="asset-folders"></div><h2>Tags</h2><p>Character · Product · Storyboard · Campaign · Workflow · Project</p></aside><main><div id="asset-drop" class="asset-drop" tabindex="0"><strong>Drop files here</strong><span>atau browse / paste dari clipboard</span><div id="upload-progress"></div></div><p id="asset-results" class="results-label"></p><div id="asset-grid" class="asset-grid"></div></main></div>
+      </section>
+      <section id="storage-settings" class="storage-settings hidden" aria-labelledby="storage-title"><header><span class="eyebrow">SETTINGS → STORAGE</span><h1 id="storage-title">Storage</h1><p>Credential hanya disimpan terenkripsi dan tidak pernah dikirim kembali ke browser.</p></header><form id="storage-form"><div class="storage-grid"><label>Storage Provider<select name="provider"><option value="local">Local Storage</option><option value="tencent-cos">Tencent COS</option></select></label><label>Tencent SecretId<input name="secretId" type="password" autocomplete="off"></label><label>Tencent SecretKey<input name="secretKey" type="password" autocomplete="off"></label><label>Bucket<input name="bucket"></label><label>Region<input name="region" placeholder="ap-jakarta"></label><label>Endpoint<input name="endpoint" placeholder="Optional custom endpoint"></label><label>Signed URL Expiration (seconds)<input name="signedUrlExpiration" type="number" min="60"></label><label>Public URL<input name="publicUrl" type="url"></label><label>Storage Quota (bytes)<input name="storageQuota" type="number" min="0"></label><label>Retention (days)<input name="retentionDays" type="number" min="0"></label><label>Auto Delete (days)<input name="autoDeleteDays" type="number" min="0"></label></div><div class="storage-checks"><label><input name="useHttps" type="checkbox"> Use HTTPS</label><label><input name="encryption" type="checkbox"> Server-side Encryption</label><label><input name="versioning" type="checkbox"> Versioning</label><label><input name="duplicateDetection" type="checkbox"> Duplicate Detection</label></div><div><button type="submit">Save Settings</button> <button id="storage-test" class="outline" type="button">Test Connection</button></div><div id="storage-status" role="status"></div></form></section>
       <section id="profile-workspace" class="profile-workspace hidden" aria-labelledby="profile-title"><div class="workspace-heading"><div><span class="eyebrow">ACCOUNT SETTINGS</span><h1 id="profile-title">Workspace Profile</h1><p>Kelola autentikasi, profil, sesi, dan penyimpanan workspace Anda.</p></div></div><div id="profile-content"></div></section>
       <section id="project-workspace" class="project-workspace" aria-labelledby="projects-title">
         <div class="workspace-heading">
@@ -228,6 +235,7 @@
 <script src="/ai-integration.js"></script>
 <script src="/account-workspace.js"></script>
 <script src="/templates.js"></script>
+<script src="/assets.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
