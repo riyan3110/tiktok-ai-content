@@ -36,6 +36,16 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.get('/terms', (req, res) => res.sendFile(`${config.root}/public/terms.html`));
   app.get('/privacy', (req, res) => res.sendFile(`${config.root}/public/privacy.html`));
   app.use('/asset-files', express.static(`${config.root}/data/assets`, { fallthrough: false, maxAge: '1h' }));
+  const projectJson = row => row && ({ id: row.id, name: row.name, brand: row.brand, product: row.product, category: row.category, description: row.description, status: row.status, promptCount: row.prompt_count, storyboardCount: row.storyboard_count, createdAt: row.created_at, updatedAt: row.updated_at });
+  const projectPayload = body => {
+    const name = String(body?.name || '').trim();
+    if (!name) throw Object.assign(new Error('Nama project wajib diisi'), { status: 422 });
+    return { name, brand: String(body?.brand || '').trim(), product: String(body?.product || '').trim(), category: String(body?.category || '').trim(), description: String(body?.description || '').trim(), status: String(body?.status || 'Draft').trim() || 'Draft' };
+  };
+  app.get('/api/projects', (req, res) => res.json(db.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all().map(projectJson)));
+  app.post('/api/projects', (req, res, next) => { try { const value = projectPayload(req.body); const id = String(req.body?.id || crypto.randomUUID()); const createdAt = req.body?.createdAt || new Date().toISOString(); db.prepare('INSERT INTO projects(id,name,brand,product,category,description,status,prompt_count,storyboard_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id, value.name, value.brand, value.product, value.category, value.description, value.status, Number(req.body?.promptCount) || 0, Number(req.body?.storyboardCount) || 0, createdAt, req.body?.updatedAt || createdAt); res.status(201).json(projectJson(db.prepare('SELECT * FROM projects WHERE id=?').get(id))); } catch (e) { next(e); } });
+  app.patch('/api/projects/:id', (req, res, next) => { try { const value = projectPayload(req.body); const result = db.prepare('UPDATE projects SET name=?,brand=?,product=?,category=?,description=?,status=?,updated_at=? WHERE id=?').run(value.name, value.brand, value.product, value.category, value.description, value.status, new Date().toISOString(), req.params.id); if (!result.changes) return res.status(404).json({ error: 'Project tidak ditemukan' }); res.json(projectJson(db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id))); } catch (e) { next(e); } });
+  app.delete('/api/projects/:id', (req, res, next) => { try { const deleted = db.transaction(id => db.prepare('DELETE FROM projects WHERE id=?').run(id).changes)(req.params.id); if (!deleted) return res.status(404).json({ error: 'Project tidak ditemukan' }); res.json({ deleted: true }); } catch (e) { next(e); } });
   app.get('/api/storage/settings', (req, res) => res.json(storage.publicSettings()));
   app.get('/api/content-studio/providers', (req, res) => res.json(studio.providers()));
   app.get('/api/ai/providers/orcarouter/models', async (req, res, next) => { try { res.json(await orcaRouterModels.get({ refresh: req.query.refresh === 'true' })); } catch (e) { next(e); } });

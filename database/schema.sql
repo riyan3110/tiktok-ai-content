@@ -28,6 +28,24 @@ CREATE TABLE IF NOT EXISTS contents (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Project-owned records are removed by SQLite foreign-key cascades. Assets are
+-- intentionally not project-owned here, so deleting a project never removes a
+-- shared local/COS object.
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL CHECK(length(trim(name)) > 0),
+  brand TEXT NOT NULL DEFAULT '', product TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'Draft',
+  prompt_count INTEGER NOT NULL DEFAULT 0, storyboard_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS project_prompts (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, payload TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS project_storyboards (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, payload TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS project_workflow_records (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, payload TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS project_settings (project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE, payload TEXT NOT NULL DEFAULT '{}');
+
 CREATE TABLE IF NOT EXISTS trend_reference_sets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL DEFAULT 'Referensi Tren Hari Ini',
