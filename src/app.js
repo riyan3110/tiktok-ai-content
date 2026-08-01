@@ -54,8 +54,8 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.patch('/api/asset-folders/:id', (req, res) => { const result = db.prepare('UPDATE asset_folders SET name=COALESCE(?,name),parent_id=COALESCE(?,parent_id),is_favorite=COALESCE(?,is_favorite),updated_at=CURRENT_TIMESTAMP WHERE id=?').run(req.body?.name || null, req.body?.parentId || null, req.body?.favorite === undefined ? null : Number(Boolean(req.body.favorite)), req.params.id); res.status(result.changes ? 200 : 404).json({ updated: Boolean(result.changes) }); });
   app.delete('/api/asset-folders/:id', (req, res) => res.json({ deleted: Boolean(db.prepare('DELETE FROM asset_folders WHERE id=?').run(req.params.id).changes) }));
   app.get('/auth/tiktok', (req, res, next) => {
-    const state = tiktok.randomState(); const now = Date.now();
     const redirectUri = config.tiktokRedirectUri || `${req.protocol}://${req.get('host')}/auth/tiktok/callback`;
+    const state = tiktok.randomState(redirectUri); const now = Date.now();
     db.prepare("DELETE FROM oauth_states WHERE provider='tiktok' AND expires_at < ?").run(now);
     db.prepare("INSERT INTO oauth_states(state,provider,status,expires_at,redirect_uri) VALUES(?,'tiktok','pending',?,?)").run(state, now + 15 * 60 * 1000, redirectUri);
     req.session.oauthState = state;
@@ -64,8 +64,19 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.get('/auth/tiktok/callback', async (req, res, next) => {
     const state = String(req.query.state || ''); const code = String(req.query.code || ''); const now = Date.now();
     try {
-      const saved = state && db.prepare("SELECT * FROM oauth_states WHERE state=? AND provider='tiktok'").get(state);
+      let saved = state && db.prepare("SELECT * FROM oauth_states WHERE state=? AND provider='tiktok'").get(state);
       const connected = Boolean(db.prepare("SELECT 1 FROM oauth_tokens WHERE provider='tiktok'").get());
+      // The signed state remains verifiable if a deploy/restart loses the pending
+      // row between authorization and TikTok's callback. The database still
+      // provides the atomic, one-use claim during normal operation.
+      if (!saved && typeof tiktok.verifyState === 'function') {
+        const verified = tiktok.verifyState(state);
+        if (verified) {
+          const redirectUri = verified.redirectUri || config.tiktokRedirectUri;
+          db.prepare("INSERT OR IGNORE INTO oauth_states(state,provider,status,expires_at,redirect_uri) VALUES(?,'tiktok','pending',?,?)").run(state, verified.expiresAt, redirectUri);
+          saved = db.prepare("SELECT * FROM oauth_states WHERE state=? AND provider='tiktok'").get(state);
+        }
+      }
       if (!code || !saved || saved.expires_at < now) return res.redirect(`/?oauth=${connected ? 'reconnect-failed' : 'expired'}`);
       if (saved.status === 'completed') return res.redirect('/?oauth=success');
       if (saved.status !== 'pending') return res.redirect(`/?oauth=${connected ? 'connected' : 'pending'}`);
