@@ -17,10 +17,10 @@ const { MediaGenerationWorker } = require('./ai/mediaWorker');
 const templateService = require('./services/templates');
 const { StorageService } = require('./storage/service');
 
-function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, automation = automationService, aiTransport } = {}) {
+function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, automation = automationService, aiTransport, storageTransport } = {}) {
   const app = express(); app.set('trust proxy', 1); app.use(express.json({ limit: '50mb' })); app.use(express.urlencoded({ extended: false, limit: '50mb' }));
   const mediaWorker = new MediaGenerationWorker({ db, transport: aiTransport });
-  const storage = new StorageService({ db });
+  const storage = new StorageService({ db, transport: storageTransport });
   app.use(session({ secret: config.sessionSecret, resave: false, saveUninitialized: false, cookie: { httpOnly: true, sameSite: 'lax', secure: config.publicBaseUrl.startsWith('https://'), maxAge: 10 * 60 * 1000 } }));
   app.use(express.static(`${config.root}/public`, { setHeaders: (res, file) => { if (/\.jpe?g$/i.test(file)) res.setHeader('Content-Type', 'image/jpeg'); } }));
   app.get('/terms', (req, res) => res.sendFile(`${config.root}/public/terms.html`));
