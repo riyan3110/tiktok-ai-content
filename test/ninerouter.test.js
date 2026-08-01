@@ -51,9 +51,10 @@ test('9Router discovered capabilities refresh and gate image defaults without ch
   db.close();
 });
 
-test('Default Image AI uses online 9Router discovery instead of a selected image model', () => {
+test('Default provider dropdown keeps enabled 9Router additive without hiding OrcaRouter', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/ai-providers.js'), 'utf8');
-  assert.match(source, /p\.health\.status==='Online'&&nineModels\?\.capabilities\?\.includes\(capability\)/);
+  assert.match(source, /p\.enabled&&p\.capabilities\.includes\(capability\)/);
+  assert.doesNotMatch(source, /p\.health\.status==='Online'&&nineModels/);
   assert.doesNotMatch(source, /imageModel.*includes\(capability\)/);
   assert.match(source, /Detected capabilities/);
   assert.match(source, /models\)<\/span>/);

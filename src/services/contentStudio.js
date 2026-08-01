@@ -12,7 +12,7 @@ const imageMime = data => data.subarray(0, 8).equals(Buffer.from([137,80,78,71,1
 
 class ContentStudioService {
   constructor({ db, storage, fetcher = fetch } = {}) { this.db = db; this.storage = storage; this.fetcher = fetcher; }
-  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: PROVIDER_NAMES[row.provider], types: connector.CAPABILITIES[row.provider], isDefault: Boolean(row.is_default), models: { text: row.text_model || row.default_model, image: row.image_model || row.default_model, video: row.video_model || row.default_model } })); }
+  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: PROVIDER_NAMES[row.provider], types: connector.CAPABILITIES[row.provider], defaultCapabilities: connector.defaultCapabilities(this.db, row.provider), models: { text: row.text_model || row.default_model, image: row.image_model || row.default_model, video: row.video_model || row.default_model } })); }
   list(query = {}) {
     const rows = this.db.prepare('SELECT * FROM ai_generations ORDER BY created_at DESC LIMIT 500').all();
     const search = String(query.search || '').trim().toLowerCase(); const type = String(query.type || ''); const status = String(query.status || ''); const provider = String(query.provider || '');
