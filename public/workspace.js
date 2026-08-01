@@ -10,6 +10,7 @@
   const contentStudio = $('#content-studio');
   const consistency = $('#consistency-engine');
   const workflow = $('#workflow-orchestrator');
+  const factory = $('#content-factory');
   const generator = $('#prompt-generator');
   const providers = $('#ai-providers');
   const queue = $('#generation-queue');
@@ -89,6 +90,7 @@
     placeholder.classList.toggle('hidden', view !== 'placeholder');
     consistency.classList.toggle('hidden', view !== 'consistency');
     workflow.classList.toggle('hidden', view !== 'workflow');
+    factory.classList.toggle('hidden', view !== 'factory');
     generator.classList.toggle('hidden', view !== 'generator');
     providers.classList.toggle('hidden', view !== 'providers');
     queue.classList.toggle('hidden', view !== 'queue');
@@ -99,7 +101,7 @@
     document.querySelector('#storage-settings').classList.toggle('hidden', view !== 'storage');
     if (view === 'placeholder') $('#placeholder-title').textContent = title;
     const legacyHeadings = { 'trend-reference': 'Referensi Tren', 'schedule-dashboard': 'Jadwal', 'history-section': 'Riwayat' };
-    const heading = view === 'assets' ? 'Asset Manager' : view === 'storage' ? 'Storage Settings' : view === 'templates' ? 'Template Manager' : view === 'projects' ? 'Project Workspace' : view === 'profile' ? 'Workspace Profile' : view === 'studio' ? 'Dashboard Konten' : view === 'legacy' ? legacyHeadings[title] || 'Content Studio' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
+    const heading = view === 'factory' ? 'AI Content Factory' : view === 'assets' ? 'Asset Manager' : view === 'storage' ? 'Storage Settings' : view === 'templates' ? 'Template Manager' : view === 'projects' ? 'Project Workspace' : view === 'profile' ? 'Workspace Profile' : view === 'studio' ? 'Dashboard Konten' : view === 'legacy' ? legacyHeadings[title] || 'Content Studio' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
     document.querySelector('.topbar-title strong').textContent = heading;
     document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', (link.dataset.workspaceView === view && (view !== 'legacy' || link.dataset.legacySection === title)) || (view === 'placeholder' && link.dataset.placeholderView === title)));
     if (view === 'legacy' && title) requestAnimationFrame(() => document.getElementById(title)?.scrollIntoView({ block: 'start' }));
@@ -145,7 +147,7 @@
   document.querySelectorAll('[data-workspace-view]').forEach(link => link.addEventListener('click', () => showView(link.dataset.workspaceView, link.dataset.legacySection)));
   document.querySelectorAll('[data-placeholder-view]').forEach(link => link.addEventListener('click', () => showView('placeholder', link.dataset.placeholderView)));
   const legacyHash = () => ['trend-reference', 'schedule-dashboard', 'history-section'].find(id => location.hash === `#${id}`);
-  const viewFromHash = () => legacyHash() ? 'legacy' : location.hash === '#assets' ? 'assets' : location.hash === '#storage' ? 'storage' : location.hash === '#templates' ? 'templates' : ['#profile', '#settings'].includes(location.hash) ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
+  const viewFromHash = () => legacyHash() ? 'legacy' : location.hash === '#content-factory' ? 'factory' : location.hash === '#assets' ? 'assets' : location.hash === '#storage' ? 'storage' : location.hash === '#templates' ? 'templates' : ['#profile', '#settings'].includes(location.hash) ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
   const showHashView = () => showView(viewFromHash(), legacyHash());
   window.addEventListener('hashchange', showHashView);
   renderProjects(); showHashView();
