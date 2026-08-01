@@ -64,6 +64,14 @@ class StorageService {
   async accessible(asset) { const url = await this.url(asset); const image = asset.type === 'image' || this.assetMimeType(asset).startsWith('image/'); const previewUrl = `/api/assets/${encodeURIComponent(asset.id)}/preview`; return { ...asset, mime_type: this.assetMimeType(asset), type: image ? 'image' : asset.type, storage_url: url, url, preview_url: image ? previewUrl : null }; }
   async preview(asset) { const downloaded = await this.adapter(asset.storage_provider).download(asset.storage_key); return { data: downloaded.data, mimeType: detectMimeType(downloaded.data, asset.name || asset.storage_key, downloaded.contentType || asset.mime_type) }; }
   async accessibleList(query = {}) { return Promise.all(this.repository.list(query).map(asset => this.accessible(asset))); }
+  async resolveIds(ids = []) {
+    if (!Array.isArray(ids) || ids.length > 100) throw Object.assign(new Error('assetIds must be an array with at most 100 items'), { status: 422 });
+    const unique = [...new Set(ids.map(String))];
+    const assets = unique.map(id => this.repository.get(id));
+    const missing = unique.filter((_, index) => !assets[index]);
+    if (missing.length) throw Object.assign(new Error(`Asset tidak ditemukan: ${missing.join(', ')}`), { status: 404 });
+    return Promise.all(assets.map(asset => this.accessible(asset)));
+  }
   async move(id, patch) { const asset = this.repository.get(id); if (!asset) throw Object.assign(new Error('Asset tidak ditemukan'), { status: 404 }); if (patch.name && patch.name !== asset.name) { const target = `${path.dirname(asset.storage_key)}/${crypto.randomUUID()}${path.extname(patch.name)}`; const adapter = this.adapter(asset.storage_provider); const stored = await adapter.rename(asset.storage_key, target); patch.storageKey = stored.key || target; patch.storageUrl = stored.url || adapter.publicUrl(target); } return this.repository.update(id, patch); }
   async copy(id) { const asset = this.repository.get(id); if (!asset) throw Object.assign(new Error('Asset tidak ditemukan'), { status: 404 }); const key = `${path.dirname(asset.storage_key)}/${crypto.randomUUID()}${path.extname(asset.storage_key)}`; const adapter = this.adapter(asset.storage_provider); const stored = await adapter.copy(asset.storage_key, key); return this.repository.create({ id: crypto.randomUUID(), name: `Copy of ${asset.name}`, type: asset.type, mimeType: asset.mime_type, storageProvider: asset.storage_provider, storageKey: stored.key || key, storageUrl: stored.url || adapter.publicUrl(key), folderId: asset.folder_id, size: asset.size, checksum: asset.checksum, tags: JSON.stringify(asset.tags), metadata: JSON.stringify({ ...asset.metadata, copiedFrom: asset.id }), isGenerated: Number(asset.is_generated) }); }
 }

@@ -15,3 +15,7 @@ When Tencent COS upload fails, `StorageService` transparently retries through lo
 ## Operations
 
 Configure **Settings → Storage**, save credentials, then use **Test Connection**. The result reports connectivity, latency, bucket status, validated permission, storage usage, and quota. Local files live under `data/assets` and are served through the dedicated `/asset-files` route. COS never falls back for destructive operations, preventing a failed cloud delete from accidentally targeting a local object.
+
+## Milestone 15 — Asset Integration
+
+Prompt Generator, Workflow Builder, and Content Studio now share one responsive **Select from Assets** modal. Consumers persist internal `assetIds`, while `POST /api/assets/resolve` resolves Local Storage or Tencent COS locations on the server immediately before use. The selector supports category, search, favorite, folder, multi-select, and preview workflows. Public URLs are never a required input; Copy URL remains available only under the Asset Manager's Advanced menu, alongside the primary Download and Delete lifecycle actions.

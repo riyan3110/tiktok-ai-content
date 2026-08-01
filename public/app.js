@@ -96,6 +96,10 @@ async function connectionStatus() {
 $('#content-category').onchange = () => $('#custom-category-field').classList.toggle('hidden', $('#content-category').value !== 'Custom');
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { $('#manual-topic-field').classList.toggle('hidden', input.value !== 'manual' || !input.checked); });
 let lastGenerationRequest;
+let studioAssets = [];
+function renderStudioAssets() { $('#studio-assets').innerHTML = studioAssets.length ? studioAssets.map(asset => `<span class="selected-asset"><img src="${escapeHtml(asset.previewUrl)}" alt=""><b>${escapeHtml(asset.name)}</b><button type="button" data-remove-studio-asset="${escapeHtml(asset.id)}">×</button></span>`).join('') : '<small>No reference assets attached</small>'; document.querySelectorAll('[data-remove-studio-asset]').forEach(button => button.onclick = () => { studioAssets = studioAssets.filter(asset => asset.id !== button.dataset.removeStudioAsset); renderStudioAssets(); }); }
+$('#studio-select-assets').onclick = async () => { const chosen = await window.AssetManager.select({ selectedIds: studioAssets.map(asset => asset.id), multiple: true }); if (chosen) { studioAssets = chosen; renderStudioAssets(); } };
+renderStudioAssets();
 function watermarkEnabled() { return $('#watermark-enabled').checked; }
 async function generate(request) {
   try {
@@ -108,7 +112,7 @@ async function generate(request) {
     $('#message').textContent = error.message; $('#retry-generate').classList.remove('hidden');
   }
 }
-$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); await generate({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false, watermarkEnabled: watermarkEnabled() }); };
+$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); await generate({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, assetIds: studioAssets.map(asset => asset.id), useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false, watermarkEnabled: watermarkEnabled() }); };
 $('#retry-generate').onclick = () => generate({ ...lastGenerationRequest, forceNewAngle: true });
 function renderPublishStatus(data, message = '') {
   const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];

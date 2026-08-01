@@ -150,3 +150,14 @@ test('Tencent COS upload errors do not silently fall back to local storage', asy
   assert.equal(db.prepare('SELECT COUNT(*) count FROM assets').get().count, 0);
   db.close();
 });
+
+test('asset ID resolver preserves order and resolves Local Storage without client URLs', async () => {
+  const db = createDatabase(':memory:'); const app = createApp({ db });
+  const first = await request(app).post('/api/assets/upload').send({ name: 'character.png', mimeType: 'image/png', data: Buffer.from('first-image').toString('base64'), tags: ['Character'], metadata: { category: 'Character' } }).expect(201);
+  const second = await request(app).post('/api/assets/upload').send({ name: 'logo.png', mimeType: 'image/png', data: Buffer.from('second-image').toString('base64'), tags: ['Logo'], metadata: { category: 'Logo' } }).expect(201);
+  const resolved = await request(app).post('/api/assets/resolve').send({ assetIds: [second.body.id, first.body.id] }).expect(200);
+  assert.deepEqual(resolved.body.map(asset => asset.id), [second.body.id, first.body.id]);
+  assert.ok(resolved.body.every(asset => asset.storage_provider === 'local' && asset.url && asset.preview_url));
+  await request(app).post('/api/assets/resolve').send({ assetIds: ['missing'] }).expect(404);
+  db.close();
+});
