@@ -53,8 +53,38 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.post('/api/asset-folders', (req, res, next) => { try { const id = crypto.randomUUID(); const name = String(req.body?.name || '').trim(); if (!name) throw Object.assign(new Error('Nama folder wajib diisi'), { status: 422 }); db.prepare('INSERT INTO asset_folders(id,name,parent_id) VALUES(?,?,?)').run(id, name, req.body?.parentId || null); res.status(201).json(db.prepare('SELECT * FROM asset_folders WHERE id=?').get(id)); } catch (e) { next(e); } });
   app.patch('/api/asset-folders/:id', (req, res) => { const result = db.prepare('UPDATE asset_folders SET name=COALESCE(?,name),parent_id=COALESCE(?,parent_id),is_favorite=COALESCE(?,is_favorite),updated_at=CURRENT_TIMESTAMP WHERE id=?').run(req.body?.name || null, req.body?.parentId || null, req.body?.favorite === undefined ? null : Number(Boolean(req.body.favorite)), req.params.id); res.status(result.changes ? 200 : 404).json({ updated: Boolean(result.changes) }); });
   app.delete('/api/asset-folders/:id', (req, res) => res.json({ deleted: Boolean(db.prepare('DELETE FROM asset_folders WHERE id=?').run(req.params.id).changes) }));
-  app.get('/auth/tiktok', (req, res) => { const state = tiktok.randomState(); req.session.oauthState = state; res.redirect(tiktok.authorizationUrl(state)); });
-  app.get('/auth/tiktok/callback', async (req, res, next) => { try { if (!req.query.code || req.query.state !== req.session.oauthState) return res.status(400).send('OAuth state tidak valid.'); const token = await tiktok.exchangeCode(req.query.code); db.prepare(`INSERT INTO oauth_tokens(provider,access_token,refresh_token,expires_at,refresh_expires_at,open_id,scope) VALUES('tiktok',?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,expires_at=excluded.expires_at,refresh_expires_at=excluded.refresh_expires_at,open_id=excluded.open_id,scope=excluded.scope,updated_at=CURRENT_TIMESTAMP`).run(token.access_token, token.refresh_token, Date.now() + token.expires_in * 1000, Date.now() + token.refresh_expires_in * 1000, token.open_id, token.scope); delete req.session.oauthState; res.redirect('/?oauth=success'); } catch (e) { next(e); } });
+  app.get('/auth/tiktok', (req, res, next) => {
+    const state = tiktok.randomState(); const now = Date.now();
+    db.prepare("DELETE FROM oauth_states WHERE provider='tiktok' AND expires_at < ?").run(now);
+    db.prepare("INSERT INTO oauth_states(state,provider,status,expires_at) VALUES(?,'tiktok','pending',?)").run(state, now + 15 * 60 * 1000);
+    req.session.oauthState = state;
+    req.session.save(error => error ? next(error) : res.redirect(tiktok.authorizationUrl(state)));
+  });
+  app.get('/auth/tiktok/callback', async (req, res, next) => {
+    const state = String(req.query.state || ''); const code = String(req.query.code || ''); const now = Date.now();
+    try {
+      const saved = state && db.prepare("SELECT * FROM oauth_states WHERE state=? AND provider='tiktok'").get(state);
+      const connected = Boolean(db.prepare("SELECT 1 FROM oauth_tokens WHERE provider='tiktok'").get());
+      if (!code || !saved || saved.expires_at < now) return res.redirect(`/?oauth=${connected ? 'reconnect-failed' : 'expired'}`);
+      if (saved.status === 'completed') return res.redirect('/?oauth=success');
+      if (saved.status !== 'pending') return res.redirect(`/?oauth=${connected ? 'connected' : 'pending'}`);
+      const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+      const claimed = db.prepare("UPDATE oauth_states SET status='processing',callback_code_hash=?,updated_at=CURRENT_TIMESTAMP WHERE state=? AND status='pending' AND expires_at>=?").run(codeHash, state, now);
+      if (!claimed.changes) return res.redirect(`/?oauth=${connected ? 'connected' : 'pending'}`);
+      try {
+        const token = await tiktok.exchangeCode(code);
+        db.transaction(() => {
+          db.prepare(`INSERT INTO oauth_tokens(provider,access_token,refresh_token,expires_at,refresh_expires_at,open_id,scope) VALUES('tiktok',?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,expires_at=excluded.expires_at,refresh_expires_at=excluded.refresh_expires_at,open_id=excluded.open_id,scope=excluded.scope,updated_at=CURRENT_TIMESTAMP`).run(token.access_token, token.refresh_token, now + token.expires_in * 1000, now + token.refresh_expires_in * 1000, token.open_id, token.scope);
+          db.prepare("UPDATE oauth_states SET status='completed',updated_at=CURRENT_TIMESTAMP WHERE state=?").run(state);
+        })();
+        delete req.session.oauthState; return res.redirect('/?oauth=success');
+      } catch (error) {
+        db.prepare("UPDATE oauth_states SET status='failed',updated_at=CURRENT_TIMESTAMP WHERE state=?").run(state);
+        if (connected) return res.redirect('/?oauth=reconnect-failed');
+        throw error;
+      }
+    } catch (e) { next(e); }
+  });
   app.get('/tiktok/connection-status', (req, res) => { const token = db.prepare("SELECT 1 FROM oauth_tokens WHERE provider='tiktok'").get(); res.json(token ? { connected: true, message: 'TikTok terhubung' } : { connected: false, message: 'TikTok belum terhubung' }); });
   app.get('/trend-references/current', (req, res) => res.json(trendReferences.current(db)));
   const providersResponse = () => { aiConnector.seed(db); const health = new Map(db.prepare('SELECT * FROM ai_provider_health').all().map(x => [x.provider, x])); return db.prepare('SELECT * FROM ai_provider_settings ORDER BY provider').all().map(row => ({ ...aiConnector.publicSetting(row), health: health.get(row.provider) || { status: 'Offline', quota_status: 'Unknown' } })); };

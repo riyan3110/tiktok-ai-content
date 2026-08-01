@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  expires_at INTEGER NOT NULL,
+  callback_code_hash TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expiry ON oauth_states(provider, expires_at);
+
 CREATE TABLE IF NOT EXISTS automation_schedules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   main_topic TEXT NOT NULL,

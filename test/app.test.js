@@ -72,6 +72,30 @@ test('status draft menyimpan status, fail_reason, dan downloaded_bytes', async (
   assert.deepEqual(saved, { publish_status: 'PROCESSING_DOWNLOAD', fail_reason: 'download pending', downloaded_bytes: 1234 });
 });
 test('OAuth dimulai dengan redirect', async () => { const { app } = setup(); await request(app).get('/auth/tiktok').expect(302).expect('Location', 'https://example.com/oauth'); });
+test('callback OAuth memakai state persisten sekali saja meski cookie sesi hilang', async () => {
+  let exchanges = 0;
+  const tiktok = { randomState: () => 'persistent-state', authorizationUrl: () => 'https://example.com/oauth', exchangeCode: async () => { exchanges++; return { access_token: 'new-token', refresh_token: 'refresh', expires_in: 3600, refresh_expires_in: 86400, open_id: 'user', scope: 'video.publish' }; } };
+  const { app, db } = setup({ tiktok });
+  await request(app).get('/auth/tiktok').expect(302);
+  await request(app).get('/auth/tiktok/callback?state=persistent-state&code=one-use').expect(302).expect('Location', '/?oauth=success');
+  await request(app).get('/auth/tiktok/callback?state=persistent-state&code=one-use').expect(302).expect('Location', '/?oauth=success');
+  assert.equal(exchanges, 1);
+  assert.equal(db.prepare("SELECT access_token FROM oauth_tokens WHERE provider='tiktok'").get().access_token, 'new-token');
+});
+test('reconnect gagal tidak menghapus koneksi TikTok yang valid', async () => {
+  const tiktok = { randomState: () => 'reconnect-state', authorizationUrl: () => 'https://example.com/oauth', exchangeCode: async () => { throw new Error('exchange failed'); } };
+  const { app, db } = setup({ tiktok });
+  db.prepare("INSERT INTO oauth_tokens(provider,access_token,expires_at) VALUES('tiktok','existing-token',?)").run(Date.now() + 3600000);
+  await request(app).get('/auth/tiktok').expect(302);
+  await request(app).get('/auth/tiktok/callback?state=reconnect-state&code=bad').expect(302).expect('Location', '/?oauth=reconnect-failed');
+  assert.equal(db.prepare("SELECT access_token FROM oauth_tokens WHERE provider='tiktok'").get().access_token, 'existing-token');
+});
+test('callback OAuth kedaluwarsa ditolak tanpa pertukaran token', async () => {
+  let exchanges = 0; const { app, db } = setup({ tiktok: { randomState: () => 'expired-state', authorizationUrl: () => 'https://example.com/oauth', exchangeCode: async () => { exchanges++; } } });
+  await request(app).get('/auth/tiktok').expect(302); db.prepare("UPDATE oauth_states SET expires_at=0 WHERE state='expired-state'").run();
+  await request(app).get('/auth/tiktok/callback?state=expired-state&code=unused').expect(302).expect('Location', '/?oauth=expired');
+  assert.equal(exchanges, 0);
+});
 test('status koneksi TikTok belum terhubung saat token tidak tersedia', async () => { const { app } = setup(); const r = await request(app).get('/tiktok/connection-status').expect(200); assert.deepEqual(r.body, { connected: false, message: 'TikTok belum terhubung' }); });
 test('status koneksi TikTok terhubung saat token tersedia', async () => { const { app, db } = setup(); db.prepare("INSERT INTO oauth_tokens(provider,access_token,expires_at) VALUES('tiktok','token',?)").run(Date.now() + 3600000); const r = await request(app).get('/tiktok/connection-status').expect(200); assert.deepEqual(r.body, { connected: true, message: 'TikTok terhubung' }); });
 test('halaman legal publik dapat diakses', async () => { const { app } = setup(); const terms = await request(app).get('/terms').expect(200).expect('Content-Type', /html/); assert.match(terms.text, /Terms of Service/); const privacy = await request(app).get('/privacy').expect(200).expect('Content-Type', /html/); assert.match(privacy.text, /Privacy Policy/); });
