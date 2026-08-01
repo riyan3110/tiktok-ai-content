@@ -18,6 +18,41 @@ test('Tencent COS builds the official Singapore bucket endpoint and canonical UR
 
   const custom = new TencentCosAdapter({ ...options, endpoint: 'https://AIADSLAB-ASSETS-1449781335.cos.ap-singapore.myqcloud.com/' });
   assert.equal(custom.host(), 'aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com');
+
+  const regional = new TencentCosAdapter({ ...options, endpoint: 'cos.ap-singapore.myqcloud.com' });
+  assert.equal(regional.host(), 'aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com');
+  assert.equal(regional.url('folder/a b.jpg'), 'https://aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com/folder/a%20b.jpg');
+  assert.equal(regional.publicUrl('folder/a b.jpg'), 'https://aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com/folder/a%20b.jpg');
+});
+
+test('Tencent COS PUT uses the bucket host and object-only canonical path with a regional endpoint', async t => {
+  t.mock.method(Date, 'now', () => 1_700_000_000_000);
+  let request;
+  const adapter = new TencentCosAdapter({ ...options, endpoint: 'cos.ap-singapore.myqcloud.com' }, async (url, init) => {
+    request = { url, init };
+    return { ok: true, status: 200, headers: new Headers() };
+  });
+
+  const uploaded = await adapter.upload('uploads/my image.png', Buffer.from('image'), { mimeType: 'image/png' });
+
+  assert.equal(request.url, 'https://aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com/uploads/my%20image.png');
+  assert.equal(request.init.method, 'PUT');
+  assert.equal(request.init.headers.Host, 'aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com');
+  assert.equal(request.init.headers['Content-Type'], 'image/png');
+  assert.equal(uploaded.url, request.url);
+  assert.match(request.init.headers.Authorization, /q-header-list=host/);
+});
+
+test('Tencent COS signed URLs use the encoded object URL on the bucket host', async t => {
+  t.mock.method(Date, 'now', () => 1_700_000_000_000);
+  const adapter = new TencentCosAdapter({ ...options, endpoint: 'https://cos.ap-singapore.myqcloud.com' });
+  const signed = await adapter.signedUrl('uploads/my image.png', 600);
+  const url = new URL(signed);
+
+  assert.equal(url.origin, 'https://aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com');
+  assert.equal(url.pathname, '/uploads/my%20image.png');
+  assert.equal(url.searchParams.get('q-ak'), options.secretId);
+  assert.equal(url.searchParams.get('q-sign-time'), '1699999940;1700000600');
 });
 
 test('Tencent COS authorization signs the canonical URI, query, and host', t => {

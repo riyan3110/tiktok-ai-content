@@ -27,7 +27,15 @@ class TencentCosAdapter extends StorageAdapter {
     const region = String(this.options.region || '').trim().toLowerCase();
     const configured = String(this.options.endpoint || '').trim();
     const scheme = this.options.useHttps === false ? 'http:' : 'https:';
-    const endpoint = configured ? new URL(configured.includes('://') ? configured : `${scheme}//${configured}`) : new URL(`${scheme}//${bucket}.cos.${region}.myqcloud.com`);
+    const endpoint = configured ? new URL(configured.includes('://') ? configured : `${scheme}//${configured}`) : new URL(`${scheme}//cos.${region}.myqcloud.com`);
+    // The value shown by the COS console is often the regional service endpoint
+    // (cos.<region>.myqcloud.com). Object requests must instead use COS's
+    // virtual-hosted form: <bucket>.cos.<region>.myqcloud.com/<object-key>.
+    // Sending PUT to the regional host authenticates successfully but addresses
+    // no bucket, and COS responds with 404.
+    if (endpoint.hostname.toLowerCase().startsWith('cos.') && endpoint.hostname.toLowerCase().endsWith('.myqcloud.com')) {
+      endpoint.hostname = `${bucket}.${endpoint.hostname.toLowerCase()}`;
+    }
     return { origin: endpoint.origin, host: endpoint.host.toLowerCase() };
   }
   host() { return this.endpoint().host; }
@@ -63,7 +71,7 @@ class TencentCosAdapter extends StorageAdapter {
   async delete(key) { await this.request('DELETE', key); return { deleted: true, key }; }
   async copy(source, target) { await this.request('PUT', target, { headers: { 'x-cos-copy-source': `/${this.options.bucket}/${source}` } }); return { key: target, url: this.publicUrl(target) }; }
   async metadata(key) { const response = await this.request('HEAD', key); return { key, size: Number(response.headers.get('content-length') || 0), etag: response.headers.get('etag'), modifiedAt: response.headers.get('last-modified'), url: this.publicUrl(key) }; }
-  publicUrl(key) { const base = this.options.publicUrl || `${this.options.useHttps === false ? 'http' : 'https'}://${this.host()}`; return `${base.replace(/\/$/, '')}/${String(key).replace(/^\/+/, '')}`; }
+  publicUrl(key) { const base = this.options.publicUrl || this.endpoint().origin; return `${base.replace(/\/$/, '')}${this.pathname(key)}`; }
   async signedUrl(key, expires = 3600) { return `${this.url(key)}?${this.authorization('GET', key, '', expires)}`; }
   async initiateMultipart(key) { const response = await this.request('POST', key, { query: 'uploads=' }); return response.text(); }
   async uploadPart(key, uploadId, partNumber, data) { const query = `partNumber=${partNumber}&uploadId=${encodeURIComponent(uploadId)}`; const response = await this.request('PUT', key, { query, data }); return response.headers.get('etag'); }
