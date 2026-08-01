@@ -104,8 +104,9 @@
             <div id="workflow-errors" class="workflow-errors hidden" role="alert"></div>
             <footer class="workflow-navigation"><button id="workflow-previous" class="outline" type="button">← Sebelumnya</button><span id="workflow-position"></span><button id="workflow-next" type="button">Berikutnya →</button></footer>
           </main>
-          <aside class="workflow-summary" aria-labelledby="workflow-summary-title"><div class="summary-heading"><div><span class="eyebrow">LIVE SUMMARY</span><h2 id="workflow-summary-title">Campaign plan</h2></div><span id="workflow-status" class="status-pill status-draft"><i></i>Draft</span></div><div id="workflow-summary-content"></div><button id="workflow-generate" type="button">✦ Generate Workflow</button><p class="local-note">Simulasi lokal — tidak ada request API.</p></aside>
+          <aside class="workflow-summary" aria-labelledby="workflow-summary-title"><div class="summary-heading"><div><span class="eyebrow">LIVE SUMMARY</span><h2 id="workflow-summary-title">Campaign plan</h2></div><span id="workflow-status" class="status-pill status-draft"><i></i>Draft</span></div><div id="workflow-summary-content"></div><button id="workflow-generate" type="button">✦ Jalankan Workflow</button><p class="local-note">Terhubung ke Asset Manager, Prompt Generator, provider, queue, dan history.</p></aside>
         </div>
+        <section id="workflow-result" class="workflow-result hidden" aria-live="polite"></section>
         <section class="workflow-history"><div class="history-heading"><div><span class="eyebrow">SESSION HISTORY</span><h2>Workflow History</h2></div><button id="workflow-new" class="outline" type="button">＋ Workflow Baru</button></div><div id="workflow-history-list"></div></section>
       </section>
       <section id="consistency-engine" class="consistency-engine hidden" aria-labelledby="consistency-title">

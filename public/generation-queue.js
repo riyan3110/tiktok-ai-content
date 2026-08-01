@@ -15,13 +15,13 @@
   function notify(message, error = false) { const toast = $('#consistency-toast'); toast.textContent = message; toast.classList.toggle('error', error); toast.classList.add('show'); clearTimeout(notify.timer); notify.timer = setTimeout(() => toast.classList.remove('show'), 2300); }
   function enqueue(input = {}) {
     const job = { id:`JOB-${Date.now().toString(36).toUpperCase()}`, project:input.project || 'Prompt Studio', provider:input.provider || 'Mock Provider', model:input.model || 'Mock v1', promptType:input.promptType || 'General', priority:input.priority || 'Normal', prompt:input.prompt || '', progress:0, status:'Waiting', createdAt:now(), startedAt:null, finishedAt:null, attempts:0, logs:[{ at:now(), message:'Job queued locally' }], timeline:[{ at:now(), status:'Waiting' }], result:null };
-    jobs.unshift(job); persist(); render(); return job;
+    jobs.unshift(job); persist(); render(); window.dispatchEvent(new CustomEvent('aiads:queue-updated',{detail:{job:{...job}}})); return job;
   }
   function log(job, status, message) { job.status = status; job.logs.push({ at:now(), message }); job.timeline.push({ at:now(), status }); }
   function complete(job) {
     job.progress = 100; job.finishedAt = now(); job.result = { type:'Mock Output', preview:'Mock generation complete — ready for future backend adapter.', asset:`mock://${job.id}` }; log(job, 'Completed', 'Mock output saved to queue history');
     const history = read(KEYS.history, []); history.unshift({ prompt:job.prompt, provider:job.provider, project:job.project, start:job.startedAt, finish:job.finishedAt, duration:duration(job), result:job.result, status:job.status, jobId:job.id }); localStorage.setItem(KEYS.history, JSON.stringify(history.slice(0, 200)));
-    if (settings.notification) notify(`${job.id} completed.`);
+    window.dispatchEvent(new CustomEvent('aiads:queue-updated',{detail:{job:{...job}}})); if (settings.notification) notify(`${job.id} completed.`);
   }
   function tick() {
     if (settings.paused) return;
@@ -51,5 +51,5 @@
   $('#queue-clear-completed').onclick = () => { jobs=jobs.filter(j=>j.status!=='Completed'); persist(); render(); }; $('#queue-clear-failed').onclick = () => { jobs=jobs.filter(j=>j.status!=='Failed'); persist(); render(); };
   $('#queue-retry-failed').onclick = () => { jobs.filter(j=>j.status==='Failed').forEach(retry); persist(); render(); }; $('#queue-cancel-all').onclick = () => jobs.filter(j=>!terminal.includes(j.status)).forEach(cancel);
   $('#queue-settings-toggle').onclick = () => $('#queue-settings').classList.toggle('hidden'); renderSettings(); render(); worker=setInterval(tick, 2000); window.addEventListener('beforeunload',()=>clearInterval(worker));
-  window.GenerationQueue = { enqueue, getJobs:() => [...jobs] };
+  window.GenerationQueue = { enqueue, getJobs:() => [...jobs], retry:id=>{const job=jobs.find(item=>item.id===id);if(job){retry(job);persist();render();}return job;}, cancel:id=>{const job=jobs.find(item=>item.id===id);if(job)cancel(job);return job;} };
 })();
