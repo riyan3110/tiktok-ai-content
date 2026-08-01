@@ -131,7 +131,12 @@ function createApp({ db, content = contentService, images = imageService, tiktok
       }
     } catch (e) { next(e); }
   });
-  app.get('/tiktok/connection-status', (req, res) => { const token = db.prepare("SELECT 1 FROM oauth_tokens WHERE provider='tiktok'").get(); res.json(token ? { connected: true, message: 'TikTok terhubung' } : { connected: false, message: 'TikTok belum terhubung' }); });
+  app.get('/api/tiktok/status', async (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    const connected = await verifiedTikTokConnection(db, tiktok);
+    res.json({ connected, status: connected ? 'Connected' : 'Disconnected' });
+  });
   app.delete('/tiktok/connection', (req, res) => { const result = db.prepare("DELETE FROM oauth_tokens WHERE provider='tiktok'").run(); res.json({ disconnected: Boolean(result.changes) }); });
   app.get('/trend-references/current', (req, res) => res.json(trendReferences.current(db)));
   const providersResponse = () => { aiConnector.seed(db); const health = new Map(db.prepare('SELECT * FROM ai_provider_health').all().map(x => [x.provider, x])); return db.prepare('SELECT * FROM ai_provider_settings ORDER BY provider').all().map(row => ({ ...aiConnector.publicSetting(row), health: health.get(row.provider) || { status: 'Offline', quota_status: 'Unknown' } })); };
@@ -210,4 +215,23 @@ function parseRecord(row) { if (!row) return null; return { ...row, slides: JSON
 function record(db, id) { return parseRecord(db.prepare('SELECT * FROM contents WHERE id=?').get(id)); }
 function parseGeneration(row) { if (!row) return null; return { ...row, assets: JSON.parse(row.assets || '[]'), media: JSON.parse(row.media || '[]'), metadata: JSON.parse(row.metadata || '{}') }; }
 async function validToken(db, tiktok) { let token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get(); if (!token) return null; if (token.expires_at < Date.now() + 60000) { const next = await tiktok.refresh(token.refresh_token); db.prepare("UPDATE oauth_tokens SET access_token=?,refresh_token=?,expires_at=?,refresh_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE provider='tiktok'").run(next.access_token, next.refresh_token || token.refresh_token, Date.now() + next.expires_in * 1000, Date.now() + (next.refresh_expires_in || 0) * 1000); token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get(); } return token; }
+
+async function verifiedTikTokConnection(db, tiktok) {
+  let token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get();
+  const disconnect = () => { db.prepare("DELETE FROM oauth_tokens WHERE provider='tiktok'").run(); return false; };
+  if (!token?.access_token || !Number.isFinite(Number(token.expires_at)) || !token.refresh_token) return disconnect();
+  if (token.refresh_expires_at && Number(token.refresh_expires_at) <= Date.now()) return disconnect();
+  try {
+    if (Number(token.expires_at) <= Date.now()) {
+      const refreshed = await tiktok.refresh(token.refresh_token);
+      if (!refreshed?.access_token || !Number.isFinite(Number(refreshed.expires_in))) return disconnect();
+      const now = Date.now();
+      db.prepare("UPDATE oauth_tokens SET access_token=?,refresh_token=?,expires_at=?,refresh_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE provider='tiktok'").run(refreshed.access_token, refreshed.refresh_token || token.refresh_token, now + Number(refreshed.expires_in) * 1000, refreshed.refresh_expires_in ? now + Number(refreshed.refresh_expires_in) * 1000 : token.refresh_expires_at);
+      token = db.prepare("SELECT * FROM oauth_tokens WHERE provider='tiktok'").get();
+    }
+    return await tiktok.validateAccessToken(token.access_token) ? true : disconnect();
+  } catch (_) {
+    return disconnect();
+  }
+}
 module.exports = { createApp };

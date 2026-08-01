@@ -37,6 +37,10 @@ async function publishPhotos(accessToken, imageUrls, caption) {
 async function status(accessToken, publishId) {
   return request(`${API}/v2/post/publish/status/fetch/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: publishId }) });
 }
+async function validateAccessToken(accessToken) {
+  const result = await request(`${API}/v2/user/info/?fields=open_id`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  return Boolean(result.data?.user?.open_id);
+}
 async function validateImageUrls(imageUrls, verifiedPrefix) {
   const prefix = new URL(verifiedPrefix.endsWith('/') ? verifiedPrefix : `${verifiedPrefix}/`);
   for (const imageUrl of imageUrls) {
@@ -59,4 +63,4 @@ async function validateImageUrls(imageUrls, verifiedPrefix) {
   }
 }
 function invalidImageUrl(message) { return Object.assign(new Error(message), { status: 400 }); }
-module.exports = { authorizationUrl, exchangeCode, refresh, publishPhotos, status, validateImageUrls, randomState, verifyState, STATE_TTL_MS };
+module.exports = { authorizationUrl, exchangeCode, refresh, publishPhotos, status, validateAccessToken, validateImageUrls, randomState, verifyState, STATE_TTL_MS };

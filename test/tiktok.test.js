@@ -48,6 +48,16 @@ test('status memakai endpoint publish status fetch dengan publish_id', async (t)
   assert.deepEqual(JSON.parse(request.options.body), { publish_id: 'draft-1' });
 });
 
+test('validasi access token memakai endpoint identitas TikTok', async (t) => {
+  const originalFetch = global.fetch;
+  let request;
+  global.fetch = async (url, options) => { request = { url, options }; return { ok: true, json: async () => ({ data: { user: { open_id: 'user-1' } }, error: { code: 'ok' } }) }; };
+  t.after(() => { global.fetch = originalFetch; });
+  assert.equal(await tiktok.validateAccessToken('access-token'), true);
+  assert.equal(request.url, 'https://open.tiktokapis.com/v2/user/info/?fields=open_id');
+  assert.equal(request.options.headers.Authorization, 'Bearer access-token');
+});
+
 test('validasi URL gambar mensyaratkan 200, JPEG, tanpa redirect, dan isi tidak kosong', async (t) => {
   const originalFetch = global.fetch;
   global.fetch = async () => ({ status: 200, headers: new Headers({ 'Content-Type': 'image/jpeg' }), arrayBuffer: async () => new Uint8Array([1, 2]).buffer });
