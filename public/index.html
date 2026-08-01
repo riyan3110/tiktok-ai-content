@@ -251,9 +251,13 @@
     <div class="form-grid"><label>Brand <span class="required">*</span><input id="project-brand" name="brand" maxlength="80" required placeholder="Nama brand"></label><label>Produk <span class="required">*</span><input id="project-product" name="product" maxlength="80" required placeholder="Nama produk"></label></div>
     <label>Kategori <span class="required">*</span><select id="project-category" name="category" required><option value="">Pilih kategori</option><option>Fashion</option><option>Beauty</option><option>Food & Beverage</option><option>Technology</option><option>Health & Wellness</option><option>Home & Living</option><option>Education</option><option>Services</option><option>Lainnya</option></select></label>
     <label>Deskripsi<textarea id="project-description" name="description" rows="4" maxlength="500" placeholder="Tujuan campaign, target audiens, atau catatan singkat…"></textarea><small class="field-hint"><span id="description-count">0</span>/500</small></label>
-    <div class="dialog-actions"><button id="cancel-project" class="outline" type="button">Batal</button><button type="submit">Buat Project</button></div>
+    <label id="project-status-field" class="hidden">Status<select id="project-status" name="status"><option>Draft</option><option>Aktif</option><option>Selesai</option><option>Diarsipkan</option></select></label>
+    <p id="project-form-error" class="auth-error" role="alert"></p>
+    <div class="dialog-actions"><button id="cancel-project" class="outline" type="button">Batal</button><button id="save-project" type="submit">Buat Project</button></div>
   </form>
 </dialog>
+<dialog id="delete-project-dialog" class="project-dialog confirm-dialog" aria-labelledby="delete-project-title"><form><span class="confirm-icon">!</span><h2 id="delete-project-title">Hapus project?</h2><p>Project dan data terkait akan dihapus. Tindakan ini tidak dapat dibatalkan.</p><p id="delete-project-error" class="auth-error" role="alert"></p><div class="dialog-actions"><button id="cancel-delete-project" class="outline" type="button">Batal</button><button id="confirm-delete-project" class="danger" type="submit">Hapus project</button></div></form></dialog>
+<div id="project-toast" class="consistency-toast" role="status" aria-live="polite"></div>
 <dialog id="prompt-dialog" class="project-dialog" aria-labelledby="prompt-dialog-title">
   <form id="prompt-form" method="dialog">
     <div class="dialog-heading"><div><span class="eyebrow">PROMPT STUDIO</span><h2 id="prompt-dialog-title">Create Prompt</h2></div><button id="close-prompt-dialog" class="icon-button" type="button" aria-label="Tutup">✕</button></div>

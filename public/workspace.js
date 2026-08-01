@@ -19,8 +19,12 @@
   const templates = $('#template-manager');
   const dialog = $('#project-dialog');
   const form = $('#project-form');
+  const deleteDialog = $('#delete-project-dialog');
   const filters = ['#filter-status', '#filter-category', '#filter-brand', '#filter-date'].map($);
   let projects = readProjects();
+  let editingId = null;
+  let deletingId = null;
+  let submitting = false;
 
   function readProjects() {
     try {
@@ -29,6 +33,8 @@
     } catch (_) { return []; }
   }
   function saveProjects() { window.BackendFoundation.storage.set(storageKey, projects); window.BackendFoundation.SyncManager.sync('projects'); }
+  async function api(url, options = {}) { const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Permintaan project gagal'); return data; }
+  function notify(message, error = false) { const toast = $('#project-toast'); toast.textContent = message; toast.classList.toggle('error', error); toast.classList.add('show'); clearTimeout(notify.timer); notify.timer = setTimeout(() => toast.classList.remove('show'), 3500); }
   function safe(value) { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; }
   function dateLabel(value) { return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value)); }
   function relativeLabel(value) {
@@ -42,7 +48,7 @@
   function projectCard(project) {
     return `<article class="project-card" data-project-id="${project.id}" tabindex="0">
       <div class="project-thumbnail" aria-hidden="true"><span>${safe(initials(project.name))}</span><i></i><i></i></div>
-      <div class="project-card-body"><div class="project-card-top"><span class="status-pill status-${safe(project.status.toLowerCase())}"><i></i>${safe(project.status)}</span><button class="project-menu" type="button" aria-label="Opsi untuk ${safe(project.name)}">•••</button></div>
+      <div class="project-card-body"><div class="project-card-top"><span class="status-pill status-${safe(project.status.toLowerCase())}"><i></i>${safe(project.status)}</span><div class="project-menu-wrap"><button class="project-menu" type="button" aria-label="Opsi untuk ${safe(project.name)}" aria-expanded="false">•••</button><div class="project-card-menu hidden"><button type="button" data-edit-project>Edit project</button><button type="button" class="danger-text" data-delete-project>Delete project</button></div></div></div>
       <h2>${safe(project.name)}</h2><p class="project-product"><strong>${safe(project.brand)}</strong> · ${safe(project.product)}</p>
       <span class="category-label">${safe(project.category)}</span>
       <div class="project-counts"><span><b>${project.promptCount || 0}</b> Prompt</span><span><b>${project.storyboardCount || 0}</b> Storyboard</span></div>
@@ -78,10 +84,17 @@
     document.querySelectorAll('[data-create-project]').forEach(button => button.onclick = openDialog);
     document.querySelectorAll('[data-reset-projects]').forEach(button => button.onclick = resetFilters);
     document.querySelectorAll('[data-project-id]').forEach(card => {
-      card.onclick = event => { if (!event.target.closest('.project-menu')) openProject(card.dataset.projectId); };
-      card.onkeydown = event => { if (event.key === 'Enter') openProject(card.dataset.projectId); };
+      card.onclick = event => {
+        const menuButton = event.target.closest('.project-menu');
+        if (menuButton) { event.stopPropagation(); const menu = menuButton.nextElementSibling; const opening = menu.classList.contains('hidden'); closeMenus(); if (opening) { menu.classList.remove('hidden'); menuButton.setAttribute('aria-expanded', 'true'); } return; }
+        if (event.target.closest('[data-edit-project]')) { event.stopPropagation(); closeMenus(); return openEditDialog(card.dataset.projectId); }
+        if (event.target.closest('[data-delete-project]')) { event.stopPropagation(); closeMenus(); return openDeleteDialog(card.dataset.projectId); }
+        if (!event.target.closest('.project-card-menu')) openProject(card.dataset.projectId);
+      };
+      card.onkeydown = event => { if (event.key === 'Enter' && !event.target.closest('.project-menu-wrap')) openProject(card.dataset.projectId); };
     });
   }
+  function closeMenus() { document.querySelectorAll('.project-card-menu').forEach(menu => menu.classList.add('hidden')); document.querySelectorAll('.project-menu').forEach(button => button.setAttribute('aria-expanded', 'false')); }
   function showView(view, title) {
     workspace.classList.toggle('hidden', view !== 'projects');
     detail.classList.toggle('hidden', view !== 'detail');
@@ -106,8 +119,10 @@
     document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', (link.dataset.workspaceView === view && (view !== 'legacy' || link.dataset.legacySection === title)) || (view === 'placeholder' && link.dataset.placeholderView === title)));
     if (view === 'legacy' && title) requestAnimationFrame(() => document.getElementById(title)?.scrollIntoView({ block: 'start' }));
   }
-  function openDialog() { form.reset(); $('#description-count').textContent = '0'; dialog.showModal(); setTimeout(() => $('#project-name').focus(), 0); }
+  function openDialog() { editingId = null; form.reset(); $('#project-dialog-title').textContent = 'Create Project'; $('#project-status-field').classList.add('hidden'); $('#save-project').textContent = 'Buat Project'; $('#project-form-error').textContent = ''; $('#description-count').textContent = '0'; dialog.showModal(); setTimeout(() => $('#project-name').focus(), 0); }
+  function openEditDialog(id) { const project = projects.find(item => item.id === id); if (!project) return; editingId = id; form.reset(); for (const key of ['name', 'brand', 'product', 'category', 'description', 'status']) if (form.elements[key]) form.elements[key].value = project[key] || ''; $('#project-dialog-title').textContent = 'Edit project'; $('#project-status-field').classList.remove('hidden'); $('#save-project').textContent = 'Save Changes'; $('#project-form-error').textContent = ''; $('#description-count').textContent = String(project.description?.length || 0); dialog.showModal(); setTimeout(() => $('#project-name').focus(), 0); }
   function closeDialog() { dialog.close(); }
+  function openDeleteDialog(id) { deletingId = id; $('#delete-project-error').textContent = ''; deleteDialog.showModal(); }
   function resetFilters() { $('#project-search').value = ''; filters.forEach(input => { input.value = ''; }); renderProjects(); }
   function openProject(id) {
     const project = projects.find(item => item.id === id); if (!project) return;
@@ -132,13 +147,24 @@
   $('#cancel-project').onclick = closeDialog;
   dialog.onclick = event => { if (event.target === dialog) closeDialog(); };
   $('#project-description').oninput = event => { $('#description-count').textContent = event.target.value.length; };
-  form.onsubmit = event => {
+  form.onsubmit = async event => {
     event.preventDefault();
-    if (!form.reportValidity()) return;
-    const data = new FormData(form); const now = new Date().toISOString();
-    const project = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), name: data.get('name').trim(), brand: data.get('brand').trim(), product: data.get('product').trim(), category: data.get('category'), description: data.get('description').trim(), status: 'Draft', createdAt: now, updatedAt: now, promptCount: 0, storyboardCount: 0 };
-    projects.unshift(project); saveProjects(); closeDialog(); renderProjects(); openProject(project.id);
+    if (submitting || !form.reportValidity()) return;
+    const data = new FormData(form); const payload = Object.fromEntries(data); payload.name = payload.name.trim();
+    if (!payload.name) return form.elements.name.setCustomValidity('Nama project wajib diisi'), form.reportValidity();
+    submitting = true; const button = $('#save-project'); const oldText = button.textContent; button.disabled = true; button.textContent = editingId ? 'Menyimpan…' : 'Membuat…'; $('#project-form-error').textContent = '';
+    try {
+      const project = await api(editingId ? `/api/projects/${editingId}` : '/api/projects', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+      const index = projects.findIndex(item => item.id === project.id); if (index >= 0) projects[index] = project; else projects.unshift(project);
+      saveProjects(); renderProjects(); closeDialog(); notify(editingId ? 'Project berhasil diperbarui.' : 'Project berhasil dibuat.');
+    } catch (error) { $('#project-form-error').textContent = error.message; }
+    finally { submitting = false; button.disabled = false; button.textContent = oldText; }
   };
+  form.elements.name.addEventListener('input', () => form.elements.name.setCustomValidity(''));
+  $('#cancel-delete-project').onclick = () => deleteDialog.close();
+  deleteDialog.onclick = event => { if (event.target === deleteDialog && !submitting) deleteDialog.close(); };
+  deleteDialog.querySelector('form').onsubmit = async event => { event.preventDefault(); if (submitting || !deletingId) return; submitting = true; const button = $('#confirm-delete-project'); button.disabled = true; button.textContent = 'Menghapus…'; $('#delete-project-error').textContent = ''; try { await api(`/api/projects/${deletingId}`, { method: 'DELETE' }); projects = projects.filter(project => project.id !== deletingId); saveProjects(); renderProjects(); deleteDialog.close(); notify('Project berhasil dihapus.'); deletingId = null; } catch (error) { $('#delete-project-error').textContent = error.message; } finally { submitting = false; button.disabled = false; button.textContent = 'Hapus project'; } };
+  document.addEventListener('click', event => { if (!event.target.closest('.project-menu-wrap')) closeMenus(); });
   $('#toggle-project-filters').onclick = () => { const open = $('#project-filters').classList.toggle('hidden'); $('#toggle-project-filters').setAttribute('aria-expanded', String(!open)); };
   $('#reset-project-filters').onclick = resetFilters;
   $('#project-search').oninput = renderProjects; filters.forEach(input => input.onchange = renderProjects);
@@ -150,5 +176,6 @@
   const viewFromHash = () => legacyHash() ? 'legacy' : location.hash === '#content-factory' ? 'factory' : location.hash === '#assets' ? 'assets' : location.hash === '#storage' ? 'storage' : location.hash === '#templates' ? 'templates' : ['#profile', '#settings'].includes(location.hash) ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
   const showHashView = () => showView(viewFromHash(), legacyHash());
   window.addEventListener('hashchange', showHashView);
-  renderProjects(); showHashView();
+  async function loadProjects() { try { const remote = await api('/api/projects'); if (remote.length) projects = remote; else if (projects.length) projects = await Promise.all(projects.map(project => api('/api/projects', { method: 'POST', body: JSON.stringify(project) }))); saveProjects(); renderProjects(); } catch (error) { notify(error.message, true); } }
+  renderProjects(); showHashView(); loadProjects();
 })();

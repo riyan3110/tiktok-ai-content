@@ -17,7 +17,8 @@ test('create project memiliki field wajib dan memakai persistensi frontend teris
   for (const field of ['project-name', 'project-brand', 'project-product', 'project-category', 'project-description']) assert.match(html, new RegExp(`id="${field}"`));
   assert.match(script, /ai-ads-lab-projects-v1/);
   assert.match(script, /localStorage\.setItem/);
-  assert.doesNotMatch(script, /fetch\(/);
+  assert.match(script, /fetch\(url/);
+  assert.match(script, /\/api\/projects/);
 });
 
 test('dashboard project menyediakan search, filter, empty state, dan dokumentasi', () => {
