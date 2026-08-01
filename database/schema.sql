@@ -112,6 +112,10 @@ CREATE TABLE IF NOT EXISTS ai_provider_settings (
   is_default INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS ai_provider_defaults (
+  capability TEXT PRIMARY KEY CHECK(capability IN ('text','image','video')),
+  provider TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS ai_generations (
   id TEXT PRIMARY KEY,
