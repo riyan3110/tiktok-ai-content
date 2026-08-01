@@ -28,6 +28,8 @@ function createDatabase(filename = config.databasePath) {
   if (!trendColumns.has('trend_hooks')) db.exec("ALTER TABLE trend_reference_sets ADD COLUMN trend_hooks TEXT NOT NULL DEFAULT '[]'");
   if (!trendColumns.has('trend_content_patterns')) db.exec("ALTER TABLE trend_reference_sets ADD COLUMN trend_content_patterns TEXT NOT NULL DEFAULT '[]'");
   if (!trendColumns.has('keyword_categories')) db.exec("ALTER TABLE trend_reference_sets ADD COLUMN keyword_categories TEXT NOT NULL DEFAULT '[]'");
+  const generationColumns = new Set(db.prepare('PRAGMA table_info(ai_generations)').all().map(({ name }) => name));
+  for (const [name, definition] of Object.entries({ media_type: "TEXT NOT NULL DEFAULT 'text'", assets: "TEXT NOT NULL DEFAULT '[]'", media: "TEXT NOT NULL DEFAULT '[]'", metadata: "TEXT NOT NULL DEFAULT '{}'", provider_job_id: 'TEXT', duration_ms: 'INTEGER' })) if (!generationColumns.has(name)) db.exec(`ALTER TABLE ai_generations ADD COLUMN ${name} ${definition}`);
   return db;
 }
 
