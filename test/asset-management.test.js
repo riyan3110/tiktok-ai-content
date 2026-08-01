@@ -79,9 +79,21 @@ test('Asset Manager refreshes signed COS GET URLs without issuing a download req
   assert.equal(expires - starts, 960);
   assert.equal(url.searchParams.get('q-ak'), 'id');
   assert.equal(asset.body.storage_url, asset.body.url);
+  const previewUrl = new URL(asset.body.preview_url);
+  assert.equal(previewUrl.searchParams.get('response-content-disposition'), 'inline');
+  assert.equal(previewUrl.searchParams.get('response-content-type'), 'image/jpeg');
+  assert.match(previewUrl.searchParams.get('q-url-param-list'), /response-content-disposition/);
+  assert.match(previewUrl.searchParams.get('q-url-param-list'), /response-content-type/);
+  assert.notEqual(asset.body.preview_url, asset.body.url);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].init.method, 'PUT');
   db.close();
+});
+
+test('Asset Manager uses the dedicated preview URL while Copy URL keeps the original URL', () => {
+  const source = require('node:fs').readFileSync(require.resolve('../public/assets.js'), 'utf8');
+  assert.match(source, /asset\.preview_url \|\| asset\.url/);
+  assert.match(source, /writeText\(item\.url\)/);
 });
 
 test('Tencent COS upload errors do not silently fall back to local storage', async () => {
