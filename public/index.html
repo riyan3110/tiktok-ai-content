@@ -17,6 +17,7 @@
     </a>
     <nav class="side-nav">
       <a class="active" href="#projects" data-workspace-view="projects"><span aria-hidden="true">▦</span><span>Projects</span></a>
+      <a href="#workflow" data-workspace-view="workflow"><span aria-hidden="true">⇥</span><span>Workflow</span></a>
       <a href="#templates" data-placeholder-view="Templates"><span aria-hidden="true">◇</span><span>Templates</span></a>
       <a href="#prompt-library" data-placeholder-view="Prompt Library"><span aria-hidden="true">⌘</span><span>Prompt Library</span></a>
       <a href="#consistency" data-workspace-view="consistency"><span aria-hidden="true">◎</span><span>Consistency</span></a>
@@ -71,6 +72,25 @@
       </section>
       <section id="workspace-placeholder" class="workspace-placeholder hidden" aria-labelledby="placeholder-title">
         <span class="state-icon" aria-hidden="true">✦</span><span class="eyebrow">WORKSPACE MODULE</span><h1 id="placeholder-title"></h1><p>Modul ini sudah disiapkan di navigasi dan akan dikembangkan pada milestone berikutnya.</p><button class="outline" data-back-projects type="button">Kembali ke Projects</button>
+      </section>
+      <section id="workflow-orchestrator" class="workflow-orchestrator hidden" aria-labelledby="workflow-title">
+        <header class="workflow-heading">
+          <div><span class="eyebrow">END-TO-END ORCHESTRATOR</span><h1 id="workflow-title">Creative Workflow</h1><p>Rancang seluruh produksi AI Ads Lab dalam satu alur lokal yang aman.</p></div>
+          <div class="workflow-save"><i></i><span><b id="workflow-save-label">Draft tersimpan</b><small id="workflow-save-time">Local workspace</small></span></div>
+        </header>
+        <div id="workflow-recovery" class="workflow-recovery hidden" role="alert"></div>
+        <div class="workflow-progress" aria-label="Progress workflow"><div><span id="workflow-progress-text">0% selesai</span><strong id="workflow-step-label">Project</strong></div><progress id="workflow-progress-bar" max="100" value="0">0%</progress></div>
+        <nav id="workflow-stepper" class="workflow-stepper" aria-label="Tahapan workflow"></nav>
+        <div class="workflow-layout">
+          <main class="workflow-builder">
+            <div class="workflow-builder-toolbar"><div><span class="eyebrow">WORKFLOW BUILDER</span><h2 id="workflow-panel-title">Project</h2></div><div><button id="workflow-undo" class="icon-button" type="button" title="Undo" aria-label="Undo">↶</button><button id="workflow-redo" class="icon-button" type="button" title="Redo" aria-label="Redo">↷</button></div></div>
+            <div id="workflow-state" aria-live="polite"><div class="loading-state"><span class="spinner"></span><p>Memulihkan workflow…</p></div></div>
+            <div id="workflow-errors" class="workflow-errors hidden" role="alert"></div>
+            <footer class="workflow-navigation"><button id="workflow-previous" class="outline" type="button">← Sebelumnya</button><span id="workflow-position"></span><button id="workflow-next" type="button">Berikutnya →</button></footer>
+          </main>
+          <aside class="workflow-summary" aria-labelledby="workflow-summary-title"><div class="summary-heading"><div><span class="eyebrow">LIVE SUMMARY</span><h2 id="workflow-summary-title">Campaign plan</h2></div><span id="workflow-status" class="status-pill status-draft"><i></i>Draft</span></div><div id="workflow-summary-content"></div><button id="workflow-generate" type="button">✦ Generate Workflow</button><p class="local-note">Simulasi lokal — tidak ada request API.</p></aside>
+        </div>
+        <section class="workflow-history"><div class="history-heading"><div><span class="eyebrow">SESSION HISTORY</span><h2>Workflow History</h2></div><button id="workflow-new" class="outline" type="button">＋ Workflow Baru</button></div><div id="workflow-history-list"></div></section>
       </section>
       <section id="consistency-engine" class="consistency-engine hidden" aria-labelledby="consistency-title">
         <div class="consistency-heading"><div><span class="eyebrow">CONSISTENCY ENGINE</span><h1 id="consistency-title">Your creative DNA, in one place.</h1><p>Keep every AI production aligned with the same people, products, visual direction, and voice.</p></div><div class="engine-status"><i></i><span><b>Local workspace</b><small>Saved automatically</small></span></div></div>
@@ -185,6 +205,7 @@
 <dialog id="consistency-dialog" class="project-dialog consistency-dialog" aria-labelledby="consistency-dialog-title"><form id="consistency-form" method="dialog"><div class="dialog-heading"><div><span class="eyebrow">CONSISTENCY LIBRARY</span><h2 id="consistency-dialog-title"></h2></div><button class="icon-button" data-close-consistency type="button" aria-label="Close">✕</button></div><div id="consistency-fields"></div><div class="dialog-actions"><button class="outline" data-close-consistency type="button">Cancel</button><button type="submit">Save to library</button></div></form></dialog>
 <dialog id="consistency-confirm" class="project-dialog confirm-dialog"><form method="dialog"><span class="confirm-icon">!</span><h2>Delete this item?</h2><p>This action cannot be undone. Your other library items won't be affected.</p><div class="dialog-actions"><button class="outline" value="cancel">Cancel</button><button class="danger" value="confirm">Delete item</button></div></form></dialog>
 <div id="consistency-toast" class="consistency-toast" role="status" aria-live="polite"></div><input id="consistency-import" class="hidden" type="file" accept="application/json">
+<script src="/workflow.js"></script>
 <script src="/prompt-studio.js"></script>
 <script src="/workspace.js"></script>
 <script src="/consistency.js"></script>
