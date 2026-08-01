@@ -85,3 +85,49 @@ CREATE TABLE IF NOT EXISTS automation_jobs (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_automation_jobs_due ON automation_jobs(status, scheduled_at, retry_at);
+
+CREATE TABLE IF NOT EXISTS ai_provider_settings (
+  provider TEXT PRIMARY KEY,
+  api_key_encrypted TEXT,
+  base_url TEXT NOT NULL,
+  organization_id TEXT,
+  region TEXT,
+  default_model TEXT,
+  timeout_ms INTEGER NOT NULL DEFAULT 30000,
+  retry_count INTEGER NOT NULL DEFAULT 2,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_generations (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  model TEXT,
+  prompt TEXT NOT NULL,
+  status TEXT NOT NULL,
+  output TEXT,
+  error_type TEXT,
+  error_message TEXT,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  estimated_cost REAL NOT NULL DEFAULT 0,
+  request_time TEXT,
+  response_time TEXT,
+  endpoint TEXT,
+  prompt_size INTEGER NOT NULL DEFAULT 0,
+  output_size INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_provider_health (
+  provider TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'Offline',
+  latency_ms INTEGER,
+  last_success TEXT,
+  last_failure TEXT,
+  quota_status TEXT NOT NULL DEFAULT 'Unknown',
+  provider_version TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
