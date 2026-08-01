@@ -25,7 +25,6 @@ function configuredProviders(db) {
   seed(db);
   const registered = new Set(ProviderFactory.names());
   const valid = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 AND default_model IS NOT NULL AND TRIM(default_model)<>\'\'').all().filter(row => registered.has(row.provider) && (row.provider === '9router' || Boolean(row.api_key_encrypted)) && validBaseUrl(row.base_url) && !(row.provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl));
-  if (valid.length === 1 && !valid[0].is_default) { db.prepare('UPDATE ai_provider_settings SET is_default=CASE WHEN provider=? THEN 1 ELSE 0 END').run(valid[0].provider); valid[0].is_default = 1; }
   return valid;
 }
 function validationError(message, status = 422, extra = {}) { return Object.assign(new Error(message), { status, ...extra }); }
