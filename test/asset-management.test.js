@@ -87,15 +87,17 @@ test('Asset Manager returns a signed copy URL and a same-origin preview endpoint
   assert.equal(expires - starts, 960);
   assert.equal(url.searchParams.get('q-ak'), 'id');
   assert.equal(asset.body.storage_url, asset.body.url);
-  assert.equal(asset.body.preview_url, asset.body.url);
+  assert.equal(asset.body.preview_url, `/api/assets/${uploaded.body.id}/preview`);
+  assert.notEqual(asset.body.preview_url, asset.body.url);
   assert.equal(calls.length, 2);
   assert.equal(calls[0].init.method, 'PUT');
   db.close();
 });
 
-test('Asset Manager loads image previews directly from signed URLs', () => {
+test('Asset Manager loads image previews from the same-origin endpoint and preserves signed Copy URLs', () => {
   const source = require('node:fs').readFileSync(require.resolve('../public/assets.js'), 'utf8');
-  assert.match(source, /src="\$\{safe\(asset\.preview_url \|\| asset\.url\)\}"/);
+  assert.match(source, /src="\$\{safe\(asset\.preview_url\)\}"/);
+  assert.doesNotMatch(source, /asset\.preview_url \|\| asset\.url/);
   assert.doesNotMatch(source, /createObjectURL|response\.blob/);
   assert.match(source, /writeText\(item\.url\)/);
 });
@@ -109,7 +111,7 @@ test('COS preview downloads the existing object once and serves an inline image 
   const uploaded = await request(app).post('/api/assets/upload').send({ name: 'legacy.jpg', mimeType: 'application/octet-stream', data: jpeg.toString('base64') }).expect(201);
   assert.equal(uploaded.body.mime_type, 'image/jpeg');
   await request(app).get(`/api/assets/${uploaded.body.id}`).expect(200);
-  const preview = await request(app).get(`/api/assets/${uploaded.body.id}/preview`).expect('Content-Type', /image\/jpeg/).expect(200);
+  const preview = await request(app).get(`/api/assets/${uploaded.body.id}/preview`).expect('Content-Type', /image\/jpeg/).expect('Content-Disposition', 'inline').expect(200);
   assert.deepEqual(preview.body, jpeg);
   assert.deepEqual(calls.map(call => call.init.method), ['PUT', 'HEAD', 'GET']);
 });
