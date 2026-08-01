@@ -5,7 +5,7 @@ const { createDatabase } = require('../src/db');
 const { createApp } = require('../src/app');
 
 function setup() { const db = createDatabase(':memory:'); return { db, app: createApp({ db }) }; }
-const valid = { name: 'Launch UGC', category: 'UGC', description: 'Template launch', targetAI: 'video', prompt: '{{hook}}: {{brand}} memperkenalkan {{product}} untuk {{audience}}', negativePrompt: 'blur', provider: 'openai', model: 'gpt-4o-mini', variables: { audience: 'Gen Z' }, tags: ['ugc', 'launch'], assets: [{ name: 'packshot', type: 'image', url: '/asset/packshot.jpg' }] };
+const valid = { name: 'Launch UGC', category: 'UGC', description: 'Template launch', targetAI: 'video', prompt: '{{hook}}: {{brand}} memperkenalkan {{product}} untuk {{audience}}', negativePrompt: 'blur', provider: 'openai-images', model: 'gpt-image-1', variables: { audience: 'Gen Z' }, tags: ['ugc', 'launch'], assets: [{ name: 'packshot', type: 'image', url: '/asset/packshot.jpg' }] };
 
 test('database menyediakan tabel engine template tanpa mengubah tabel lama', () => { const { db } = setup(); const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x => x.name); for (const name of ['templates', 'template_versions', 'template_assets', 'template_runs', 'contents', 'ai_generations']) assert.ok(names.includes(name)); });
 test('list menyertakan sembilan preset bawaan', async () => { const { app } = setup(); const response = await request(app).get('/api/templates').expect(200); assert.equal(response.body.filter(x => x.preset).length, 9); assert.ok(response.body.some(x => x.name === 'Google Veo')); });
