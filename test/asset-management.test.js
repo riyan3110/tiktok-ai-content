@@ -93,6 +93,9 @@ test('Asset Manager refreshes signed COS GET URLs without issuing a download req
 test('Asset Manager uses the dedicated preview URL while Copy URL keeps the original URL', () => {
   const source = require('node:fs').readFileSync(require.resolve('../public/assets.js'), 'utf8');
   assert.match(source, /asset\.preview_url \|\| asset\.url/);
+  assert.match(source, /URL\.createObjectURL\(await response\.blob\(\)\)/);
+  assert.match(source, /image\.src = objectUrl/);
+  assert.match(source, /URL\.revokeObjectURL/);
   assert.match(source, /writeText\(item\.url\)/);
 });
 
