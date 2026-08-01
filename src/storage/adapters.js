@@ -18,6 +18,7 @@ class LocalStorageAdapter extends StorageAdapter {
   async metadata(key) { const stat = await fs.stat(this.resolve(key)); const data = await fs.readFile(this.resolve(key)); return { key, size: stat.size, modifiedAt: stat.mtime.toISOString(), checksum: crypto.createHash('sha256').update(data).digest('hex'), url: this.publicUrl(key) }; }
   publicUrl(key) { return `${this.publicBaseUrl}/asset-files/${encodeURIComponent(key).replace(/%2F/g, '/')}`; }
   async signedUrl(key) { return this.publicUrl(key); }
+  async previewUrl(key) { return this.publicUrl(key); }
   async test() { const started = Date.now(); await fs.mkdir(this.root, { recursive: true }); await fs.access(this.root); return { connected: true, latency: Date.now() - started, bucketStatus: 'Writable', permission: 'Read / Write / Delete' }; }
 }
 class TencentCosAdapter extends StorageAdapter {
@@ -72,7 +73,14 @@ class TencentCosAdapter extends StorageAdapter {
   async copy(source, target) { await this.request('PUT', target, { headers: { 'x-cos-copy-source': `/${this.options.bucket}/${source}` } }); return { key: target, url: this.publicUrl(target) }; }
   async metadata(key) { const response = await this.request('HEAD', key); return { key, size: Number(response.headers.get('content-length') || 0), etag: response.headers.get('etag'), modifiedAt: response.headers.get('last-modified'), url: this.publicUrl(key) }; }
   publicUrl(key) { const base = this.options.publicUrl || this.endpoint().origin; return `${base.replace(/\/$/, '')}${this.pathname(key)}`; }
-  async signedUrl(key, expires = 3600) { return `${this.url(key)}?${this.authorization('GET', key, '', expires)}`; }
+  async signedUrl(key, expires = 3600, query = '') { const separator = query ? '&' : '?'; return `${this.url(key, query)}${separator}${this.authorization('GET', key, query, expires)}`; }
+  async previewUrl(key, mimeType, expires = 3600) {
+    const query = new URLSearchParams({
+      'response-content-disposition': 'inline',
+      'response-content-type': mimeType || 'image/*'
+    }).toString();
+    return this.signedUrl(key, expires, query);
+  }
   async initiateMultipart(key) { const response = await this.request('POST', key, { query: 'uploads=' }); return response.text(); }
   async uploadPart(key, uploadId, partNumber, data) { const query = `partNumber=${partNumber}&uploadId=${encodeURIComponent(uploadId)}`; const response = await this.request('PUT', key, { query, data }); return response.headers.get('etag'); }
   async completeMultipart(key, uploadId, parts) { const body = `<CompleteMultipartUpload>${parts.map(p => `<Part><PartNumber>${p.partNumber}</PartNumber><ETag>${p.etag}</ETag></Part>`).join('')}</CompleteMultipartUpload>`; await this.request('POST', key, { query: `uploadId=${encodeURIComponent(uploadId)}`, data: body }); return { key, url: this.publicUrl(key) }; }
