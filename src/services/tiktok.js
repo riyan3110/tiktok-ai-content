@@ -4,27 +4,14 @@ const API = 'https://open.tiktokapis.com';
 const STATE_TTL_MS = 15 * 60 * 1000;
 
 function randomState(redirectUri = config.tiktokRedirectUri) {
-  const payload = Buffer.from(JSON.stringify({
-    nonce: crypto.randomBytes(24).toString('hex'),
-    expiresAt: Date.now() + STATE_TTL_MS,
-    redirectUri: redirectUri || null
-  })).toString('base64url');
-  const signature = crypto.createHmac('sha256', config.sessionSecret).update(payload).digest('base64url');
-  return `${payload}.${signature}`;
+  // TikTok expects an opaque, URL-safe state value. Keep the callback URI and
+  // expiry in the server-side oauth_states row instead of encoding them here;
+  // punctuation-heavy signed payloads are rejected by some Login Kit clients.
+  return crypto.randomBytes(32).toString('hex');
 }
 
 function verifyState(state) {
-  const [payload, signature, extra] = String(state || '').split('.');
-  if (!payload || !signature || extra) return null;
-  const expected = crypto.createHmac('sha256', config.sessionSecret).update(payload).digest();
-  let received;
-  try { received = Buffer.from(signature, 'base64url'); } catch { return null; }
-  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
-  try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    if (!data.nonce || !Number.isFinite(data.expiresAt) || data.expiresAt < Date.now()) return null;
-    return data;
-  } catch { return null; }
+  return /^[a-f0-9]{64}$/.test(String(state || ''));
 }
 
 function authorizationUrl(state, redirectUri = config.tiktokRedirectUri) {
