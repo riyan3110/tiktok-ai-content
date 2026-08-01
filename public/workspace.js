@@ -1,4 +1,6 @@
 (() => {
+  // Compatibility note: persistence formerly called localStorage.setItem here;
+  // Milestone 10 delegates that operation to LocalStorageAdapter instead.
   const storageKey = 'ai-ads-lab-projects-v1';
   const $ = selector => document.querySelector(selector);
   const workspace = $('#project-workspace');
@@ -11,6 +13,7 @@
   const providers = $('#ai-providers');
   const queue = $('#generation-queue');
   const integration = $('#ai-integration');
+  const profile = $('#profile-workspace');
   const dialog = $('#project-dialog');
   const form = $('#project-form');
   const filters = ['#filter-status', '#filter-category', '#filter-brand', '#filter-date'].map($);
@@ -18,11 +21,11 @@
 
   function readProjects() {
     try {
-      const value = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const value = window.BackendFoundation?.storage.get(storageKey, []) ?? [];
       return Array.isArray(value) ? value : [];
     } catch (_) { return []; }
   }
-  function saveProjects() { localStorage.setItem(storageKey, JSON.stringify(projects)); }
+  function saveProjects() { window.BackendFoundation.storage.set(storageKey, projects); window.BackendFoundation.SyncManager.sync('projects'); }
   function safe(value) { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; }
   function dateLabel(value) { return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value)); }
   function relativeLabel(value) {
@@ -87,8 +90,9 @@
     providers.classList.toggle('hidden', view !== 'providers');
     queue.classList.toggle('hidden', view !== 'queue');
     integration.classList.toggle('hidden', view !== 'integration');
+    profile.classList.toggle('hidden', view !== 'profile');
     if (view === 'placeholder') $('#placeholder-title').textContent = title;
-    const heading = view === 'projects' ? 'Project Workspace' : view === 'studio' ? 'Dashboard Konten' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
+    const heading = view === 'projects' ? 'Project Workspace' : view === 'profile' ? 'Profile Workspace' : view === 'studio' ? 'Dashboard Konten' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
     document.querySelector('.topbar-title strong').textContent = heading;
     document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', link.dataset.workspaceView === view || (view === 'placeholder' && link.dataset.placeholderView === title)));
   }
@@ -132,5 +136,7 @@
   document.querySelectorAll('[data-back-projects]').forEach(button => button.onclick = () => { showView('projects'); location.hash = 'projects'; });
   document.querySelectorAll('[data-workspace-view]').forEach(link => link.addEventListener('click', () => showView(link.dataset.workspaceView)));
   document.querySelectorAll('[data-placeholder-view]').forEach(link => link.addEventListener('click', () => showView('placeholder', link.dataset.placeholderView)));
-  renderProjects(); showView(location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects');
+  const viewFromHash = () => location.hash === '#profile' ? 'profile' : location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects';
+  window.addEventListener('hashchange', () => showView(viewFromHash()));
+  renderProjects(); showView(viewFromHash());
 })();

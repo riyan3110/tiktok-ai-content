@@ -42,11 +42,15 @@
       <button class="icon-button menu-button" id="menu-toggle" type="button" aria-label="Buka navigasi" aria-controls="sidebar" aria-expanded="false">☰</button>
       <div class="topbar-title"><small>WORKSPACE</small><strong>Dashboard Konten</strong></div>
       <div class="topbar-actions">
+        <button id="connection-status" class="connection-status" data-status="healthy" type="button" title="Jalankan sinkronisasi mock"><i></i><span><b>Healthy</b><small>Mock backend</small></span></button>
+        <button class="icon-button notification-button" id="notification-toggle" type="button" aria-label="Buka notifikasi">♢<span id="notification-count" class="notification-count hidden">0</span></button>
+        <button class="account-button" id="account-button" type="button"><span class="account-avatar">?</span><span>Masuk</span></button>
         <button class="icon-button" id="theme-toggle" type="button" aria-label="Gunakan tema terang" title="Ganti tema"><span aria-hidden="true">☀</span></button>
         <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div>
       </div>
     </header>
     <div class="page-content">
+      <section id="profile-workspace" class="profile-workspace hidden" aria-labelledby="profile-title"><div class="workspace-heading"><div><span class="eyebrow">ACCOUNT &amp; WORKSPACE</span><h1 id="profile-title">Profile Workspace</h1><p>Kelola identitas, penggunaan, dan aktivitas workspace Anda.</p></div></div><div id="profile-content"></div></section>
       <section id="project-workspace" class="project-workspace" aria-labelledby="projects-title">
         <div class="workspace-heading">
           <div><span class="eyebrow">AI CONTENT WORKSPACE</span><h1 id="projects-title">Projects</h1><p>Kelola ide, prompt, dan aset konten brand Anda dalam satu workspace.</p></div>
@@ -182,6 +186,8 @@
     <footer><span>© AI Ads Lab</span><nav aria-label="Legal"><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a></nav></footer>
   </main>
 </div>
+<aside id="notification-panel" class="notification-panel hidden" aria-label="Notification Center"><header><div><span class="eyebrow">LIVE UPDATES</span><h2>Notification Center</h2></div><button id="notification-close" class="icon-button" aria-label="Tutup notifikasi">✕</button></header><div id="notification-list"></div><button id="notification-clear" class="text-button" type="button">Tandai semua sudah dibaca</button></aside>
+<dialog id="auth-dialog" class="project-dialog auth-dialog" aria-labelledby="auth-title" data-mode="login"><form id="auth-form"><div class="dialog-heading"><div><span class="eyebrow">MOCK AUTHENTICATION</span><h2 id="auth-title">Selamat datang</h2></div><button id="auth-close" class="icon-button" type="button" aria-label="Tutup">✕</button></div><p>Autentikasi ini berjalan sepenuhnya di browser dan tidak mengirim request internet.</p><label id="auth-name-field" class="hidden">Nama Workspace<input name="name" autocomplete="organization" placeholder="Creative Team"></label><label>Email<input name="email" type="email" autocomplete="email" required value="demo@aiadslab.local"></label><label id="auth-password-field">Kata sandi<input name="password" type="password" autocomplete="current-password" required value="demo123"></label><label id="auth-remember-field" class="auth-remember"><input name="remember" type="checkbox" value="yes"> Ingat login di perangkat ini</label><p id="auth-error" class="auth-error" role="alert"></p><button id="auth-submit" type="submit">Login</button><div class="auth-links"><button class="text-button" data-auth-mode="register" type="button">Register</button><button class="text-button" data-auth-mode="forgot" type="button">Forgot Password</button><button class="text-button" data-auth-mode="login" type="button">Login</button></div></form></dialog>
 <dialog id="project-dialog" class="project-dialog" aria-labelledby="project-dialog-title">
   <form id="project-form" method="dialog">
     <div class="dialog-heading"><div><span class="eyebrow">NEW WORKSPACE</span><h2 id="project-dialog-title">Create Project</h2></div><button id="close-project-dialog" class="icon-button" type="button" aria-label="Tutup">✕</button></div>
@@ -205,6 +211,7 @@
 <dialog id="consistency-dialog" class="project-dialog consistency-dialog" aria-labelledby="consistency-dialog-title"><form id="consistency-form" method="dialog"><div class="dialog-heading"><div><span class="eyebrow">CONSISTENCY LIBRARY</span><h2 id="consistency-dialog-title"></h2></div><button class="icon-button" data-close-consistency type="button" aria-label="Close">✕</button></div><div id="consistency-fields"></div><div class="dialog-actions"><button class="outline" data-close-consistency type="button">Cancel</button><button type="submit">Save to library</button></div></form></dialog>
 <dialog id="consistency-confirm" class="project-dialog confirm-dialog"><form method="dialog"><span class="confirm-icon">!</span><h2>Delete this item?</h2><p>This action cannot be undone. Your other library items won't be affected.</p><div class="dialog-actions"><button class="outline" value="cancel">Cancel</button><button class="danger" value="confirm">Delete item</button></div></form></dialog>
 <div id="consistency-toast" class="consistency-toast" role="status" aria-live="polite"></div><input id="consistency-import" class="hidden" type="file" accept="application/json">
+<script src="/backend-foundation.js"></script>
 <script src="/workflow.js"></script>
 <script src="/prompt-studio.js"></script>
 <script src="/workspace.js"></script>
@@ -213,6 +220,7 @@
 <script src="/ai-providers.js"></script>
 <script src="/generation-queue.js"></script>
 <script src="/ai-integration.js"></script>
+<script src="/account-workspace.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
