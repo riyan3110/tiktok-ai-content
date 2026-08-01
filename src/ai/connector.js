@@ -9,23 +9,53 @@ const key = crypto.createHash('sha256').update(config.sessionSecret).digest();
 function encrypt(value) { if (!value) return null; const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return [iv, cipher.getAuthTag(), data].map(x => x.toString('base64url')).join('.'); }
 function decrypt(value) { if (!value) return ''; const [iv, tag, data] = value.split('.').map(x => Buffer.from(x, 'base64url')); const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv); decipher.setAuthTag(tag); return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8'); }
 const publicSetting = row => ({ provider: row.provider, baseUrl: row.base_url, organizationId: row.organization_id, region: row.region, defaultModel: row.default_model, timeout: row.timeout_ms, retry: row.retry_count, enabled: Boolean(row.enabled), hasApiKey: Boolean(row.api_key_encrypted), apiKey: row.api_key_encrypted ? '••••••••' : '', isDefault: Boolean(row.is_default), updatedAt: row.updated_at });
+const CAPABILITIES = Object.freeze({ 'google-flow': ['image', 'video'], 'google-veo': ['video'], 'google-imagen': ['image'], 'google-gemini': ['image'], 'openai-images': ['image'], vidu: ['image', 'video'], omni: ['image', 'video'] });
+const PLACEHOLDER_HOSTS = /(^|\.)(example\.(com|org|net)|localhost|invalid)$/i;
 
 function seed(db) { for (const provider of ProviderFactory.names()) { const defaults = ProviderFactory.defaults(provider); db.prepare('INSERT OR IGNORE INTO ai_provider_settings(provider,base_url,default_model) VALUES(?,?,?)').run(provider, defaults.baseUrl, defaults.model); } }
 function setting(db, provider) { seed(db); const row = db.prepare('SELECT * FROM ai_provider_settings WHERE provider=?').get(provider); if (!row) throw Object.assign(new Error('Provider not found'), { status: 404 }); return row; }
 function configured(row) { return { ...row, api_key: decrypt(row.api_key_encrypted) }; }
+function validBaseUrl(value) { try { const url = new URL(String(value || '')); return /^https?:$/.test(url.protocol) && !PLACEHOLDER_HOSTS.test(url.hostname) && !/(placeholder|your[-_.]?api|change[-_.]?me)/i.test(url.href); } catch { return false; } }
+function configuredProviders(db) {
+  seed(db);
+  const valid = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 AND api_key_encrypted IS NOT NULL AND api_key_encrypted<>\'\' AND default_model IS NOT NULL AND TRIM(default_model)<>\'\'').all().filter(row => validBaseUrl(row.base_url) && !(row.provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl));
+  if (valid.length === 1 && !valid[0].is_default) { db.prepare('UPDATE ai_provider_settings SET is_default=CASE WHEN provider=? THEN 1 ELSE 0 END').run(valid[0].provider); valid[0].is_default = 1; }
+  return valid;
+}
+function validationError(message, status = 422, extra = {}) { return Object.assign(new Error(message), { status, ...extra }); }
+function validateGeneration(db, body = {}) {
+  seed(db); const mediaType = body.mediaType === 'video' ? 'video' : 'image';
+  const valid = configuredProviders(db); const defaultRow = valid.find(row => row.is_default) || (valid.length === 1 ? valid[0] : null);
+  const provider = body.provider || defaultRow?.provider;
+  if (!provider) throw validationError('Provider belum diaktifkan', 409);
+  if (!ProviderFactory.names().includes(provider)) throw validationError(`Provider ID tidak valid: ${provider}`);
+  const row = db.prepare('SELECT * FROM ai_provider_settings WHERE provider=?').get(provider);
+  if (!row?.enabled) throw validationError('Provider belum diaktifkan', 409);
+  if (!(CAPABILITIES[provider] || []).includes(mediaType)) throw validationError(`Provider aktif tidak mendukung generate ${mediaType}`, 409);
+  if (!row.api_key_encrypted) throw validationError('API key provider belum tersedia');
+  if (!row.default_model?.trim()) throw validationError('Model provider belum tersedia');
+  if (provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl) throw validationError('Google Flow generation API belum dikonfigurasi', 409);
+  if (!validBaseUrl(row.base_url)) throw validationError(provider === 'omni' ? 'Omni masih menggunakan endpoint placeholder' : 'Base URL provider belum valid', 409);
+  const prompt = String(body.prompt || '').trim(); if (!prompt) throw validationError('Prompt wajib diisi');
+  const unresolvedVariables = [...new Set([...prompt.matchAll(/{{\s*([\w.-]+)\s*}}/g)].map(match => match[1]))];
+  if (unresolvedVariables.length) throw validationError('Prompt template belum lengkap', 422, { unresolvedVariables });
+  const count = body.count === undefined ? 1 : Number(body.count); if (!Number.isInteger(count) || count < 1 || count > 10) throw validationError('Jumlah batch harus antara 1 dan 10');
+  buildGenerationRequest({ ...body, mediaType }, row);
+  return { provider, row, mediaType, count };
+}
 function save(db, provider, body) { const old = setting(db, provider); const encrypted = body.apiKey === undefined ? old.api_key_encrypted : encrypt(String(body.apiKey || '')); if (body.isDefault) db.prepare('UPDATE ai_provider_settings SET is_default=0').run();
   db.prepare(`UPDATE ai_provider_settings SET api_key_encrypted=?,base_url=?,organization_id=?,region=?,default_model=?,timeout_ms=?,retry_count=?,enabled=?,is_default=?,updated_at=CURRENT_TIMESTAMP WHERE provider=?`).run(encrypted, String(body.baseUrl ?? old.base_url), body.organizationId ?? old.organization_id, body.region ?? old.region, body.defaultModel ?? old.default_model, clamp(body.timeout ?? old.timeout_ms, 1000, 300000), clamp(body.retry ?? old.retry_count, 0, 10), body.enabled === undefined ? old.enabled : Number(Boolean(body.enabled)), body.isDefault === undefined ? old.is_default : Number(Boolean(body.isDefault)), provider); return publicSetting(setting(db, provider)); }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, Number(value) || min)); }
 function updateHealth(db, provider, success, data = {}) { db.prepare(`INSERT INTO ai_provider_health(provider,status,latency_ms,last_success,last_failure,quota_status,provider_version) VALUES(?,?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET status=excluded.status,latency_ms=excluded.latency_ms,last_success=COALESCE(excluded.last_success,ai_provider_health.last_success),last_failure=COALESCE(excluded.last_failure,ai_provider_health.last_failure),quota_status=excluded.quota_status,provider_version=excluded.provider_version,updated_at=CURRENT_TIMESTAMP`).run(provider, success ? 'Online' : 'Offline', data.responseTime ?? null, success ? new Date().toISOString() : null, success ? null : new Date().toISOString(), data.quotaStatus || (success ? 'Available' : 'Unknown'), data.providerVersion || null); }
 async function retry(task, count, progress) { let last; for (let attempt = 0; attempt <= count; attempt += 1) { try { return await task(); } catch (error) { last = error; if (attempt === count || ['Authentication Error', 'Model Not Found', 'Quota Exceeded'].includes(error.type)) throw error; progress('Retrying'); } } throw last; }
-async function execute(db, body, transport, progress = () => {}, suppliedId) { const requestedProvider = body.provider || db.prepare('SELECT provider FROM ai_provider_settings WHERE enabled=1 AND is_default=1').get()?.provider; const row = setting(db, requestedProvider); if (!row.enabled) throw Object.assign(new Error('Provider is disabled'), { status: 409 }); if (!row.api_key_encrypted) throw Object.assign(new Error('API key is required'), { status: 422 });
+async function execute(db, body, transport, progress = () => {}, suppliedId) { const validated = validateGeneration(db, body); const requestedProvider = validated.provider; const row = validated.row;
   const id = suppliedId || body.id || crypto.randomUUID(); const started = new Date(); const request = buildGenerationRequest(body, row); const prompt = request.prompt;
   db.prepare('INSERT OR IGNORE INTO ai_generations(id,provider,model,prompt,status,prompt_size,request_time,media_type,assets,metadata) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id, requestedProvider, request.model, prompt, 'Preparing', Buffer.byteLength(prompt), started.toISOString(), request.mediaType, JSON.stringify(request.assets), JSON.stringify(request.metadata));
   const controller = new AbortController(); active.set(id, controller); const timeout = setTimeout(() => controller.abort(), row.timeout_ms); const adapter = ProviderFactory.create(configured(row), transport);
   try { progress('Preparing', id); if (request.assets.length) { updateStatus(db, id, 'Uploading'); progress('Uploading', id); } const result = await retry(() => adapter.execute({ ...request, stream: Boolean(body.stream) }, { signal: controller.signal, onProgress: status => { const mapped = status === 'Sending' ? 'Generating' : status === 'Receiving' ? 'Downloading' : status; updateStatus(db, id, mapped); progress(mapped, id); } }), row.retry_count, status => { updateStatus(db, id, status); progress(status, id); });
     const usage = result.usage; usage.totalTokens ||= usage.promptTokens + usage.completionTokens; const completed = new Date(); const cost = estimate(body.provider, usage);
     db.prepare(`UPDATE ai_generations SET status='Completed',output=?,media=?,provider_job_id=?,prompt_tokens=?,completion_tokens=?,total_tokens=?,estimated_cost=?,response_time=?,duration_ms=?,endpoint=?,output_size=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(result.content, JSON.stringify(result.media || []), result.providerJobId, usage.promptTokens, usage.completionTokens, usage.totalTokens, cost, completed.toISOString(), completed - started, adapter.endpoint(adapter.requestPath()), Buffer.byteLength(result.content), id); progress('Completed', id); updateHealth(db, requestedProvider, true, { responseTime: completed - started }); return generation(db, id);
-  } catch (caught) { const error = normalizeError(caught); const cancelled = controller.signal.aborted && active.get(id)?.cancelled; const status = cancelled ? 'Cancelled' : 'Failed'; db.prepare('UPDATE ai_generations SET status=?,error_type=?,error_message=?,response_time=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status, cancelled ? null : error.type, error.message, new Date().toISOString(), id); progress(status, id); updateHealth(db, body.provider, false); if (cancelled) return generation(db, id); throw Object.assign(error, { generationId: id });
+  } catch (caught) { const error = normalizeError(caught); const cancelled = controller.signal.aborted && active.get(id)?.cancelled; const status = cancelled ? 'Cancelled' : 'Failed'; db.prepare('UPDATE ai_generations SET status=?,error_type=?,error_message=?,response_time=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status, cancelled ? null : error.type, error.message, new Date().toISOString(), id); progress(status, id); updateHealth(db, requestedProvider, false); if (cancelled) return generation(db, id); throw Object.assign(error, { generationId: id });
   } finally { clearTimeout(timeout); active.delete(id); }
 }
 function updateStatus(db, id, status) { db.prepare('UPDATE ai_generations SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status, id); }
@@ -34,4 +64,4 @@ function estimate(provider, usage) { const perMillion = { openai: 0.6, claude: 3
 function cancel(id) { const controller = active.get(id); if (!controller) return false; controller.cancelled = true; controller.abort(); return true; }
 function markCancelled(db, id) { return db.prepare("UPDATE ai_generations SET status='Cancelled',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status NOT IN ('Completed','Failed','Cancelled')").run(id).changes > 0; }
 
-module.exports = { seed, setting, save, publicSetting, configured, updateHealth, execute, generation, cancel, markCancelled };
+module.exports = { seed, setting, save, publicSetting, configured, configuredProviders, validateGeneration, validBaseUrl, CAPABILITIES, updateHealth, execute, generation, cancel, markCancelled };

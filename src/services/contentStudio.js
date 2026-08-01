@@ -1,14 +1,7 @@
 const path = require('node:path');
 
-const PROVIDERS = Object.freeze([
-  { id: 'google-flow', name: 'Google Flow', types: ['image', 'video'] },
-  { id: 'google-omni', name: 'Google Veo', types: ['video'] },
-  { id: 'gemini', name: 'Google Imagen', types: ['image'] },
-  { id: 'openai', name: 'OpenAI Images', types: ['image'] },
-  { id: 'vidu', name: 'Vidu', types: ['image', 'video'] },
-  { id: 'google-omni', name: 'Omni', types: ['image', 'video'] },
-  { id: 'gemini', name: 'Gemini', types: ['image', 'video'] }
-]);
+const connector = require('../ai/connector');
+const PROVIDER_NAMES = Object.freeze({ 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', omni: 'Omni' });
 
 const decodeDataUrl = value => {
   const match = String(value || '').match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
@@ -18,7 +11,7 @@ const decodeDataUrl = value => {
 
 class ContentStudioService {
   constructor({ db, storage, fetcher = fetch } = {}) { this.db = db; this.storage = storage; this.fetcher = fetcher; }
-  providers() { return PROVIDERS; }
+  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: PROVIDER_NAMES[row.provider], types: connector.CAPABILITIES[row.provider], isDefault: Boolean(row.is_default) })); }
   list(query = {}) {
     const rows = this.db.prepare('SELECT * FROM ai_generations ORDER BY created_at DESC LIMIT 500').all();
     const search = String(query.search || '').trim().toLowerCase(); const type = String(query.type || ''); const status = String(query.status || ''); const provider = String(query.provider || '');
@@ -30,7 +23,7 @@ class ContentStudioService {
   createQueued(id, body) {
     const prompt = String(body.prompt || '').trim(); if (!prompt) throw Object.assign(new Error('Prompt wajib diisi'), { status: 422 });
     const mediaType = body.mediaType === 'video' ? 'video' : 'image'; const count = Math.max(1, Math.min(10, Number(body.count) || 1));
-    const metadata = { negativePrompt: String(body.negativePrompt || ''), resolution: String(body.resolution || (mediaType === 'video' ? '1080p' : '1024×1024')), source: body.promptSource === 'generator' ? 'Prompt Generator' : 'Manual', batchCount: count };
+    const metadata = { ...(body.metadata || {}), negativePrompt: String(body.negativePrompt || ''), resolution: String(body.resolution || (mediaType === 'video' ? '1080p' : '1024×1024')), source: body.promptSource === 'generator' ? 'Prompt Generator' : 'Manual', batchCount: count };
     this.db.prepare("INSERT INTO ai_generations(id,provider,model,prompt,status,media_type,assets,metadata,request_time,prompt_size) VALUES(?,?,?,?,'Queued',?,?,?,?,?)").run(id, body.provider, body.model || null, prompt, mediaType, JSON.stringify(body.assets || []), JSON.stringify(metadata), new Date().toISOString(), Buffer.byteLength(prompt));
     return { count, metadata };
   }
@@ -49,4 +42,4 @@ class ContentStudioService {
   async download(id) { const item = this.get(id); if (!item?.asset_id) return null; const asset = this.storage.repository.get(item.asset_id); if (!asset) return null; const file = await this.storage.preview(asset); return { ...file, name: path.basename(asset.name) }; }
 }
 
-module.exports = { ContentStudioService, PROVIDERS };
+module.exports = { ContentStudioService, PROVIDER_NAMES };

@@ -16,8 +16,8 @@ test('Content Studio UI provides generation, batch, realtime queue, history, and
 
 test('Content Studio queues image jobs, keeps history, duplicates, retries, and deletes', async () => {
   const db = createDatabase(':memory:'); const app = createApp({ db, aiTransport: async () => response({ output: 'generated' }) });
-  await request(app).put('/api/ai/providers/openai').send({ apiKey: 'secret', enabled: true }).expect(200);
-  const generated = await request(app).post('/api/content-studio/generate').send({ provider: 'openai', prompt: 'Premium product photo', negativePrompt: 'blur', mediaType: 'image', resolution: '1024×1024' }).expect(202);
+  await request(app).put('/api/ai/providers/openai-images').send({ apiKey: 'secret', enabled: true }).expect(200);
+  const generated = await request(app).post('/api/content-studio/generate').send({ provider: 'openai-images', prompt: 'Premium product photo', negativePrompt: 'blur', mediaType: 'image', resolution: '1024×1024' }).expect(202);
   const job = await waitFor(app, generated.body.ids[0], 'Completed'); assert.equal(job.negative_prompt, 'blur'); assert.equal(job.progress, 100);
   const history = await request(app).get('/api/content-studio/jobs?search=premium&type=image').expect(200); assert.equal(history.body.length, 1);
   const duplicate = await request(app).post(`/api/content-studio/jobs/${job.id}/duplicate`).expect(202); await waitFor(app, duplicate.body.id, 'Completed');
