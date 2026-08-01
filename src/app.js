@@ -20,6 +20,8 @@ const { ContentStudioService } = require('./services/contentStudio');
 
 function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, automation = automationService, aiTransport, storageTransport } = {}) {
   const app = express(); app.set('trust proxy', 1); app.use(express.json({ limit: '50mb' })); app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+  const oauthLog = (stage, details = {}) => console.info('[TikTok OAuth]', stage, details);
+  const stateFingerprint = state => state ? crypto.createHash('sha256').update(state).digest('hex').slice(0, 12) : null;
   const mediaWorker = new MediaGenerationWorker({ db, transport: aiTransport });
   const storage = new StorageService({ db, transport: storageTransport });
   const studio = new ContentStudioService({ db, storage });
@@ -57,44 +59,75 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.get('/auth/tiktok', (req, res, next) => {
     const redirectUri = config.tiktokRedirectUri || `${req.protocol}://${req.get('host')}/auth/tiktok/callback`;
     const state = tiktok.randomState(redirectUri); const now = Date.now();
-    db.prepare("DELETE FROM oauth_states WHERE provider='tiktok' AND expires_at < ?").run(now);
-    db.prepare("INSERT INTO oauth_states(state,provider,status,expires_at,redirect_uri) VALUES(?,'tiktok','pending',?,?)").run(state, now + 15 * 60 * 1000, redirectUri);
-    req.session.oauthState = state;
-    req.session.save(error => error ? next(error) : res.redirect(tiktok.authorizationUrl(state, redirectUri)));
+    try {
+      new URL(redirectUri);
+      oauthLog('state generated', { state: stateFingerprint(state), redirectUri });
+      db.transaction(() => {
+        db.prepare("DELETE FROM oauth_states WHERE provider='tiktok' AND expires_at < ?").run(now);
+        db.prepare("INSERT INTO oauth_states(state,provider,status,expires_at,redirect_uri) VALUES(?,'tiktok','pending',?,?)").run(state, now + 15 * 60 * 1000, redirectUri);
+      })();
+      oauthLog('state stored', { state: stateFingerprint(state), storage: 'database', expiresAt: now + 15 * 60 * 1000 });
+      req.session.oauthState = state;
+      req.session.save(error => {
+        if (error) { console.error('[TikTok OAuth] state session save failed', { cause: error.message }); return next(error); }
+        const authorizationUrl = tiktok.authorizationUrl(state, redirectUri);
+        oauthLog('redirect', { state: stateFingerprint(state), redirectUri, destination: String(authorizationUrl).split('?')[0] });
+        return res.redirect(authorizationUrl);
+      });
+    } catch (error) {
+      console.error('[TikTok OAuth] start failed', { cause: error.message, redirectUri });
+      next(error);
+    }
   });
   app.get('/auth/tiktok/callback', async (req, res, next) => {
     const state = String(req.query.state || ''); const code = String(req.query.code || ''); const now = Date.now();
     try {
-      let saved = state && db.prepare("SELECT * FROM oauth_states WHERE state=? AND provider='tiktok'").get(state);
+      oauthLog('callback received', { state: stateFingerprint(state), hasCode: Boolean(code), providerError: req.query.error || null });
+      const saved = state && db.prepare("SELECT * FROM oauth_states WHERE state=? AND provider='tiktok'").get(state);
       const connected = Boolean(db.prepare("SELECT 1 FROM oauth_tokens WHERE provider='tiktok'").get());
-      // The signed state remains verifiable if a deploy/restart loses the pending
-      // row between authorization and TikTok's callback. The database still
-      // provides the atomic, one-use claim during normal operation.
-      if (!saved && typeof tiktok.verifyState === 'function') {
-        const verified = tiktok.verifyState(state);
-        if (verified) {
-          const redirectUri = verified.redirectUri || config.tiktokRedirectUri;
-          db.prepare("INSERT OR IGNORE INTO oauth_states(state,provider,status,expires_at,redirect_uri) VALUES(?,'tiktok','pending',?,?)").run(state, verified.expiresAt, redirectUri);
-          saved = db.prepare("SELECT * FROM oauth_states WHERE state=? AND provider='tiktok'").get(state);
-        }
+      const failure = req.query.error ? `TikTok menolak otorisasi: ${req.query.error_description || req.query.error}`
+        : !state ? 'parameter state tidak ada pada callback'
+          : !saved ? 'state callback tidak ditemukan di penyimpanan persisten'
+            : saved.expires_at < now ? 'state callback sudah kedaluwarsa'
+              : !code ? 'authorization code tidak ada pada callback'
+                : null;
+      oauthLog('state compare', {
+        state: stateFingerprint(state),
+        databaseMatch: Boolean(saved),
+        sessionMatch: Boolean(req.session.oauthState && req.session.oauthState === state),
+        sessionAvailable: Boolean(req.session.oauthState),
+        result: failure || 'match'
+      });
+      if (failure) {
+        console.error('[TikTok OAuth] validation failed', { cause: failure, state: stateFingerprint(state) });
+        return res.redirect(`/?oauth=${connected ? 'reconnect-failed' : 'expired'}`);
       }
-      if (!code || !saved || saved.expires_at < now) return res.redirect(`/?oauth=${connected ? 'reconnect-failed' : 'expired'}`);
       if (saved.status === 'completed') return res.redirect('/?oauth=success');
-      if (saved.status !== 'pending') return res.redirect(`/?oauth=${connected ? 'connected' : 'pending'}`);
+      if (saved.status !== 'pending') {
+        console.error('[TikTok OAuth] validation failed', { cause: `state berstatus ${saved.status}, bukan pending`, state: stateFingerprint(state) });
+        return res.redirect(`/?oauth=${connected ? 'reconnect-failed' : 'expired'}`);
+      }
       const codeHash = crypto.createHash('sha256').update(code).digest('hex');
       const claimed = db.prepare("UPDATE oauth_states SET status='processing',callback_code_hash=?,updated_at=CURRENT_TIMESTAMP WHERE state=? AND status='pending' AND expires_at>=?").run(codeHash, state, now);
-      if (!claimed.changes) return res.redirect(`/?oauth=${connected ? 'connected' : 'pending'}`);
+      if (!claimed.changes) {
+        console.error('[TikTok OAuth] validation failed', { cause: 'state gagal diklaim secara atomik', state: stateFingerprint(state) });
+        return res.redirect(`/?oauth=${connected ? 'reconnect-failed' : 'expired'}`);
+      }
       try {
+        oauthLog('token exchange', { state: stateFingerprint(state), redirectUri: saved.redirect_uri });
         const token = await tiktok.exchangeCode(code, saved.redirect_uri);
+        if (!token?.access_token || !Number.isFinite(Number(token.expires_in))) throw new Error('Respons token TikTok tidak berisi access_token atau expires_in yang valid');
         db.transaction(() => {
-          db.prepare(`INSERT INTO oauth_tokens(provider,access_token,refresh_token,expires_at,refresh_expires_at,open_id,scope) VALUES('tiktok',?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,expires_at=excluded.expires_at,refresh_expires_at=excluded.refresh_expires_at,open_id=excluded.open_id,scope=excluded.scope,updated_at=CURRENT_TIMESTAMP`).run(token.access_token, token.refresh_token, now + token.expires_in * 1000, now + token.refresh_expires_in * 1000, token.open_id, token.scope);
+          db.prepare(`INSERT INTO oauth_tokens(provider,access_token,refresh_token,expires_at,refresh_expires_at,open_id,scope) VALUES('tiktok',?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,expires_at=excluded.expires_at,refresh_expires_at=excluded.refresh_expires_at,open_id=excluded.open_id,scope=excluded.scope,updated_at=CURRENT_TIMESTAMP`).run(token.access_token, token.refresh_token || null, now + Number(token.expires_in) * 1000, token.refresh_expires_in ? now + Number(token.refresh_expires_in) * 1000 : null, token.open_id || null, token.scope || null);
           db.prepare("UPDATE oauth_states SET status='completed',updated_at=CURRENT_TIMESTAMP WHERE state=?").run(state);
         })();
+        oauthLog('connected', { state: stateFingerprint(state), tokenStored: true });
         delete req.session.oauthState; return res.redirect('/?oauth=success');
       } catch (error) {
         db.prepare("UPDATE oauth_states SET status='failed',updated_at=CURRENT_TIMESTAMP WHERE state=?").run(state);
+        console.error('[TikTok OAuth] token exchange failed', { cause: error.message, state: stateFingerprint(state), redirectUri: saved.redirect_uri });
         if (connected) return res.redirect('/?oauth=reconnect-failed');
-        throw error;
+        return res.redirect('/?oauth=expired');
       }
     } catch (e) { next(e); }
   });
