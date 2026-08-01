@@ -2,10 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const tiktok = require('../src/services/tiktok');
 
-test('OAuth state ditandatangani, menyimpan redirect URI, dan menolak perubahan', () => {
+test('OAuth state berupa token opaque alfanumerik yang diterima Login Kit', () => {
   const state = tiktok.randomState('https://app.example.com/auth/tiktok/callback');
-  assert.equal(tiktok.verifyState(state).redirectUri, 'https://app.example.com/auth/tiktok/callback');
-  assert.equal(tiktok.verifyState(`${state.slice(0, -1)}x`), null);
+  assert.match(state, /^[a-f0-9]{64}$/);
+  assert.equal(tiktok.verifyState(state), true);
+  assert.equal(tiktok.verifyState(`${state}.invalid`), false);
 });
 
 test('authorization URL hanya meminta scope sandbox yang aktif', () => {
