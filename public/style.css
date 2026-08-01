@@ -70,3 +70,72 @@
 .workflow-result{margin-top:24px;padding:24px;border:1px solid var(--border,#e2e8f0);border-radius:18px;background:var(--surface,#fff)}
 .workflow-result-grid{display:grid;grid-template-columns:minmax(260px,1fr) 1fr;gap:24px;margin-top:18px}.workflow-result-preview{min-height:240px;display:grid;place-items:center;overflow:hidden;border-radius:14px;background:#f6f7fb;text-align:center}.workflow-result-preview img,.workflow-result-preview video{width:100%;height:100%;max-height:480px;object-fit:contain}.workflow-result-preview>span{font-size:42px}.workflow-result dl{display:grid;grid-template-columns:90px 1fr;gap:10px;margin:0 0 20px}.workflow-result dt{font-weight:700}.workflow-result dd{margin:0;overflow-wrap:anywhere}.workflow-history-thumb{width:48px;height:48px;display:grid;place-items:center;overflow:hidden;border-radius:10px;background:#f1f5f9}.workflow-history-thumb img{width:100%;height:100%;object-fit:cover}.workflow-history article{gap:12px}.workflow-history article>div:nth-child(2){min-width:0;flex:1}.workflow-history article p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:720px){.workflow-result{padding:16px}.workflow-result-grid{grid-template-columns:1fr}.workflow-result dl{grid-template-columns:72px 1fr}.workflow-history article{align-items:flex-start;flex-wrap:wrap}.workflow-history article button{margin-left:60px}}
+
+/* Milestone 20 — mobile-first interaction and layout polish. */
+html{min-height:100%;overscroll-behavior-y:none;scroll-padding-top:88px}
+body{min-height:100vh;min-height:100dvh;-webkit-tap-highlight-color:transparent}
+.app-shell{min-height:100vh;min-height:100dvh}
+.sidebar{height:100vh;height:100dvh;overflow-y:auto;overscroll-behavior:contain;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
+.sidebar-brand,.sidebar-note{flex:0 0 auto}.side-nav{flex:0 0 auto}.sidebar-note{margin-top:18px}
+main{min-width:0;min-height:100vh;min-height:100dvh}
+.topbar{padding-top:env(safe-area-inset-top);height:calc(72px + env(safe-area-inset-top));padding-right:max(32px,env(safe-area-inset-right))}
+.page-content{max-width:100%;min-width:0}
+.page-content section,.page-content article,.page-content aside,.page-content form,.page-content div{min-width:0}
+img,video,canvas,svg{max-width:100%}
+button,.button,.outline,input,select{min-height:48px}
+button:disabled,.button[aria-disabled="true"],input:disabled,select:disabled,textarea:disabled{cursor:not-allowed;filter:saturate(.35);opacity:.55;transform:none}
+button[aria-busy="true"]{cursor:progress;pointer-events:none}
+button[aria-busy="true"]::before{content:"";display:inline-block;width:14px;height:14px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:spin .7s linear infinite}
+.workflow-stepper,.factory-progress,.studio-tabs,.generator-tabs{scroll-snap-type:x mandatory;scrollbar-width:thin;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}
+.workflow-stepper>* ,.factory-progress>* ,.studio-tabs>* ,.generator-tabs>*{scroll-snap-align:start}
+.workflow-stepper{position:sticky;top:calc(72px + env(safe-area-inset-top));z-index:10;background:var(--bg)}
+table{width:100%;max-width:100%;border-collapse:collapse}th,td{overflow-wrap:anywhere}
+dialog{max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
+#slide-preview img,.viewer-preview img,.viewer-preview video,.workflow-result-preview img,.workflow-result-preview video{object-fit:contain}
+
+@media (hover:none){button:hover,.outline:hover{filter:none;transform:none}button:active,.outline:active{filter:brightness(.9);transform:scale(.98)}}
+
+/* Tablet uses the same non-blocking drawer while retaining two-column content. */
+@media(max-width:1023px){
+  .sidebar{z-index:40;transform:translateX(-105%);transition:transform .25s ease,visibility .25s;visibility:hidden;box-shadow:var(--shadow)}
+  .sidebar.open{transform:translateX(0);visibility:visible}
+  .mobile-backdrop{position:fixed;inset:0;z-index:35;display:block;background:rgba(0,0,0,.62);opacity:0;visibility:hidden;transition:opacity .25s,visibility .25s;backdrop-filter:blur(2px)}
+  .mobile-backdrop.open{opacity:1;visibility:visible}
+  body.drawer-open{overflow:hidden;touch-action:none}
+  main{margin-left:0}
+  .menu-button{display:grid;flex:0 0 48px}
+  .topbar{padding-left:max(18px,env(safe-area-inset-left));padding-right:max(18px,env(safe-area-inset-right))}
+  .page-content{width:min(calc(100% - 36px),1360px);padding-top:32px}
+  .project-grid,.provider-grid,.studio-result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .workflow-layout,.factory-builder-grid,.studio-grid{grid-template-columns:1fr}
+  .workflow-summary,.factory-preview{position:static}
+}
+
+@media(max-width:767px){
+  html{scroll-padding-top:76px}
+  .sidebar{width:min(86vw,320px)}
+  .side-nav a{min-height:48px;padding:12px 13px}
+  .topbar{height:calc(64px + env(safe-area-inset-top));padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+  .topbar-title small,.connection-status,.account-button span:not(.account-avatar),.tiktok-connection{display:none}
+  .topbar-actions{gap:5px}.topbar-actions .icon-button,.account-button{min-width:48px;min-height:48px;padding:0}
+  .page-content{width:100%;padding:24px max(14px,env(safe-area-inset-right)) max(40px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+  .project-grid,.provider-grid,.studio-result-grid,.template-grid,.asset-grid{grid-template-columns:1fr}
+  .workspace-heading,.template-heading,.asset-heading,.workflow-heading{align-items:stretch;flex-direction:column}
+  .workspace-heading>button,.template-heading>button,.asset-heading>button{width:100%}
+  .project-toolbar,.template-toolbar,.asset-toolbar,.dialog-actions,.workflow-navigation{align-items:stretch;flex-direction:column}
+  .project-filters,.factory-fields,.form-grid,.storage-grid{grid-template-columns:1fr}
+  .actions,#editor,#schedule-dashboard,.history-section,.trend-reference,.studio-card,.factory-panel,.workflow-result{padding:16px;border-radius:14px}
+  .workflow-stepper{top:calc(64px + env(safe-area-inset-top));margin-inline:-14px;padding-inline:14px;overflow-x:auto}
+  .workflow-stepper>*{flex:0 0 auto;min-width:132px}
+  .asset-layout>aside,.template-layout>aside{max-height:220px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .asset-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .asset-preview{height:auto;aspect-ratio:4/3}
+  .factory-preview-body{min-height:300px;max-height:70dvh}
+  .viewer-preview{height:auto;min-height:220px;max-height:65dvh;aspect-ratio:9/16}
+  footer{padding-bottom:max(32px,env(safe-area-inset-bottom))}
+}
+
+@media(max-width:359px){
+  .page-content{padding-inline:10px}.topbar-title{display:none}.asset-grid{grid-template-columns:1fr}
+  .factory-export,.asset-selector-actions>div{grid-template-columns:1fr}
+}
