@@ -22,7 +22,8 @@ function configured(row) { return { ...row, api_key: decrypt(row.api_key_encrypt
 function validBaseUrl(value) { try { const url = new URL(String(value || '')); return /^https?:$/.test(url.protocol) && !PLACEHOLDER_HOSTS.test(url.hostname) && !/(placeholder|your[-_.]?api|change[-_.]?me)/i.test(url.href); } catch { return false; } }
 function configuredProviders(db) {
   seed(db);
-  const valid = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 AND api_key_encrypted IS NOT NULL AND api_key_encrypted<>\'\' AND default_model IS NOT NULL AND TRIM(default_model)<>\'\'').all().filter(row => validBaseUrl(row.base_url) && !(row.provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl));
+  const registered = new Set(ProviderFactory.names());
+  const valid = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 AND api_key_encrypted IS NOT NULL AND api_key_encrypted<>\'\' AND default_model IS NOT NULL AND TRIM(default_model)<>\'\'').all().filter(row => registered.has(row.provider) && validBaseUrl(row.base_url) && !(row.provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl));
   if (valid.length === 1 && !valid[0].is_default) { db.prepare('UPDATE ai_provider_settings SET is_default=CASE WHEN provider=? THEN 1 ELSE 0 END').run(valid[0].provider); valid[0].is_default = 1; }
   return valid;
 }
