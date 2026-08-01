@@ -63,7 +63,7 @@ test('Tencent COS uploads stay in COS and persist the returned key and URL', asy
   db.close();
 });
 
-test('Asset Manager refreshes signed COS GET URLs without issuing a download request', async () => {
+test('Asset Manager returns a signed copy URL and a same-origin preview endpoint without downloading during listing', async () => {
   const calls = [];
   const db = createDatabase(':memory:');
   const app = createApp({ db, storageTransport: async (url, init) => {
@@ -79,11 +79,7 @@ test('Asset Manager refreshes signed COS GET URLs without issuing a download req
   assert.equal(expires - starts, 960);
   assert.equal(url.searchParams.get('q-ak'), 'id');
   assert.equal(asset.body.storage_url, asset.body.url);
-  const previewUrl = new URL(asset.body.preview_url);
-  assert.equal(previewUrl.searchParams.get('response-content-disposition'), 'inline');
-  assert.equal(previewUrl.searchParams.get('response-content-type'), 'image/jpeg');
-  assert.match(previewUrl.searchParams.get('q-url-param-list'), /response-content-disposition/);
-  assert.match(previewUrl.searchParams.get('q-url-param-list'), /response-content-type/);
+  assert.equal(asset.body.preview_url, `/api/assets/${uploaded.body.id}/preview`);
   assert.notEqual(asset.body.preview_url, asset.body.url);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].init.method, 'PUT');
@@ -93,10 +89,58 @@ test('Asset Manager refreshes signed COS GET URLs without issuing a download req
 test('Asset Manager uses the dedicated preview URL while Copy URL keeps the original URL', () => {
   const source = require('node:fs').readFileSync(require.resolve('../public/assets.js'), 'utf8');
   assert.match(source, /asset\.preview_url \|\| asset\.url/);
-  assert.match(source, /URL\.createObjectURL\(await response\.blob\(\)\)/);
+  assert.match(source, /const blob = await response\.blob\(\)/);
+  assert.match(source, /URL\.createObjectURL\(blob\)/);
   assert.match(source, /image\.src = objectUrl/);
   assert.match(source, /URL\.revokeObjectURL/);
   assert.match(source, /writeText\(item\.url\)/);
+});
+
+test('COS preview downloads the existing object once and serves an inline image blob', async () => {
+  const calls = [];
+  const jpeg = Buffer.from('ffd8ffe000104a464946', 'hex');
+  const db = createDatabase(':memory:');
+  const app = createApp({ db, storageTransport: async (url, init) => {
+    calls.push({ url, init });
+    if (init.method === 'GET') return { ok: true, status: 200, headers: new Headers({ 'content-type': 'application/octet-stream', 'content-disposition': 'attachment' }), arrayBuffer: async () => jpeg };
+    return { ok: true, status: 200, headers: new Headers(), text: async () => '' };
+  } });
+  await request(app).put('/api/storage/settings').send({ provider: 'tencent-cos', secretId: 'id', secretKey: 'key', bucket: 'private-123', region: 'ap-singapore' }).expect(200);
+  const uploaded = await request(app).post('/api/assets/upload').send({ name: 'legacy.jpg', mimeType: 'application/octet-stream', data: jpeg.toString('base64') }).expect(201);
+  assert.equal(uploaded.body.mime_type, 'image/jpeg');
+  await request(app).get(`/api/assets/${uploaded.body.id}`).expect(200);
+  const preview = await request(app).get(`/api/assets/${uploaded.body.id}/preview`).expect('Content-Type', /image\/jpeg/).expect(200);
+  assert.deepEqual(preview.body, jpeg);
+  assert.deepEqual(calls.map(call => call.init.method), ['PUT', 'GET']);
+});
+
+test('concurrent duplicate uploads produce one COS PUT and Copy URL performs no storage operation', async () => {
+  const calls = [];
+  const db = createDatabase(':memory:');
+  const app = createApp({ db, storageTransport: async (url, init) => {
+    calls.push({ url, init });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    return { ok: true, status: 200, headers: new Headers(), text: async () => '' };
+  } });
+  await request(app).put('/api/storage/settings').send({ provider: 'tencent-cos', secretId: 'id', secretKey: 'key', bucket: 'private-123', region: 'ap-singapore', duplicateDetection: true }).expect(200);
+  const payload = { name: 'same.png', mimeType: '', data: Buffer.from('89504e470d0a1a0a', 'hex').toString('base64') };
+  const [first, second] = await Promise.all([request(app).post('/api/assets/upload').send(payload), request(app).post('/api/assets/upload').send(payload)]);
+  assert.equal(first.status, 201); assert.equal(second.status, 201);
+  assert.equal(first.body.id, second.body.id);
+  assert.equal(second.body.duplicate, true);
+  assert.equal(calls.filter(call => call.init.method === 'PUT').length, 1);
+  await request(app).get(`/api/assets/${first.body.id}`).expect(200);
+  assert.equal(calls.length, 1);
+  db.close();
+});
+
+test('Local Storage preview remains readable through the blob endpoint', async () => {
+  const db = createDatabase(':memory:'); const app = createApp({ db });
+  const png = Buffer.from('89504e470d0a1a0a', 'hex');
+  const uploaded = await request(app).post('/api/assets/upload').send({ name: 'local.bin', mimeType: '', data: png.toString('base64') }).expect(201);
+  assert.equal(uploaded.body.storage_provider, 'local'); assert.equal(uploaded.body.mime_type, 'image/png');
+  const preview = await request(app).get(uploaded.body.preview_url).expect('Content-Type', /image\/png/).expect(200);
+  assert.deepEqual(preview.body, png); db.close();
 });
 
 test('Tencent COS upload errors do not silently fall back to local storage', async () => {
