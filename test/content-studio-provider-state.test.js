@@ -11,11 +11,13 @@ const script = fs.readFileSync('public/content-studio.js', 'utf8');
 const setup = () => { const db = createDatabase(':memory:'); return { db, app: createApp({ db }) }; };
 const enable = (db, provider, changes = {}) => connector.save(db, provider, { apiKey: 'secret', enabled: true, ...changes });
 
-test('text-only OrcaRouter never appears as an image or video Content Studio provider', async () => {
+test('OrcaRouter appears as an image and video Content Studio provider', async () => {
   const { db, app } = setup(); enable(db, 'orcarouter');
   const providers = (await request(app).get('/api/content-studio/providers').expect(200)).body;
-  assert.equal(providers.some(provider => provider.types.includes('image') || provider.types.includes('video')), false);
-  assert.deepEqual(providers[0].types, ['text']); db.close();
+  assert.equal(providers.some(provider => provider.types.includes('image') && provider.types.includes('video')), true);
+  assert.deepEqual(providers[0].types, ['text', 'image', 'video']);
+  assert.equal(providers[0].models.image, 'openai/gpt-image-1');
+  assert.equal(providers[0].models.video, 'kling/kling-v2-6'); db.close();
 });
 
 test('Content Studio contains explained image and video empty states instead of a blank select', () => {

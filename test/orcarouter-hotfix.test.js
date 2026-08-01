@@ -9,7 +9,7 @@ const connector = require('../src/ai/connector');
 test('factory registers OrcaRouter and rejects unknown IDs', () => {
   assert.ok(ProviderFactory.names().includes('orcarouter'));
   assert.throws(() => ProviderFactory.create({ provider: 'openai' }), /Provider ID tidak valid/);
-  assert.deepEqual(connector.CAPABILITIES.orcarouter, ['text']);
+  assert.deepEqual(connector.CAPABILITIES.orcarouter, ['text', 'image', 'video']);
 });
 
 test('OrcaRouter sends the exact OpenAI-compatible request and normalizes output', async () => {
@@ -49,6 +49,37 @@ test('registry hides legacy rows, failed authentication stays Offline, and text 
   assert.deepEqual(rows.find(row => row.provider === 'openai-images').defaultCapabilities, ['image']);
   const failure = await request(app).post('/api/ai/providers/orcarouter/test').expect(401); assert.equal(failure.body.error, 'API key OrcaRouter tidak valid');
   assert.equal(db.prepare("SELECT status FROM ai_provider_health WHERE provider='orcarouter'").get().status, 'Offline');
-  assert.throws(() => connector.validateGeneration(db, { provider: 'orcarouter', mediaType: 'image', prompt: 'x' }), /tidak mendukung generate image/);
+  assert.doesNotThrow(() => connector.validateGeneration(db, { provider: 'orcarouter', mediaType: 'image', prompt: 'x' }));
   db.close();
+});
+
+test('OrcaRouter uses capability-specific image endpoint, model, and response formats', async () => {
+  const calls = [];
+  const adapter = ProviderFactory.create({ provider: 'orcarouter', base_url: 'https://api.orcarouter.ai', default_model: 'orcarouter/auto', image_model: 'openai/gpt-image-1', video_model: 'kling/kling-v2-6', api_key: 'one-key' }, async (url, options) => {
+    calls.push({ url, options }); return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=', mime_type: 'image/png' }] }), { status: 200 });
+  });
+  const result = await adapter.execute({ mediaType: 'image', prompt: 'poster', parameters: { resolution: '1024x1024' } });
+  assert.equal(calls[0].url, 'https://api.orcarouter.ai/v1/images/generations');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer one-key');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { model: 'openai/gpt-image-1', prompt: 'poster', size: '1024x1024' });
+  assert.equal(result.media[0].b64_json, 'aGVsbG8=');
+});
+
+test('OrcaRouter polls video tasks through SUCCESS and records result_url', async () => {
+  const calls = []; let polls = 0;
+  const adapter = ProviderFactory.create({ provider: 'orcarouter', base_url: 'https://api.orcarouter.ai', default_model: 'orcarouter/auto', video_model: 'kling/kling-v2-6', video_poll_interval_ms: 1, api_key: 'one-key' }, async (url, options) => {
+    calls.push({ url, options });
+    if (!options?.method) { polls += 1; return new Response(JSON.stringify({ data: polls === 1 ? { status: 'IN_PROGRESS' } : { status: 'SUCCESS', result_url: 'https://cdn.example/video.mp4' } }), { status: 200 }); }
+    return new Response(JSON.stringify({ task_id: 'task-7', status: 'SUBMITTED' }), { status: 200 });
+  });
+  const result = await adapter.execute({ mediaType: 'video', prompt: 'vertical ad', parameters: {} });
+  assert.equal(calls[0].url, 'https://api.orcarouter.ai/v1/video/generations');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { model: 'kling/kling-v2-6', prompt: 'vertical ad', metadata: { mode: 'std', aspect_ratio: '9:16', duration: '5' } });
+  assert.equal(calls.at(-1).url, 'https://api.orcarouter.ai/v1/video/generations/task-7');
+  assert.equal(result.media[0].url, 'https://cdn.example/video.mp4');
+});
+
+test('OrcaRouter video FAILURE is terminal and preserves fail_reason', async () => {
+  const adapter = ProviderFactory.create({ provider: 'orcarouter', base_url: 'https://api.orcarouter.ai', video_model: 'kling/kling-v2-6', video_poll_interval_ms: 1, api_key: 'one-key' }, async (_url, options) => new Response(JSON.stringify(options?.method ? { task_id: 'bad-task' } : { data: { status: 'FAILURE', fail_reason: 'policy rejected' } }), { status: 200 }));
+  await assert.rejects(adapter.execute({ mediaType: 'video', prompt: 'bad', parameters: {} }), /policy rejected/);
 });

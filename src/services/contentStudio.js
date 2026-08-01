@@ -1,7 +1,7 @@
 const path = require('node:path');
 
 const connector = require('../ai/connector');
-const PROVIDER_NAMES = Object.freeze({ 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', omni: 'Omni' });
+const PROVIDER_NAMES = Object.freeze({ orcarouter: 'OrcaRouter', 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', omni: 'Omni' });
 
 const decodeDataUrl = value => {
   const match = String(value || '').match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
@@ -11,7 +11,7 @@ const decodeDataUrl = value => {
 
 class ContentStudioService {
   constructor({ db, storage, fetcher = fetch } = {}) { this.db = db; this.storage = storage; this.fetcher = fetcher; }
-  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: PROVIDER_NAMES[row.provider], types: connector.CAPABILITIES[row.provider], isDefault: Boolean(row.is_default) })); }
+  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: PROVIDER_NAMES[row.provider], types: connector.CAPABILITIES[row.provider], isDefault: Boolean(row.is_default), models: { text: row.text_model || row.default_model, image: row.image_model || row.default_model, video: row.video_model || row.default_model } })); }
   list(query = {}) {
     const rows = this.db.prepare('SELECT * FROM ai_generations ORDER BY created_at DESC LIMIT 500').all();
     const search = String(query.search || '').trim().toLowerCase(); const type = String(query.type || ''); const status = String(query.status || ''); const provider = String(query.provider || '');
