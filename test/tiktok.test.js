@@ -2,6 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const tiktok = require('../src/services/tiktok');
 
+test('OAuth state ditandatangani, menyimpan redirect URI, dan menolak perubahan', () => {
+  const state = tiktok.randomState('https://app.example.com/auth/tiktok/callback');
+  assert.equal(tiktok.verifyState(state).redirectUri, 'https://app.example.com/auth/tiktok/callback');
+  assert.equal(tiktok.verifyState(`${state.slice(0, -1)}x`), null);
+});
+
 test('authorization URL hanya meminta scope sandbox yang aktif', () => {
   const url = new URL(tiktok.authorizationUrl('oauth-state'));
 
