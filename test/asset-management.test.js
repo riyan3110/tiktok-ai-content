@@ -161,3 +161,35 @@ test('asset ID resolver preserves order and resolves Local Storage without clien
   await request(app).post('/api/assets/resolve').send({ assetIds: ['missing'] }).expect(404);
   db.close();
 });
+
+test('bulk delete permanently removes Local Storage files and database rows', async () => {
+  const db = createDatabase(':memory:'); const app = createApp({ db });
+  const first = await request(app).post('/api/assets/upload').send({ name: 'one.png', mimeType: 'image/png', data: Buffer.from('one').toString('base64') }).expect(201);
+  const second = await request(app).post('/api/assets/upload').send({ name: 'two.png', mimeType: 'image/png', data: Buffer.from('two').toString('base64') }).expect(201);
+  const result = await request(app).post('/api/assets/bulk-delete').send({ assetIds: [first.body.id, second.body.id], permanent: true }).expect(200);
+  assert.deepEqual(new Set(result.body.deleted), new Set([first.body.id, second.body.id]));
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM assets').get().count, 0);
+  await request(app).get(first.body.preview_url).expect(404);
+  db.close();
+});
+
+test('permanent delete invokes Tencent COS DELETE before removing its row', async () => {
+  const calls = []; const db = createDatabase(':memory:');
+  const app = createApp({ db, storageTransport: verifiedCosTransport(calls) });
+  await request(app).put('/api/storage/settings').send({ provider: 'tencent-cos', secretId: 'id', secretKey: 'key', bucket: 'private-123', region: 'ap-singapore' }).expect(200);
+  const uploaded = await request(app).post('/api/assets/upload').send({ name: 'delete.png', mimeType: 'image/png', data: Buffer.from('delete').toString('base64') }).expect(201);
+  await request(app).delete(`/api/assets/${uploaded.body.id}?permanent=true`).expect(200);
+  assert.deepEqual(calls.map(call => call.init.method), ['PUT', 'HEAD', 'DELETE']);
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM assets').get().count, 0);
+  db.close();
+});
+
+test('Asset Manager UI exposes modal preview and complete multi-selection actions', () => {
+  const html = require('node:fs').readFileSync(require.resolve('../public/index.html'), 'utf8');
+  const source = require('node:fs').readFileSync(require.resolve('../public/assets.js'), 'utf8');
+  for (const id of ['asset-preview-modal', 'asset-select-all', 'asset-clear-selection', 'asset-delete-selected', 'asset-download-selected', 'asset-move-selected', 'asset-copy-selected']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(source, /previewDialog\.showModal\(\)/);
+  assert.match(source, /assets\.forEach\(asset => managerSelected\.add\(asset\.id\)\)/);
+  assert.match(source, /api\/assets\/bulk-delete/);
+  assert.doesNotMatch(source.match(/function card\(asset\).*?\n/)[0], /<h3/);
+});
