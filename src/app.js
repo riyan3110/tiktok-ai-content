@@ -11,7 +11,7 @@ const historyService = require('./services/history');
 const automationService = require('./services/automation');
 const trendReferences = require('./services/trendReferences');
 const aiConnector = require('./ai/connector');
-const { ProviderFactory } = require('./ai/adapters');
+const { ProviderFactory } = require('./providers');
 const { normalizeError } = require('./ai/errors');
 const { MediaGenerationWorker } = require('./ai/mediaWorker');
 const templateService = require('./services/templates');
@@ -57,6 +57,16 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.get('/auth/tiktok/callback', async (req, res, next) => { try { if (!req.query.code || req.query.state !== req.session.oauthState) return res.status(400).send('OAuth state tidak valid.'); const token = await tiktok.exchangeCode(req.query.code); db.prepare(`INSERT INTO oauth_tokens(provider,access_token,refresh_token,expires_at,refresh_expires_at,open_id,scope) VALUES('tiktok',?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,expires_at=excluded.expires_at,refresh_expires_at=excluded.refresh_expires_at,open_id=excluded.open_id,scope=excluded.scope,updated_at=CURRENT_TIMESTAMP`).run(token.access_token, token.refresh_token, Date.now() + token.expires_in * 1000, Date.now() + token.refresh_expires_in * 1000, token.open_id, token.scope); delete req.session.oauthState; res.redirect('/?oauth=success'); } catch (e) { next(e); } });
   app.get('/tiktok/connection-status', (req, res) => { const token = db.prepare("SELECT 1 FROM oauth_tokens WHERE provider='tiktok'").get(); res.json(token ? { connected: true, message: 'TikTok terhubung' } : { connected: false, message: 'TikTok belum terhubung' }); });
   app.get('/trend-references/current', (req, res) => res.json(trendReferences.current(db)));
+  const providersResponse = () => { aiConnector.seed(db); const health = new Map(db.prepare('SELECT * FROM ai_provider_health').all().map(x => [x.provider, x])); return db.prepare('SELECT * FROM ai_provider_settings ORDER BY provider').all().map(row => ({ ...aiConnector.publicSetting(row), health: health.get(row.provider) || { status: 'Offline', quota_status: 'Unknown' } })); };
+  app.get('/api/providers', (req, res) => res.json(providersResponse()));
+  app.post('/api/providers/save', (req, res, next) => { try { res.json(aiConnector.save(db, req.body?.provider, req.body || {})); } catch (e) { next(e); } });
+  app.post('/api/providers/test', async (req, res, next) => testProvider(req.body?.provider, res, next));
+  const enqueueGeneration = mediaType => (req, res, next) => { try { const id = mediaWorker.enqueue({ ...req.body, mediaType }); res.status(202).json({ status: 'Queued', provider: req.body?.provider || null, jobId: id, previewUrl: null, downloadUrl: null, storageUrl: null, metadata: {} }); } catch (e) { next(e); } };
+  app.post('/api/generate/image', enqueueGeneration('image'));
+  app.post('/api/generate/video', enqueueGeneration('video'));
+  app.get('/api/generate/jobs', (req, res) => res.json(studio.list(req.query)));
+  app.get('/api/generate/jobs/:id', (req, res) => { const item = studio.get(req.params.id); if (!item) return res.status(404).json({ error: 'Generation not found' }); res.json({ status: item.status, provider: item.provider, jobId: item.id, previewUrl: item.result_url || null, downloadUrl: item.asset_id ? `/api/content-studio/jobs/${item.id}/download` : null, storageUrl: item.result_url || null, metadata: item.metadata, errorMessage: item.error_message || null }); });
+  async function testProvider(provider, res, next) { const started = Date.now(); try { const row = aiConnector.setting(db, provider); if (!row.enabled) throw Object.assign(new Error('Provider is disabled'), { status: 409 }); if (!row.api_key_encrypted) throw Object.assign(new Error('API key is required'), { status: 422 }); const adapter = ProviderFactory.create(aiConnector.configured(row), aiTransport); const result = await adapter.testConnection({}); aiConnector.updateHealth(db, row.provider, true, result); res.json(result); } catch (caught) { const error = normalizeError(caught); aiConnector.updateHealth(db, provider, false, { responseTime: Date.now() - started }); next(error); } }
   app.get('/api/ai/providers', (req, res) => { aiConnector.seed(db); const health = new Map(db.prepare('SELECT * FROM ai_provider_health').all().map(x => [x.provider, x])); res.json(db.prepare('SELECT * FROM ai_provider_settings ORDER BY provider').all().map(row => ({ ...aiConnector.publicSetting(row), health: health.get(row.provider) || { status: 'Offline', quota_status: 'Unknown' } }))); });
   app.put('/api/ai/providers/:provider', (req, res, next) => { try { res.json(aiConnector.save(db, req.params.provider, req.body || {})); } catch (e) { next(e); } });
   app.delete('/api/ai/providers/:provider/key', (req, res, next) => { try { res.json(aiConnector.save(db, req.params.provider, { apiKey: '' })); } catch (e) { next(e); } });
