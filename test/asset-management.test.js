@@ -28,3 +28,41 @@ test('asset folders, favorite, trash, and restore preserve lifecycle', async () 
   await request(app).post(`/api/assets/${uploaded.body.id}/restore`).expect(200);
   assert.equal((await request(app).get('/api/assets')).body.length, 1); db.close();
 });
+
+test('Tencent COS uploads stay in COS and persist the returned key and URL', async () => {
+  const calls = [];
+  const transport = async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, status: 200, headers: new Headers(), text: async () => '' };
+  };
+  const db = createDatabase(':memory:');
+  const app = createApp({ db, storageTransport: transport });
+  await request(app).put('/api/storage/settings').send({
+    provider: 'tencent-cos', secretId: 'AKIDEXAMPLE', secretKey: 'SECRETEXAMPLE',
+    bucket: 'asset-bucket-123', region: 'ap-singapore', useHttps: true,
+    publicUrl: 'https://cdn.example.com/assets', duplicateDetection: true
+  }).expect(200);
+
+  const payload = { name: 'cos-image.png', mimeType: 'image/png', data: Buffer.from('cos-content').toString('base64') };
+  const uploaded = await request(app).post('/api/assets/upload').send(payload).expect(201);
+  assert.equal(uploaded.body.storage_provider, 'tencent-cos');
+  assert.match(uploaded.body.storage_key, /^\d{4}-\d{2}-\d{2}\/[\w-]+\.png$/);
+  assert.equal(uploaded.body.storage_url, `https://cdn.example.com/assets/${uploaded.body.storage_key}`);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.method, 'PUT');
+  assert.equal(calls[0].url, `https://asset-bucket-123.cos.ap-singapore.myqcloud.com/${uploaded.body.storage_key}`);
+  assert.deepEqual(Buffer.from(calls[0].init.body), Buffer.from('cos-content'));
+
+  const listed = await request(app).get('/api/assets?provider=tencent-cos').expect(200);
+  assert.equal(listed.body[0].storage_url, uploaded.body.storage_url);
+  db.close();
+});
+
+test('Tencent COS upload errors do not silently fall back to local storage', async () => {
+  const db = createDatabase(':memory:');
+  const app = createApp({ db, storageTransport: async () => ({ ok: false, status: 403, headers: new Headers(), text: async () => 'AccessDenied' }) });
+  await request(app).put('/api/storage/settings').send({ provider: 'tencent-cos', secretId: 'id', secretKey: 'key', bucket: 'bucket-123', region: 'ap-singapore' }).expect(200);
+  await request(app).post('/api/assets/upload').send({ name: 'blocked.txt', mimeType: 'text/plain', data: Buffer.from('blocked').toString('base64') }).expect(403);
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM assets').get().count, 0);
+  db.close();
+});

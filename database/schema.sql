@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS asset_folders (
 );
 CREATE TABLE IF NOT EXISTS assets (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, mime_type TEXT NOT NULL,
-  storage_provider TEXT NOT NULL, storage_key TEXT NOT NULL, folder_id TEXT REFERENCES asset_folders(id) ON DELETE SET NULL,
+  storage_provider TEXT NOT NULL, storage_key TEXT NOT NULL, storage_url TEXT NOT NULL, folder_id TEXT REFERENCES asset_folders(id) ON DELETE SET NULL,
   size INTEGER NOT NULL, checksum TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', metadata TEXT NOT NULL DEFAULT '{}',
   is_favorite INTEGER NOT NULL DEFAULT 0, is_generated INTEGER NOT NULL DEFAULT 0, deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
