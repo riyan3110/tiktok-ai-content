@@ -24,7 +24,7 @@ class ContentStudioService {
   createQueued(id, body) {
     const prompt = String(body.prompt || '').trim(); if (!prompt) throw Object.assign(new Error('Prompt wajib diisi'), { status: 422 });
     const mediaType = body.mediaType === 'video' ? 'video' : 'image'; const count = Math.max(1, Math.min(10, Number(body.count) || 1));
-    const metadata = { ...(body.metadata || {}), negativePrompt: String(body.negativePrompt || ''), resolution: String(body.resolution || (mediaType === 'video' ? '1080p' : '1024×1024')), source: body.promptSource === 'generator' ? 'Prompt Generator' : 'Manual', batchCount: count };
+    const metadata = { ...(body.metadata || {}), modelType: body.modelType || null, capability: body.capability || mediaType, negativePrompt: String(body.negativePrompt || ''), resolution: String(body.resolution || (mediaType === 'video' ? '1080p' : '1024×1024')), source: body.promptSource === 'generator' ? 'Prompt Generator' : 'Manual', batchCount: count };
     this.db.prepare("INSERT INTO ai_generations(id,provider,model,prompt,status,media_type,assets,metadata,request_time,prompt_size) VALUES(?,?,?,?,'Queued',?,?,?,?,?)").run(id, body.provider, body.model || null, prompt, mediaType, JSON.stringify(body.assets || []), JSON.stringify(metadata), new Date().toISOString(), Buffer.byteLength(prompt));
     return { count, metadata };
   }

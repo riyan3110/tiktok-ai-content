@@ -1,16 +1,51 @@
 const { joinGatewayUrl } = require('../providers/NineRouterProvider');
 const CACHE_TTL = 10 * 60 * 1000;
-const fields = ['capability', 'capabilities', 'modality', 'modalities', 'type', 'service', 'service_kind', 'input_modalities', 'output_modalities'];
+const COMBOS_PATH = '/api/combos';
+const MODELS_PATH = '/v1/models';
+const CAPABILITIES = ['text', 'image', 'video'];
+const fields = ['capability', 'capabilities', 'modality', 'modalities', 'type', 'service', 'service_type', 'service_kind', 'endpoint', 'input_modalities', 'output_modalities'];
 const values = value => Array.isArray(value) ? value : value && typeof value === 'object' ? Object.entries(value).filter(([, enabled]) => enabled).map(([name]) => name) : value == null ? [] : [value];
-function configuredMapping() { try { return JSON.parse(process.env.NINEROUTER_CAPABILITY_MAP || '{}'); } catch { return {}; } }
-function capabilitiesFrom(source) { const result = new Set(); for (const item of source.map(value => String(value).toLowerCase())) { if (/text|chat|language/.test(item)) result.add('text'); if (/image/.test(item)) result.add('image'); if (/video/.test(item)) result.add('video'); } return result; }
-function modelCapabilities(model, mapping = configuredMapping()) { const id = String(typeof model === 'string' ? model : model.id || model.name || '').trim(); const metadata = typeof model === 'object' && model ? [...fields.flatMap(field => values(model[field])), ...fields.flatMap(field => values(model.architecture?.[field]))] : []; const official = capabilitiesFrom(metadata); return official.size ? official : capabilitiesFrom(values(mapping[id])); }
-function normalizeModels(payload, mapping) { const result = { text: [], image: [], video: [], unknown: [] }; const models = Array.isArray(payload) ? payload : payload?.data || payload?.models; if (!Array.isArray(models)) throw new Error('Respons katalog model 9Router tidak valid'); for (const model of models) { const id = String(typeof model === 'string' ? model : model?.id || model?.name || '').trim(); if (!id) continue; const capabilities = modelCapabilities(model, mapping); if (!capabilities.size) result.unknown.push(id); else for (const capability of capabilities) result[capability].push(id); } for (const capability of Object.keys(result)) result[capability] = [...new Set(result[capability])].sort(); return result; }
-function discovery(models, manualMappings = {}) { const capabilities = ['text', 'image', 'video'].filter(type => models[type].length); const reasons = []; if (!models.image.length) reasons.push('endpoint models tidak mengembalikan model image'); if (models.unknown.length) reasons.push('metadata model tidak memiliki capability image', 'model masuk kategori unknown', 'capability mapping belum dibuat'); return { ...models, manualMappings, capabilities, counts: Object.fromEntries(['text', 'image', 'video', 'unknown'].map(type => [type, models[type].length])), diagnostics: { image: { available: Boolean(models.image.length), reasons } } }; }
+const idOf = item => String(typeof item === 'string' ? item : item?.id || item?.name || item?.model || '').trim();
+
+function capabilitiesFromMetadata(item = {}) {
+  const sources = [item, item.architecture, item.config, item.service].filter(value => value && typeof value === 'object');
+  const result = new Set();
+  for (const value of sources.flatMap(source => fields.flatMap(field => values(source[field]))).map(String).map(value => value.toLowerCase())) {
+    if (/text|chat|language|completion/.test(value)) result.add('text');
+    if (/image/.test(value)) result.add('image');
+    if (/video/.test(value)) result.add('video');
+  }
+  return result;
+}
+function registryCapabilities(id) {
+  const value = String(id).toLowerCase();
+  if (/(^|\/)(sora|veo|kling|vidu|hailuo|wan[^/]*video|runway|luma|minimax-video)/.test(value)) return new Set(['video']);
+  if (/(^|\/)(gpt-image|dall-e|imagen|flux|ideogram|recraft|stable-diffusion|sdxl|qwen-image)/.test(value)) return new Set(['image']);
+  if (/(deepseek|(^|\/)(openai\/)?gpt-|qwen[^/]*(chat|coder|instruct)|claude|gemini|llama|mistral)/.test(value)) return new Set(['text']);
+  return new Set();
+}
+function modelCapabilities(model) { const official = capabilitiesFromMetadata(model); return official.size ? official : registryCapabilities(idOf(model)); }
+function payloadItems(payload, keys) { if (Array.isArray(payload)) return payload; for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key]; if (payload?.data && !Array.isArray(payload.data)) for (const key of keys) if (Array.isArray(payload.data[key])) return payload.data[key]; throw new Error('Respons katalog 9Router tidak valid'); }
+function normalized(result) { for (const key of Object.keys(result)) result[key] = [...new Set(result[key])].sort(); return result; }
+function normalizeModels(payload) {
+  const result = { text: [], image: [], video: [], unknown: [] };
+  for (const model of payloadItems(payload, ['data', 'models', 'items'])) { const id = idOf(model); if (!id) continue; const capabilities = modelCapabilities(model); if (!capabilities.size) result.unknown.push(id); for (const capability of capabilities) result[capability].push(id); }
+  return normalized(result);
+}
+function comboMembers(combo) { return ['models', 'members', 'routes', 'targets', 'candidates'].flatMap(key => values(combo?.[key])).flatMap(member => typeof member === 'string' ? [member] : [member?.model, member?.model_id, member?.id, member?.target].filter(Boolean)).map(String); }
+function normalizeCombos(payload, directPayload) {
+  const directItems = payloadItems(directPayload, ['data', 'models', 'items']); const directById = new Map(directItems.map(item => [idOf(item), item]));
+  const result = { text: [], image: [], video: [], unknown: [] };
+  for (const combo of payloadItems(payload, ['data', 'combos', 'routers', 'items'])) { const id = idOf(combo); if (!id) continue; let capabilities = capabilitiesFromMetadata(combo); if (!capabilities.size) { capabilities = new Set(); for (const memberId of comboMembers(combo)) for (const capability of modelCapabilities(directById.get(memberId) || { id: memberId })) capabilities.add(capability); } if (!capabilities.size) result.unknown.push(id); for (const capability of capabilities) result[capability].push(id); }
+  return normalized(result);
+}
+function discovery(combos, direct) {
+  const result = {}; for (const capability of CAPABILITIES) result[capability] = { combos: combos[capability], directModels: direct[capability] };
+  result.unknown = { combos: combos.unknown, directModels: direct.unknown }; result.capabilities = CAPABILITIES.filter(type => result[type].combos.length || result[type].directModels.length); result.counts = Object.fromEntries(CAPABILITIES.map(type => [type, result[type].combos.length + result[type].directModels.length])); result.endpoints = { combos: COMBOS_PATH, directModels: MODELS_PATH }; return result;
+}
 class NineRouterModels {
   constructor({ db, connector, transport = fetch, ttl = CACHE_TTL }) { this.db = db; this.connector = connector; this.transport = transport; this.ttl = ttl; this.cached = null; }
-  mappings() { return Object.fromEntries(this.db.prepare("SELECT model_id,capability FROM ai_provider_model_capabilities WHERE provider='9router'").all().map(row => [row.model_id, row.capability])); }
-  async saveMappings(mapping = {}) { const save = this.db.prepare("INSERT INTO ai_provider_model_capabilities(provider,model_id,capability) VALUES('9router',?,?) ON CONFLICT(provider,model_id) DO UPDATE SET capability=excluded.capability,updated_at=CURRENT_TIMESTAMP"); this.db.transaction(() => { for (const [id, capability] of Object.entries(mapping)) { if (!['text','image','video','ignore'].includes(capability)) throw Object.assign(new Error(`Capability tidak valid untuk ${id}`), { status: 422 }); save.run(String(id).trim(), capability); } })(); this.cached = null; return this.get({ refresh: true }); }
-  async get({ refresh = false } = {}) { if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value; const config = this.connector.configured(this.connector.setting(this.db, '9router')); const headers = { Accept: 'application/json' }; if (config.api_key) headers.Authorization = `Bearer ${config.api_key}`; const response = await this.transport(joinGatewayUrl(config.base_url, '/v1/models'), { headers }); if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status }); let payload; try { payload = await response.json(); } catch { throw Object.assign(new Error('Respons katalog model 9Router tidak valid'), { status: 502 }); } const manualMappings = this.mappings(); const value = discovery(normalizeModels(payload, manualMappings), manualMappings); this.cached = { at: Date.now(), value }; return value; }
+  async fetchJson(config, path, headers) { const response = await this.transport(joinGatewayUrl(config.base_url, path), { headers }); if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status }); try { return await response.json(); } catch { throw Object.assign(new Error('Respons katalog 9Router tidak valid'), { status: 502 }); } }
+  async get({ refresh = false } = {}) { if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value; const config = this.connector.configured(this.connector.setting(this.db, '9router')); const headers = { Accept: 'application/json' }; if (config.api_key) headers.Authorization = `Bearer ${config.api_key}`; const [combos, direct] = await Promise.all([this.fetchJson(config, COMBOS_PATH, headers), this.fetchJson(config, MODELS_PATH, headers)]); const value = discovery(normalizeCombos(combos, direct), normalizeModels(direct)); this.cached = { at: Date.now(), value }; return value; }
 }
-module.exports = { NineRouterModels, normalizeModels, modelCapabilities, discovery, CACHE_TTL };
+module.exports = { NineRouterModels, normalizeModels, normalizeCombos, modelCapabilities, discovery, COMBOS_PATH, MODELS_PATH, CACHE_TTL };
