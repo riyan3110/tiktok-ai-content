@@ -15,7 +15,7 @@ function buildGenerationRequest(input = {}, providerConfig = {}) {
   if (!MEDIA_TYPES.has(mediaType)) throw Object.assign(new Error('mediaType must be text, image, or video'), { status: 422 });
   const assets = (input.referenceAssets || input.assets || []).map(normalizeAsset);
   return {
-    prompt, mediaType, assets, model: input.model || providerConfig.default_model,
+    prompt, mediaType, assets, model: input.model || providerConfig[`${mediaType}_model`] || providerConfig.default_model,
     parameters: { aspectRatio: input.aspectRatio, duration: input.duration, resolution: input.resolution, style: input.style, seed: input.seed, negativePrompt: input.negativePrompt, ...input.parameters },
     metadata: { ...input.metadata, requestedAt: new Date().toISOString() }
   };

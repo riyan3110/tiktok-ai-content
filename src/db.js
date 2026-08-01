@@ -38,6 +38,7 @@ function createDatabase(filename = config.databasePath) {
   for (const [name, definition] of Object.entries({ media_type: "TEXT NOT NULL DEFAULT 'text'", assets: "TEXT NOT NULL DEFAULT '[]'", media: "TEXT NOT NULL DEFAULT '[]'", metadata: "TEXT NOT NULL DEFAULT '{}'", provider_job_id: 'TEXT', duration_ms: 'INTEGER' })) if (!generationColumns.has(name)) db.exec(`ALTER TABLE ai_generations ADD COLUMN ${name} ${definition}`);
   const providerColumns = new Set(db.prepare('PRAGMA table_info(ai_provider_settings)').all().map(({ name }) => name));
   if (!providerColumns.has('is_default')) db.exec('ALTER TABLE ai_provider_settings ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0');
+  for (const name of ['text_model', 'image_model', 'video_model']) if (!providerColumns.has(name)) db.exec(`ALTER TABLE ai_provider_settings ADD COLUMN ${name} TEXT`);
   const assetColumns = new Set(db.prepare('PRAGMA table_info(assets)').all().map(({ name }) => name));
   if (!assetColumns.has('storage_url')) {
     db.exec("ALTER TABLE assets ADD COLUMN storage_url TEXT NOT NULL DEFAULT ''");
