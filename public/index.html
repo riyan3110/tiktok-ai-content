@@ -18,7 +18,7 @@
     <nav class="side-nav">
       <a class="active" href="#projects" data-workspace-view="projects"><span aria-hidden="true">▦</span><span>Projects</span></a>
       <a href="#workflow" data-workspace-view="workflow"><span aria-hidden="true">⇥</span><span>Workflow</span></a>
-      <a href="#templates" data-placeholder-view="Templates"><span aria-hidden="true">◇</span><span>Templates</span></a>
+      <a href="#templates" data-workspace-view="templates"><span aria-hidden="true">◇</span><span>Templates</span></a>
       <a href="#prompt-library" data-placeholder-view="Prompt Library"><span aria-hidden="true">⌘</span><span>Prompt Library</span></a>
       <a href="#consistency" data-workspace-view="consistency"><span aria-hidden="true">◎</span><span>Consistency</span></a>
       <a href="#prompt-generator" data-workspace-view="generator"><span aria-hidden="true">✧</span><span>Prompt Generator</span></a>
@@ -76,6 +76,11 @@
       </section>
       <section id="workspace-placeholder" class="workspace-placeholder hidden" aria-labelledby="placeholder-title">
         <span class="state-icon" aria-hidden="true">✦</span><span class="eyebrow">WORKSPACE MODULE</span><h1 id="placeholder-title"></h1><p>Modul ini sudah disiapkan di navigasi dan akan dikembangkan pada milestone berikutnya.</p><button class="outline" data-back-projects type="button">Kembali ke Projects</button>
+      </section>
+      <section id="template-manager" class="template-manager hidden" aria-labelledby="templates-title">
+        <header class="template-heading"><div><span class="eyebrow">TEMPLATE &amp; AUTOMATION ENGINE</span><h1 id="templates-title">Template Manager</h1><p>Reuse prompt image, video, text, dan workflow UGC—lalu jalankan sekali, batch, queue, atau terjadwal.</p></div><button id="template-create" type="button">＋ Create Template</button></header>
+        <div class="template-toolbar"><label class="project-search"><span>⌕</span><input id="template-search" type="search" placeholder="Search template, prompt, atau tag…"></label><select id="template-category"><option value="">Semua kategori</option></select><select id="template-state"><option value="active">Aktif</option><option value="favorite">Favorite</option><option value="archived">Archive</option></select></div>
+        <div class="template-layout"><aside><h2>Folders</h2><div id="template-folders"></div><h2>Built-in Presets</h2><p>UGC · TikTok Ads · Google Veo · Google Flow · Image Ads · Shopee · Tokopedia · Instagram Reels · YouTube Shorts</p></aside><main><p id="template-results" class="results-label"></p><div id="template-list" class="template-grid"></div></main></div>
       </section>
       <section id="workflow-orchestrator" class="workflow-orchestrator hidden" aria-labelledby="workflow-title">
         <header class="workflow-heading">
@@ -207,6 +212,7 @@
     <div class="dialog-actions"><button id="cancel-prompt" class="outline" type="button">Batal</button><button type="submit">Create Prompt</button></div>
   </form>
 </dialog>
+<dialog id="template-dialog" class="project-dialog template-dialog" aria-labelledby="template-dialog-title"><form id="template-form"><div class="dialog-heading"><div><span class="eyebrow">REUSABLE GENERATION</span><h2 id="template-dialog-title">Create Template</h2></div><button id="template-close" class="icon-button" type="button">✕</button></div><div class="form-grid"><label>Nama *<input name="name" required></label><label>Kategori *<input name="category" required></label><label>Target AI *<select name="targetAI"><option>image</option><option>video</option><option>text</option><option>workflow</option></select></label><label>Folder<input name="folder"></label><label>Provider *<input name="provider" value="openai" required></label><label>Model *<input name="model" value="gpt-image-1" required></label></div><label>Deskripsi<textarea name="description"></textarea></label><label>Prompt *<textarea name="prompt" rows="7" required></textarea></label><label>Negative Prompt<textarea name="negativePrompt"></textarea></label><div class="form-grid"><label>Style<input name="style"></label><label>Camera<input name="camera"></label><label>Lighting<input name="lighting"></label><label>Voice<input name="voice"></label><label>Duration<input name="duration" type="number"></label><label>Resolution<input name="resolution"></label><label>Aspect Ratio<input name="aspectRatio"></label><label>Tags<input name="tags"></label></div><label>Custom variables (JSON)<textarea name="variables" placeholder='{"audience":"Gen Z"}'></textarea></label><label>Notes<textarea name="notes"></textarea></label><p id="template-form-error" class="auth-error"></p><div class="dialog-actions"><button class="outline" id="template-cancel" type="button">Cancel</button><button type="submit">Save Template</button></div></form></dialog>
 <dialog id="slide-preview" aria-labelledby="slide-preview-title"><div class="dialog-heading"><h2 id="slide-preview-title">Preview slide</h2><button id="close-preview" class="outline" aria-label="Tutup preview">✕</button></div><img id="slide-preview-image" alt=""><p id="slide-preview-label"></p></dialog>
 <dialog id="consistency-dialog" class="project-dialog consistency-dialog" aria-labelledby="consistency-dialog-title"><form id="consistency-form" method="dialog"><div class="dialog-heading"><div><span class="eyebrow">CONSISTENCY LIBRARY</span><h2 id="consistency-dialog-title"></h2></div><button class="icon-button" data-close-consistency type="button" aria-label="Close">✕</button></div><div id="consistency-fields"></div><div class="dialog-actions"><button class="outline" data-close-consistency type="button">Cancel</button><button type="submit">Save to library</button></div></form></dialog>
 <dialog id="consistency-confirm" class="project-dialog confirm-dialog"><form method="dialog"><span class="confirm-icon">!</span><h2>Delete this item?</h2><p>This action cannot be undone. Your other library items won't be affected.</p><div class="dialog-actions"><button class="outline" value="cancel">Cancel</button><button class="danger" value="confirm">Delete item</button></div></form></dialog>
@@ -221,6 +227,7 @@
 <script src="/generation-queue.js"></script>
 <script src="/ai-integration.js"></script>
 <script src="/account-workspace.js"></script>
+<script src="/templates.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

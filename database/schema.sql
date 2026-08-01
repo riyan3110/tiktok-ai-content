@@ -137,3 +137,74 @@ CREATE TABLE IF NOT EXISTS ai_provider_health (
   provider_version TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  description TEXT,
+  target_ai TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  negative_prompt TEXT,
+  character_data TEXT NOT NULL DEFAULT '{}',
+  product_data TEXT NOT NULL DEFAULT '{}',
+  reference_images TEXT NOT NULL DEFAULT '[]',
+  style TEXT,
+  camera TEXT,
+  lighting TEXT,
+  voice TEXT,
+  duration INTEGER,
+  resolution TEXT,
+  aspect_ratio TEXT,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  seed INTEGER,
+  temperature REAL,
+  notes TEXT,
+  variables TEXT NOT NULL DEFAULT '{}',
+  folder TEXT,
+  tags TEXT NOT NULL DEFAULT '[]',
+  is_favorite INTEGER NOT NULL DEFAULT 0,
+  is_archived INTEGER NOT NULL DEFAULT 0,
+  is_preset INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_templates_library ON templates(is_archived, is_favorite, category, folder);
+
+CREATE TABLE IF NOT EXISTS template_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  snapshot TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(template_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS template_assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  name TEXT,
+  type TEXT NOT NULL,
+  url TEXT NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS template_runs (
+  id TEXT PRIMARY KEY,
+  template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  generation_id TEXT,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  duration_ms INTEGER,
+  cost REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Queued',
+  mode TEXT NOT NULL DEFAULT 'once',
+  scheduled_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_template_runs_history ON template_runs(template_id, created_at DESC);
