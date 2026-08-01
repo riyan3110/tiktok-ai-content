@@ -43,8 +43,11 @@
     $('#factory-preview-body').innerHTML = html;
   }
   async function openAssets() {
-    const dialog = $('#factory-asset-dialog'); $('#factory-asset-options').innerHTML = '<p>Memuat Asset Manager…</p>'; dialog.showModal();
-    try { const response = await fetch('/api/assets'); const list = await response.json(); $('#factory-asset-options').innerHTML = list.length ? list.map(asset => `<label><input type="checkbox" value="${safe(asset.id)}" ${assets.some(x => x.id === asset.id) ? 'checked' : ''}><span>□</span><b>${safe(asset.name)}</b><small>${safe(asset.category || asset.type || 'Asset')}</small></label>`).join('') : '<p>Belum ada asset. Tambahkan melalui Asset Manager.</p>'; $('#factory-assets-done').onclick = () => { const ids = [...$('#factory-asset-options').querySelectorAll('input:checked')].map(x => x.value); assets = list.filter(asset => ids.includes(String(asset.id))); $('#factory-assets-list').innerHTML = assets.map(a => `<span>□ ${safe(a.name)}</span>`).join(''); dialog.close(); }; } catch (_) { $('#factory-asset-options').innerHTML = '<p>Asset Manager tidak dapat dimuat saat ini.</p>'; }
+    const chosen = await window.AssetManager.select({ selectedIds: assets.map(asset => asset.id) });
+    if (!chosen) return;
+    assets = chosen;
+    $('#factory-assets-list').innerHTML = assets.map(asset => `<span class="selected-asset"><img src="${safe(asset.previewUrl)}" alt=""><button type="button" data-remove-factory-asset="${safe(asset.id)}" aria-label="Remove asset">×</button></span>`).join('');
+    document.querySelectorAll('[data-remove-factory-asset]').forEach(button => button.onclick = () => { assets = assets.filter(asset => asset.id !== button.dataset.removeFactoryAsset); button.closest('.selected-asset').remove(); });
   }
   function storeResults(factoryResult) {
     const read = key => { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (_) { return []; } };
@@ -53,7 +56,7 @@
     window.dispatchEvent(new CustomEvent('ai-ads-lab:workflow-result', { detail: factoryResult }));
   }
   $('#factory-form').onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget); const data = Object.fromEntries(form); data.providers = form.getAll('providers'); if (!data.providers.length) return void ($('#factory-status').textContent = 'Pilih minimal satu prompt output.'); const batch = Number(data.batch); $('#factory-generate').disabled = true; $('#factory-status').textContent = `Menjalankan ${batch} workflow…`; setTimeout(() => { result = { batchId: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), items: Array.from({ length: batch }, (_, index) => makeContent(data, index)) }; storeResults(result); $('#factory-result-count').textContent = `${batch} hasil`; $('#factory-export').classList.remove('hidden'); $('#factory-generate').disabled = false; $('#factory-status').textContent = `Selesai — ${batch} konten masuk ke Workflow & History.`; renderPreview(); }, 350); };
-  $('#factory-template-search').oninput = event => renderTemplates(event.target.value); $('#factory-assets-button').onclick = openAssets; $('#factory-assets-close').onclick = () => $('#factory-asset-dialog').close();
+  $('#factory-template-search').oninput = event => renderTemplates(event.target.value); $('#factory-assets-button').onclick = openAssets;
   document.querySelectorAll('[data-factory-tab]').forEach(button => button.onclick = () => { activeTab = button.dataset.factoryTab; document.querySelectorAll('[data-factory-tab]').forEach(x => x.classList.toggle('active', x === button)); renderPreview(); });
   document.querySelectorAll('[data-factory-export]').forEach(button => button.onclick = async () => { const type = button.dataset.factoryExport; const content = serialize(undefined, type); if (type === 'copy') { await navigator.clipboard.writeText(serialize()); button.textContent = 'Tersalin ✓'; setTimeout(() => { button.textContent = 'Copy'; }, 1200); return; } const blob = new Blob([content], { type: type === 'json' ? 'application/json' : 'text/plain' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `ai-content-factory.${type}`; link.click(); URL.revokeObjectURL(link.href); });
   $('#factory-category').innerHTML = templates.map(item => `<option>${safe(item.name)}</option>`).join(''); renderTemplates(); selectTemplate(selected.name);

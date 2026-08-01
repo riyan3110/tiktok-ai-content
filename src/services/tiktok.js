@@ -2,8 +2,8 @@ const crypto = require('node:crypto');
 const config = require('../config');
 const API = 'https://open.tiktokapis.com';
 
-function authorizationUrl(state) {
-  const p = new URLSearchParams({ client_key: config.tiktokClientKey, scope: 'user.info.basic,video.upload', response_type: 'code', redirect_uri: config.tiktokRedirectUri, state });
+function authorizationUrl(state, redirectUri = config.tiktokRedirectUri) {
+  const p = new URLSearchParams({ client_key: config.tiktokClientKey, scope: 'user.info.basic,video.upload', response_type: 'code', redirect_uri: redirectUri, state });
   return `https://www.tiktok.com/v2/auth/authorize/?${p}`;
 }
 async function request(url, options) {
@@ -11,8 +11,8 @@ async function request(url, options) {
   if (!response.ok || (body.error?.code && body.error.code !== 'ok')) throw new Error(body.error_description || body.error?.message || `TikTok HTTP ${response.status}`);
   return body;
 }
-async function exchangeCode(code) {
-  const body = new URLSearchParams({ client_key: config.tiktokClientKey, client_secret: config.tiktokClientSecret, code, grant_type: 'authorization_code', redirect_uri: config.tiktokRedirectUri });
+async function exchangeCode(code, redirectUri = config.tiktokRedirectUri) {
+  const body = new URLSearchParams({ client_key: config.tiktokClientKey, client_secret: config.tiktokClientSecret, code, grant_type: 'authorization_code', redirect_uri: redirectUri });
   return request(`${API}/v2/oauth/token/`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
 }
 async function refresh(refreshToken) {

@@ -55,10 +55,11 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.delete('/api/asset-folders/:id', (req, res) => res.json({ deleted: Boolean(db.prepare('DELETE FROM asset_folders WHERE id=?').run(req.params.id).changes) }));
   app.get('/auth/tiktok', (req, res, next) => {
     const state = tiktok.randomState(); const now = Date.now();
+    const redirectUri = config.tiktokRedirectUri || `${req.protocol}://${req.get('host')}/auth/tiktok/callback`;
     db.prepare("DELETE FROM oauth_states WHERE provider='tiktok' AND expires_at < ?").run(now);
-    db.prepare("INSERT INTO oauth_states(state,provider,status,expires_at) VALUES(?,'tiktok','pending',?)").run(state, now + 15 * 60 * 1000);
+    db.prepare("INSERT INTO oauth_states(state,provider,status,expires_at,redirect_uri) VALUES(?,'tiktok','pending',?,?)").run(state, now + 15 * 60 * 1000, redirectUri);
     req.session.oauthState = state;
-    req.session.save(error => error ? next(error) : res.redirect(tiktok.authorizationUrl(state)));
+    req.session.save(error => error ? next(error) : res.redirect(tiktok.authorizationUrl(state, redirectUri)));
   });
   app.get('/auth/tiktok/callback', async (req, res, next) => {
     const state = String(req.query.state || ''); const code = String(req.query.code || ''); const now = Date.now();
@@ -72,7 +73,7 @@ function createApp({ db, content = contentService, images = imageService, tiktok
       const claimed = db.prepare("UPDATE oauth_states SET status='processing',callback_code_hash=?,updated_at=CURRENT_TIMESTAMP WHERE state=? AND status='pending' AND expires_at>=?").run(codeHash, state, now);
       if (!claimed.changes) return res.redirect(`/?oauth=${connected ? 'connected' : 'pending'}`);
       try {
-        const token = await tiktok.exchangeCode(code);
+        const token = await tiktok.exchangeCode(code, saved.redirect_uri);
         db.transaction(() => {
           db.prepare(`INSERT INTO oauth_tokens(provider,access_token,refresh_token,expires_at,refresh_expires_at,open_id,scope) VALUES('tiktok',?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,expires_at=excluded.expires_at,refresh_expires_at=excluded.refresh_expires_at,open_id=excluded.open_id,scope=excluded.scope,updated_at=CURRENT_TIMESTAMP`).run(token.access_token, token.refresh_token, now + token.expires_in * 1000, now + token.refresh_expires_in * 1000, token.open_id, token.scope);
           db.prepare("UPDATE oauth_states SET status='completed',updated_at=CURRENT_TIMESTAMP WHERE state=?").run(state);
@@ -86,6 +87,7 @@ function createApp({ db, content = contentService, images = imageService, tiktok
     } catch (e) { next(e); }
   });
   app.get('/tiktok/connection-status', (req, res) => { const token = db.prepare("SELECT 1 FROM oauth_tokens WHERE provider='tiktok'").get(); res.json(token ? { connected: true, message: 'TikTok terhubung' } : { connected: false, message: 'TikTok belum terhubung' }); });
+  app.delete('/tiktok/connection', (req, res) => { const result = db.prepare("DELETE FROM oauth_tokens WHERE provider='tiktok'").run(); res.json({ disconnected: Boolean(result.changes) }); });
   app.get('/trend-references/current', (req, res) => res.json(trendReferences.current(db)));
   const providersResponse = () => { aiConnector.seed(db); const health = new Map(db.prepare('SELECT * FROM ai_provider_health').all().map(x => [x.provider, x])); return db.prepare('SELECT * FROM ai_provider_settings ORDER BY provider').all().map(row => ({ ...aiConnector.publicSetting(row), health: health.get(row.provider) || { status: 'Offline', quota_status: 'Unknown' } })); };
   app.get('/api/providers', (req, res) => res.json(providersResponse()));
