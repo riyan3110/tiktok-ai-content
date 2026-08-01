@@ -112,16 +112,63 @@ async function history() {
   }; });
 }
 function escapeHtml(x) { const d = document.createElement('div'); d.textContent = x; return d.innerHTML; }
-async function connectionStatus() {
-  const result = await api('/api/tiktok/status', { cache: 'no-store' });
-  $('#tiktok-status').textContent = result.status;
-  $('#tiktok-status').classList.toggle('connected', result.connected);
-  $('#tiktok-status').classList.toggle('disconnected', !result.connected);
-  $('#tiktok-connect').classList.toggle('hidden', result.connected);
-  $('#tiktok-reconnect').classList.toggle('hidden', !result.connected);
-  $('#tiktok-disconnect').classList.toggle('hidden', !result.connected);
+class TikTokConnection {
+  constructor(element) {
+    this.element = element;
+    this.status = element.querySelector('[data-tiktok-status]');
+    this.disconnectButton = element.querySelector('[data-tiktok-disconnect]');
+    this.toast = $('#tiktok-toast');
+    this.toastTimer = null;
+    this.disconnectButton.onclick = () => this.disconnect();
+    this.toast.querySelector('button').onclick = () => this.hideToast();
+    element.querySelectorAll('[data-tiktok-connect],[data-tiktok-reconnect]').forEach(link => link.onclick = () => this.render('connecting'));
+  }
+  render(state, account) {
+    this.element.dataset.state = state;
+    this.status.textContent = state === 'connected' ? 'TikTok Connected' : state === 'connecting' ? 'Menghubungkan TikTok…' : state === 'error' ? 'TikTok Error' : state === 'loading' ? 'Memuat TikTok…' : 'TikTok Disconnected';
+    this.status.title = account?.displayName || '';
+  }
+  async refresh() {
+    this.render('loading');
+    try {
+      const result = await api('/api/tiktok/status', { cache: 'no-store' });
+      this.render(result.connected ? 'connected' : 'disconnected', result.account);
+      return result;
+    } catch (error) {
+      this.render('error');
+      this.showToast(`Gagal menghubungkan TikTok: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+  async disconnect() {
+    this.disconnectButton.disabled = true;
+    try {
+      await api('/api/tiktok/connection', { method: 'DELETE' });
+      await this.refresh();
+      this.showToast('TikTok telah diputuskan', 'info');
+    } catch (error) {
+      this.render('error');
+      this.showToast(`Gagal menghubungkan TikTok: ${error.message}`, 'error');
+    } finally { this.disconnectButton.disabled = false; }
+  }
+  showToast(message, type) {
+    clearTimeout(this.toastTimer);
+    this.toast.querySelector('span').textContent = message;
+    this.toast.dataset.type = type;
+    this.toast.classList.add('show');
+    this.toastTimer = setTimeout(() => this.hideToast(), 4500);
+  }
+  hideToast() { this.toast.classList.remove('show'); }
 }
-$('#tiktok-disconnect').onclick = async () => { await api('/tiktok/connection', { method: 'DELETE' }); $('#connection-message').textContent = 'Akun TikTok diputuskan.'; await connectionStatus(); };
+const tiktokConnection = new TikTokConnection($('#tiktok-connection'));
+const tiktokLayout = window.matchMedia('(max-width: 1023px)');
+function placeTikTokConnection() {
+  const target = tiktokLayout.matches ? sidebar : $('.topbar-actions');
+  if (tiktokLayout.matches) sidebar.querySelector('.sidebar-brand').after(tiktokConnection.element);
+  else target.append(tiktokConnection.element);
+}
+tiktokLayout.addEventListener('change', placeTikTokConnection);
+placeTikTokConnection();
 $('#content-category').onchange = () => $('#custom-category-field').classList.toggle('hidden', $('#content-category').value !== 'Custom');
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { $('#manual-topic-field').classList.toggle('hidden', input.value !== 'manual' || !input.checked); });
 let lastGenerationRequest;
@@ -174,10 +221,13 @@ $('#delete-all').onclick = async () => {
   } catch (error) { $('#message').textContent = error.message; }
 };
 const params = new URLSearchParams(window.location.search);
-if (params.get('oauth') === 'success') $('#connection-message').textContent = 'Akun TikTok berhasil dihubungkan.';
-if (params.get('oauth') === 'reconnect-failed') $('#connection-message').textContent = 'Hubungkan ulang gagal. Akun TikTok yang aktif tetap terhubung.';
-if (params.get('oauth') === 'expired') $('#connection-message').textContent = 'Sesi TikTok kedaluwarsa. Silakan hubungkan lagi.';
-connectionStatus().catch(e => { $('#connection-message').textContent = `Status koneksi gagal dimuat: ${e.message}`; });
+const oauthResult = params.get('oauth');
+const oauthReason = params.get('reason');
+tiktokConnection.refresh().then(result => {
+  if (oauthResult === 'success' && result.connected) tiktokConnection.showToast('TikTok berhasil dihubungkan', 'success');
+  else if (oauthResult === 'error') tiktokConnection.showToast(`Gagal menghubungkan TikTok: ${oauthReason || 'otorisasi tidak dapat diselesaikan'}`, 'error');
+  if (oauthResult) history.replaceState({}, '', `${location.pathname}${location.hash}`);
+}).catch(() => {});
 history().catch(e => { $('#history').innerHTML = errorState(e.message); });
 loadTrend().catch(e => $('#trend-message').textContent = e.message);
 

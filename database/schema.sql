@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   expires_at INTEGER NOT NULL,
   refresh_expires_at INTEGER,
   open_id TEXT,
+  display_name TEXT,
   scope TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
