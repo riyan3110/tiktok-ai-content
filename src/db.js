@@ -9,6 +9,8 @@ function createDatabase(filename = config.databasePath) {
   db.pragma('foreign_keys = ON');
   db.pragma('journal_mode = WAL');
   db.exec(fs.readFileSync(path.join(config.root, 'database/schema.sql'), 'utf8'));
+  const oauthColumns = new Set(db.prepare('PRAGMA table_info(oauth_states)').all().map(({ name }) => name));
+  if (!oauthColumns.has('redirect_uri')) db.exec('ALTER TABLE oauth_states ADD COLUMN redirect_uri TEXT');
   const columns = new Set(db.prepare('PRAGMA table_info(contents)').all().map(({ name }) => name));
   if (!columns.has('topic_source')) db.exec("ALTER TABLE contents ADD COLUMN topic_source TEXT NOT NULL DEFAULT 'ai'");
   if (!columns.has('requested_topic')) db.exec('ALTER TABLE contents ADD COLUMN requested_topic TEXT');

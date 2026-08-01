@@ -115,12 +115,15 @@ function escapeHtml(x) { const d = document.createElement('div'); d.textContent 
 async function connectionStatus() {
   const status = await api('/tiktok/connection-status');
   const connect = $('#tiktok-connect');
-  connect.textContent = status.connected ? 'TikTok Terhubung ✓' : 'Hubungkan TikTok';
+  connect.textContent = status.connected ? '✓ Connected' : 'Hubungkan TikTok';
   connect.classList.toggle('connected', status.connected);
   if (status.connected) connect.removeAttribute('href');
   else connect.href = '/auth/tiktok';
   $('#tiktok-reconnect').classList.toggle('hidden', !status.connected);
+  $('#tiktok-disconnect').classList.toggle('hidden', !status.connected);
+  document.querySelectorAll('.drawer-tiktok,.mobile-tiktok-connect').forEach(link => { link.classList.toggle('connected', status.connected); link.toggleAttribute('aria-disabled', status.connected); if (status.connected) { link.removeAttribute('href'); link.onclick = event => event.preventDefault(); } });
 }
+$('#tiktok-disconnect').onclick = async () => { await api('/tiktok/connection', { method: 'DELETE' }); $('#connection-message').textContent = 'Akun TikTok diputuskan.'; await connectionStatus(); };
 $('#content-category').onchange = () => $('#custom-category-field').classList.toggle('hidden', $('#content-category').value !== 'Custom');
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { $('#manual-topic-field').classList.toggle('hidden', input.value !== 'manual' || !input.checked); });
 let lastGenerationRequest;

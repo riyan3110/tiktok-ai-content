@@ -52,7 +52,7 @@
         <button class="account-button" id="account-button" type="button"><span class="account-avatar">?</span><span>Masuk</span></button>
         <button class="icon-button" id="theme-toggle" type="button" aria-label="Gunakan tema terang" title="Ganti tema"><span aria-hidden="true">☀</span></button>
         <a class="icon-button mobile-tiktok-connect" href="/auth/tiktok" aria-label="Hubungkan akun TikTok" title="Hubungkan TikTok"><span aria-hidden="true">♪</span></a>
-        <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Hubungkan ulang</a><span id="connection-message" role="status"></span></div>
+        <div class="tiktok-connection"><a id="tiktok-connect" class="outline" href="/auth/tiktok">Hubungkan TikTok</a><a id="tiktok-reconnect" class="reconnect hidden" href="/auth/tiktok">Reconnect</a><button id="tiktok-disconnect" class="text-button hidden" type="button">Disconnect</button><span id="connection-message" role="status"></span></div>
       </div>
     </header>
     <div class="page-content">
@@ -127,7 +127,6 @@
           </form>
           <aside class="factory-panel factory-preview"><div class="factory-section-title"><div><span class="eyebrow">LIVE PREVIEW</span><h2>Konten siap posting</h2></div><span id="factory-result-count">0 hasil</span></div><div class="factory-preview-tabs" role="tablist"><button class="active" type="button" data-factory-tab="carousel">Carousel</button><button type="button" data-factory-tab="caption">Caption</button><button type="button" data-factory-tab="prompt">Prompt</button><button type="button" data-factory-tab="script">Script</button><button type="button" data-factory-tab="thumbnail">Thumbnail</button></div><div id="factory-preview-body" class="factory-preview-body"><div class="factory-empty"><span>✦</span><h3>Brief Anda, banyak format</h3><p>Hasil terstruktur akan tampil di sini dan otomatis tercatat ke Workflow serta History.</p></div></div><div id="factory-export" class="factory-export hidden"><button type="button" data-factory-export="txt">TXT</button><button type="button" data-factory-export="md">Markdown</button><button type="button" data-factory-export="json">JSON</button><button type="button" data-factory-export="copy">Copy</button></div></aside>
         </div>
-        <dialog id="factory-asset-dialog" class="project-dialog"><div class="dialog-heading"><div><span class="eyebrow">ASSET MANAGER</span><h2>Pilih asset yang sudah ada</h2></div><button id="factory-assets-close" class="icon-button" type="button">✕</button></div><div id="factory-asset-options" class="factory-asset-options"></div><div class="dialog-actions"><button id="factory-assets-done" type="button">Gunakan asset terpilih</button></div></dialog>
       </section>
       <section id="consistency-engine" class="consistency-engine hidden" aria-labelledby="consistency-title">
         <div class="consistency-heading"><div><span class="eyebrow">CONSISTENCY ENGINE</span><h1 id="consistency-title">Your creative DNA, in one place.</h1><p>Keep every AI production aligned with the same people, products, visual direction, and voice.</p></div><div class="engine-status"><i></i><span><b>Local workspace</b><small>Saved automatically</small></span></div></div>

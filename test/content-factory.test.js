@@ -22,7 +22,7 @@ test('factory supports structures, providers, asset reuse, workflow history, bat
   for (const provider of ['Google Flow', 'Google Veo', 'Google Imagen', 'Google Gemini', 'OpenAI Images', 'Omni', 'Vidu']) assert.match(html, new RegExp(provider));
   for (const tab of ['carousel', 'caption', 'prompt', 'script', 'thumbnail']) assert.match(html, new RegExp(`data-factory-tab="${tab}"`));
   for (const format of ['txt', 'md', 'json', 'copy']) assert.match(html, new RegExp(`data-factory-export="${format}"`));
-  assert.match(factory, /fetch\('\/api\/assets'\)/);
+  assert.match(factory, /window\.AssetManager\.select/);
   assert.match(factory, /ai-ads-lab-workflow-history-v1/);
   assert.match(factory, /ai-ads-lab-content-factory-history-v1/);
   assert.match(factory, /visualPrompt/);

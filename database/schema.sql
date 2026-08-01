@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   status TEXT NOT NULL DEFAULT 'pending',
   expires_at INTEGER NOT NULL,
   callback_code_hash TEXT,
+  redirect_uri TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
