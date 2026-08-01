@@ -30,7 +30,7 @@
       <a href="#settings" data-workspace-view="profile"><span aria-hidden="true">⚙</span><span>Settings</span></a>
       <a href="#storage" data-workspace-view="storage"><span aria-hidden="true">☁</span><span>Storage</span></a>
       <div class="nav-divider"></div>
-      <a href="#studio" data-workspace-view="studio"><span aria-hidden="true">✦</span><span>Content Studio</span><small>Legacy</small></a>
+      <a href="#studio" data-workspace-view="studio"><span aria-hidden="true">✦</span><span>Content Studio</span></a>
       <a href="#trend-reference" data-workspace-view="studio"><span aria-hidden="true">⌁</span><span>Referensi Tren</span></a>
       <a href="#schedule-dashboard" data-workspace-view="studio"><span aria-hidden="true">◷</span><span>Jadwal</span></a>
       <a href="#history-section" data-workspace-view="studio"><span aria-hidden="true">▤</span><span>Riwayat</span></a>
@@ -147,6 +147,25 @@
         </div>
         <section class="integration-card integration-logs"><div class="logs-heading"><div><span class="eyebrow">OBSERVABILITY</span><h2>Integration Logs</h2></div><button id="integration-clear-logs" class="outline" type="button">Clear logs</button></div><div class="integration-log-table"><table><thead><tr><th>Timestamp</th><th>Provider</th><th>Duration</th><th>Request Size</th><th>Response Size</th><th>Status</th></tr></thead><tbody id="integration-log-rows"></tbody></table><div id="integration-log-empty" class="empty-state">No pipeline runs yet.</div></div></section>
       </section>
+      <section id="content-studio" class="content-studio hidden" aria-labelledby="content-studio-title">
+        <header class="studio-heading"><div><span class="eyebrow">CREATE &amp; SHIP</span><h1 id="content-studio-title">Content Studio</h1><p>Generate image dan video, pantau progress, lalu kelola seluruh hasil dari satu tempat.</p></div><div id="studio-storage-badge" class="storage-badge">Checking storage…</div></header>
+        <div class="studio-tabs" role="tablist"><button class="active" data-studio-type="image" role="tab">▧ Image Generation</button><button data-studio-type="video" role="tab">▶ Video Generation</button><button data-studio-type="batch" role="tab">≋ Batch Generation</button><button data-studio-type="history" role="tab">↺ History</button></div>
+        <div id="studio-create-panel" class="studio-grid">
+          <form id="studio-generate-form" class="studio-card">
+            <div class="card-title"><div><span class="eyebrow">GENERATION SETUP</span><h2 id="studio-form-title">Generate Image</h2></div><span id="studio-kind-pill" class="status-pill status-active">IMAGE</span></div>
+            <div class="form-grid"><label>Provider<select id="studio-provider" required></select></label><label>Model<input id="studio-model" placeholder="Default provider model"></label></div>
+            <fieldset class="prompt-source"><legend>Prompt source</legend><label><input type="radio" name="studio-prompt-source" value="manual" checked> Manual input</label><label><input type="radio" name="studio-prompt-source" value="generator"> Prompt Generator</label></fieldset>
+            <label>Prompt *<textarea id="studio-prompt" rows="7" required placeholder="Describe the creative, subject, composition, lighting, and style…"></textarea></label>
+            <label>Negative Prompt<textarea id="studio-negative-prompt" rows="3" placeholder="Elements to avoid…"></textarea></label>
+            <div class="form-grid"><label>Resolution<select id="studio-resolution"><option>1024×1024</option><option>1080×1920</option><option>1920×1080</option><option>1080p</option><option>4K</option></select></label><label id="studio-batch-field" class="hidden">Batch size<input id="studio-batch-count" type="number" min="2" max="10" value="3"></label></div>
+            <div class="studio-assets"><div><b>Reference assets</b><small>Dipilih langsung dari Asset Manager dan otomatis dikirim ke provider.</small></div><button id="studio-load-assets" class="outline" type="button">＋ Choose assets</button><div id="studio-asset-choices" class="asset-choice-list hidden"></div><div id="studio-selected-assets" class="selected-assets"></div></div>
+            <div class="studio-submit"><button id="studio-generate" type="submit">✦ Generate Image</button><span id="studio-generate-message" role="status"></span></div>
+          </form>
+          <aside class="studio-card live-jobs"><div class="card-title"><div><span class="eyebrow">REALTIME QUEUE</span><h2>Active Jobs</h2></div><button id="studio-refresh" class="icon-button" type="button" aria-label="Refresh">↻</button></div><div id="studio-active-jobs" aria-live="polite"></div></aside>
+        </div>
+        <section id="studio-history-panel" class="studio-card studio-history"><div class="history-heading"><div><span class="eyebrow">GENERATED MEDIA</span><h2>History</h2></div><div class="studio-filters"><input id="studio-search" type="search" placeholder="Search prompt or provider…"><select id="studio-filter-type"><option value="">All types</option><option value="image">Image</option><option value="video">Video</option></select><select id="studio-filter-status"><option value="">All statuses</option><option>Queued</option><option>Running</option><option>Completed</option><option>Failed</option><option>Cancelled</option></select></div></div><div id="studio-history" class="studio-result-grid"></div></section>
+      </section>
+      <aside id="studio-result-viewer" class="job-detail hidden" aria-label="Result viewer"></aside>
       <div id="legacy-studio" class="hidden">
       <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Buat konten yang<br><em>layak dihentikan.</em></h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
       <div class="content-layout">
@@ -242,6 +261,7 @@
 <script src="/account-workspace.js"></script>
 <script src="/templates.js"></script>
 <script src="/assets.js"></script>
+<script src="/content-studio.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

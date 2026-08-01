@@ -7,6 +7,7 @@
   const detail = $('#project-detail');
   const placeholder = $('#workspace-placeholder');
   const studio = $('#legacy-studio');
+  const contentStudio = $('#content-studio');
   const consistency = $('#consistency-engine');
   const workflow = $('#workflow-orchestrator');
   const generator = $('#prompt-generator');
@@ -83,7 +84,8 @@
   function showView(view, title) {
     workspace.classList.toggle('hidden', view !== 'projects');
     detail.classList.toggle('hidden', view !== 'detail');
-    studio.classList.toggle('hidden', view !== 'studio');
+    studio.classList.add('hidden');
+    contentStudio.classList.toggle('hidden', view !== 'studio');
     placeholder.classList.toggle('hidden', view !== 'placeholder');
     consistency.classList.toggle('hidden', view !== 'consistency');
     workflow.classList.toggle('hidden', view !== 'workflow');
