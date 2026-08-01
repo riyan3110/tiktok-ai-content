@@ -174,6 +174,8 @@ $('#delete-all').onclick = async () => {
 };
 const params = new URLSearchParams(window.location.search);
 if (params.get('oauth') === 'success') $('#connection-message').textContent = 'Akun TikTok berhasil dihubungkan.';
+if (params.get('oauth') === 'reconnect-failed') $('#connection-message').textContent = 'Hubungkan ulang gagal. Akun TikTok yang aktif tetap terhubung.';
+if (params.get('oauth') === 'expired') $('#connection-message').textContent = 'Sesi TikTok kedaluwarsa. Silakan hubungkan lagi.';
 connectionStatus().catch(e => { $('#connection-message').textContent = `Status koneksi gagal dimuat: ${e.message}`; });
 history().catch(e => { $('#history').innerHTML = errorState(e.message); });
 loadTrend().catch(e => $('#trend-message').textContent = e.message);

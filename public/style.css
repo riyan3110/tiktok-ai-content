@@ -136,7 +136,7 @@ dialog{max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
 }
 
 @media(max-width:359px){
-  .page-content{padding-inline:10px}.topbar-title{display:none}.asset-grid{grid-template-columns:1fr}
+  .page-content{padding-inline:10px}.topbar-title{display:none}.asset-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .factory-export,.asset-selector-actions>div{grid-template-columns:1fr}
 }
 
