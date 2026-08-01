@@ -26,6 +26,37 @@ test('9Router is one canonical multi-capability provider with safe URLs', () => 
 test('9Router catalog uses metadata, preserves unknown, and never forces My2', () => {
   assert.deepEqual(normalizeModels(catalog), { text: ['My2'], image: ['picture-pro'], video: ['movie-pro'], unknown: ['mystery'] });
   assert.deepEqual(normalizeModels({ data: [{ id: 'My2' }] }), { text: [], image: [], video: [], unknown: ['My2'] });
+  assert.deepEqual(normalizeModels({ data: [{ id: 'mapped-picture', type: 'unknown' }] }, { 'mapped-picture': ['image'] }).image, ['mapped-picture']);
+});
+
+test('9Router discovered capabilities refresh and gate image defaults without changing OrcaRouter', async () => {
+  const db = createDatabase(':memory:'); connector.save(db, '9router', { enabled: true, imageModel: '' });
+  let current = { data: [{ id: 'chat', capabilities: ['text'] }, { id: 'clip', capabilities: ['video'] }] };
+  const app = createApp({ db, aiTransport: async () => new Response(JSON.stringify(current)) });
+  const absent = (await request(app).get('/api/ai/providers/9router/models?refresh=true').expect(200)).body;
+  assert.deepEqual(absent.capabilities, ['text', 'video']); assert.equal(absent.image.length, 0); assert.match(absent.diagnostics.image.reasons.join(' '), /tidak mengembalikan model image/);
+  await request(app).put('/api/ai/providers/9router').send({ isDefault: true, defaultCapability: 'image' }).expect(409);
+
+  current = { data: [{ id: 'chat', capabilities: ['text'] }, { id: 'image-v2', output_modalities: ['image'] }, { id: 'clip', capabilities: ['video'] }] };
+  const refreshed = (await request(app).get('/api/ai/providers/9router/models?refresh=true').expect(200)).body;
+  assert.deepEqual(refreshed.capabilities, ['text', 'image', 'video']); assert.deepEqual(refreshed.image, ['image-v2']);
+  await request(app).post('/api/ai/providers/9router/test').expect(200);
+  await request(app).put('/api/ai/providers/9router').send({ isDefault: true, defaultCapability: 'image' }).expect(200);
+  assert.equal(db.prepare("SELECT image_model FROM ai_provider_settings WHERE provider='9router'").get().image_model, 'image-v2');
+  assert.equal(db.prepare("SELECT provider FROM ai_provider_defaults WHERE capability='image'").get().provider, '9router');
+  const providers = (await request(app).get('/api/ai/providers').expect(200)).body;
+  assert.deepEqual(connector.CAPABILITIES['9router'], ['text', 'image', 'video']);
+  assert.deepEqual(providers.find(item => item.provider === 'orcarouter').capabilities, ['text', 'image', 'video']);
+  assert.equal(providers.filter(item => item.provider === '9router').length, 1);
+  db.close();
+});
+
+test('Default Image AI uses online 9Router discovery instead of a selected image model', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/ai-providers.js'), 'utf8');
+  assert.match(source, /p\.health\.status==='Online'&&nineModels\?\.capabilities\?\.includes\(capability\)/);
+  assert.doesNotMatch(source, /imageModel.*includes\(capability\)/);
+  assert.match(source, /Detected capabilities/);
+  assert.match(source, /models\)<\/span>/);
 });
 
 test('9Router discovery is backend-only and gateway key stays secret', async () => {
