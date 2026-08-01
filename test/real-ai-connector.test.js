@@ -9,7 +9,7 @@ const response = body => ({ ok: true, status: 200, headers: { get: () => 'test-v
 function setup(transport = async () => response({ output: 'Generated ad', usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } })) { const db = createDatabase(':memory:'); return { db, app: createApp({ db, aiTransport: transport }) }; }
 
 test('factory registers every Milestone 11 provider behind one adapter contract', () => {
-  assert.deepEqual(ProviderFactory.names(), ['google-flow','google-veo','google-imagen','google-gemini','openai-images','vidu','omni']);
+  assert.deepEqual(ProviderFactory.names(), ['orcarouter','google-flow','google-veo','google-imagen','google-gemini','openai-images','vidu','omni']);
   for (const provider of ProviderFactory.names()) { const defaults = ProviderFactory.defaults(provider); const adapter = ProviderFactory.create({ provider, base_url: defaults.baseUrl, default_model: defaults.model, api_key: 'secret' }, async () => response({})); for (const method of ['buildRequest','execute','parse','testConnection']) assert.equal(typeof adapter[method], 'function'); }
 });
 

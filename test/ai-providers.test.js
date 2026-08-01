@@ -12,13 +12,13 @@ test('AI Providers workspace is routed below Prompt Generator and preserves lega
   assert.match(read('public/workspace.js'), /view === 'providers'/);
 });
 
-test('provider engine ships adapters, local contracts, security controls, and mock pipeline', () => {
+test('provider UI consumes the backend registry and never declares unsupported provider IDs', () => {
   const script = read('public/ai-providers.js');
-  for (const key of ['providers.config','providers.history','providers.default']) assert.ok(script.includes(key));
-  for (const provider of ['Google Flow','Google Veo','Google Gemini','OpenAI','Claude','Runway','Kling','Vidu','Hailuo','Pika','Custom Provider']) assert.ok(script.includes(provider));
+  assert.match(script, /providers=await http\('\/api\/ai\/providers'\)/);
+  for (const provider of ["OpenAI:'openai'", "Claude:'claude'", "Runway:'runway'", "Custom Provider", "google-omni"]) assert.ok(!script.includes(provider));
   for (const step of ['Preparing Prompt...','Sending Request...','Waiting AI...','Receiving Response...','Completed']) assert.ok(script.includes(step));
   assert.doesNotMatch(script, /fetch\s*\(/);
-  for (const action of ["'toggle'","'copy'","'clear'","'test'","'duplicate'","'delete'"]) assert.ok(script.includes(action));
+  assert.match(script, /defaultCapability/);
 });
 
 test('provider architecture documentation covers production concerns', () => {
