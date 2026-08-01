@@ -50,10 +50,10 @@ class StorageService {
     const used = this.db.prepare('SELECT COALESCE(SUM(size),0) usage FROM assets WHERE deleted_at IS NULL').get().usage;
     if (row.storage_quota && used + buffer.length > row.storage_quota) throw Object.assign(new Error('Storage quota terlampaui'), { status: 413 });
     const detectedMimeType = detectMimeType(buffer, name, mimeType);
-    const extension = path.extname(name).replace(/[^.a-zA-Z0-9]/g, '');
-    const requestedKey = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}${extension}`;
+    const originalFilename = path.basename(String(name || '').replace(/\\/g, '/')) || `asset${path.extname(String(name || ''))}`;
+    const requestedKey = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}/${originalFilename}`;
     const adapter = this.adapter(provider);
-    const stored = await adapter.upload(requestedKey, buffer, { mimeType: detectedMimeType });
+    const stored = await adapter.upload(requestedKey, buffer, { mimeType: detectedMimeType, filename: originalFilename });
     const key = stored.key || requestedKey; const url = stored.url || adapter.publicUrl(key);
     try { return this.repository.create({ id: crypto.randomUUID(), name, type: type || this.inferType(detectedMimeType), mimeType: detectedMimeType, storageProvider: provider, storageKey: key, storageUrl: url, folderId: folderId || null, size: buffer.length, checksum: stored.checksum || checksum, tags: JSON.stringify(tags), metadata: JSON.stringify(metadata), isGenerated: Number(generated) }); }
     catch (error) { await adapter.delete(key).catch(() => {}); throw error; }
@@ -61,7 +61,7 @@ class StorageService {
   inferType(mime = '') { return mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'prompt-attachment'; }
   async url(asset) { return this.adapter(asset.storage_provider).signedUrl(asset.storage_key, this.row().signed_url_expiration); }
   assetMimeType(asset) { return detectMimeType(Buffer.alloc(0), asset.name || asset.storage_key, asset.mime_type); }
-  async accessible(asset) { const url = await this.url(asset); const image = asset.type === 'image' || this.assetMimeType(asset).startsWith('image/'); return { ...asset, mime_type: this.assetMimeType(asset), type: image ? 'image' : asset.type, storage_url: url, url, preview_url: image ? `/api/assets/${encodeURIComponent(asset.id)}/preview` : null }; }
+  async accessible(asset) { const url = await this.url(asset); const image = asset.type === 'image' || this.assetMimeType(asset).startsWith('image/'); const previewUrl = asset.storage_provider === 'tencent-cos' ? url : `/api/assets/${encodeURIComponent(asset.id)}/preview`; return { ...asset, mime_type: this.assetMimeType(asset), type: image ? 'image' : asset.type, storage_url: url, url, preview_url: image ? previewUrl : null }; }
   async preview(asset) { const downloaded = await this.adapter(asset.storage_provider).download(asset.storage_key); return { data: downloaded.data, mimeType: detectMimeType(downloaded.data, asset.name || asset.storage_key, downloaded.contentType || asset.mime_type) }; }
   async accessibleList(query = {}) { return Promise.all(this.repository.list(query).map(asset => this.accessible(asset))); }
   async move(id, patch) { const asset = this.repository.get(id); if (!asset) throw Object.assign(new Error('Asset tidak ditemukan'), { status: 404 }); if (patch.name && patch.name !== asset.name) { const target = `${path.dirname(asset.storage_key)}/${crypto.randomUUID()}${path.extname(patch.name)}`; const adapter = this.adapter(asset.storage_provider); const stored = await adapter.rename(asset.storage_key, target); patch.storageKey = stored.key || target; patch.storageUrl = stored.url || adapter.publicUrl(target); } return this.repository.update(id, patch); }

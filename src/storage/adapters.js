@@ -68,10 +68,32 @@ class TencentCosAdapter extends StorageAdapter {
     if (!response.ok) { const details = typeof response.text === 'function' ? await response.text() : ''; const requestId = response.headers?.get?.('x-cos-request-id'); throw Object.assign(new Error(`Tencent COS ${method} failed (${response.status})${requestId ? ` [request-id: ${requestId}]` : ''}${details ? `: ${details}` : ''}`), { status: response.status }); }
     return response;
   }
-  async upload(key, data, metadata = {}) { await this.request('PUT', key, { data, headers: { 'Content-Type': metadata.mimeType || 'application/octet-stream', ...(this.options.encryption ? { 'x-cos-server-side-encryption': 'AES256' } : {}) } }); return { key, size: data.length, checksum: crypto.createHash('sha256').update(data).digest('hex'), url: this.publicUrl(key) }; }
+  async upload(key, data, metadata = {}) {
+    const contentType = metadata.mimeType || 'application/octet-stream';
+    const filename = String(metadata.filename || path.basename(key));
+    const contentDisposition = `inline; filename*=UTF-8''${this.encode(filename)}`;
+    const response = await this.request('PUT', key, { data, headers: {
+      'Content-Type': contentType,
+      'Content-Disposition': contentDisposition,
+      ...(this.options.encryption ? { 'x-cos-server-side-encryption': 'AES256' } : {})
+    } });
+    const objectMetadata = await this.metadata(key);
+    if (objectMetadata.contentType !== contentType || !String(objectMetadata.contentDisposition || '').toLowerCase().startsWith('inline')) {
+      throw Object.assign(new Error(`Tencent COS metadata verification failed for ${key}`), { status: 502, metadata: objectMetadata });
+    }
+    return {
+      key,
+      size: data.length,
+      checksum: crypto.createHash('sha256').update(data).digest('hex'),
+      url: this.publicUrl(key),
+      contentType: objectMetadata.contentType,
+      contentDisposition: objectMetadata.contentDisposition,
+      responseHeaders: Object.fromEntries(response.headers?.entries?.() || [])
+    };
+  }
   async delete(key) { await this.request('DELETE', key); return { deleted: true, key }; }
   async copy(source, target) { await this.request('PUT', target, { headers: { 'x-cos-copy-source': `/${this.options.bucket}/${source}` } }); return { key: target, url: this.publicUrl(target) }; }
-  async metadata(key) { const response = await this.request('HEAD', key); return { key, size: Number(response.headers.get('content-length') || 0), etag: response.headers.get('etag'), modifiedAt: response.headers.get('last-modified'), url: this.publicUrl(key) }; }
+  async metadata(key) { const response = await this.request('HEAD', key); return { key, size: Number(response.headers.get('content-length') || 0), contentType: response.headers.get('content-type'), contentDisposition: response.headers.get('content-disposition'), etag: response.headers.get('etag'), modifiedAt: response.headers.get('last-modified'), responseHeaders: Object.fromEntries(response.headers.entries()), url: this.publicUrl(key) }; }
   publicUrl(key) { const base = this.options.publicUrl || this.endpoint().origin; return `${base.replace(/\/$/, '')}${this.pathname(key)}`; }
   async signedUrl(key, expires = 3600, query = '') { const separator = query ? '&' : '?'; return `${this.url(key, query)}${separator}${this.authorization('GET', key, query, expires)}`; }
   async download(key) {

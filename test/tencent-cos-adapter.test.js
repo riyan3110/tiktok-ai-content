@@ -27,20 +27,44 @@ test('Tencent COS builds the official Singapore bucket endpoint and canonical UR
 
 test('Tencent COS PUT uses the bucket host and object-only canonical path with a regional endpoint', async t => {
   t.mock.method(Date, 'now', () => 1_700_000_000_000);
-  let request;
+  const requests = [];
   const adapter = new TencentCosAdapter({ ...options, endpoint: 'cos.ap-singapore.myqcloud.com' }, async (url, init) => {
-    request = { url, init };
-    return { ok: true, status: 200, headers: new Headers() };
+    requests.push({ url, init });
+    const headers = init.method === 'HEAD' ? new Headers({ 'content-type': 'image/png', 'content-disposition': "inline; filename*=UTF-8''my%20image.png", etag: 'verified' }) : new Headers({ 'x-cos-request-id': 'put-request' });
+    return { ok: true, status: 200, headers };
   });
 
   const uploaded = await adapter.upload('uploads/my image.png', Buffer.from('image'), { mimeType: 'image/png' });
 
-  assert.equal(request.url, 'https://aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com/uploads/my%20image.png');
-  assert.equal(request.init.method, 'PUT');
-  assert.equal(request.init.headers.Host, 'aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com');
-  assert.equal(request.init.headers['Content-Type'], 'image/png');
-  assert.equal(uploaded.url, request.url);
-  assert.match(request.init.headers.Authorization, /q-header-list=host/);
+  const [put, head] = requests;
+  assert.equal(put.url, 'https://aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com/uploads/my%20image.png');
+  assert.equal(put.init.method, 'PUT');
+  assert.equal(put.init.headers.Host, 'aiadslab-assets-1449781335.cos.ap-singapore.myqcloud.com');
+  assert.equal(put.init.headers['Content-Type'], 'image/png');
+  assert.equal(put.init.headers['Content-Disposition'], "inline; filename*=UTF-8''my%20image.png");
+  assert.equal(head.init.method, 'HEAD');
+  assert.equal(uploaded.contentType, 'image/png');
+  assert.match(uploaded.contentDisposition, /^inline/);
+  assert.equal(uploaded.responseHeaders['x-cos-request-id'], 'put-request');
+  assert.equal(uploaded.url, put.url);
+  assert.match(put.init.headers.Authorization, /q-header-list=host/);
+});
+
+test('Tencent COS verifies JPG and PNG metadata for inline browser rendering', async () => {
+  for (const [filename, contentType] of [['photo.jpg', 'image/jpeg'], ['graphic.png', 'image/png']]) {
+    const calls = [];
+    const adapter = new TencentCosAdapter(options, async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, headers: init.method === 'HEAD'
+        ? new Headers({ 'content-type': contentType, 'content-disposition': `inline; filename*=UTF-8''${filename}`, 'x-cos-request-id': `head-${filename}` })
+        : new Headers({ 'x-cos-request-id': `put-${filename}` }) };
+    });
+    const result = await adapter.upload(`images/${filename}`, Buffer.from(filename), { mimeType: contentType, filename });
+    assert.equal(result.contentType, contentType);
+    assert.match(result.contentDisposition, /^inline/);
+    assert.equal(calls[0].init.headers['Content-Disposition'].startsWith('attachment'), false);
+    assert.deepEqual(calls.map(call => call.init.method), ['PUT', 'HEAD']);
+  }
 });
 
 test('Tencent COS signed URLs use the encoded object URL on the bucket host', async t => {
