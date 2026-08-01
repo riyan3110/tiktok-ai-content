@@ -3,9 +3,8 @@ const { normalizeError } = require('../ai/errors');
 
 const DEFAULT_BASE_URL = 'http://43.159.50.231:20130/v1';
 function joinGatewayUrl(baseUrl, path = '') {
-  let base = String(baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const base = String(baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
   const suffix = String(path).replace(/^\/+/, '').replace(/^v1\//, '');
-  if (suffix.startsWith('api/') && /\/v1$/.test(base)) base = base.slice(0, -3);
   return `${base}/${suffix}`;
 }
 
@@ -13,10 +12,10 @@ class NineRouterProvider extends BaseProvider {
   endpoint(path = '') { return joinGatewayUrl(this.config.base_url, path); }
   headers() { const headers = { 'Content-Type': 'application/json' }; if (this.config.api_key) headers.Authorization = `Bearer ${this.config.api_key}`; return headers; }
   model(input = {}) { return input.model || this.config[`${input.mediaType || 'text'}_model`] || this.config.default_model; }
-  requestPath(input = {}) { if (input.mediaType === 'image') return '/v1/images/generations'; if (input.mediaType === 'video') return '/v1/videos/generations'; return '/v1/chat/completions'; }
-  buildRequest(input) { const model = this.model(input); return input.mediaType === 'text' || !input.mediaType ? { model, messages: [{ role: 'user', content: input.prompt }], stream: false } : { model, prompt: input.prompt, ...(input.mediaType === 'image' ? { size: input.parameters?.resolution || '1024x1024' } : {}) }; }
+  requestPath(input = {}) { if (input.mediaType === 'image') return '/v1/images/generations'; if (input.mediaType === 'video') throw Object.assign(new Error('9Router tidak mengekspos endpoint video yang terverifikasi'), { status: 409 }); return '/v1/chat/completions'; }
+  buildRequest(input) { const model = this.model(input); return input.mediaType === 'image' ? { model, prompt: input.prompt, size: input.parameters?.resolution || '1024x1024' } : { model, messages: [{ role: 'user', content: input.prompt }], stream: false }; }
   parse(data, mediaType = 'text') {
-    if (mediaType === 'image' || mediaType === 'video') { const media = data.data || data.images || data.videos || data.output || []; const items = (Array.isArray(media) ? media : [media]).map(item => typeof item === 'string' ? { url: item } : item); return { ...super.parse({ ...data, images: items }), content: '', providerJobId: data.id || data.task_id || null, status: data.status || 'completed' }; }
+    if (mediaType === 'image') { const images = (data.data || data.images || []).map(item => typeof item === 'string' ? { url: item } : item); return { ...super.parse({ ...data, images }), content: '', status: 'completed' }; }
     const usage = data.usage || {}; return { content: data.choices?.[0]?.message?.content || '', media: [], providerJobId: data.id || null, status: data.status, usage: { promptTokens: usage.prompt_tokens || 0, completionTokens: usage.completion_tokens || 0, totalTokens: usage.total_tokens || 0 }, raw: data };
   }
   async execute(input, { signal, onProgress = () => {} } = {}) { try { onProgress('Sending'); const response = await this.transport(this.endpoint(this.requestPath(input)), { method: 'POST', headers: this.headers(), body: JSON.stringify(this.buildRequest(input)), signal }); if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status }); onProgress('Receiving'); return this.parse(await response.json(), input.mediaType); } catch (error) { throw normalizeError(error); } }
