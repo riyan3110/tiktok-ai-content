@@ -51,10 +51,10 @@ test('status memakai endpoint publish status fetch dengan publish_id', async (t)
 test('validasi access token memakai endpoint identitas TikTok', async (t) => {
   const originalFetch = global.fetch;
   let request;
-  global.fetch = async (url, options) => { request = { url, options }; return { ok: true, json: async () => ({ data: { user: { open_id: 'user-1' } }, error: { code: 'ok' } }) }; };
+  global.fetch = async (url, options) => { request = { url, options }; return { ok: true, json: async () => ({ data: { user: { open_id: 'user-1', display_name: 'Creator' } }, error: { code: 'ok' } }) }; };
   t.after(() => { global.fetch = originalFetch; });
-  assert.equal(await tiktok.validateAccessToken('access-token'), true);
-  assert.equal(request.url, 'https://open.tiktokapis.com/v2/user/info/?fields=open_id');
+  assert.deepEqual(await tiktok.validateAccessToken('access-token'), { openId: 'user-1', displayName: 'Creator' });
+  assert.equal(request.url, 'https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name');
   assert.equal(request.options.headers.Authorization, 'Bearer access-token');
 });
 

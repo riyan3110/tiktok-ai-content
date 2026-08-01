@@ -38,8 +38,9 @@ async function status(accessToken, publishId) {
   return request(`${API}/v2/post/publish/status/fetch/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: publishId }) });
 }
 async function validateAccessToken(accessToken) {
-  const result = await request(`${API}/v2/user/info/?fields=open_id`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  return Boolean(result.data?.user?.open_id);
+  const result = await request(`${API}/v2/user/info/?fields=open_id,display_name`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const user = result.data?.user;
+  return user?.open_id ? { openId: user.open_id, displayName: user.display_name || user.open_id } : null;
 }
 async function validateImageUrls(imageUrls, verifiedPrefix) {
   const prefix = new URL(verifiedPrefix.endsWith('/') ? verifiedPrefix : `${verifiedPrefix}/`);
