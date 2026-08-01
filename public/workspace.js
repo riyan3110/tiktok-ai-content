@@ -6,6 +6,7 @@
   const placeholder = $('#workspace-placeholder');
   const studio = $('#legacy-studio');
   const consistency = $('#consistency-engine');
+  const workflow = $('#workflow-orchestrator');
   const generator = $('#prompt-generator');
   const providers = $('#ai-providers');
   const queue = $('#generation-queue');
@@ -81,12 +82,13 @@
     studio.classList.toggle('hidden', view !== 'studio');
     placeholder.classList.toggle('hidden', view !== 'placeholder');
     consistency.classList.toggle('hidden', view !== 'consistency');
+    workflow.classList.toggle('hidden', view !== 'workflow');
     generator.classList.toggle('hidden', view !== 'generator');
     providers.classList.toggle('hidden', view !== 'providers');
     queue.classList.toggle('hidden', view !== 'queue');
     integration.classList.toggle('hidden', view !== 'integration');
     if (view === 'placeholder') $('#placeholder-title').textContent = title;
-    const heading = view === 'projects' ? 'Project Workspace' : view === 'studio' ? 'Dashboard Konten' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
+    const heading = view === 'projects' ? 'Project Workspace' : view === 'studio' ? 'Dashboard Konten' : view === 'workflow' ? 'Workflow Orchestrator' : view === 'consistency' ? 'Consistency Engine' : view === 'generator' ? 'Prompt Generator' : view === 'providers' ? 'AI Providers' : view === 'queue' ? 'Generation Queue' : view === 'integration' ? 'AI Integration' : title || 'Project Detail';
     document.querySelector('.topbar-title strong').textContent = heading;
     document.querySelectorAll('.side-nav a').forEach(link => link.classList.toggle('active', link.dataset.workspaceView === view || (view === 'placeholder' && link.dataset.placeholderView === title)));
   }
@@ -130,5 +132,5 @@
   document.querySelectorAll('[data-back-projects]').forEach(button => button.onclick = () => { showView('projects'); location.hash = 'projects'; });
   document.querySelectorAll('[data-workspace-view]').forEach(link => link.addEventListener('click', () => showView(link.dataset.workspaceView)));
   document.querySelectorAll('[data-placeholder-view]').forEach(link => link.addEventListener('click', () => showView('placeholder', link.dataset.placeholderView)));
-  renderProjects(); showView(location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects');
+  renderProjects(); showView(location.hash === '#workflow' ? 'workflow' : location.hash === '#studio' ? 'studio' : location.hash === '#consistency' ? 'consistency' : location.hash === '#prompt-generator' ? 'generator' : location.hash === '#ai-providers' ? 'providers' : location.hash === '#generation-queue' ? 'queue' : location.hash === '#ai-integration' ? 'integration' : 'projects');
 })();
