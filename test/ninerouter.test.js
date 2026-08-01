@@ -8,6 +8,7 @@ const connector = require('../src/ai/connector');
 const { ProviderFactory } = require('../src/providers');
 const NineRouterProvider = require('../src/providers/NineRouterProvider');
 const { normalizeModels, normalizeCombos, discovery } = require('../src/services/nineRouterModels');
+const { NineRouterClient, API_BASE_URL } = require('../src/services/nineRouterClient');
 
 const directPayload = { data: [
   { id: 'deepseek/deepseek-v4-flash', capabilities: ['text'] },
@@ -23,15 +24,16 @@ const comboPayload = { combos: [
   { id: 'Multi', models: ['openai/gpt-image-1', 'google/veo-3'] }
 ] };
 const catalog = discovery(normalizeCombos(comboPayload, directPayload), normalizeModels(directPayload));
-const transport = async url => new Response(JSON.stringify(url.includes('/api/combos') ? comboPayload : directPayload), { headers: { 'content-type': 'application/json' } });
+const gatewayPayload = { ...directPayload, combos: comboPayload.combos };
+const calls = [];
+const transport = async (url, options={}) => { calls.push({url, options}); return new Response(JSON.stringify(gatewayPayload), { headers: { 'content-type': 'application/json' } }); };
 
-function setup() { const db=createDatabase(':memory:'); connector.save(db,'9router',{enabled:true}); return { db, app:createApp({db,aiTransport:transport}) }; }
+function setup() { calls.length=0; const db=createDatabase(':memory:'); connector.save(db,'9router',{enabled:true,apiKey:'gateway-secret'}); return { db, app:createApp({db,aiTransport:transport}) }; }
 
-test('9Router uses combo dashboard and direct model endpoints without /v1/v1', () => {
+test('9Router always uses the exact API models URL, never dashboard port or duplicated v1', () => {
   assert.ok(ProviderFactory.names().includes('9router'));
-  assert.equal(NineRouterProvider.joinGatewayUrl('http://host/v1','/api/combos'),'http://host/api/combos');
-  assert.equal(NineRouterProvider.joinGatewayUrl('http://host/v1','/v1/models'),'http://host/v1/models');
-  assert.doesNotMatch(NineRouterProvider.joinGatewayUrl('http://host/v1','/v1/models'),/v1\/v1/);
+  assert.equal(NineRouterProvider.joinGatewayUrl('http://host:20128/v1','/v1/models'),`${API_BASE_URL}/models`);
+  assert.doesNotMatch(NineRouterProvider.joinGatewayUrl('', '/v1/models'),/20128|v1\/v1/);
 });
 
 test('text catalog contains My1 plus DeepSeek, GPT, and Qwen direct models', () => {
@@ -51,7 +53,8 @@ test('official metadata wins over a misleading model name', () => assert.deepEqu
 
 test('backend returns grouped normalized catalog and test connection updates the shared health status', async () => {
   const {db,app}=setup(); const response=(await request(app).get('/api/ai/providers/9router/models').expect(200)).body;
-  assert.deepEqual(response.text,catalog.text); assert.equal(response.endpoints.combos,'/api/combos'); assert.equal(response.endpoints.directModels,'/v1/models');
+  assert.deepEqual(response.text,catalog.text); assert.equal(response.endpoints.models,'/v1/models');
+  assert.ok(calls.every(call=>call.url===`${API_BASE_URL}/models`)); assert.ok(calls.every(call=>call.options.headers.Authorization==='Bearer gateway-secret'));
   await request(app).post('/api/ai/providers/9router/test').expect(200);
   const list=(await request(app).get('/api/ai/providers').expect(200)).body; assert.equal(list.find(p=>p.provider==='9router').health.status,'Online');
   db.close();
@@ -66,4 +69,39 @@ test('UI has grouped selectors, no manual mapping/free-text, and keeps OrcaRoute
   assert.match(providers,/COMBOS/); assert.match(providers,/DIRECT MODELS/); assert.doesNotMatch(providers,/Model Capability Mapping|Save Mapping|model-mappings|datalist/);
   assert.match(studio,/optionGroup\('COMBOS'/); assert.match(studio,/optionGroup\('DIRECT MODELS'/); assert.doesNotMatch(studio,/studio-nine-models|datalist|input\.value\.trim/);
   assert.match(html,/<select id="studio-model"/); assert.doesNotMatch(html,/<input id="studio-model"/); assert.match(html,/studio-orcarouter-model/);
+});
+
+
+test('saved gateway key is encrypted at rest, decrypted only for backend requests, and absent from browser responses', async () => {
+  const {db,app}=setup(); const row=connector.setting(db,'9router');
+  assert.notEqual(row.api_key_encrypted,'gateway-secret'); assert.equal(connector.configured(row).api_key,'gateway-secret');
+  const publicProviders=(await request(app).get('/api/ai/providers').expect(200)).body;
+  assert.equal(JSON.stringify(publicProviders).includes('gateway-secret'),false); assert.equal(publicProviders.find(provider=>provider.provider==='9router').apiKey,undefined);
+  await request(app).get('/api/ai/providers/9router/models?refresh=true').expect(200);
+  assert.equal(JSON.stringify(calls).includes('gateway-secret'),true);
+});
+
+test('masked credential is never persisted or sent and an empty gateway key is rejected', async () => {
+  const {db,app}=setup(); const before=connector.setting(db,'9router').api_key_encrypted;
+  await request(app).put('/api/ai/providers/9router').send({apiKey:'•••••••• (saved)'}).expect(200);
+  assert.equal(connector.setting(db,'9router').api_key_encrypted,before);
+  await request(app).get('/api/ai/providers/9router/models?refresh=true').expect(200);
+  assert.ok(calls.every(call=>call.options.headers.Authorization==='Bearer gateway-secret'));
+  assert.throws(()=>new NineRouterClient({api_key:'•••••••• (saved)'}),/belum dikonfigurasi/);
+});
+
+test('test, refresh, and generation use the shared NineRouterClient authorization and timeout path', async () => {
+  const {db,app}=setup();
+  await request(app).post('/api/ai/providers/9router/test').expect(200);
+  await request(app).get('/api/ai/providers/9router/models?refresh=true').expect(200);
+  const provider=ProviderFactory.create(connector.configured(connector.setting(db,'9router')),transport);
+  await provider.execute({model:'openai/gpt-5',mediaType:'text',prompt:'hello'});
+  assert.ok(calls.every(call=>call.url.startsWith(API_BASE_URL) && !call.url.includes('20128') && call.options.headers.Authorization==='Bearer gateway-secret'));
+  db.close();
+});
+
+test('returned My1/My2/My3 populate grouped dropdowns and empty groups render no heading', () => {
+  assert.ok(catalog.text.combos.includes('My1')); assert.ok(catalog.image.combos.includes('My2')); assert.ok(catalog.video.combos.includes('My3'));
+  const providers=fs.readFileSync('public/ai-providers.js','utf8'), studio=fs.readFileSync('public/content-studio.js','utf8');
+  assert.match(providers,/items\.length\?/); assert.match(studio,/models\.length\?/);
 });

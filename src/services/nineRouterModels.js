@@ -1,6 +1,5 @@
-const { joinGatewayUrl } = require('../providers/NineRouterProvider');
+const { NineRouterClient } = require('./nineRouterClient');
 const CACHE_TTL = 10 * 60 * 1000;
-const COMBOS_PATH = '/api/combos';
 const MODELS_PATH = '/v1/models';
 const CAPABILITIES = ['text', 'image', 'video'];
 const fields = ['capability', 'capabilities', 'modality', 'modalities', 'type', 'service', 'service_type', 'service_kind', 'endpoint', 'input_modalities', 'output_modalities'];
@@ -32,6 +31,7 @@ function normalizeModels(payload) {
   for (const model of payloadItems(payload, ['data', 'models', 'items'])) { const id = idOf(model); if (!id) continue; const capabilities = modelCapabilities(model); if (!capabilities.size) result.unknown.push(id); for (const capability of capabilities) result[capability].push(id); }
   return normalized(result);
 }
+function combosPayload(payload) { return Array.isArray(payload?.combos) ? payload.combos : Array.isArray(payload?.data?.combos) ? payload.data.combos : []; }
 function comboMembers(combo) { return ['models', 'members', 'routes', 'targets', 'candidates'].flatMap(key => values(combo?.[key])).flatMap(member => typeof member === 'string' ? [member] : [member?.model, member?.model_id, member?.id, member?.target].filter(Boolean)).map(String); }
 function normalizeCombos(payload, directPayload) {
   const directItems = payloadItems(directPayload, ['data', 'models', 'items']); const directById = new Map(directItems.map(item => [idOf(item), item]));
@@ -41,11 +41,11 @@ function normalizeCombos(payload, directPayload) {
 }
 function discovery(combos, direct) {
   const result = {}; for (const capability of CAPABILITIES) result[capability] = { combos: combos[capability], directModels: direct[capability] };
-  result.unknown = { combos: combos.unknown, directModels: direct.unknown }; result.capabilities = CAPABILITIES.filter(type => result[type].combos.length || result[type].directModels.length); result.counts = Object.fromEntries(CAPABILITIES.map(type => [type, result[type].combos.length + result[type].directModels.length])); result.endpoints = { combos: COMBOS_PATH, directModels: MODELS_PATH }; return result;
+  result.unknown = { combos: combos.unknown, directModels: direct.unknown }; result.capabilities = CAPABILITIES.filter(type => result[type].combos.length || result[type].directModels.length); result.counts = Object.fromEntries(CAPABILITIES.map(type => [type, result[type].combos.length + result[type].directModels.length])); result.endpoints = { models: MODELS_PATH }; return result;
 }
+function catalogFromPayload(payload) { return discovery(normalizeCombos(combosPayload(payload), payload), normalizeModels(payload)); }
 class NineRouterModels {
   constructor({ db, connector, transport = fetch, ttl = CACHE_TTL }) { this.db = db; this.connector = connector; this.transport = transport; this.ttl = ttl; this.cached = null; }
-  async fetchJson(config, path, headers) { const response = await this.transport(joinGatewayUrl(config.base_url, path), { headers }); if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status }); try { return await response.json(); } catch { throw Object.assign(new Error('Respons katalog 9Router tidak valid'), { status: 502 }); } }
-  async get({ refresh = false } = {}) { if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value; const config = this.connector.configured(this.connector.setting(this.db, '9router')); const headers = { Accept: 'application/json' }; if (config.api_key) headers.Authorization = `Bearer ${config.api_key}`; const [combos, direct] = await Promise.all([this.fetchJson(config, COMBOS_PATH, headers), this.fetchJson(config, MODELS_PATH, headers)]); const value = discovery(normalizeCombos(combos, direct), normalizeModels(direct)); this.cached = { at: Date.now(), value }; return value; }
+  async get({ refresh = false } = {}) { if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value; const config = this.connector.configured(this.connector.setting(this.db, '9router')); const client = new NineRouterClient(config, this.transport); const response = await client.request(MODELS_PATH); if (!response.ok) throw await client.responseError(response); let payload; try { payload = await response.json(); } catch { throw Object.assign(new Error('Respons katalog 9Router tidak valid'), { status: 502 }); } const value = catalogFromPayload(payload); this.cached = { at: Date.now(), value }; return value; }
 }
-module.exports = { NineRouterModels, normalizeModels, normalizeCombos, modelCapabilities, discovery, COMBOS_PATH, MODELS_PATH, CACHE_TTL };
+module.exports = { NineRouterModels, normalizeModels, normalizeCombos, modelCapabilities, discovery, catalogFromPayload, MODELS_PATH, CACHE_TTL };

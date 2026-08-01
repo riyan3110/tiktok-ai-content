@@ -9,7 +9,7 @@ const connector = require('../src/ai/connector');
 function configuredPair() {
   const db = createDatabase(':memory:');
   connector.save(db, 'orcarouter', { apiKey: 'existing-orca-secret', enabled: true });
-  connector.save(db, '9router', { enabled: true });
+  connector.save(db, '9router', { enabled: true, apiKey: 'test-gateway-key' });
   const transport = async () => new Response(JSON.stringify({ data: [
     { id: 'nine-text', capabilities: ['text'] },
     { id: 'nine-image', capabilities: ['image'] },
