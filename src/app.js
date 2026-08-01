@@ -16,17 +16,28 @@ const { normalizeError } = require('./ai/errors');
 const { MediaGenerationWorker } = require('./ai/mediaWorker');
 const templateService = require('./services/templates');
 const { StorageService } = require('./storage/service');
+const { ContentStudioService } = require('./services/contentStudio');
 
 function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, automation = automationService, aiTransport, storageTransport } = {}) {
   const app = express(); app.set('trust proxy', 1); app.use(express.json({ limit: '50mb' })); app.use(express.urlencoded({ extended: false, limit: '50mb' }));
   const mediaWorker = new MediaGenerationWorker({ db, transport: aiTransport });
   const storage = new StorageService({ db, transport: storageTransport });
+  const studio = new ContentStudioService({ db, storage });
+  mediaWorker.onCompleted = id => studio.persistResult(id);
   app.use(session({ secret: config.sessionSecret, resave: false, saveUninitialized: false, cookie: { httpOnly: true, sameSite: 'lax', secure: config.publicBaseUrl.startsWith('https://'), maxAge: 10 * 60 * 1000 } }));
   app.use(express.static(`${config.root}/public`, { setHeaders: (res, file) => { if (/\.jpe?g$/i.test(file)) res.setHeader('Content-Type', 'image/jpeg'); } }));
   app.get('/terms', (req, res) => res.sendFile(`${config.root}/public/terms.html`));
   app.get('/privacy', (req, res) => res.sendFile(`${config.root}/public/privacy.html`));
   app.use('/asset-files', express.static(`${config.root}/data/assets`, { fallthrough: false, maxAge: '1h' }));
   app.get('/api/storage/settings', (req, res) => res.json(storage.publicSettings()));
+  app.get('/api/content-studio/providers', (req, res) => res.json(studio.providers()));
+  app.get('/api/content-studio/jobs', (req, res) => res.json(studio.list(req.query)));
+  app.get('/api/content-studio/jobs/:id', (req, res) => { const job = studio.get(req.params.id); res.status(job ? 200 : 404).json(job || { error: 'Job tidak ditemukan' }); });
+  app.post('/api/content-studio/generate', async (req, res, next) => { try { const count = Math.max(1, Math.min(10, Number(req.body?.count) || 1)); const ids = []; const selected = req.body?.assetIds?.length ? await storage.resolveIds(req.body.assetIds) : (req.body?.assets || []); const assets = selected.map(asset => ({ id: asset.id, type: asset.type === 'video' ? 'video' : 'image', name: asset.name, mimeType: asset.mime_type || asset.mimeType, url: asset.url })); for (let index = 0; index < count; index += 1) { const id = crypto.randomUUID(); studio.createQueued(id, { ...req.body, assets, count }); ids.push(id); mediaWorker.enqueue({ ...req.body, id, assets, metadata: { negativePrompt: req.body?.negativePrompt || '', resolution: req.body?.resolution || '', batchIndex: index + 1 } }); } res.status(202).json({ ids, status: 'Queued' }); } catch (e) { next(e); } });
+  app.post('/api/content-studio/jobs/:id/retry', (req, res) => { const old = studio.get(req.params.id); if (!old) return res.status(404).json({ error: 'Job tidak ditemukan' }); const id = crypto.randomUUID(); studio.createQueued(id, { provider: old.provider, model: old.model, prompt: old.prompt, negativePrompt: old.negative_prompt, mediaType: old.media_type, assets: old.assets, resolution: old.resolution }); mediaWorker.enqueue({ id, provider: old.provider, model: old.model, prompt: old.prompt, mediaType: old.media_type, assets: old.assets, metadata: { ...old.metadata, retryOf: old.id } }); res.status(202).json({ id, status: 'Queued' }); });
+  app.post('/api/content-studio/jobs/:id/duplicate', (req, res) => { const old = studio.get(req.params.id); if (!old) return res.status(404).json({ error: 'Job tidak ditemukan' }); const id = crypto.randomUUID(); studio.createQueued(id, { provider: old.provider, model: old.model, prompt: old.prompt, negativePrompt: old.negative_prompt, mediaType: old.media_type, assets: old.assets, resolution: old.resolution }); mediaWorker.enqueue({ id, provider: old.provider, model: old.model, prompt: old.prompt, mediaType: old.media_type, assets: old.assets, metadata: { ...old.metadata, duplicateOf: old.id } }); res.status(202).json({ id, status: 'Queued' }); });
+  app.delete('/api/content-studio/jobs/:id', async (req, res, next) => { try { res.json({ deleted: await studio.remove(req.params.id) }); } catch (e) { next(e); } });
+  app.get('/api/content-studio/jobs/:id/download', async (req, res, next) => { try { const file = await studio.download(req.params.id); if (!file) return res.status(404).json({ error: 'File hasil tidak ditemukan' }); res.set({ 'Content-Type': file.mimeType, 'Content-Disposition': `attachment; filename="${file.name.replace(/"/g, '')}"` }).send(file.data); } catch (e) { next(e); } });
   app.put('/api/storage/settings', (req, res, next) => { try { res.json(storage.saveSettings(req.body || {})); } catch (e) { next(e); } });
   app.post('/api/storage/test', async (req, res, next) => { try { res.json(await storage.test()); } catch (e) { next(e); } });
   app.get('/api/assets', async (req, res, next) => { try { res.json(await storage.accessibleList(req.query)); } catch (e) { next(e); } });
