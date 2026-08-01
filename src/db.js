@@ -35,7 +35,7 @@ function createDatabase(filename = config.databasePath) {
   if (!trendColumns.has('trend_content_patterns')) db.exec("ALTER TABLE trend_reference_sets ADD COLUMN trend_content_patterns TEXT NOT NULL DEFAULT '[]'");
   if (!trendColumns.has('keyword_categories')) db.exec("ALTER TABLE trend_reference_sets ADD COLUMN keyword_categories TEXT NOT NULL DEFAULT '[]'");
   const generationColumns = new Set(db.prepare('PRAGMA table_info(ai_generations)').all().map(({ name }) => name));
-  for (const [name, definition] of Object.entries({ media_type: "TEXT NOT NULL DEFAULT 'text'", assets: "TEXT NOT NULL DEFAULT '[]'", media: "TEXT NOT NULL DEFAULT '[]'", metadata: "TEXT NOT NULL DEFAULT '{}'", provider_job_id: 'TEXT', duration_ms: 'INTEGER' })) if (!generationColumns.has(name)) db.exec(`ALTER TABLE ai_generations ADD COLUMN ${name} ${definition}`);
+  for (const [name, definition] of Object.entries({ media_type: "TEXT NOT NULL DEFAULT 'text'", assets: "TEXT NOT NULL DEFAULT '[]'", media: "TEXT NOT NULL DEFAULT '[]'", metadata: "TEXT NOT NULL DEFAULT '{}'", provider_job_id: 'TEXT', duration_ms: 'INTEGER', error_code: 'TEXT', provider_status: 'INTEGER', provider_request_id: 'TEXT' })) if (!generationColumns.has(name)) db.exec(`ALTER TABLE ai_generations ADD COLUMN ${name} ${definition}`);
   const providerColumns = new Set(db.prepare('PRAGMA table_info(ai_provider_settings)').all().map(({ name }) => name));
   if (!providerColumns.has('is_default')) db.exec('ALTER TABLE ai_provider_settings ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0');
   for (const name of ['text_model', 'image_model', 'video_model']) if (!providerColumns.has(name)) db.exec(`ALTER TABLE ai_provider_settings ADD COLUMN ${name} TEXT`);

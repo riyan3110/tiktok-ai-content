@@ -5,15 +5,12 @@ function capabilities(model) {
   const metadata = [model.capabilities, model.modalities, model.supported_modalities, model.architecture?.modalities, model.architecture?.input_modalities, model.architecture?.output_modalities, model.input_modalities, model.output_modalities, model.type].flatMap(values).map(value => String(value).toLowerCase());
   const result = new Set();
   for (const capability of metadata) { if (/image|vision/.test(capability)) result.add('image'); if (/video/.test(capability)) result.add('video'); if (/text|chat|language/.test(capability)) result.add('text'); }
-  if (result.size) return result;
-  const id = String(model.id || model.name || '').toLowerCase();
-  if (/image|imagen|flux|ideogram/.test(id)) result.add('image'); else if (/kling|video|seedance|veo|runway|vidu|hailuo/.test(id)) result.add('video'); else result.add('text');
   return result;
 }
 function normalize(payload) {
-  const models = Array.isArray(payload) ? payload : payload?.data || payload?.models || []; const output = { text: [], image: [], video: [] };
-  for (const model of models) { const id = String(typeof model === 'string' ? model : model.id || model.name || '').trim(); if (!id) continue; for (const type of capabilities(typeof model === 'string' ? { id } : model)) output[type]?.push(id); }
-  for (const type of Object.keys(output)) output[type] = [...new Set(output[type])].sort(); return output;
+  const models = Array.isArray(payload) ? payload : payload?.data || payload?.models || []; const output = { text: [], image: [], video: [], unverified: [] };
+  for (const model of models) { const id = String(typeof model === 'string' ? model : model.id || model.name || '').trim(); if (!id) continue; const verified = capabilities(typeof model === 'string' ? { id } : model); if (!verified.size) output.unverified.push(id); for (const type of verified) output[type]?.push(id); }
+  for (const type of Object.keys(output)) output[type] = [...new Set(output[type])].sort(); if (!output.unverified.length) delete output.unverified; return output;
 }
 class OrcaRouterModels {
   constructor({ db, connector, transport = fetch, ttl = CACHE_TTL }) { this.db = db; this.connector = connector; this.transport = transport; this.ttl = ttl; this.cached = null; }
