@@ -113,15 +113,13 @@ async function history() {
 }
 function escapeHtml(x) { const d = document.createElement('div'); d.textContent = x; return d.innerHTML; }
 async function connectionStatus() {
-  const status = await api('/tiktok/connection-status');
-  const connect = $('#tiktok-connect');
-  connect.textContent = status.connected ? '✓ Connected' : 'Hubungkan TikTok';
-  connect.classList.toggle('connected', status.connected);
-  if (status.connected) connect.removeAttribute('href');
-  else connect.href = '/auth/tiktok';
-  $('#tiktok-reconnect').classList.toggle('hidden', !status.connected);
-  $('#tiktok-disconnect').classList.toggle('hidden', !status.connected);
-  document.querySelectorAll('.drawer-tiktok,.mobile-tiktok-connect').forEach(link => { link.classList.toggle('connected', status.connected); link.toggleAttribute('aria-disabled', status.connected); if (status.connected) { link.removeAttribute('href'); link.onclick = event => event.preventDefault(); } });
+  const result = await api('/api/tiktok/status', { cache: 'no-store' });
+  $('#tiktok-status').textContent = result.status;
+  $('#tiktok-status').classList.toggle('connected', result.connected);
+  $('#tiktok-status').classList.toggle('disconnected', !result.connected);
+  $('#tiktok-connect').classList.toggle('hidden', result.connected);
+  $('#tiktok-reconnect').classList.toggle('hidden', !result.connected);
+  $('#tiktok-disconnect').classList.toggle('hidden', !result.connected);
 }
 $('#tiktok-disconnect').onclick = async () => { await api('/tiktok/connection', { method: 'DELETE' }); $('#connection-message').textContent = 'Akun TikTok diputuskan.'; await connectionStatus(); };
 $('#content-category').onchange = () => $('#custom-category-field').classList.toggle('hidden', $('#content-category').value !== 'Custom');
