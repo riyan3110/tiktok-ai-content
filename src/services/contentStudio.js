@@ -1,7 +1,7 @@
 const path = require('node:path');
 
 const connector = require('../ai/connector');
-const PROVIDER_NAMES = Object.freeze({ orcarouter: 'OrcaRouter', 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', omni: 'Omni' });
+const PROVIDER_NAMES = Object.freeze({ '9router': '9Router', orcarouter: 'OrcaRouter', 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', omni: 'Omni' });
 
 const decodeDataUrl = value => {
   const match = String(value || '').match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
