@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('node:crypto');
 const session = require('express-session');
 const config = require('./config');
 const contentService = require('./services/content');
@@ -13,6 +14,7 @@ const aiConnector = require('./ai/connector');
 const { ProviderFactory } = require('./ai/adapters');
 const { normalizeError } = require('./ai/errors');
 const { MediaGenerationWorker } = require('./ai/mediaWorker');
+const templateService = require('./services/templates');
 
 function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, automation = automationService, aiTransport } = {}) {
   const app = express(); app.set('trust proxy', 1); app.use(express.json()); app.use(express.urlencoded({ extended: false }));
@@ -40,6 +42,30 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.post('/api/ai/jobs/:id/cancel', (req, res) => { const cancelled = mediaWorker.cancel(req.params.id); res.status(cancelled ? 202 : 404).json({ cancelled }); });
   app.get('/api/ai/generations', (req, res) => res.json(db.prepare('SELECT * FROM ai_generations ORDER BY created_at DESC LIMIT 100').all()));
   app.get('/api/ai/health', (req, res) => res.json(db.prepare('SELECT * FROM ai_provider_health ORDER BY provider').all()));
+  app.get('/api/templates', (req, res, next) => { try { res.json(templateService.list(db, req.query)); } catch (e) { next(e); } });
+  app.post('/api/templates', (req, res, next) => { try { res.status(201).json(templateService.create(db, req.body || {})); } catch (e) { next(e); } });
+  app.put('/api/templates/:id', (req, res, next) => { try { res.json(templateService.update(db, req.params.id, req.body || {})); } catch (e) { next(e); } });
+  app.delete('/api/templates/:id', (req, res, next) => { try { res.json(templateService.remove(db, req.params.id)); } catch (e) { next(e); } });
+  app.post('/api/templates/:id/duplicate', (req, res, next) => { try { res.status(201).json(templateService.duplicate(db, req.params.id)); } catch (e) { next(e); } });
+  app.get('/api/templates/:id/versions', (req, res, next) => { try { templateService.get(db, req.params.id); res.json(db.prepare('SELECT id,template_id,version,created_at FROM template_versions WHERE template_id=? ORDER BY version DESC').all(Number(req.params.id))); } catch (e) { next(e); } });
+  app.get('/api/templates/:id/runs', (req, res, next) => { try { templateService.get(db, req.params.id); res.json(db.prepare('SELECT * FROM template_runs WHERE template_id=? ORDER BY created_at DESC').all(Number(req.params.id))); } catch (e) { next(e); } });
+  app.post('/api/templates/:id/preview', (req, res, next) => { try { const item = templateService.get(db, req.params.id); res.json(templateService.preview(item, req.body || {})); } catch (e) { next(e); } });
+  app.get('/api/templates/:id/export/:format', (req, res, next) => { try { const item = templateService.get(db, req.params.id); const format = req.params.format; if (!['json', 'markdown', 'txt'].includes(format)) throw Object.assign(new Error('Format export harus json, markdown, atau txt'), { status: 400 }); if (format === 'json') return res.type('json').send(JSON.stringify(item, null, 2)); if (format === 'txt') return res.type('text').send(item.prompt); res.type('text/markdown').send(`# ${item.name}\n\n${item.description || ''}\n\n## Prompt\n\n${item.prompt}\n\n## Negative Prompt\n\n${item.negative_prompt || '-'}\n`); } catch (e) { next(e); } });
+  app.post('/api/templates/:id/generate', (req, res, next) => { try {
+    const item = templateService.get(db, req.params.id); aiConnector.setting(db, item.provider);
+    const preview = templateService.preview(item, req.body?.context || req.body?.variables || {});
+    if (preview.unresolved.length) throw Object.assign(new Error(`Variable belum diisi: ${preview.unresolved.join(', ')}`), { status: 422 });
+    const mode = req.body?.mode || 'once'; if (!['once', 'batch', 'queue', 'scheduled'].includes(mode)) throw Object.assign(new Error('Mode automation tidak valid'), { status: 422 });
+    const count = mode === 'once' ? 1 : Number(req.body?.count || 10); if (!Number.isInteger(count) || count < 1 || count > 100) throw Object.assign(new Error('Batch harus berisi 1 sampai 100 generation'), { status: 422 });
+    if (mode === 'scheduled' && !req.body?.scheduledAt) throw Object.assign(new Error('scheduledAt wajib untuk generate berkala'), { status: 422 });
+    const ids = []; const insert = db.prepare('INSERT INTO template_runs(id,template_id,generation_id,provider,model,prompt,cost,status,mode,scheduled_at) VALUES(?,?,?,?,?,?,?,?,?,?)');
+    const transaction = db.transaction(() => { for (let index = 0; index < count; index += 1) { const runId = crypto.randomUUID(); const generationId = crypto.randomUUID(); insert.run(runId, item.id, generationId, item.provider, item.model, preview.prompt, preview.estimatedCost, mode === 'scheduled' ? 'Scheduled' : 'Queued', mode, req.body?.scheduledAt || null); ids.push({ runId, generationId }); } }); transaction();
+    if (mode !== 'scheduled') ids.forEach(({ generationId }) => {
+      const unsubscribe = mediaWorker.subscribe(generationId, event => { const generation = aiConnector.generation(db, generationId); db.prepare('UPDATE template_runs SET status=?,duration_ms=?,cost=?,updated_at=CURRENT_TIMESTAMP WHERE generation_id=?').run(event.status, generation?.duration_ms || null, generation?.estimated_cost || preview.estimatedCost, generationId); if (['Completed', 'Failed', 'Cancelled'].includes(event.status)) unsubscribe(); });
+      mediaWorker.enqueue({ id: generationId, provider: item.provider, model: item.model, prompt: preview.prompt, mediaType: item.target_ai, assets: item.assets, seed: item.seed, temperature: item.temperature, metadata: { templateId: item.id, templateVersion: item.version } });
+    });
+    res.status(202).json({ templateId: item.id, mode, count, jobs: ids, preview });
+  } catch (e) { next(e); } });
   app.post('/trend-references', (req, res, next) => { try { res.status(201).json(trendReferences.save(db, req.body || {})); } catch (e) { next(e); } });
   app.put('/trend-references/:id', (req, res, next) => { try { res.json(trendReferences.save(db, req.body || {}, Number(req.params.id))); } catch (e) { next(e); } });
   app.post('/trend-references/:id/disable', (req, res) => { const result = db.prepare('UPDATE trend_reference_sets SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(Number(req.params.id)); if (!result.changes) return res.status(404).json({ error: 'Referensi tidak ditemukan' }); res.json(trendReferences.current(db)); });
