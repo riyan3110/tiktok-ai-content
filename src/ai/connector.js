@@ -24,7 +24,7 @@ function validBaseUrl(value) { try { const url = new URL(String(value || '')); r
 function configuredProviders(db) {
   seed(db);
   const registered = new Set(ProviderFactory.names());
-  const valid = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 AND default_model IS NOT NULL AND TRIM(default_model)<>\'\'').all().filter(row => registered.has(row.provider) && (row.provider === '9router' || Boolean(row.api_key_encrypted)) && validBaseUrl(row.base_url) && !(row.provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl));
+  const valid = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 AND default_model IS NOT NULL AND TRIM(default_model)<>\'\'').all().filter(row => registered.has(row.provider) && Boolean(row.api_key_encrypted) && validBaseUrl(row.base_url) && !(row.provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl));
   return valid;
 }
 function validationError(message, status = 422, extra = {}) { return Object.assign(new Error(message), { status, ...extra }); }
@@ -37,7 +37,7 @@ function validateGeneration(db, body = {}) {
   const row = db.prepare('SELECT * FROM ai_provider_settings WHERE provider=?').get(provider);
   if (!row?.enabled) throw validationError('Provider belum diaktifkan', 409);
   if (!(CAPABILITIES[provider] || []).includes(mediaType)) throw validationError(`Provider aktif tidak mendukung generate ${mediaType}`, 409);
-  if (!row.api_key_encrypted && provider !== '9router') throw validationError('API key provider belum tersedia');
+  if (!row.api_key_encrypted) throw validationError('API key provider belum tersedia');
   if (!row.default_model?.trim()) throw validationError('Model provider belum tersedia');
   if (provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl) throw validationError('Google Flow generation API belum dikonfigurasi', 409);
   if (!validBaseUrl(row.base_url)) throw validationError(provider === 'omni' ? 'Omni masih menggunakan endpoint placeholder' : 'Base URL provider belum valid', 409);

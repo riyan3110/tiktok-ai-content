@@ -21,9 +21,11 @@ class NineRouterClient {
   async request(path, options = {}) {
     const controller = new AbortController();
     const abort = () => controller.abort();
-    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) controller.abort(options.signal.reason);
+    else options.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(abort, this.timeout);
     try {
+      controller.signal.throwIfAborted();
       return await this.transport(gatewayUrl(path), { ...options, headers: { ...this.headers(Boolean(options.body)), ...(options.headers || {}) }, signal: controller.signal });
     } finally {
       clearTimeout(timer);

@@ -90,6 +90,20 @@ test('masked credential is never persisted or sent and an empty gateway key is r
   assert.throws(()=>new NineRouterClient({api_key:'•••••••• (saved)'}),/belum dikonfigurasi/);
 });
 
+test('generation without a saved gateway key is rejected before history insertion', async () => {
+  const db=createDatabase(':memory:'); connector.save(db,'9router',{enabled:true});
+  await assert.rejects(connector.execute(db,{provider:'9router',model:'My1',prompt:'hello',mediaType:'text'},transport),/API key provider belum tersedia/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_generations').get().count,0);
+  db.close();
+});
+
+test('shared client rejects an already-aborted parent signal without starting transport', async () => {
+  const controller=new AbortController(); controller.abort(); let started=false;
+  const client=new NineRouterClient({api_key:'gateway-secret'},async()=>{ started=true; return new Response('{}'); });
+  await assert.rejects(client.request('/models',{signal:controller.signal}),error=>error.name==='AbortError');
+  assert.equal(started,false);
+});
+
 test('test, refresh, and generation use the shared NineRouterClient authorization and timeout path', async () => {
   const {db,app}=setup();
   await request(app).post('/api/ai/providers/9router/test').expect(200);
