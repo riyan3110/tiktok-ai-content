@@ -82,17 +82,17 @@ test('callback OAuth memakai state persisten sekali saja meski cookie sesi hilan
   assert.equal(exchanges, 1);
   assert.equal(db.prepare("SELECT access_token FROM oauth_tokens WHERE provider='tiktok'").get().access_token, 'new-token');
 });
-test('callback OAuth memulihkan state bertanda tangan setelah pending state hilang', async () => {
+test('callback OAuth menolak state yang tidak ada di penyimpanan persisten', async () => {
   let exchanges = 0;
   const signed = require('../src/services/tiktok');
-  const tiktok = { ...signed, exchangeCode: async (_code, redirectUri) => { exchanges++; assert.equal(redirectUri, 'https://callback.example/auth/tiktok/callback'); return { access_token: 'recovered-token', refresh_token: 'refresh', expires_in: 3600, refresh_expires_in: 86400 }; } };
+  const tiktok = { ...signed, exchangeCode: async () => { exchanges++; } };
   const { app, db } = setup({ tiktok });
   const start = await request(app).get('/auth/tiktok').set('Host', 'callback.example').set('X-Forwarded-Proto', 'https').expect(302);
   const state = new URL(start.headers.location).searchParams.get('state');
   db.prepare('DELETE FROM oauth_states WHERE state=?').run(state);
-  await request(app).get(`/auth/tiktok/callback?state=${encodeURIComponent(state)}&code=recovered`).expect(302).expect('Location', '/?oauth=success');
-  assert.equal(exchanges, 1);
-  assert.equal(db.prepare("SELECT access_token FROM oauth_tokens WHERE provider='tiktok'").get().access_token, 'recovered-token');
+  await request(app).get(`/auth/tiktok/callback?state=${encodeURIComponent(state)}&code=unused`).expect(302).expect('Location', '/?oauth=expired');
+  assert.equal(exchanges, 0);
+  assert.equal(db.prepare("SELECT access_token FROM oauth_tokens WHERE provider='tiktok'").get(), undefined);
 });
 test('reconnect gagal tidak menghapus koneksi TikTok yang valid', async () => {
   const tiktok = { randomState: () => 'reconnect-state', authorizationUrl: () => 'https://example.com/oauth', exchangeCode: async () => { throw new Error('exchange failed'); } };
