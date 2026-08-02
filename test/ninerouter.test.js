@@ -7,26 +7,21 @@ const { createApp } = require('../src/app');
 const connector = require('../src/ai/connector');
 const { ProviderFactory } = require('../src/providers');
 const NineRouterProvider = require('../src/providers/NineRouterProvider');
-const { normalizeModels, normalizeCombos, discovery } = require('../src/services/nineRouterModels');
+const { catalogFromPayload, CATALOG_PATHS } = require('../src/services/nineRouterModels');
 const { NineRouterClient, API_BASE_URL } = require('../src/services/nineRouterClient');
 
-const directPayload = { data: [
-  { id: 'deepseek/deepseek-v4-flash', capabilities: ['text'] },
-  { id: 'openai/gpt-5', type: 'chat' }, { id: 'qwen/qwen-chat', service_type: 'text' },
-  { id: 'openai/gpt-image-1', output_modalities: ['image'] },
-  { id: 'google/veo-3', endpoint: '/video/generations' },
-  { id: 'deepseek/image-by-wrong-name', capabilities: ['text'] }
-] };
-const comboPayload = { combos: [
-  { id: 'My1', models: ['deepseek/deepseek-v4-flash'] },
-  { id: 'My2', members: [{ model_id: 'openai/gpt-image-1' }] },
-  { id: 'My3', routes: [{ model: 'google/veo-3' }] },
-  { id: 'Multi', models: ['openai/gpt-image-1', 'google/veo-3'] }
-] };
-const catalog = discovery(normalizeCombos(comboPayload, directPayload), normalizeModels(directPayload));
-const gatewayPayload = { ...directPayload, combos: comboPayload.combos };
+const payloads = {
+  [`${API_BASE_URL}/models`]: { object: 'list', data: [{ id: 'My1', owned_by: 'combo' }, { id: 'deepseek/deepseek-v4-flash', owned_by: 'deepseek' }, { id: 'openai/gpt-5', owned_by: 'openai' }] },
+  [`${API_BASE_URL}/models/image`]: { object: 'list', data: [{ id: 'My2', owned_by: 'combo' }, { id: 'openai/gpt-image-1', owned_by: 'openai' }] },
+  [`${API_BASE_URL}/models/video`]: { object: 'list', data: [{ id: 'My3', owned_by: 'combo' }, { id: 'google/veo-3', owned_by: 'google' }] }
+};
+const catalog = {
+  text: catalogFromPayload(payloads[`${API_BASE_URL}/models`]),
+  image: catalogFromPayload(payloads[`${API_BASE_URL}/models/image`]),
+  video: catalogFromPayload(payloads[`${API_BASE_URL}/models/video`])
+};
 const calls = [];
-const transport = async (url, options={}) => { calls.push({url, options}); return new Response(JSON.stringify(gatewayPayload), { headers: { 'content-type': 'application/json' } }); };
+const transport = async (url, options={}) => { calls.push({url, options}); const payload = payloads[url] || { id: 'generation-1', choices: [{ message: { content: 'ok' } }] }; return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } }); };
 
 function setup() { calls.length=0; const db=createDatabase(':memory:'); connector.save(db,'9router',{enabled:true,apiKey:'gateway-secret'}); return { db, app:createApp({db,aiTransport:transport}) }; }
 
@@ -36,25 +31,18 @@ test('9Router always uses the exact API models URL, never dashboard port or dupl
   assert.doesNotMatch(NineRouterProvider.joinGatewayUrl('', '/v1/models'),/20128|v1\/v1/);
 });
 
-test('text catalog contains My1 plus DeepSeek, GPT, and Qwen direct models', () => {
+test('each endpoint classifies only owned_by combo as a combo', () => {
   assert.deepEqual(catalog.text.combos, ['My1']);
-  assert.deepEqual(catalog.text.directModels, ['deepseek/deepseek-v4-flash','deepseek/image-by-wrong-name','openai/gpt-5','qwen/qwen-chat']);
+  assert.deepEqual(catalog.text.directModels, ['deepseek/deepseek-v4-flash','openai/gpt-5']);
+  assert.deepEqual(catalog.image, { combos: ['My2'], directModels: ['openai/gpt-image-1'] });
+  assert.deepEqual(catalog.video, { combos: ['My3'], directModels: ['google/veo-3'] });
+  assert.throws(() => catalogFromPayload({ data: [] }), /tidak valid/);
 });
-
-test('image and video catalogs contain only correctly capable combos and direct models', () => {
-  assert.deepEqual(catalog.image, { combos: ['Multi','My2'], directModels: ['openai/gpt-image-1'] });
-  assert.deepEqual(catalog.video, { combos: ['Multi','My3'], directModels: ['google/veo-3'] });
-  assert.equal(catalog.video.directModels.includes('openai/gpt-5'), false);
-  assert.equal(catalog.image.directModels.some(id=>id.startsWith('deepseek')), false);
-  assert.equal(catalog.video.directModels.some(id=>id.startsWith('deepseek')), false);
-});
-
-test('official metadata wins over a misleading model name', () => assert.deepEqual(normalizeModels(directPayload).text.includes('deepseek/image-by-wrong-name'), true));
 
 test('backend returns grouped normalized catalog and test connection updates the shared health status', async () => {
   const {db,app}=setup(); const response=(await request(app).get('/api/ai/providers/9router/models').expect(200)).body;
-  assert.deepEqual(response.text,catalog.text); assert.equal(response.endpoints.models,'/v1/models');
-  assert.ok(calls.every(call=>call.url===`${API_BASE_URL}/models`)); assert.ok(calls.every(call=>call.options.headers.Authorization==='Bearer gateway-secret'));
+  assert.deepEqual(response.text,catalog.text); assert.deepEqual(response.endpoints,CATALOG_PATHS);
+  assert.deepEqual(new Set(calls.map(call=>call.url)),new Set(Object.keys(payloads))); assert.ok(calls.every(call=>call.options.headers.Authorization==='Bearer gateway-secret'));
   await request(app).post('/api/ai/providers/9router/test').expect(200);
   const list=(await request(app).get('/api/ai/providers').expect(200)).body; assert.equal(list.find(p=>p.provider==='9router').health.status,'Online');
   db.close();
@@ -102,6 +90,16 @@ test('shared client rejects an already-aborted parent signal without starting tr
   const client=new NineRouterClient({api_key:'gateway-secret'},async()=>{ started=true; return new Response('{}'); });
   await assert.rejects(client.request('/models',{signal:controller.signal}),error=>error.name==='AbortError');
   assert.equal(started,false);
+});
+
+test('a cancelled 9Router request cannot continue into retry', async () => {
+  const db=createDatabase(':memory:'); connector.save(db,'9router',{enabled:true,apiKey:'gateway-secret',retry:3}); let attempts=0;
+  const pending=connector.execute(db,{id:'cancel-nine',provider:'9router',model:'My1',prompt:'hello',mediaType:'text'},async (_url,{signal})=>{
+    attempts+=1;
+    return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Object.assign(new Error('cancelled'),{name:'AbortError'})),{once:true}));
+  });
+  await new Promise(resolve=>setImmediate(resolve)); assert.equal(connector.cancel('cancel-nine'),true);
+  const result=await pending; assert.equal(result.status,'Cancelled'); assert.equal(attempts,1); db.close();
 });
 
 test('test, refresh, and generation use the shared NineRouterClient authorization and timeout path', async () => {

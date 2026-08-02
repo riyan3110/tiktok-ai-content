@@ -10,10 +10,8 @@ function configuredPair() {
   const db = createDatabase(':memory:');
   connector.save(db, 'orcarouter', { apiKey: 'existing-orca-secret', enabled: true });
   connector.save(db, '9router', { enabled: true, apiKey: 'test-gateway-key' });
-  const transport = async () => new Response(JSON.stringify({ data: [
-    { id: 'nine-text', capabilities: ['text'] },
-    { id: 'nine-image', capabilities: ['image'] },
-    { id: 'nine-video', capabilities: ['video'] }
+  const transport = async url => new Response(JSON.stringify({ object: 'list', data: [
+    { id: url.endsWith('/image') ? 'nine-image' : url.endsWith('/video') ? 'nine-video' : 'nine-text', owned_by: '9router' }
   ] }), { headers: { 'content-type': 'application/json' } });
   return { db, app: createApp({ db, aiTransport: transport }) };
 }
