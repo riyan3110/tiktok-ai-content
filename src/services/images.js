@@ -192,8 +192,12 @@ function watermarkElement(options) {
   return `<text data-role="watermark" x="80" y="${WATERMARK_Y}" fill="#fce7f3" fill-opacity="${watermark.opacity}" font-family="Arial,sans-serif" font-size="${watermark.fontSize}" font-weight="600" letter-spacing="1.5" text-anchor="start">${escapeXml(watermark.text)}</text>`;
 }
 
-function frame(inner, number, total, watermark) {
-  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#15122d"/><stop offset="1" stop-color="#5b21b6"/></linearGradient><filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#090617" flood-opacity=".7"/></filter></defs><rect width="1080" height="1920" fill="url(#g)"/><circle cx="940" cy="190" r="260" fill="#ec4899" opacity=".28"/>${watermarkElement(watermark)}${inner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="#f9a8d4" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
+function frame(inner, number, total, watermark, background = {}) {
+  const color = /^#[0-9a-f]{6}$/i.test(background.color || '') ? background.color : '#0B0B0D';
+  const image = background.imageData ? `<image width="${WIDTH}" height="${HEIGHT}" href="${escapeXml(background.imageData)}" preserveAspectRatio="xMidYMid slice"/>` : '';
+  const textColor = background.textColor === '#000000' ? '#000000' : '#FFFFFF';
+  const themedInner = inner.replaceAll('fill="white"', `fill="${textColor}"`).replaceAll('fill="#f3e8ff"', `fill="${textColor}"`).replaceAll('fill="#f9a8d4"', `fill="${textColor}"`);
+  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${WIDTH}" height="${HEIGHT}" fill="${color}"/>${image}${watermarkElement(watermark)}${themedInner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="${textColor}" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
 }
 
 function buildStructuredLayout(slide, index, total, format = '') {
@@ -443,7 +447,7 @@ function validateVisualLayout(layout, { slideIndex } = {}) {
   return true;
 }
 
-function renderLayout(layout, number, total, watermark) {
+function renderLayout(layout, number, total, watermark, background) {
   validateVisualLayout(layout);
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
   const startY = contentY(layout.fit);
@@ -464,7 +468,7 @@ function renderLayout(layout, number, total, watermark) {
       parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
       y += point.lines.length * layout.fit.pointSize * 1.22;
     }
-    return frame(heading + parts.join(''), number, total, watermark);
+    return frame(heading + parts.join(''), number, total, watermark, background);
   }
   if (layout.type === 'steps') {
     let y = startY;
@@ -473,9 +477,9 @@ function renderLayout(layout, number, total, watermark) {
       y += lines.length * layout.fit.fontSize * layout.fit.lineHeight + 24;
       return element;
     }).join('');
-    return frame(heading + elements, number, total, watermark);
+    return frame(heading + elements, number, total, watermark, background);
   }
-  return frame(heading + textElement(layout.fit.lines, { y: startY, fontSize: layout.fit.fontSize, lineHeight: layout.fit.lineHeight }), number, total, watermark);
+  return frame(heading + textElement(layout.fit.lines, { y: startY, fontSize: layout.fit.fontSize, lineHeight: layout.fit.lineHeight }), number, total, watermark, background);
 }
 
 async function createSlides(id, content) {
@@ -494,7 +498,8 @@ async function createSlides(id, content) {
   const files = [];
   for (let i = 0; i < layouts.length; i++) {
     const name = `${id}-${i + 1}.jpg`;
-    await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY }).toFile(path.join(dir, name));
+    const background = content.background?.applyToAllSlides === false ? (content.background.slideBackgrounds?.[i] || content.background) : content.background;
+    await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark, background))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY }).toFile(path.join(dir, name));
     files.push(`/generated/${name}`);
   }
   return files;

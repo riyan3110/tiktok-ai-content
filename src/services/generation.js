@@ -40,7 +40,7 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -91,9 +91,9 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       // Rendering happens only after AI parsing, normalization, and validation;
       // the database remains untouched if any slide cannot be rendered.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const slides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat, watermark });
-      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(slides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords));
+      const slides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat, watermark, background });
+      const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(slides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}));
       return result.lastInsertRowid;
     } catch (error) {
       const isUniqueConflict = String(error.code || error.message).includes('UNIQUE');

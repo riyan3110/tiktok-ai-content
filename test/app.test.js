@@ -185,3 +185,26 @@ test('kategori dan format yang tidak dikenal ditolak', async () => {
   await request(app).post('/generate').send({ contentCategory: 'Tidak valid', contentFormat: 'Listicle' }).expect(400);
   await request(app).post('/generate').send({ contentCategory: 'Motivasi', contentFormat: 'Tidak valid' }).expect(400);
 });
+
+test('konfigurasi background carousel diterapkan ke export dan disimpan bersama draft', async () => {
+  let rendered;
+  const images = { createSlides: async (id, content) => { rendered = content.background; return [1, 2, 3].map(index => `/generated/${id}-${index}.jpg`); }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const background = { type: 'color', color: '#E9E1D3', assetId: null, previewUrl: null, applyToAllSlides: false, slideBackgrounds: { 1: { type: 'color', color: '#FFFFFF', assetId: null, previewUrl: null } } };
+  const response = await request(app).post('/generate').send({ background }).expect(200);
+  assert.equal(rendered.color, '#E9E1D3');
+  assert.equal(rendered.applyToAllSlides, false);
+  assert.equal(rendered.slideBackgrounds[1].color, '#FFFFFF');
+  assert.equal(response.body.background.color, '#E9E1D3');
+  assert.equal(response.body.background.slideBackgrounds[1].color, '#FFFFFF');
+  assert.equal(response.body.slides.length, 3);
+});
+
+test('background tidak valid dinormalisasi ke Hitam agar draft dan export aman', async () => {
+  let rendered;
+  const images = { createSlides: async (id, content) => { rendered = content.background; return [`/generated/${id}-1.jpg`]; }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const response = await request(app).post('/generate').send({ background: { type: 'color', color: 'url(javascript:bad)' } }).expect(200);
+  assert.equal(rendered.color, '#0B0B0D');
+  assert.equal(response.body.background.color, '#0B0B0D');
+});

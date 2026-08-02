@@ -81,12 +81,13 @@ $('#delete-trends').onclick = async () => { if (activeTrend && window.confirm('H
 $('#trend-fetched-at').value = jakartaInput();
 function show(item) {
   current = item;
+  if (item.background?.type) { carouselBackground = { ...DEFAULT_BACKGROUND, ...item.background, slideBackgrounds: item.background.slideBackgrounds || {} }; localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); }
   $('#editor').classList.remove('hidden');
   $('#slides').innerHTML = item.slides.map((x, i) => `<button class="slide-button" type="button" data-slide="${i}" aria-label="Perbesar slide ${i + 1}"><img src="${x}" alt="Slide ${i + 1}"></button>`).join('');
   document.querySelectorAll('[data-slide]').forEach((button, i) => { button.onclick = () => openSlide(item.slides[i], i); });
   $('#caption').value = item.caption;
   $('#trend-reference-used').textContent = `Referensi tren yang digunakan: ${item.trend_keywords_used.length ? item.trend_keywords_used.join(', ') : 'tidak ada keyword relevan'}`;
-  $('#status').textContent = item.publish_status;
+  $('#status').textContent = item.publish_status; renderSlideBackgrounds(); applyBackgroundPreview();
 }
 function openSlide(src, index) {
   $('#slide-preview-image').src = src;
@@ -176,6 +177,38 @@ let studioAssets = [];
 function renderStudioAssets() { $('#studio-assets').innerHTML = studioAssets.length ? studioAssets.map(asset => `<span class="selected-asset"><img src="${escapeHtml(asset.previewUrl)}" alt=""><b>${escapeHtml(asset.name)}</b><button type="button" data-remove-studio-asset="${escapeHtml(asset.id)}">×</button></span>`).join('') : '<small>No reference assets attached</small>'; document.querySelectorAll('[data-remove-studio-asset]').forEach(button => button.onclick = () => { studioAssets = studioAssets.filter(asset => asset.id !== button.dataset.removeStudioAsset); renderStudioAssets(); }); }
 $('#studio-select-assets').onclick = async () => { const chosen = await window.AssetManager.select({ selectedIds: studioAssets.map(asset => asset.id), multiple: true }); if (chosen) { studioAssets = chosen; renderStudioAssets(); } };
 renderStudioAssets();
+const BACKGROUND_DRAFT_KEY = 'content-studio-carousel-background';
+const DEFAULT_BACKGROUND = { type: 'color', color: '#0B0B0D', assetId: null, previewUrl: null, applyToAllSlides: true, slideBackgrounds: {} };
+function loadBackgroundDraft() { try { return { ...DEFAULT_BACKGROUND, ...JSON.parse(localStorage.getItem(BACKGROUND_DRAFT_KEY) || '{}'), slideBackgrounds: JSON.parse(localStorage.getItem(BACKGROUND_DRAFT_KEY) || '{}').slideBackgrounds || {} }; } catch { return { ...DEFAULT_BACKGROUND }; } }
+let carouselBackground = loadBackgroundDraft();
+function saveBackgroundDraft() { localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); applyBackgroundPreview(); }
+function backgroundChoice(background) { return background?.type === 'image' ? 'image' : background?.color || '#0B0B0D'; }
+function renderSlideBackgrounds() {
+  const host = $('#slide-background-options'); host.classList.toggle('hidden', carouselBackground.applyToAllSlides);
+  host.innerHTML = carouselBackground.applyToAllSlides ? '' : Array.from({ length: Math.max(3, current?.slides?.length || 5) }, (_, index) => `<label>Slide ${index + 1}<select data-slide-background="${index}"><option value="">Gunakan global</option><option value="#0B0B0D">Hitam</option><option value="#FFFFFF">Putih</option><option value="#E9E1D3">Krem</option>${carouselBackground.assetId ? '<option value="image">Gambar upload</option>' : ''}</select></label>`).join('');
+  document.querySelectorAll('[data-slide-background]').forEach(select => { select.value = backgroundChoice(carouselBackground.slideBackgrounds[select.dataset.slideBackground]) === backgroundChoice(carouselBackground) ? '' : backgroundChoice(carouselBackground.slideBackgrounds[select.dataset.slideBackground]); select.onchange = () => { const index = select.dataset.slideBackground; if (!select.value) delete carouselBackground.slideBackgrounds[index]; else carouselBackground.slideBackgrounds[index] = select.value === 'image' ? { type: 'image', assetId: carouselBackground.assetId, previewUrl: carouselBackground.previewUrl, color: carouselBackground.color } : { type: 'color', color: select.value, assetId: null, previewUrl: null }; saveBackgroundDraft(); }; });
+}
+function renderBackgroundSelector() {
+  const choice = backgroundChoice(carouselBackground); const radio = document.querySelector(`input[name="carousel-background"][value="${CSS.escape(choice)}"]`); if (radio) radio.checked = true;
+  $('#background-apply-all').checked = carouselBackground.applyToAllSlides;
+  $('#background-image-preview').style.backgroundImage = carouselBackground.previewUrl ? `url("${carouselBackground.previewUrl.replace(/["\\]/g, '\\$&')}")` : '';
+  $('#background-upload-actions').classList.toggle('hidden', !carouselBackground.assetId);
+  renderSlideBackgrounds();
+}
+function applyBackgroundPreview() { if (!current) return; document.querySelectorAll('#slides .slide-button').forEach((button, index) => { const selected = carouselBackground.applyToAllSlides ? carouselBackground : (carouselBackground.slideBackgrounds[index] || carouselBackground); button.style.background = selected.type === 'image' ? `center / cover no-repeat url("${selected.previewUrl}")` : selected.color; button.dataset.textColor = selected.textColor || (/^#(?:0B0B0D)$/i.test(selected.color) ? '#FFFFFF' : '#000000'); }); }
+function fileDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); }); }
+async function imageTextColor(url) { return new Promise(resolve => { const image = new Image(); image.onload = () => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32; const context = canvas.getContext('2d'); context.drawImage(image, 0, 0, 32, 32); const pixels = context.getImageData(0, 0, 32, 32).data; let luminance = 0; for (let i = 0; i < pixels.length; i += 4) luminance += .2126 * pixels[i] + .7152 * pixels[i + 1] + .0722 * pixels[i + 2]; resolve(luminance / (pixels.length / 4) > 140 ? '#000000' : '#FFFFFF'); }; image.onerror = () => resolve('#FFFFFF'); image.src = url; }); }
+async function uploadBackground(file) {
+  $('#background-error').textContent = '';
+  if (!['image/png','image/jpeg','image/webp'].includes(file?.type) || file.size > 10 * 1024 * 1024) { $('#background-error').textContent = 'Gunakan PNG, JPEG, atau WebP berukuran maksimal 10 MB.'; return; }
+  try { const dataUrl = await fileDataUrl(file); const uploaded = await api('/api/assets/upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: file.name, mimeType: file.type, data: dataUrl.split(',')[1], tags: ['Background'], metadata: { category: 'Background' } }) }); carouselBackground = { ...carouselBackground, type: 'image', assetId: uploaded.id, previewUrl: uploaded.preview_url || uploaded.url, textColor: await imageTextColor(dataUrl) }; saveBackgroundDraft(); } catch (error) { $('#background-error').textContent = error.message; }
+}
+document.querySelectorAll('input[name="carousel-background"]').forEach(input => input.onchange = () => { if (!input.checked) return; if (input.value === 'image') { if (!carouselBackground.assetId) $('#background-file').click(); else { carouselBackground.type = 'image'; saveBackgroundDraft(); } } else { carouselBackground = { ...carouselBackground, type: 'color', color: input.value, assetId: null, previewUrl: null, textColor: input.value === '#0B0B0D' ? '#FFFFFF' : '#000000' }; saveBackgroundDraft(); } });
+$('#background-file').onchange = event => { const [file] = event.target.files; if (file) uploadBackground(file); event.target.value = ''; };
+$('#background-change').onclick = () => $('#background-file').click(); $('#background-remove').onclick = () => { carouselBackground = { ...carouselBackground, type: 'color', color: '#0B0B0D', assetId: null, previewUrl: null, textColor: '#FFFFFF' }; saveBackgroundDraft(); };
+$('#background-apply-all').onchange = event => { carouselBackground.applyToAllSlides = event.target.checked; saveBackgroundDraft(); };
+$('#background-reset').onclick = () => { carouselBackground = { ...DEFAULT_BACKGROUND }; saveBackgroundDraft(); };
+renderBackgroundSelector();
 function watermarkEnabled() { return $('#watermark-enabled').checked; }
 async function generate(request) {
   try {
@@ -188,7 +221,7 @@ async function generate(request) {
     $('#message').textContent = error.message; $('#retry-generate').classList.remove('hidden');
   }
 }
-$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); await generate({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, assetIds: studioAssets.map(asset => asset.id), useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false, watermarkEnabled: watermarkEnabled() }); };
+$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = $('#manual-topic').value; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); await generate({ topicSource, requestedTopic, contentCategory, customCategory, contentFormat, assetIds: studioAssets.map(asset => asset.id), useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false, watermarkEnabled: watermarkEnabled(), background: carouselBackground }); };
 $('#retry-generate').onclick = () => generate({ ...lastGenerationRequest, forceNewAngle: true });
 function renderPublishStatus(data, message = '') {
   const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];
