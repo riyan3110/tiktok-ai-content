@@ -59,6 +59,49 @@ test('all three catalogs receive the same saved Bearer key and populate image an
   db.close();
 });
 
+async function catalogsWithFailures(failures) {
+  const calls = [];
+  const transport = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    calls.push({ path, authorization: options.headers.Authorization });
+    if (failures[path]) return new Response('not found', { status: failures[path] });
+    return new Response(JSON.stringify(payloads[path]), { headers: { 'content-type': 'application/json' } });
+  };
+  const db = createDatabase(':memory:');
+  connector.save(db, '9router', { enabled: true, apiKey: 'saved-gateway-key' });
+  const response = await request(createApp({ db, aiTransport: transport })).get('/api/ai/providers/9router/models');
+  db.close();
+  return { response, calls };
+}
+
+test('video catalog 404 preserves successful text and image catalogs', async () => {
+  const { response, calls } = await catalogsWithFailures({ '/v1/models/video': 404 });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.text, { combos: ['TextCombo'], directModels: ['openai/gpt-5'] });
+  assert.deepEqual(response.body.image, { combos: ['ImageCombo'], directModels: ['openai/gpt-image-1'] });
+  assert.deepEqual(response.body.video, { combos: [], directModels: [] });
+  assert.deepEqual(response.body.errors.video, { status: 404, message: '9Router tidak menyediakan katalog model video.' });
+  assert.deepEqual(response.body.capabilities, ['text', 'image']);
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(call => call.authorization === 'Bearer saved-gateway-key'));
+});
+
+test('image catalog 404 preserves the required text catalog', async () => {
+  const { response } = await catalogsWithFailures({ '/v1/models/image': 404 });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.text, { combos: ['TextCombo'], directModels: ['openai/gpt-5'] });
+  assert.deepEqual(response.body.image, { combos: [], directModels: [] });
+  assert.equal(response.body.errors.image.status, 404);
+});
+
+test('required text catalog failure reports provider catalog failure after attempting every catalog', async () => {
+  const { response, calls } = await catalogsWithFailures({ '/v1/models': 503 });
+  assert.equal(response.status, 503);
+  assert.match(response.body.error, /not found/);
+  assert.deepEqual(calls.map(call => call.path).sort(), Object.values(CATALOG_PATHS).sort());
+  assert.ok(calls.every(call => call.authorization === 'Bearer saved-gateway-key'));
+});
+
 test('Test Connection counts models from all three catalogs', async () => {
   const { db, app } = setup();
   const response = await request(app).post('/api/ai/providers/9router/test').expect(200);
@@ -124,6 +167,7 @@ test('UI keeps grouped automatic selectors, no free-text input, and OrcaRouter r
   assert.match(providers, /DIRECT MODELS/);
   assert.match(studio, /optionGroup\('COMBOS'/);
   assert.match(studio, /optionGroup\('DIRECT MODELS'/);
+  assert.match(studio, /Versi 9Router ini belum menyediakan katalog model video\./);
   assert.doesNotMatch(studio, /studio-nine-models|datalist|input\.value\.trim/);
   assert.match(html, /<select id="studio-model"/);
   assert.doesNotMatch(html, /<input id="studio-model"/);
