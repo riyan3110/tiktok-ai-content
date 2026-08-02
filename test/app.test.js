@@ -242,3 +242,53 @@ test('live preview rerender menyimpan background global dan per-slide yang sama 
   assert.equal(updated.body.background.slideBackgrounds[1].color, '#E9E1D3');
   assert.notDeepEqual(updated.body.slides, generated.body.slides);
 });
+
+test('generation mempromosikan file pending ke path stabil content ID dan history menghapusnya', async (t) => {
+  const db = createDatabase(':memory:');
+  const content = { generateContent: async () => ({ topic: `Stable ${Date.now()}`, hook: 'Hook', body: '1. Langkah', caption: 'Caption', hashtags: ['#test'], cta: 'CTA' }) };
+  const app = createApp({ db, content, trending: { getLatest: async () => [] } });
+  const generated = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200);
+  assert.deepEqual(generated.body.slides, [1, 2, 3].map(index => `/generated/${generated.body.id}-${index}.jpg`));
+  const dir = path.join(process.cwd(), 'public/generated');
+  const names = fs.readdirSync(dir);
+  assert.equal(names.some(name => name.startsWith('pending-') && name.endsWith('.jpg')), false);
+  for (const slide of generated.body.slides) assert.equal(fs.existsSync(path.join(process.cwd(), 'public', slide)), true);
+  await request(app).delete(`/history/${generated.body.id}`).expect(200);
+  for (const slide of generated.body.slides) assert.equal(fs.existsSync(path.join(process.cwd(), 'public', slide)), false);
+  t.after(() => db.close());
+});
+
+test('rerender gagal mempertahankan slide dan background database sebelumnya tanpa temporary file', async () => {
+  let calls = 0;
+  const images = { createSlides: async id => { if (++calls > 1) throw new Error('render gagal'); return [`/generated/${id}-1.jpg`]; }, validateSlides: async () => {}, cleanupSlides: async () => {} };
+  const { app, db } = setup({ images });
+  const generated = await request(app).post('/generate').send({ background: { type: 'color', color: '#0B0B0D' } }).expect(200);
+  await request(app).patch(`/contents/${generated.body.id}/background`).send({ revision: 1, background: { type: 'color', color: '#FFFFFF' } }).expect(500);
+  const saved = db.prepare('SELECT slides,background FROM contents WHERE id=?').get(generated.body.id);
+  assert.deepEqual(JSON.parse(saved.slides), generated.body.slides);
+  assert.equal(JSON.parse(saved.background).color, '#0B0B0D');
+});
+
+test('request background cepat hanya menyimpan revisi terbaru', async () => {
+  let calls = 0; const cleaned = [];
+  const images = { createSlides: async id => { calls++; if (calls === 2) await new Promise(resolve => setTimeout(resolve, 30)); return [`/generated/${id}-1.jpg`]; }, validateSlides: async () => {}, cleanupSlides: async files => cleaned.push(...files) };
+  const { app, db } = setup({ images });
+  const generated = await request(app).post('/generate').expect(200);
+  const first = request(app).patch(`/contents/${generated.body.id}/background`).send({ revision: 10, background: { type: 'color', color: '#FFFFFF' } });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const latest = request(app).patch(`/contents/${generated.body.id}/background`).send({ revision: 11, background: { type: 'color', color: '#E9E1D3' } });
+  const [oldResponse, latestResponse] = await Promise.all([first, latest]);
+  assert.equal(oldResponse.status, 409); assert.equal(latestResponse.status, 200);
+  const saved = db.prepare('SELECT background,background_revision FROM contents WHERE id=?').get(generated.body.id);
+  assert.equal(JSON.parse(saved.background).color, '#E9E1D3'); assert.equal(saved.background_revision, 11);
+  assert.ok(cleaned.some(file => file.includes('-10-')));
+});
+
+test('legacy content menyimpan pilihan tetapi tidak merusak slide lama', async () => {
+  const { app, db } = setup();
+  const result = db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta,slides) VALUES('Legacy','H','B','C','[]','CTA','[\"/generated/legacy.jpg\"]')").run();
+  const response = await request(app).patch(`/contents/${result.lastInsertRowid}/background`).send({ revision: 2, background: { type: 'color', color: '#FFFFFF' } }).expect(409);
+  assert.equal(response.body.legacy, true);
+  const saved = db.prepare('SELECT slides,background FROM contents WHERE id=?').get(result.lastInsertRowid);
+  assert.equal(saved.slides, '["/generated/legacy.jpg"]'); assert.equal(JSON.parse(saved.background).color, '#FFFFFF');
+});

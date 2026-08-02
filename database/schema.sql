@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS contents (
   trend_keywords_ignored TEXT NOT NULL DEFAULT '[]',
   background TEXT NOT NULL DEFAULT '{}',
   render_source TEXT NOT NULL DEFAULT '{}',
+  background_revision INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

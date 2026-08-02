@@ -84,6 +84,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       trends = trends.filter((topic) => normalizeTopic(topic) !== normalizeTopic(basis));
       continue;
     }
+    let renderedSlides = [];
     try {
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
@@ -91,11 +92,21 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       // Rendering happens only after AI parsing, normalization, and validation;
       // the database remains untouched if any slide cannot be rendered.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const slides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat, watermark, background });
+      renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(slides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}), JSON.stringify({ ...generated, contentCategory, contentFormat, watermark }));
-      return result.lastInsertRowid;
+        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(renderedSlides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}), JSON.stringify({ ...generated, contentCategory, contentFormat, watermark }));
+      try {
+        let stableSlides = renderedSlides;
+        if (images.promoteSlides) stableSlides = await images.promoteSlides(renderedSlides, result.lastInsertRowid, [], stable => db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(stable), result.lastInsertRowid));
+        else db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(stableSlides), result.lastInsertRowid);
+        return result.lastInsertRowid;
+      } catch (error) {
+        db.prepare('DELETE FROM contents WHERE id=?').run(result.lastInsertRowid);
+        if (images.cleanupSlides) await images.cleanupSlides(renderedSlides);
+        throw error;
+      }
     } catch (error) {
+      if (renderedSlides.length && images.cleanupSlides) await images.cleanupSlides(renderedSlides);
       const isUniqueConflict = String(error.code || error.message).includes('UNIQUE');
       if (!isUniqueConflict) throw error;
       if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();

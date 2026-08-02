@@ -496,13 +496,51 @@ async function createSlides(id, content) {
     layouts = validateCarouselLayouts(buildSlideLayouts(repaired));
   }
   const files = [];
-  for (let i = 0; i < layouts.length; i++) {
-    const name = `${id}-${i + 1}.jpg`;
-    const background = content.background?.applyToAllSlides === false ? (content.background.slideBackgrounds?.[i] || content.background) : content.background;
-    await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark, background))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY }).toFile(path.join(dir, name));
-    files.push(`/generated/${name}`);
+  try {
+    for (let i = 0; i < layouts.length; i++) {
+      const name = `${id}-${i + 1}.jpg`;
+      const background = content.background?.applyToAllSlides === false ? (content.background.slideBackgrounds?.[i] || content.background) : content.background;
+      await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark, background))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY }).toFile(path.join(dir, name));
+      files.push(`/generated/${name}`);
+    }
+    return files;
+  } catch (error) {
+    await Promise.all(files.map(file => fs.rm(path.join(config.root, 'public', file), { force: true })));
+    throw error;
   }
-  return files;
+}
+
+function generatedPath(file) {
+  if (typeof file !== 'string' || !/^\/generated\/[a-zA-Z0-9._-]+\.jpg$/.test(file)) return null;
+  const target = path.resolve(config.root, 'public', file.slice(1));
+  const root = path.resolve(config.root, 'public/generated');
+  return target.startsWith(`${root}${path.sep}`) ? target : null;
+}
+
+async function cleanupSlides(files = []) { await Promise.all([...new Set(files)].map(generatedPath).filter(Boolean).map(file => fs.rm(file, { force: true }))); }
+
+async function promoteSlides(files, contentId, previous = [], afterReplace) {
+  if (!Array.isArray(files) || !files.length || !files.every(generatedPath)) throw new Error('File render sementara tidak valid.');
+  const stable = files.map((_, index) => `/generated/${contentId}-${index + 1}.jpg`);
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const backups = []; const promoted = [];
+  try {
+    for (let index = 0; index < stable.length; index++) {
+      const target = generatedPath(stable[index]);
+      try { await fs.access(target); const backup = `${target}.backup-${token}`; await fs.rename(target, backup); backups.push({ target, backup }); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      await fs.rename(generatedPath(files[index]), target); promoted.push(target);
+    }
+    if (afterReplace) await afterReplace(stable);
+  } catch (error) {
+    await Promise.all(promoted.map(file => fs.rm(file, { force: true })));
+    await Promise.all(backups.map(({ target, backup }) => fs.rename(backup, target).catch(() => {})));
+    await cleanupSlides(files);
+    throw error;
+  }
+  await Promise.all(backups.map(({ backup }) => fs.rm(backup, { force: true })));
+  await cleanupSlides(files.filter(file => !stable.includes(file)));
+  await cleanupSlides(previous.filter(file => !stable.includes(file)));
+  return stable;
 }
 
 async function validateSlides(files) {
@@ -520,4 +558,4 @@ async function validateSlides(files) {
 
 function invalidImage(message) { return Object.assign(new Error(message), { status: 400 }); }
 
-module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, buildStructuredLayout, repairStructuredSlides, fitStructuredSlides, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, layoutHeightMetrics, isTextHeightValid, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y, LABEL_Y, CONTENT_TOP, BOTTOM_SAFE_AREA, OVERFLOW_TOLERANCE };
+module.exports = { createSlides, validateSlides, measureTextWidth, wrapText, autoFitText, adaptiveTextFit, parseSteps, paginateSteps, buildSlideLayouts, buildStructuredLayout, repairStructuredSlides, fitStructuredSlides, normalizePointSequence, semanticSlideLabel, validateCarouselLayouts, resolveFooter, renderLayout, validateVisualLayout, layoutHeightMetrics, isTextHeightValid, contentY, wordCount, normalizeWatermarkOptions, watermarkElement, cleanupSlides, promoteSlides, generatedPath, SAFE_AREA, WIDTH, HEIGHT, JPEG_QUALITY, WATERMARK_Y, LABEL_Y, CONTENT_TOP, BOTTOM_SAFE_AREA, OVERFLOW_TOLERANCE };

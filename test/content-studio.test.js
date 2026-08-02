@@ -46,3 +46,11 @@ test('live carousel preview memakai layer terlihat lalu menggantinya dengan JPEG
   assert.match(css, /\.slide-background-preview\{position:absolute;inset:0;z-index:2/);
   assert.match(css, /\.slide-button>img\{position:relative;z-index:1/);
 });
+
+test('live preview membatalkan request lama dan membersihkan overlay pada error legacy', () => {
+  const script = fs.readFileSync('public/app.js', 'utf8');
+  assert.match(script, /schedulePreviewRender\.controller\?\.abort\(\)/);
+  assert.match(script, /version !== schedulePreviewRender\.version/);
+  assert.match(script, /signal: schedulePreviewRender\.controller\.signal/);
+  assert.match(script, /slide-background-preview'\)\.forEach\(layer => layer\.classList\.remove\('pending'\)\)/);
+});
