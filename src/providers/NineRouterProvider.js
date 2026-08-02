@@ -18,7 +18,7 @@ class NineRouterProvider extends BaseProvider {
   }
   async execute(input, { signal, onProgress = () => {} } = {}) { try { onProgress('Sending'); const response = await this.client.request(this.requestPath(input), { method: 'POST', body: JSON.stringify(this.buildRequest(input)), signal }); if (!response.ok) throw await this.client.responseError(response); onProgress('Receiving'); return this.parse(await response.json(), input.mediaType); } catch (error) { throw normalizeError(error); } }
   healthPath() { return '/v1/models'; }
-  async testConnection({ signal } = {}) { const started = Date.now(); const response = await this.client.request(this.healthPath(), { signal }); if (!response.ok) throw await this.client.responseError(response); let payload; try { payload = await response.json(); } catch { throw Object.assign(new Error('Respons katalog model 9Router tidak valid'), { status: 502 }); } const { catalogFromPayload } = require('../services/nineRouterModels'); const catalog = catalogFromPayload(payload); return { connected: true, responseTime: Date.now() - started, providerVersion: response.headers.get('x-api-version') || 'Available', counts: catalog.counts, capabilities: catalog.capabilities }; }
+  async testConnection({ signal } = {}) { const started = Date.now(); const { fetchCatalogs } = require('../services/nineRouterModels'); const catalog = await fetchCatalogs(this.client, { signal }); return { connected: true, responseTime: Date.now() - started, providerVersion: 'Available', counts: catalog.counts, capabilities: catalog.capabilities }; }
 }
 NineRouterProvider.DEFAULT_BASE_URL = DEFAULT_BASE_URL;
 NineRouterProvider.joinGatewayUrl = joinGatewayUrl;
