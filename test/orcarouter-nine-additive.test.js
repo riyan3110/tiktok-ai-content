@@ -9,7 +9,7 @@ const connector = require('../src/ai/connector');
 function configuredPair() {
   const db = createDatabase(':memory:');
   connector.save(db, 'orcarouter', { apiKey: 'existing-orca-secret', enabled: true });
-  connector.save(db, '9router', { enabled: true });
+  connector.save(db, '9router', { apiKey: 'nine-gateway-secret', enabled: true });
   const transport = async url => {
     const type = new URL(url).pathname.endsWith('/image') ? 'image' : new URL(url).pathname.endsWith('/video') ? 'video' : 'text';
     return new Response(JSON.stringify({ object: 'list', data: [{ id: `nine-${type}`, owned_by: 'nine' }] }), { headers: { 'content-type': 'application/json' } });

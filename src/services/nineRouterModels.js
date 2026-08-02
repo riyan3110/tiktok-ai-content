@@ -58,7 +58,9 @@ class NineRouterModels {
 
   async get({ refresh = false } = {}) {
     if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value;
-    const config = this.connector.configured(this.connector.setting(this.db, '9router'));
+    const row = this.connector.setting(this.db, '9router');
+    if (!row.api_key_encrypted) throw Object.assign(new Error('API key is required'), { status: 422 });
+    const config = this.connector.configured(row);
     const client = new NineRouterClient(config, this.transport);
     const entries = await Promise.all(Object.entries(CATALOG_PATHS).map(async ([type, path]) => [type, await this.fetchCatalog(client, path)]));
     const value = discovery(Object.fromEntries(entries));
