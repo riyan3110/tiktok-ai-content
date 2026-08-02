@@ -23,6 +23,7 @@
     const normalized = normalizeHistoryItem(record);
     return deduplicate([record, ...(Array.isArray(items) ? items : []).filter(item => { const current = normalizeHistoryItem(item); return !(current.id === normalized.id && current.recordType === normalized.recordType); })]);
   }
+  function findHistoryRecord(items, id, recordType) { return deduplicate(items).map(normalizeHistoryItem).find(item => item.id === String(id) && item.recordType === recordType); }
   function sortAndFilter(items, { search = '', source = '', status = '' } = {}) {
     const query = search.toLocaleLowerCase('id');
     return deduplicate(items).map(normalizeHistoryItem).filter(item => {
@@ -37,5 +38,5 @@
     return { id: makeId(), currentStep: 0, status: 'Draft', createdAt: now, updatedAt: now, data: { project: { name: payload.title || '', product: payload.brief?.topic || '' }, consistency: { style: payload.brief?.style || '' }, studio: { format: payload.brief?.output || payload.template || '' }, generator: { prompt, assetIds: Array.isArray(payload.assetIds) ? [...payload.assetIds] : [] }, provider: {}, queue: {}, integration: {} } };
   }
   function duplicate(item, makeId) { const copy = clone(normalizeHistoryItem(item).raw); copy.id = makeId(); copy.name = `${copy.name || copy.payload?.title || 'Record'} (Salinan)`; copy.createdAt = copy.updatedAt = new Date().toISOString(); return copy; }
-  return { LIMIT, normalizeHistoryItem, formatHistoryDate, deduplicate, upsert, sortAndFilter, mapContentFactoryToWorkflow, duplicate };
+  return { LIMIT, normalizeHistoryItem, formatHistoryDate, deduplicate, upsert, findHistoryRecord, sortAndFilter, mapContentFactoryToWorkflow, duplicate };
 });
