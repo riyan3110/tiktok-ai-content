@@ -81,7 +81,7 @@ $('#delete-trends').onclick = async () => { if (activeTrend && window.confirm('H
 $('#trend-fetched-at').value = jakartaInput();
 function show(item) {
   current = item;
-  if (item.background?.type) { carouselBackground = { ...DEFAULT_BACKGROUND, ...item.background, slideBackgrounds: item.background.slideBackgrounds || {} }; localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); }
+  if (item.background?.type) { carouselBackground = BackgroundState.copy(item.background); localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); }
   $('#editor').classList.remove('hidden');
   $('#slides').innerHTML = item.slides.map((x, i) => `<button class="slide-button" type="button" data-slide="${i}" aria-label="Perbesar slide ${i + 1}"><img src="${x}" alt="Slide ${i + 1}"></button>`).join('');
   document.querySelectorAll('[data-slide]').forEach((button, i) => { button.onclick = () => openSlide(item.slides[i], i); });
@@ -178,21 +178,23 @@ function renderStudioAssets() { $('#studio-assets').innerHTML = studioAssets.len
 $('#studio-select-assets').onclick = async () => { const chosen = await window.AssetManager.select({ selectedIds: studioAssets.map(asset => asset.id), multiple: true }); if (chosen) { studioAssets = chosen; renderStudioAssets(); } };
 renderStudioAssets();
 const BACKGROUND_DRAFT_KEY = 'content-studio-carousel-background';
-const DEFAULT_BACKGROUND = { type: 'color', color: '#0B0B0D', assetId: null, previewUrl: null, applyToAllSlides: true, slideBackgrounds: {} };
-function loadBackgroundDraft() { try { return { ...DEFAULT_BACKGROUND, ...JSON.parse(localStorage.getItem(BACKGROUND_DRAFT_KEY) || '{}'), slideBackgrounds: JSON.parse(localStorage.getItem(BACKGROUND_DRAFT_KEY) || '{}').slideBackgrounds || {} }; } catch { return { ...DEFAULT_BACKGROUND }; } }
+const BackgroundState = window.CarouselBackgroundState;
+const DEFAULT_BACKGROUND = BackgroundState.DEFAULT;
+function loadBackgroundDraft() { try { return BackgroundState.copy(JSON.parse(localStorage.getItem(BACKGROUND_DRAFT_KEY) || '{}')); } catch { return BackgroundState.copy(); } }
 let carouselBackground = loadBackgroundDraft();
 function saveBackgroundDraft() { localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); applyBackgroundPreview(); }
 function backgroundChoice(background) { return background?.type === 'image' ? 'image' : background?.color || '#0B0B0D'; }
 function renderSlideBackgrounds() {
   const host = $('#slide-background-options'); host.classList.toggle('hidden', carouselBackground.applyToAllSlides);
-  host.innerHTML = carouselBackground.applyToAllSlides ? '' : Array.from({ length: Math.max(3, current?.slides?.length || 5) }, (_, index) => `<label>Slide ${index + 1}<select data-slide-background="${index}"><option value="">Gunakan global</option><option value="#0B0B0D">Hitam</option><option value="#FFFFFF">Putih</option><option value="#E9E1D3">Krem</option>${carouselBackground.assetId ? '<option value="image">Gambar upload</option>' : ''}</select></label>`).join('');
-  document.querySelectorAll('[data-slide-background]').forEach(select => { select.value = backgroundChoice(carouselBackground.slideBackgrounds[select.dataset.slideBackground]) === backgroundChoice(carouselBackground) ? '' : backgroundChoice(carouselBackground.slideBackgrounds[select.dataset.slideBackground]); select.onchange = () => { const index = select.dataset.slideBackground; if (!select.value) delete carouselBackground.slideBackgrounds[index]; else carouselBackground.slideBackgrounds[index] = select.value === 'image' ? { type: 'image', assetId: carouselBackground.assetId, previewUrl: carouselBackground.previewUrl, color: carouselBackground.color } : { type: 'color', color: select.value, assetId: null, previewUrl: null }; saveBackgroundDraft(); }; });
+  host.innerHTML = carouselBackground.applyToAllSlides ? '' : Array.from({ length: Math.max(3, current?.slides?.length || 5) }, (_, index) => `<label>Slide ${index + 1}<select data-slide-background="${index}"><option value="">Gunakan global</option><option value="#0B0B0D">Hitam</option><option value="#FFFFFF">Putih</option><option value="#E9E1D3">Krem</option>${carouselBackground.uploadedBackground ? '<option value="image">Gambar upload</option>' : ''}</select></label>`).join('');
+  document.querySelectorAll('[data-slide-background]').forEach(select => { select.value = backgroundChoice(carouselBackground.slideBackgrounds[select.dataset.slideBackground]) === backgroundChoice(carouselBackground) ? '' : backgroundChoice(carouselBackground.slideBackgrounds[select.dataset.slideBackground]); select.onchange = () => { const index = select.dataset.slideBackground; carouselBackground = BackgroundState.setSlide(carouselBackground, index, select.value); saveBackgroundDraft(); }; });
 }
 function renderBackgroundSelector() {
   const choice = backgroundChoice(carouselBackground); const radio = document.querySelector(`input[name="carousel-background"][value="${CSS.escape(choice)}"]`); if (radio) radio.checked = true;
   $('#background-apply-all').checked = carouselBackground.applyToAllSlides;
-  $('#background-image-preview').style.backgroundImage = carouselBackground.previewUrl ? `url("${carouselBackground.previewUrl.replace(/["\\]/g, '\\$&')}")` : '';
-  $('#background-upload-actions').classList.toggle('hidden', !carouselBackground.assetId);
+  const uploaded = carouselBackground.uploadedBackground;
+  $('#background-image-preview').style.backgroundImage = uploaded?.previewUrl ? `url("${uploaded.previewUrl.replace(/["\\]/g, '\\$&')}")` : '';
+  $('#background-upload-actions').classList.toggle('hidden', !uploaded);
   renderSlideBackgrounds();
 }
 function applyBackgroundPreview() { if (!current) return; document.querySelectorAll('#slides .slide-button').forEach((button, index) => { const selected = carouselBackground.applyToAllSlides ? carouselBackground : (carouselBackground.slideBackgrounds[index] || carouselBackground); button.style.background = selected.type === 'image' ? `center / cover no-repeat url("${selected.previewUrl}")` : selected.color; button.dataset.textColor = selected.textColor || (/^#(?:0B0B0D)$/i.test(selected.color) ? '#FFFFFF' : '#000000'); }); }
@@ -201,13 +203,13 @@ async function imageTextColor(url) { return new Promise(resolve => { const image
 async function uploadBackground(file) {
   $('#background-error').textContent = '';
   if (!['image/png','image/jpeg','image/webp'].includes(file?.type) || file.size > 10 * 1024 * 1024) { $('#background-error').textContent = 'Gunakan PNG, JPEG, atau WebP berukuran maksimal 10 MB.'; return; }
-  try { const dataUrl = await fileDataUrl(file); const uploaded = await api('/api/assets/upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: file.name, mimeType: file.type, data: dataUrl.split(',')[1], tags: ['Background'], metadata: { category: 'Background' } }) }); carouselBackground = { ...carouselBackground, type: 'image', assetId: uploaded.id, previewUrl: uploaded.preview_url || uploaded.url, textColor: await imageTextColor(dataUrl) }; saveBackgroundDraft(); } catch (error) { $('#background-error').textContent = error.message; }
+  try { const dataUrl = await fileDataUrl(file); const uploaded = await api('/api/assets/upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: file.name, mimeType: file.type, data: dataUrl.split(',')[1], tags: ['Background'], metadata: { category: 'Background' } }) }); carouselBackground = BackgroundState.upload(carouselBackground, { assetId: uploaded.id, previewUrl: uploaded.preview_url || uploaded.url, textColor: await imageTextColor(dataUrl) }); saveBackgroundDraft(); } catch (error) { $('#background-error').textContent = error.message; }
 }
-document.querySelectorAll('input[name="carousel-background"]').forEach(input => input.onchange = () => { if (!input.checked) return; if (input.value === 'image') { if (!carouselBackground.assetId) $('#background-file').click(); else { carouselBackground.type = 'image'; saveBackgroundDraft(); } } else { carouselBackground = { ...carouselBackground, type: 'color', color: input.value, assetId: null, previewUrl: null, textColor: input.value === '#0B0B0D' ? '#FFFFFF' : '#000000' }; saveBackgroundDraft(); } });
+document.querySelectorAll('input[name="carousel-background"]').forEach(input => input.onchange = () => { if (!input.checked) return; if (input.value === 'image') { if (!carouselBackground.uploadedBackground) $('#background-file').click(); else { carouselBackground = BackgroundState.activateUpload(carouselBackground); saveBackgroundDraft(); } } else { carouselBackground = BackgroundState.selectColor(carouselBackground, input.value); saveBackgroundDraft(); } });
 $('#background-file').onchange = event => { const [file] = event.target.files; if (file) uploadBackground(file); event.target.value = ''; };
-$('#background-change').onclick = () => $('#background-file').click(); $('#background-remove').onclick = () => { carouselBackground = { ...carouselBackground, type: 'color', color: '#0B0B0D', assetId: null, previewUrl: null, textColor: '#FFFFFF' }; saveBackgroundDraft(); };
+$('#background-change').onclick = () => $('#background-file').click(); $('#background-remove').onclick = () => { carouselBackground = BackgroundState.removeUpload(carouselBackground); saveBackgroundDraft(); };
 $('#background-apply-all').onchange = event => { carouselBackground.applyToAllSlides = event.target.checked; saveBackgroundDraft(); };
-$('#background-reset').onclick = () => { carouselBackground = { ...DEFAULT_BACKGROUND }; saveBackgroundDraft(); };
+$('#background-reset').onclick = () => { carouselBackground = BackgroundState.reset(carouselBackground); saveBackgroundDraft(); };
 renderBackgroundSelector();
 function watermarkEnabled() { return $('#watermark-enabled').checked; }
 async function generate(request) {

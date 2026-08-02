@@ -208,3 +208,22 @@ test('background tidak valid dinormalisasi ke Hitam agar draft dan export aman',
   assert.equal(rendered.color, '#0B0B0D');
   assert.equal(response.body.background.color, '#0B0B0D');
 });
+
+test('generation menerima background warna global dan gambar upload per slide tanpa mengubah watermark', async () => {
+  let rendered;
+  const images = { createSlides: async (id, content) => { rendered = content; return [`/generated/${id}-1.jpg`, `/generated/${id}-2.jpg`]; }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+AvzZ9QAAAABJRU5ErkJggg==';
+  const asset = await request(app).post('/api/assets/upload').send({ name: 'background.png', mimeType: 'image/png', data: png, tags: ['Background'] }).expect(201);
+  const uploadedBackground = { assetId: asset.body.id, previewUrl: asset.body.preview_url, textColor: '#FFFFFF' };
+  const background = { type: 'color', color: '#FFFFFF', assetId: null, previewUrl: null, textColor: '#000000', uploadedBackground, applyToAllSlides: false, slideBackgrounds: { 1: { type: 'image', color: '#FFFFFF', ...uploadedBackground } } };
+  const response = await request(app).post('/generate').send({ watermarkEnabled: true, background }).expect(200);
+  assert.equal(rendered.watermark.enabled, true);
+  assert.equal(rendered.background.color, '#FFFFFF');
+  assert.equal(rendered.background.type, 'color');
+  assert.equal(rendered.background.slideBackgrounds[1].assetId, asset.body.id);
+  assert.match(rendered.background.slideBackgrounds[1].imageData, /^data:image\/png;base64,/);
+  assert.equal(response.body.background.uploadedBackground.assetId, asset.body.id);
+  assert.equal(response.body.background.slideBackgrounds[1].assetId, asset.body.id);
+  assert.equal(response.body.background.slideBackgrounds[1].imageData, undefined);
+});
