@@ -33,6 +33,19 @@ function discovery(payloads) {
   return result;
 }
 
+const emptyCatalog = () => ({ combos: [], directModels: [] });
+
+function catalogError(type, error) {
+  const status = error?.status || 500;
+  const unavailable = status === 404 && type === 'video';
+  return {
+    status,
+    message: unavailable
+      ? '9Router tidak menyediakan katalog model video.'
+      : error?.message || `Katalog model ${type} 9Router gagal dimuat.`
+  };
+}
+
 class NineRouterModels {
   constructor({ db, connector, transport = fetch, ttl = CACHE_TTL }) {
     this.db = db;
@@ -62,11 +75,26 @@ class NineRouterModels {
     if (!row.api_key_encrypted) throw Object.assign(new Error('API key is required'), { status: 422 });
     const config = this.connector.configured(row);
     const client = new NineRouterClient(config, this.transport);
-    const entries = await Promise.all(Object.entries(CATALOG_PATHS).map(async ([type, path]) => [type, await this.fetchCatalog(client, path)]));
-    const value = discovery(Object.fromEntries(entries));
+    const types = Object.keys(CATALOG_PATHS);
+    const settled = await Promise.allSettled(types.map(async type => normalizeCatalog(await this.fetchCatalog(client, CATALOG_PATHS[type]))));
+    const textResult = settled[types.indexOf('text')];
+    if (textResult.status === 'rejected') throw textResult.reason;
+
+    const value = { errors: { image: null, video: null } };
+    for (const [index, type] of types.entries()) {
+      const result = settled[index];
+      if (result.status === 'fulfilled') {
+        value[type] = result.value;
+      } else {
+        value[type] = emptyCatalog();
+        value.errors[type] = catalogError(type, result.reason);
+      }
+    }
+    value.capabilities = types.filter(type => value[type].combos.length || value[type].directModels.length);
+    value.counts = Object.fromEntries(types.map(type => [type, value[type].combos.length + value[type].directModels.length]));
     this.cached = { at: Date.now(), value };
     return value;
   }
 }
 
-module.exports = { NineRouterModels, normalizeCatalog, discovery, CATALOG_PATHS, CACHE_TTL };
+module.exports = { NineRouterModels, normalizeCatalog, discovery, catalogError, CATALOG_PATHS, CACHE_TTL };
