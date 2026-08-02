@@ -83,8 +83,8 @@ function show(item) {
   current = item;
   if (item.background?.type) { carouselBackground = BackgroundState.copy(item.background); localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); }
   $('#editor').classList.remove('hidden');
-  $('#slides').innerHTML = item.slides.map((x, i) => `<button class="slide-button" type="button" data-slide="${i}" aria-label="Perbesar slide ${i + 1}"><img src="${x}" alt="Slide ${i + 1}"></button>`).join('');
-  document.querySelectorAll('[data-slide]').forEach((button, i) => { button.onclick = () => openSlide(item.slides[i], i); });
+  $('#slides').innerHTML = item.slides.map((x, i) => `<button class="slide-button" type="button" data-slide="${i}" aria-label="Perbesar slide ${i + 1}"><img src="${x}" alt="Slide ${i + 1}"><span class="slide-background-preview" aria-hidden="true"></span></button>`).join('');
+  document.querySelectorAll('[data-slide]').forEach((button, i) => { button.onclick = () => openSlide(current.slides[i], i); });
   $('#caption').value = item.caption;
   $('#trend-reference-used').textContent = `Referensi tren yang digunakan: ${item.trend_keywords_used.length ? item.trend_keywords_used.join(', ') : 'tidak ada keyword relevan'}`;
   $('#status').textContent = item.publish_status; renderSlideBackgrounds(); applyBackgroundPreview();
@@ -182,7 +182,7 @@ const BackgroundState = window.CarouselBackgroundState;
 const DEFAULT_BACKGROUND = BackgroundState.DEFAULT;
 function loadBackgroundDraft() { try { return BackgroundState.copy(JSON.parse(localStorage.getItem(BACKGROUND_DRAFT_KEY) || '{}')); } catch { return BackgroundState.copy(); } }
 let carouselBackground = loadBackgroundDraft();
-function saveBackgroundDraft() { localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); applyBackgroundPreview(); }
+function saveBackgroundDraft() { localStorage.setItem(BACKGROUND_DRAFT_KEY, JSON.stringify(carouselBackground)); renderBackgroundSelector(); applyBackgroundPreview(); schedulePreviewRender(); }
 function backgroundChoice(background) { return background?.type === 'image' ? 'image' : background?.color || '#0B0B0D'; }
 function renderSlideBackgrounds() {
   const host = $('#slide-background-options'); host.classList.toggle('hidden', carouselBackground.applyToAllSlides);
@@ -197,7 +197,8 @@ function renderBackgroundSelector() {
   $('#background-upload-actions').classList.toggle('hidden', !uploaded);
   renderSlideBackgrounds();
 }
-function applyBackgroundPreview() { if (!current) return; document.querySelectorAll('#slides .slide-button').forEach((button, index) => { const selected = carouselBackground.applyToAllSlides ? carouselBackground : (carouselBackground.slideBackgrounds[index] || carouselBackground); button.style.background = selected.type === 'image' ? `center / cover no-repeat url("${selected.previewUrl}")` : selected.color; button.dataset.textColor = selected.textColor || (/^#(?:0B0B0D)$/i.test(selected.color) ? '#FFFFFF' : '#000000'); }); }
+function applyBackgroundPreview() { if (!current) return; document.querySelectorAll('#slides .slide-button').forEach((button, index) => { const selected = carouselBackground.applyToAllSlides ? carouselBackground : (carouselBackground.slideBackgrounds[index] || carouselBackground); const layer = button.querySelector('.slide-background-preview'); layer.style.background = selected.type === 'image' ? `center / cover no-repeat url("${selected.previewUrl}")` : selected.color; layer.classList.toggle('image', selected.type === 'image'); layer.classList.add('pending'); button.dataset.textColor = selected.textColor || (/^#(?:0B0B0D)$/i.test(selected.color) ? '#FFFFFF' : '#000000'); }); }
+function schedulePreviewRender() { if (!current?.id) return; clearTimeout(schedulePreviewRender.timer); schedulePreviewRender.timer = setTimeout(async () => { try { const updated = await api(`/contents/${current.id}/background`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ background: carouselBackground }) }); if (current?.id !== updated.id) return; current = updated; document.querySelectorAll('#slides .slide-button').forEach((button, index) => { const image = button.querySelector('img'); image.src = `${updated.slides[index]}?background=${Date.now()}`; button.querySelector('.slide-background-preview').classList.remove('pending'); }); } catch (error) { $('#background-error').textContent = error.message; } }, 180); }
 function fileDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); }); }
 async function imageTextColor(url) { return new Promise(resolve => { const image = new Image(); image.onload = () => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32; const context = canvas.getContext('2d'); context.drawImage(image, 0, 0, 32, 32); const pixels = context.getImageData(0, 0, 32, 32).data; let luminance = 0; for (let i = 0; i < pixels.length; i += 4) luminance += .2126 * pixels[i] + .7152 * pixels[i + 1] + .0722 * pixels[i + 2]; resolve(luminance / (pixels.length / 4) > 140 ? '#000000' : '#FFFFFF'); }; image.onerror = () => resolve('#FFFFFF'); image.src = url; }); }
 async function uploadBackground(file) {

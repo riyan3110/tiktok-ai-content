@@ -355,3 +355,18 @@ test('structured auto-fit menjaga batas title, body, total visual, dan font mini
   assert.ok(layout.fit.pointSize >= 32);
   assert.equal(validateVisualLayout(layout), true);
 });
+
+
+test('watermark mengikuti kontras background tanpa mengubah opacity atau status enabled', () => {
+  const layout = images.buildSlideLayouts(content)[0];
+  for (const background of [
+    { color: '#0B0B0D', textColor: '#FFFFFF' },
+    { color: '#FFFFFF', textColor: '#000000' },
+    { color: '#E9E1D3', textColor: '#000000' },
+    { color: '#0B0B0D', imageData: 'data:image/png;base64,AA==', textColor: '#000000' }
+  ]) {
+    const svg = images.renderLayout(layout, 1, 3, { enabled: true }, background);
+    assert.match(svg, new RegExp(`data-role="watermark"[^>]*fill="${background.textColor}"[^>]*fill-opacity="0\.4"`));
+  }
+  assert.doesNotMatch(images.renderLayout(layout, 1, 3, { enabled: false }, { color: '#FFFFFF', textColor: '#000000' }), /data-role="watermark"/);
+});

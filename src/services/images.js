@@ -186,10 +186,10 @@ function normalizeWatermarkOptions(options = {}) {
   };
 }
 
-function watermarkElement(options) {
+function watermarkElement(options, contrastColor = '#FFFFFF') {
   const watermark = normalizeWatermarkOptions(options);
   if (!watermark.enabled) return '';
-  return `<text data-role="watermark" x="80" y="${WATERMARK_Y}" fill="#fce7f3" fill-opacity="${watermark.opacity}" font-family="Arial,sans-serif" font-size="${watermark.fontSize}" font-weight="600" letter-spacing="1.5" text-anchor="start">${escapeXml(watermark.text)}</text>`;
+  return `<text data-role="watermark" x="80" y="${WATERMARK_Y}" fill="${contrastColor}" fill-opacity="${watermark.opacity}" font-family="Arial,sans-serif" font-size="${watermark.fontSize}" font-weight="600" letter-spacing="1.5" text-anchor="start">${escapeXml(watermark.text)}</text>`;
 }
 
 function frame(inner, number, total, watermark, background = {}) {
@@ -197,7 +197,7 @@ function frame(inner, number, total, watermark, background = {}) {
   const image = background.imageData ? `<image width="${WIDTH}" height="${HEIGHT}" href="${escapeXml(background.imageData)}" preserveAspectRatio="xMidYMid slice"/>` : '';
   const textColor = background.textColor === '#000000' ? '#000000' : '#FFFFFF';
   const themedInner = inner.replaceAll('fill="white"', `fill="${textColor}"`).replaceAll('fill="#f3e8ff"', `fill="${textColor}"`).replaceAll('fill="#f9a8d4"', `fill="${textColor}"`);
-  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${WIDTH}" height="${HEIGHT}" fill="${color}"/>${image}${watermarkElement(watermark)}${themedInner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="${textColor}" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
+  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${WIDTH}" height="${HEIGHT}" fill="${color}"/>${image}${watermarkElement(watermark, textColor)}${themedInner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="${textColor}" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
 }
 
 function buildStructuredLayout(slide, index, total, format = '') {

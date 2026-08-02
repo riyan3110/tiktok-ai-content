@@ -44,3 +44,16 @@ test('draft image dari versi sebelumnya dimigrasikan ke uploadedBackground', () 
   const state = BackgroundState.copy({ type: 'image', color: '#0B0B0D', ...uploaded, slideBackgrounds: {} });
   assert.deepEqual(state.uploadedBackground, uploaded);
 });
+
+
+test('preview global dan per-slide memakai konfigurasi yang sama dengan generation', () => {
+  let state = BackgroundState.selectColor(BackgroundState.copy(), '#FFFFFF');
+  assert.deepEqual(BackgroundState.previews(state, 3).map(item => item.color), ['#FFFFFF', '#FFFFFF', '#FFFFFF']);
+  state.applyToAllSlides = false;
+  state = BackgroundState.setSlide(state, 1, '#0B0B0D');
+  const preview = BackgroundState.previews(state, 3);
+  assert.equal(preview[0].color, '#FFFFFF');
+  assert.equal(preview[1].color, '#0B0B0D');
+  assert.equal(preview[2].color, '#FFFFFF');
+  assert.deepEqual(preview, [state, state.slideBackgrounds[1], state]);
+});

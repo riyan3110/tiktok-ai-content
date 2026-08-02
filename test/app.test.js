@@ -227,3 +227,18 @@ test('generation menerima background warna global dan gambar upload per slide ta
   assert.equal(response.body.background.slideBackgrounds[1].assetId, asset.body.id);
   assert.equal(response.body.background.slideBackgrounds[1].imageData, undefined);
 });
+
+test('live preview rerender menyimpan background global dan per-slide yang sama dengan export', async () => {
+  const renders = [];
+  const images = { createSlides: async (id, content) => { renders.push(content); return [`/generated/${id}-1.jpg`, `/generated/${id}-2.jpg`, `/generated/${id}-3.jpg`]; }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const generated = await request(app).post('/generate').send({ background: { type: 'color', color: '#0B0B0D', applyToAllSlides: true } }).expect(200);
+  const background = { type: 'color', color: '#FFFFFF', textColor: '#000000', applyToAllSlides: false, slideBackgrounds: { 1: { type: 'color', color: '#E9E1D3', textColor: '#000000' } } };
+  const updated = await request(app).patch(`/contents/${generated.body.id}/background`).send({ background }).expect(200);
+  assert.equal(renders.length, 2);
+  assert.equal(renders[1].background.color, '#FFFFFF');
+  assert.equal(renders[1].background.slideBackgrounds[1].color, '#E9E1D3');
+  assert.equal(updated.body.background.color, '#FFFFFF');
+  assert.equal(updated.body.background.slideBackgrounds[1].color, '#E9E1D3');
+  assert.notDeepEqual(updated.body.slides, generated.body.slides);
+});

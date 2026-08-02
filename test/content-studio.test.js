@@ -34,3 +34,15 @@ test('Content Studio menyediakan selector background carousel yang persisten dan
   assert.match(css, /background-size:cover/);
   assert.match(css, /grid-template-columns:repeat\(3/);
 });
+
+
+test('live carousel preview memakai layer terlihat lalu menggantinya dengan JPEG render terbaru', () => {
+  const script = fs.readFileSync('public/app.js', 'utf8');
+  const css = fs.readFileSync('public/style.css', 'utf8');
+  assert.match(script, /<img[^>]+><span class="slide-background-preview"/);
+  assert.match(script, /layer\.classList\.add\('pending'\)/);
+  assert.match(script, /contents\/\$\{current\.id\}\/background/);
+  assert.match(script, /image\.src = `\$\{updated\.slides\[index\]\}/);
+  assert.match(css, /\.slide-background-preview\{position:absolute;inset:0;z-index:2/);
+  assert.match(css, /\.slide-button>img\{position:relative;z-index:1/);
+});

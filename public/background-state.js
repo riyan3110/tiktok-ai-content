@@ -10,9 +10,11 @@
   const upload = (state, uploadedBackground) => ({ ...copy(state), type: 'image', color: state?.color || BLACK, ...uploadedBackground, uploadedBackground: { ...uploadedBackground } });
   const activateUpload = state => state?.uploadedBackground ? upload(state, state.uploadedBackground) : copy(state);
   const removeUpload = state => {
-    const next = copy(state); next.uploadedBackground = null;
+    const next = copy(state);
     for (const [key, background] of Object.entries(next.slideBackgrounds)) if (background?.type === 'image') delete next.slideBackgrounds[key];
-    return next.type === 'image' ? selectColor(next, BLACK) : next;
+    if (next.type === 'image') Object.assign(next, { type: 'color', color: BLACK, assetId: null, previewUrl: null, textColor: '#FFFFFF' });
+    next.uploadedBackground = null;
+    return next;
   };
   const reset = state => ({ ...selectColor(state, BLACK), applyToAllSlides: true, slideBackgrounds: {} });
   const setSlide = (state, index, choice) => {
@@ -22,5 +24,6 @@
     else if (/^#[0-9a-f]{6}$/i.test(choice)) next.slideBackgrounds[index] = { type: 'color', color: choice, assetId: null, previewUrl: null, textColor: choice === BLACK ? '#FFFFFF' : '#000000' };
     return next;
   };
-  return { BLACK, DEFAULT, copy, selectColor, upload, activateUpload, removeUpload, reset, setSlide };
+  const previews = (state, count) => Array.from({ length: count }, (_, index) => state.applyToAllSlides ? state : (state.slideBackgrounds[index] || state));
+  return { BLACK, DEFAULT, copy, selectColor, upload, activateUpload, removeUpload, reset, setSlide, previews };
 });
