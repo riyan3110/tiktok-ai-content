@@ -10,11 +10,10 @@ function configuredPair() {
   const db = createDatabase(':memory:');
   connector.save(db, 'orcarouter', { apiKey: 'existing-orca-secret', enabled: true });
   connector.save(db, '9router', { enabled: true });
-  const transport = async () => new Response(JSON.stringify({ data: [
-    { id: 'nine-text', capabilities: ['text'] },
-    { id: 'nine-image', capabilities: ['image'] },
-    { id: 'nine-video', capabilities: ['video'] }
-  ] }), { headers: { 'content-type': 'application/json' } });
+  const transport = async url => {
+    const type = new URL(url).pathname.endsWith('/image') ? 'image' : new URL(url).pathname.endsWith('/video') ? 'video' : 'text';
+    return new Response(JSON.stringify({ object: 'list', data: [{ id: `nine-${type}`, owned_by: 'nine' }] }), { headers: { 'content-type': 'application/json' } });
+  };
   return { db, app: createApp({ db, aiTransport: transport }) };
 }
 
