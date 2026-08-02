@@ -116,7 +116,8 @@
           <aside class="workflow-summary" aria-labelledby="workflow-summary-title"><div class="summary-heading"><div><span class="eyebrow">LIVE SUMMARY</span><h2 id="workflow-summary-title">Campaign plan</h2></div><span id="workflow-status" class="status-pill status-draft"><i></i>Draft</span></div><div id="workflow-summary-content"></div><button id="workflow-generate" type="button">✦ Jalankan Workflow</button><p class="local-note">Terhubung ke Asset Manager, Prompt Generator, provider, queue, dan history.</p></aside>
         </div>
         <section id="workflow-result" class="workflow-result hidden" aria-live="polite"></section>
-        <section class="workflow-history"><div class="history-heading"><div><span class="eyebrow">SESSION HISTORY</span><h2>Workflow History</h2></div><button id="workflow-new" class="outline" type="button">＋ Workflow Baru</button></div><div id="workflow-history-list"></div></section>
+        <section class="workflow-history"><div class="history-heading"><div><span class="eyebrow">SESSION HISTORY</span><h2>Workflow History</h2></div><div class="workflow-history-heading-actions"><button id="workflow-new" class="outline" type="button">＋ Workflow Baru</button><button id="workflow-clear-history" class="danger" type="button">Hapus Semua History</button></div></div><div class="workflow-history-tools"><input id="workflow-history-search" type="search" placeholder="Cari nama, topik, atau prompt…"><select id="workflow-history-source"><option value="">Semua</option><option value="workflow">Workflow</option><option value="content-factory">AI Content Factory</option></select><select id="workflow-history-status"><option value="">Semua status</option></select><strong id="workflow-history-count">0 hasil</strong></div><div id="workflow-history-list"></div></section>
+        <div id="workflow-history-modal" class="workflow-history-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workflow-history-modal-title"><div class="workflow-history-dialog"><button id="workflow-history-modal-close" class="icon-button" type="button" aria-label="Tutup detail">✕</button><div id="workflow-history-detail"></div></div></div>
       </section>
       <section id="content-factory" class="content-factory hidden" aria-labelledby="factory-title">
         <header class="factory-heading"><div><span class="eyebrow">ONE BRIEF · EVERY CHANNEL</span><h1 id="factory-title">AI Content Factory</h1><p>Pilih format, susun brief, dan produksi konten siap posting lewat Workflow Engine.</p></div><span class="factory-workflow-badge">⇥ Milestone 18 Workflow</span></header>
@@ -279,7 +280,7 @@
 <div id="tiktok-toast" class="tiktok-toast" role="status" aria-live="polite"><span></span><button type="button" aria-label="Tutup notifikasi">×</button></div>
 <div id="consistency-toast" class="consistency-toast" role="status" aria-live="polite"></div><input id="consistency-import" class="hidden" type="file" accept="application/json">
 <script src="/backend-foundation.js"></script>
-<script src="/workflow.js"></script>
+<script src="/workflow-history.js"></script><script src="/workflow.js"></script>
 <script src="/content-factory.js"></script>
 <script src="/prompt-studio.js"></script>
 <script src="/workspace.js"></script>
