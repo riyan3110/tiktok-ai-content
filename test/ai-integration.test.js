@@ -5,11 +5,13 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('AI Integration is wired below Generation Queue', () => {
+test('AI Integration stays implemented without a sidebar entry', () => {
   const html = read('public/index.html');
-  assert.ok(html.indexOf('data-workspace-view="integration"') > html.indexOf('data-workspace-view="queue"'));
+  const workspace = read('public/workspace.js');
+  assert.doesNotMatch(html, /href="#ai-integration"/);
   assert.match(html, /id="ai-integration"/);
   assert.match(html, /ai-integration\.js/);
+  assert.match(workspace, /location\.hash === '#ai-integration' \? 'integration'/);
 });
 
 test('adapter implements normalized mock-only contract', () => {

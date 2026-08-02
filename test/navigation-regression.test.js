@@ -10,8 +10,8 @@ const navigation = [
   ['projects', 'Projects'], ['workflow', 'Workflow'], ['templates', 'Templates'],
   ['prompt-library', 'Prompt Library'], ['consistency', 'Consistency'],
   ['prompt-generator', 'Prompt Generator'], ['ai-providers', 'AI Providers'],
-  ['generation-queue', 'Generation Queue'], ['ai-integration', 'AI Integration'],
-  ['assets', 'Assets'], ['analytics', 'Analytics'], ['settings', 'Settings'],
+  ['generation-queue', 'Generation Queue'], ['assets', 'Assets'],
+  ['analytics', 'Analytics'], ['settings', 'Settings'],
   ['storage', 'Storage'], ['studio', 'Content Studio'],
   ['trend-reference', 'Referensi Tren'], ['schedule-dashboard', 'Jadwal'],
   ['history-section', 'Riwayat']
@@ -21,6 +21,13 @@ test('sidebar preserves every established and AI Provider navigation entry', () 
   for (const [hash, label] of navigation) {
     assert.match(html, new RegExp(`href="#${hash}"[^>]*>[^<]*<span[^>]*>[^<]*</span><span>${label}</span>`));
   }
+});
+
+test('AI Integration remains implemented but hidden from sidebar navigation', () => {
+  assert.doesNotMatch(html, /href="#ai-integration"/);
+  assert.match(html, /<section id="ai-integration"/);
+  assert.match(html, /<script src="\/ai-integration\.js"><\/script>/);
+  assert.match(workspace, /location\.hash === '#ai-integration' \? 'integration'/);
 });
 
 test('legacy content routes reveal their existing implementation instead of Content Studio', () => {
