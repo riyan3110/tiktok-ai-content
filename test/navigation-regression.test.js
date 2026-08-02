@@ -10,7 +10,7 @@ const navigation = [
   ['projects', 'Projects'], ['workflow', 'Workflow'], ['templates', 'Templates'],
   ['prompt-library', 'Prompt Library'], ['consistency', 'Consistency'],
   ['prompt-generator', 'Prompt Generator'], ['ai-providers', 'AI Providers'],
-  ['generation-queue', 'Generation Queue'], ['assets', 'Assets'],
+  ['assets', 'Assets'],
   ['analytics', 'Analytics'], ['settings', 'Settings'],
   ['storage', 'Storage'], ['studio', 'Content Studio'],
   ['trend-reference', 'Referensi Tren'], ['schedule-dashboard', 'Jadwal'],
@@ -28,6 +28,13 @@ test('AI Integration remains implemented but hidden from sidebar navigation', ()
   assert.match(html, /<section id="ai-integration"/);
   assert.match(html, /<script src="\/ai-integration\.js"><\/script>/);
   assert.match(workspace, /location\.hash === '#ai-integration' \? 'integration'/);
+});
+
+test('Generation Queue remains implemented but hidden from sidebar navigation', () => {
+  assert.doesNotMatch(html, /href="#generation-queue"/);
+  assert.match(html, /<section id="generation-queue"/);
+  assert.match(html, /<script src="\/generation-queue\.js"><\/script>/);
+  assert.match(workspace, /location\.hash === '#generation-queue' \? 'queue'/);
 });
 
 test('legacy content routes reveal their existing implementation instead of Content Studio', () => {
