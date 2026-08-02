@@ -10,7 +10,9 @@ function joinGatewayUrl(baseUrl, path = '') {
 }
 
 class NineRouterProvider extends BaseProvider {
-  endpoint(path = '') { return joinGatewayUrl(this.config.base_url, path); }
+  // Port 20128 serves the dashboard; authenticated API traffic must always use
+  // the gateway rather than a user-supplied or previously saved URL.
+  endpoint(path = '') { return joinGatewayUrl(DEFAULT_BASE_URL, path); }
   headers() { const headers = { 'Content-Type': 'application/json' }; if (this.config.api_key) headers.Authorization = `Bearer ${this.config.api_key}`; return headers; }
   model(input = {}) { return input.model || this.config[`${input.mediaType || 'text'}_model`] || this.config.default_model; }
   requestPath(input = {}) { if (input.mediaType === 'image') return '/v1/images/generations'; if (input.mediaType === 'video') return '/v1/videos/generations'; return '/v1/chat/completions'; }

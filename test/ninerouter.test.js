@@ -35,6 +35,10 @@ test('9Router catalog paths use the gateway URL without creating /v1/v1', () => 
     assert.doesNotMatch(url, /v1\/v1/);
     assert.equal(new URL(url).pathname, path);
   }
+  assert.equal(
+    NineRouterProvider.joinGatewayUrl(NineRouterProvider.DEFAULT_BASE_URL, '/v1/images/generations'),
+    'http://43.159.50.231:20130/v1/images/generations'
+  );
 });
 
 test('each OpenAI catalog groups owned_by combo separately from direct models', () => {
@@ -60,6 +64,43 @@ test('Test Connection counts models from all three catalogs', async () => {
   const response = await request(app).post('/api/ai/providers/9router/test').expect(200);
   assert.deepEqual(response.body.counts, { text: 2, image: 2, video: 2 });
   assert.deepEqual(response.body.capabilities, ['text', 'image', 'video']);
+  db.close();
+});
+
+test('generation uses the gateway client and saved Bearer key, never a saved dashboard URL', async () => {
+  const calls = [];
+  const transport = async (url, options = {}) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ data: [{ url: 'https://cdn.example/result.png' }] }), { headers: { 'content-type': 'application/json' } });
+  };
+  const db = createDatabase(':memory:');
+  connector.save(db, '9router', { enabled: true, apiKey: 'saved-gateway-key', baseUrl: 'http://43.159.50.231:20128' });
+  await connector.execute(db, { provider: '9router', model: 'ImageCombo', prompt: 'draw', mediaType: 'image' }, transport);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://43.159.50.231:20130/v1/images/generations');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer saved-gateway-key');
+  db.close();
+});
+
+test('missing 9Router key is rejected before generation history and AbortError is not retried', async () => {
+  const db = createDatabase(':memory:');
+  connector.save(db, '9router', { enabled: true, retry: 3 });
+  await assert.rejects(
+    connector.execute(db, { provider: '9router', model: 'ImageCombo', prompt: 'draw', mediaType: 'image' }, async () => new Response('{}')),
+    /API key/
+  );
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_generations').get().count, 0);
+
+  connector.save(db, '9router', { apiKey: 'saved-gateway-key' });
+  let calls = 0;
+  await assert.rejects(
+    connector.execute(db, { provider: '9router', model: 'ImageCombo', prompt: 'draw', mediaType: 'image' }, async () => {
+      calls += 1;
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    }),
+    error => error.type === 'Timeout'
+  );
+  assert.equal(calls, 1);
   db.close();
 });
 
