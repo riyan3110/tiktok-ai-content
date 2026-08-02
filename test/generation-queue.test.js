@@ -5,12 +5,13 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('Generation Queue is wired into navigation and Prompt Generator', () => {
+test('Generation Queue stays implemented without a sidebar entry', () => {
   const html = read('public/index.html');
-  assert.match(html, /data-workspace-view="queue"/);
-  assert.match(html, /id="generation-queue"/);
+  assert.doesNotMatch(html, /href="#generation-queue"/);
+  assert.match(html, /<section id="generation-queue"/);
   assert.match(html, /data-generator-action="generate"/);
-  assert.match(html, /generation-queue\.js/);
+  assert.match(html, /<script src="\/generation-queue\.js"><\/script>/);
+  assert.ok(read('public/generation-queue.js').includes('window.GenerationQueue'));
 });
 
 test('mock worker uses required storage boundaries and never calls AI', () => {
