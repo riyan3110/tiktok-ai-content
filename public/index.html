@@ -215,6 +215,20 @@
       <label class="switch-row"><input id="automation-toggle" type="checkbox" role="switch"><span class="switch-control" aria-hidden="true"></span><span>Aktifkan posting otomatis</span></label>
       <label class="switch-row"><input id="watermark-enabled" type="checkbox" role="switch" checked><span class="switch-control" aria-hidden="true"></span><span>Tampilkan watermark</span></label>
       <p id="mode-help" class="mode-help">Mode manual: konten dibuat dan diunggah hanya melalui tombol.</p>
+      <section class="carousel-background" aria-labelledby="background-title">
+        <div class="background-heading"><div><h3 id="background-title">Background Konten</h3><p>Pilih latar carousel. Perubahan tersimpan otomatis.</p></div><button id="background-reset" class="outline" type="button">Reset Background</button></div>
+        <fieldset><legend class="sr-only">Background global</legend><div id="background-options" class="background-options">
+          <label class="background-option"><input type="radio" name="carousel-background" value="#0B0B0D"><span class="background-swatch" style="--swatch:#0B0B0D"><i>✓</i></span><b>Hitam</b></label>
+          <label class="background-option"><input type="radio" name="carousel-background" value="#FFFFFF"><span class="background-swatch" style="--swatch:#FFFFFF"><i>✓</i></span><b>Putih</b></label>
+          <label class="background-option"><input type="radio" name="carousel-background" value="#E9E1D3"><span class="background-swatch" style="--swatch:#E9E1D3"><i>✓</i></span><b>Krem</b></label>
+          <label class="background-option background-upload-option"><input type="radio" name="carousel-background" value="image"><span class="background-swatch upload-swatch" id="background-image-preview"><i>✓</i><em>＋</em></span><b>Unggah dari perangkat</b></label>
+        </div></fieldset>
+        <input id="background-file" class="hidden" type="file" accept="image/png,image/jpeg,image/webp">
+        <div id="background-upload-actions" class="background-upload-actions hidden"><button id="background-change" class="outline" type="button">Ganti Gambar</button><button id="background-remove" class="danger" type="button">Hapus</button></div>
+        <p id="background-error" class="background-error" role="alert"></p>
+        <label class="switch-row"><input id="background-apply-all" type="checkbox" role="switch" checked><span class="switch-control" aria-hidden="true"></span><span>Terapkan ke semua slide</span></label>
+        <div id="slide-background-options" class="slide-background-options hidden" aria-label="Background per slide"></div>
+      </section>
       <div id="manual-settings">
         <fieldset class="topic-source"><legend>Sumber Topik</legend><div class="segment-options"><label><input type="radio" name="topic-source" value="manual"><span>Topik manual</span></label><label><input type="radio" name="topic-source" value="ai" checked><span>Otomatis dari AI</span></label><label><input type="radio" name="topic-source" value="trending"><span>Topik trending</span></label></div></fieldset>
         <div class="option-grid"><label>Kategori Konten<select id="content-category"><option>Iklan &amp; UGC</option><option>Tutorial AI</option><option>Tips bisnis</option><option>Produktivitas</option><option>Fakta unik</option><option>Edukasi teknologi</option><option>Motivasi</option><option>Konten kreator</option><option>Custom</option></select></label><label>Format Konten<select id="content-format"><option>Tutorial langkah</option><option>Listicle</option><option>Fakta singkat</option><option>Masalah dan solusi</option><option>Before-after</option><option>Tips cepat</option></select></label></div>
@@ -293,6 +307,7 @@
 <script src="/templates.js"></script>
 <script src="/assets.js"></script>
 <script src="/content-studio.js"></script>
+<script src="/background-state.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

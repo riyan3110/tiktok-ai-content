@@ -355,3 +355,46 @@ test('structured auto-fit menjaga batas title, body, total visual, dan font mini
   assert.ok(layout.fit.pointSize >= 32);
   assert.equal(validateVisualLayout(layout), true);
 });
+
+
+test('watermark mengikuti kontras background tanpa mengubah opacity atau status enabled', () => {
+  const layout = images.buildSlideLayouts(content)[0];
+  for (const background of [
+    { color: '#0B0B0D', textColor: '#FFFFFF' },
+    { color: '#FFFFFF', textColor: '#000000' },
+    { color: '#E9E1D3', textColor: '#000000' },
+    { color: '#0B0B0D', imageData: 'data:image/png;base64,AA==', textColor: '#000000' }
+  ]) {
+    const svg = images.renderLayout(layout, 1, 3, { enabled: true }, background);
+    assert.match(svg, new RegExp(`data-role="watermark"[^>]*fill="${background.textColor}"[^>]*fill-opacity="0\.4"`));
+  }
+  assert.doesNotMatch(images.renderLayout(layout, 1, 3, { enabled: false }, { color: '#FFFFFF', textColor: '#000000' }), /data-role="watermark"/);
+});
+
+test('promoteSlides mengganti set stabil tanpa meninggalkan file pending', async (t) => {
+  const id = `atomic-${process.pid}-${Date.now()}`;
+  const first = await images.createSlides(`${id}-pending-a`, content);
+  const stable = await images.promoteSlides(first, id);
+  const second = await images.createSlides(`${id}-pending-b`, { ...content, background: { type: 'color', color: '#FFFFFF', textColor: '#000000' } });
+  const replaced = await images.promoteSlides(second, id, stable);
+  assert.deepEqual(replaced, [1, 2, 3].map(index => `/generated/${id}-${index}.jpg`));
+  const names = await fs.readdir(path.join(config.root, 'public/generated'));
+  assert.equal(names.some(name => name.startsWith(`${id}-pending-`)), false);
+  assert.equal(names.some(name => name.includes('.backup-')), false);
+  t.after(() => images.cleanupSlides(replaced));
+});
+
+test('promoteSlides rollback membersihkan temporary dan mempertahankan stable saat commit gagal', async (t) => {
+  const id = `rollback-${process.pid}-${Date.now()}`;
+  const original = await images.createSlides(`${id}-original`, content);
+  const stable = await images.promoteSlides(original, id);
+  const before = await Promise.all(stable.map(file => fs.readFile(path.join(config.root, 'public', file))));
+  const temporary = await images.createSlides(`${id}-pending-failed`, { ...content, background: { type: 'color', color: '#FFFFFF', textColor: '#000000' } });
+  await assert.rejects(images.promoteSlides(temporary, id, stable, () => { throw new Error('database gagal'); }), /database gagal/);
+  const after = await Promise.all(stable.map(file => fs.readFile(path.join(config.root, 'public', file))));
+  assert.deepEqual(after, before);
+  const names = await fs.readdir(path.join(config.root, 'public/generated'));
+  assert.equal(names.some(name => name.startsWith(`${id}-pending-failed`)), false);
+  assert.equal(names.some(name => name.includes('.backup-')), false);
+  t.after(() => images.cleanupSlides(stable));
+});

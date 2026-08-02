@@ -24,3 +24,33 @@ test('Content Studio queues image jobs, keeps history, duplicates, retries, and 
   const retry = await request(app).post(`/api/content-studio/jobs/${job.id}/retry`).expect(202); await waitFor(app, retry.body.id, 'Completed');
   await request(app).delete(`/api/content-studio/jobs/${job.id}`).expect(200); await request(app).get(`/api/content-studio/jobs/${job.id}`).expect(404); db.close();
 });
+
+test('Content Studio menyediakan selector background carousel yang persisten dan mobile-safe', () => {
+  const html = fs.readFileSync('public/index.html', 'utf8');
+  const script = fs.readFileSync('public/app.js', 'utf8');
+  const css = fs.readFileSync('public/style.css', 'utf8');
+  for (const value of ['Background Konten', '#0B0B0D', '#FFFFFF', '#E9E1D3', 'Unggah dari perangkat', 'Terapkan ke semua slide', 'Reset Background', 'accept="image/png,image/jpeg,image/webp"']) assert.match(html, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  for (const value of ['10 * 1024 * 1024', 'localStorage.setItem', 'slideBackgrounds', '/api/assets/upload', 'imageTextColor', 'background: carouselBackground']) assert.match(script, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(css, /background-size:cover/);
+  assert.match(css, /grid-template-columns:repeat\(3/);
+});
+
+
+test('live carousel preview memakai layer terlihat lalu menggantinya dengan JPEG render terbaru', () => {
+  const script = fs.readFileSync('public/app.js', 'utf8');
+  const css = fs.readFileSync('public/style.css', 'utf8');
+  assert.match(script, /<img[^>]+><span class="slide-background-preview"/);
+  assert.match(script, /layer\.classList\.add\('pending'\)/);
+  assert.match(script, /contents\/\$\{current\.id\}\/background/);
+  assert.match(script, /image\.src = `\$\{updated\.slides\[index\]\}/);
+  assert.match(css, /\.slide-background-preview\{position:absolute;inset:0;z-index:2/);
+  assert.match(css, /\.slide-button>img\{position:relative;z-index:1/);
+});
+
+test('live preview membatalkan request lama dan membersihkan overlay pada error legacy', () => {
+  const script = fs.readFileSync('public/app.js', 'utf8');
+  assert.match(script, /schedulePreviewRender\.controller\?\.abort\(\)/);
+  assert.match(script, /version !== schedulePreviewRender\.version/);
+  assert.match(script, /signal: schedulePreviewRender\.controller\.signal/);
+  assert.match(script, /slide-background-preview'\)\.forEach\(layer => layer\.classList\.remove\('pending'\)\)/);
+});

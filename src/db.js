@@ -30,6 +30,9 @@ function createDatabase(filename = config.databasePath) {
   if (!columns.has('trend_reference_id')) db.exec('ALTER TABLE contents ADD COLUMN trend_reference_id INTEGER REFERENCES trend_reference_sets(id) ON DELETE SET NULL');
   if (!columns.has('trend_keywords_used')) db.exec("ALTER TABLE contents ADD COLUMN trend_keywords_used TEXT NOT NULL DEFAULT '[]'");
   if (!columns.has('trend_keywords_ignored')) db.exec("ALTER TABLE contents ADD COLUMN trend_keywords_ignored TEXT NOT NULL DEFAULT '[]'");
+  if (!columns.has('background')) db.exec("ALTER TABLE contents ADD COLUMN background TEXT NOT NULL DEFAULT '{}'");
+  if (!columns.has('render_source')) db.exec("ALTER TABLE contents ADD COLUMN render_source TEXT NOT NULL DEFAULT '{}'");
+  if (!columns.has('background_revision')) db.exec('ALTER TABLE contents ADD COLUMN background_revision INTEGER NOT NULL DEFAULT 0');
   const trendColumns = new Set(db.prepare('PRAGMA table_info(trend_reference_sets)').all().map(({ name }) => name));
   if (!trendColumns.has('trend_hooks')) db.exec("ALTER TABLE trend_reference_sets ADD COLUMN trend_hooks TEXT NOT NULL DEFAULT '[]'");
   if (!trendColumns.has('trend_content_patterns')) db.exec("ALTER TABLE trend_reference_sets ADD COLUMN trend_content_patterns TEXT NOT NULL DEFAULT '[]'");

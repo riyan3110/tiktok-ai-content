@@ -185,3 +185,110 @@ test('kategori dan format yang tidak dikenal ditolak', async () => {
   await request(app).post('/generate').send({ contentCategory: 'Tidak valid', contentFormat: 'Listicle' }).expect(400);
   await request(app).post('/generate').send({ contentCategory: 'Motivasi', contentFormat: 'Tidak valid' }).expect(400);
 });
+
+test('konfigurasi background carousel diterapkan ke export dan disimpan bersama draft', async () => {
+  let rendered;
+  const images = { createSlides: async (id, content) => { rendered = content.background; return [1, 2, 3].map(index => `/generated/${id}-${index}.jpg`); }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const background = { type: 'color', color: '#E9E1D3', assetId: null, previewUrl: null, applyToAllSlides: false, slideBackgrounds: { 1: { type: 'color', color: '#FFFFFF', assetId: null, previewUrl: null } } };
+  const response = await request(app).post('/generate').send({ background }).expect(200);
+  assert.equal(rendered.color, '#E9E1D3');
+  assert.equal(rendered.applyToAllSlides, false);
+  assert.equal(rendered.slideBackgrounds[1].color, '#FFFFFF');
+  assert.equal(response.body.background.color, '#E9E1D3');
+  assert.equal(response.body.background.slideBackgrounds[1].color, '#FFFFFF');
+  assert.equal(response.body.slides.length, 3);
+});
+
+test('background tidak valid dinormalisasi ke Hitam agar draft dan export aman', async () => {
+  let rendered;
+  const images = { createSlides: async (id, content) => { rendered = content.background; return [`/generated/${id}-1.jpg`]; }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const response = await request(app).post('/generate').send({ background: { type: 'color', color: 'url(javascript:bad)' } }).expect(200);
+  assert.equal(rendered.color, '#0B0B0D');
+  assert.equal(response.body.background.color, '#0B0B0D');
+});
+
+test('generation menerima background warna global dan gambar upload per slide tanpa mengubah watermark', async () => {
+  let rendered;
+  const images = { createSlides: async (id, content) => { rendered = content; return [`/generated/${id}-1.jpg`, `/generated/${id}-2.jpg`]; }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+AvzZ9QAAAABJRU5ErkJggg==';
+  const asset = await request(app).post('/api/assets/upload').send({ name: 'background.png', mimeType: 'image/png', data: png, tags: ['Background'] }).expect(201);
+  const uploadedBackground = { assetId: asset.body.id, previewUrl: asset.body.preview_url, textColor: '#FFFFFF' };
+  const background = { type: 'color', color: '#FFFFFF', assetId: null, previewUrl: null, textColor: '#000000', uploadedBackground, applyToAllSlides: false, slideBackgrounds: { 1: { type: 'image', color: '#FFFFFF', ...uploadedBackground } } };
+  const response = await request(app).post('/generate').send({ watermarkEnabled: true, background }).expect(200);
+  assert.equal(rendered.watermark.enabled, true);
+  assert.equal(rendered.background.color, '#FFFFFF');
+  assert.equal(rendered.background.type, 'color');
+  assert.equal(rendered.background.slideBackgrounds[1].assetId, asset.body.id);
+  assert.match(rendered.background.slideBackgrounds[1].imageData, /^data:image\/png;base64,/);
+  assert.equal(response.body.background.uploadedBackground.assetId, asset.body.id);
+  assert.equal(response.body.background.slideBackgrounds[1].assetId, asset.body.id);
+  assert.equal(response.body.background.slideBackgrounds[1].imageData, undefined);
+});
+
+test('live preview rerender menyimpan background global dan per-slide yang sama dengan export', async () => {
+  const renders = [];
+  const images = { createSlides: async (id, content) => { renders.push(content); return [`/generated/${id}-1.jpg`, `/generated/${id}-2.jpg`, `/generated/${id}-3.jpg`]; }, validateSlides: async () => {} };
+  const { app } = setup({ images });
+  const generated = await request(app).post('/generate').send({ background: { type: 'color', color: '#0B0B0D', applyToAllSlides: true } }).expect(200);
+  const background = { type: 'color', color: '#FFFFFF', textColor: '#000000', applyToAllSlides: false, slideBackgrounds: { 1: { type: 'color', color: '#E9E1D3', textColor: '#000000' } } };
+  const updated = await request(app).patch(`/contents/${generated.body.id}/background`).send({ background }).expect(200);
+  assert.equal(renders.length, 2);
+  assert.equal(renders[1].background.color, '#FFFFFF');
+  assert.equal(renders[1].background.slideBackgrounds[1].color, '#E9E1D3');
+  assert.equal(updated.body.background.color, '#FFFFFF');
+  assert.equal(updated.body.background.slideBackgrounds[1].color, '#E9E1D3');
+  assert.notDeepEqual(updated.body.slides, generated.body.slides);
+});
+
+test('generation mempromosikan file pending ke path stabil content ID dan history menghapusnya', async (t) => {
+  const db = createDatabase(':memory:');
+  const content = { generateContent: async () => ({ topic: `Stable ${Date.now()}`, hook: 'Hook', body: '1. Langkah', caption: 'Caption', hashtags: ['#test'], cta: 'CTA' }) };
+  const app = createApp({ db, content, trending: { getLatest: async () => [] } });
+  const generated = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200);
+  assert.deepEqual(generated.body.slides, [1, 2, 3].map(index => `/generated/${generated.body.id}-${index}.jpg`));
+  const dir = path.join(process.cwd(), 'public/generated');
+  const names = fs.readdirSync(dir);
+  assert.equal(names.some(name => name.startsWith('pending-') && name.endsWith('.jpg')), false);
+  for (const slide of generated.body.slides) assert.equal(fs.existsSync(path.join(process.cwd(), 'public', slide)), true);
+  await request(app).delete(`/history/${generated.body.id}`).expect(200);
+  for (const slide of generated.body.slides) assert.equal(fs.existsSync(path.join(process.cwd(), 'public', slide)), false);
+  t.after(() => db.close());
+});
+
+test('rerender gagal mempertahankan slide dan background database sebelumnya tanpa temporary file', async () => {
+  let calls = 0;
+  const images = { createSlides: async id => { if (++calls > 1) throw new Error('render gagal'); return [`/generated/${id}-1.jpg`]; }, validateSlides: async () => {}, cleanupSlides: async () => {} };
+  const { app, db } = setup({ images });
+  const generated = await request(app).post('/generate').send({ background: { type: 'color', color: '#0B0B0D' } }).expect(200);
+  await request(app).patch(`/contents/${generated.body.id}/background`).send({ revision: 1, background: { type: 'color', color: '#FFFFFF' } }).expect(500);
+  const saved = db.prepare('SELECT slides,background FROM contents WHERE id=?').get(generated.body.id);
+  assert.deepEqual(JSON.parse(saved.slides), generated.body.slides);
+  assert.equal(JSON.parse(saved.background).color, '#0B0B0D');
+});
+
+test('request background cepat hanya menyimpan revisi terbaru', async () => {
+  let calls = 0; const cleaned = [];
+  const images = { createSlides: async id => { calls++; if (calls === 2) await new Promise(resolve => setTimeout(resolve, 30)); return [`/generated/${id}-1.jpg`]; }, validateSlides: async () => {}, cleanupSlides: async files => cleaned.push(...files) };
+  const { app, db } = setup({ images });
+  const generated = await request(app).post('/generate').expect(200);
+  const first = request(app).patch(`/contents/${generated.body.id}/background`).send({ revision: 10, background: { type: 'color', color: '#FFFFFF' } });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const latest = request(app).patch(`/contents/${generated.body.id}/background`).send({ revision: 11, background: { type: 'color', color: '#E9E1D3' } });
+  const [oldResponse, latestResponse] = await Promise.all([first, latest]);
+  assert.equal(oldResponse.status, 409); assert.equal(latestResponse.status, 200);
+  const saved = db.prepare('SELECT background,background_revision FROM contents WHERE id=?').get(generated.body.id);
+  assert.equal(JSON.parse(saved.background).color, '#E9E1D3'); assert.equal(saved.background_revision, 11);
+  assert.ok(cleaned.some(file => file.includes('-10-')));
+});
+
+test('legacy content menyimpan pilihan tetapi tidak merusak slide lama', async () => {
+  const { app, db } = setup();
+  const result = db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta,slides) VALUES('Legacy','H','B','C','[]','CTA','[\"/generated/legacy.jpg\"]')").run();
+  const response = await request(app).patch(`/contents/${result.lastInsertRowid}/background`).send({ revision: 2, background: { type: 'color', color: '#FFFFFF' } }).expect(409);
+  assert.equal(response.body.legacy, true);
+  const saved = db.prepare('SELECT slides,background FROM contents WHERE id=?').get(result.lastInsertRowid);
+  assert.equal(saved.slides, '["/generated/legacy.jpg"]'); assert.equal(JSON.parse(saved.background).color, '#FFFFFF');
+});

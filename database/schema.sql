@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS contents (
   trend_reference_id INTEGER REFERENCES trend_reference_sets(id) ON DELETE SET NULL,
   trend_keywords_used TEXT NOT NULL DEFAULT '[]',
   trend_keywords_ignored TEXT NOT NULL DEFAULT '[]',
+  background TEXT NOT NULL DEFAULT '{}',
+  render_source TEXT NOT NULL DEFAULT '{}',
+  background_revision INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
