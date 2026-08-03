@@ -39,6 +39,33 @@ test('generate memakai Chat Completions dan mempertahankan struktur JSON', async
   assert.match(request.messages[1].content, /"required":\["focus","topic","hook","body","caption","hashtags","cta","trendKeywordsUsed"\]/);
 });
 
+test('prompt mengarahkan bahasa natural tanpa mengubah respons atau menambah panggilan AI', async () => {
+  const expected = { focus: { masalah: 'Brief kabur', penyebab: 'Tujuan kosong', solusi: 'Tulis tujuan', hasil: 'Brief jelas' }, topic: 'Brief visual', hook: 'Brief yang Jelas Bikin Visual Lebih Terarah', body: 'Tulis tujuan visual sebelum memilih referensi.', caption: 'Mulai brief dari tujuan visual yang jelas.', hashtags: ['#KontenKreator'], cta: 'Coba di brief berikutnya', trendKeywordsUsed: [], content_angle: 'brief praktis', primary_tool: 'tanpa tool', hook_pattern: 'pernyataan langsung' };
+  const requests = [];
+  const client = { chat: { completions: { create: async (request) => {
+    requests.push(request);
+    return { choices: [{ message: { content: JSON.stringify(expected) } }] };
+  } } } };
+
+  const result = await generateContent([], client);
+  const { messages } = requests[0];
+  const prompt = messages[1].content;
+
+  assert.equal(requests.length, 1, 'respons valid cukup memakai satu panggilan AI');
+  assert.deepEqual(result, expected, 'hasil AI tidak ditulis ulang oleh tahap humanizer');
+  assert.match(messages[0].content, /natural, ringkas, conversational, dan tetap akurat/i);
+  assert.match(prompt, /bahasa Indonesia sehari-hari yang rapi/i);
+  assert.match(prompt, /bukan seperti buku pelajaran, laporan, atau presentasi perusahaan/i);
+  assert.match(prompt, /template AI/i);
+  assert.match(prompt, /variasikan bentuk hook antarkonten secara alami/i);
+  assert.match(prompt, /Pertanyaan hanya digunakan ketika cocok.*jangan memaksa setiap judul menjadi pertanyaan/i);
+  assert.match(prompt, /jangan mengulang title di body atau points/i);
+  assert.match(prompt, /jangan menambahkan pengalaman pribadi palsu maupun fakta, angka, tren, atau klaim yang tidak tersedia/i);
+  assert.match(prompt, /Kembalikan hanya JSON sesuai schema/i);
+  assert.match(prompt, /"required":\["focus","topic","hook","body","caption","hashtags","cta","trendKeywordsUsed","content_angle","primary_tool","hook_pattern","slides"\]/);
+  for (const field of ['section', 'title', 'body', 'points']) assert.match(prompt, new RegExp(`"${field}"`));
+});
+
 test('generate memberi pesan jelas ketika provider mengembalikan JSON invalid', async () => {
   const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: 'bukan JSON' } }] }) } } };
   await assert.rejects(() => generateContent([], client), /mengembalikan JSON yang tidak valid/);
