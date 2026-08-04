@@ -23,5 +23,13 @@
     if(!modelsFor(media,assetCount).includes(model))return {valid:false,message:'Pilih model Vidu yang tersedia untuk endpoint ini.'};
     return {valid:true,message:''};
   }
-  return {MODEL_KEYS,modelsFor,stateFor,validate};
+  function applySelect(input,{models=[],choice='',valid=false,onchange=null},escape=value=>value){
+    input.onchange=onchange;
+    input.innerHTML=models.length?models.map(model=>`<option value="${escape(model)}">${escape(model)}</option>`).join(''):'<option value="">Not selected</option>';
+    input.value=choice;
+    input.disabled=!valid;
+  }
+  function genericState(model){const choice=String(model||'');return {models:choice?[choice]:[],choice,valid:Boolean(choice),onchange:null}}
+  function clearHandler(input){input.onchange=null}
+  return {MODEL_KEYS,modelsFor,stateFor,validate,applySelect,genericState,clearHandler};
 });

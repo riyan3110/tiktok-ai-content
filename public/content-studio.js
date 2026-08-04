@@ -12,6 +12,7 @@
   function renderModel(media, selectedProvider){
     const input=$('#studio-model'),select=$('#studio-orcarouter-model'),status=$('#studio-model-status'),retry=$('#studio-model-retry'),isOrca=selectedProvider?.id==='orcarouter';
     const isNine=selectedProvider?.id==='9router',isVidu=selectedProvider?.id==='vidu';
+    if(!isVidu)viduModels.clearHandler(input);
     if(isNine){
       select.classList.add('hidden');input.classList.remove('hidden');retry.classList.add('hidden');status.classList.remove('hidden');
       if(nineModelsLoading){status.textContent='Memuat model 9Router…';input.disabled=true;return false}
@@ -27,10 +28,10 @@
     if(isVidu){
       select.classList.add('hidden');input.classList.remove('hidden');retry.classList.add('hidden');status.classList.add('hidden');
       const state=viduModels.stateFor({media,assetCount:selectedAssets.length,saved:localStorage.getItem(VIDU_MODEL_KEYS[media]),configured:selectedProvider.models?.[media]});
-      input.innerHTML=state.models.map(model=>`<option value="${safe(model)}">${safe(model)}</option>`).join('');input.value=state.choice;input.disabled=!state.valid;status.textContent=state.message;status.classList.toggle('hidden',!state.message);input.onchange=()=>localStorage.setItem(VIDU_MODEL_KEYS[media],input.value);return state.valid
+      viduModels.applySelect(input,{...state,onchange:()=>localStorage.setItem(VIDU_MODEL_KEYS[media],input.value)},safe);status.textContent=state.message;status.classList.toggle('hidden',!state.message);return state.valid
     }
     input.classList.toggle('hidden',isOrca);select.classList.toggle('hidden',!isOrca);status.classList.toggle('hidden',!isOrca);retry.classList.add('hidden');
-    if(!isOrca){input.disabled=!selectedProvider;if(selectedProvider?.models?.[media])input.value=selectedProvider.models[media];return Boolean(selectedProvider)}
+    if(!isOrca){const state=viduModels.genericState(selectedProvider?.models?.[media]);viduModels.applySelect(input,state,safe);return state.valid}
     if(orcaModelsLoading){status.textContent='Memuat model OrcaRouter…';select.classList.add('hidden');select.disabled=true;return false}
     if(!orcaModels){status.textContent='Daftar model OrcaRouter gagal dimuat.';select.classList.add('hidden');retry.classList.remove('hidden');return false}
     const models=orcaModels[media]||[];status.textContent=orcaModels.fallback?'Daftar model OrcaRouter gagal dimuat. Menggunakan fallback.':'';status.classList.toggle('hidden',!orcaModels.fallback);retry.classList.toggle('hidden',!orcaModels.fallback);
