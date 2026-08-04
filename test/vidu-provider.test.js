@@ -43,12 +43,12 @@ test('Vidu text2video uses the valid default model, submits once, and polls crea
     return response(calls.length === 2 ? { state: 'processing' } : { state: 'success', creations: [{ url: 'https://cdn.test/video.mp4' }] });
   };
   const provider = new ViduProvider(config, transport);
-  const result = await provider.execute({ mediaType: 'video', prompt: 'A product reveal', parameters: { aspectRatio: '9:16', duration: 5 } });
+  const result = await provider.execute({ mediaType: 'video', prompt: 'A product reveal', parameters: { aspectRatio: '9:16', resolution: '1080p', duration: 5 } });
 
   assert.equal(ProviderFactory.defaults('vidu').model, 'viduq3-turbo');
   assert.equal(calls.filter(call => call.options.method === 'POST').length, 1);
   assert.equal(calls[0].url, 'https://api.vidu.test/ent/v2/text2video');
-  assert.deepEqual(JSON.parse(calls[0].options.body), { model: 'viduq3-turbo', prompt: 'A product reveal', duration: 5, aspect_ratio: '9:16' });
+  assert.deepEqual(JSON.parse(calls[0].options.body), { model: 'viduq3-turbo', prompt: 'A product reveal', duration: 5, aspect_ratio: '9:16', resolution: '1080p' });
   assert.equal(calls[1].url, 'https://api.vidu.test/ent/v2/tasks/task%2Fone/creations');
   assert.equal(result.providerJobId, 'task/one');
   assert.deepEqual(result.media, [{ url: 'https://cdn.test/video.mp4' }]);
@@ -57,29 +57,32 @@ test('Vidu text2video uses the valid default model, submits once, and polls crea
 test('Vidu img2video accepts exactly one image URL', async () => {
   const calls = [];
   const provider = new ViduProvider(config, successfulTransport(calls));
-  await provider.execute({ mediaType: 'video', prompt: 'Animate it', assets: [{ url: 'https://cdn.test/source.png' }], parameters: {} });
+  await provider.execute({ mediaType: 'video', prompt: 'Animate it', assets: [{ url: 'https://cdn.test/source.png' }], parameters: { aspectRatio: '9:16', resolution: '1080p' } });
 
   assert.equal(calls[0].url, 'https://api.vidu.test/ent/v2/img2video');
-  assert.deepEqual(JSON.parse(calls[0].options.body).images, ['https://cdn.test/source.png']);
+  const body = JSON.parse(calls[0].options.body);
+  assert.deepEqual(body.images, ['https://cdn.test/source.png']);
+  assert.equal(Object.hasOwn(body, 'aspect_ratio'), false);
+  assert.equal(body.resolution, '1080p');
   assert.deepEqual(calls.map(call => call.options.method), ['POST', 'GET']);
 });
 
 test('Vidu reference2video accepts two to seven images', async () => {
   const calls = [];
   const provider = new ViduProvider(config, successfulTransport(calls));
-  await provider.execute({ mediaType: 'video', prompt: 'Combine references', assets: [{ url: 'https://cdn.test/one.png' }, { url: 'https://cdn.test/two.png' }], parameters: {} });
+  await provider.execute({ mediaType: 'video', prompt: 'Combine references', assets: [{ url: 'https://cdn.test/one.png' }, { url: 'https://cdn.test/two.png' }], parameters: { aspectRatio: '9:16', resolution: '1080p' } });
 
   assert.equal(calls[0].url, 'https://api.vidu.test/ent/v2/reference2video');
-  assert.deepEqual(JSON.parse(calls[0].options.body).images, ['https://cdn.test/one.png', 'https://cdn.test/two.png']);
+  assert.deepEqual(JSON.parse(calls[0].options.body), { model: 'viduq3-turbo', prompt: 'Combine references', aspect_ratio: '9:16', resolution: '1080p', images: ['https://cdn.test/one.png', 'https://cdn.test/two.png'] });
 });
 
-test('Vidu reference2image is selected for image generation', async () => {
+test('Vidu reference2image without references sends TikTok output parameters', async () => {
   const calls = [];
   const provider = new ViduProvider(config, successfulTransport(calls));
-  await provider.execute({ mediaType: 'image', prompt: 'Restyle reference', assets: [{ url: 'https://cdn.test/reference.png' }], parameters: {} });
+  await provider.execute({ mediaType: 'image', prompt: 'Create an image', parameters: { aspectRatio: '9:16', resolution: '1080p' } });
 
   assert.equal(calls[0].url, 'https://api.vidu.test/ent/v2/reference2image');
-  assert.equal(JSON.parse(calls[0].options.body).model, 'viduq2');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { model: 'viduq2', prompt: 'Create an image', aspect_ratio: '9:16', resolution: '1080p' });
 });
 
 test('Vidu reference2image rejects more than seven images before submission', async () => {

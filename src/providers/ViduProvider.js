@@ -43,16 +43,16 @@ class ViduProvider extends BaseProvider {
 
   buildRequest(input) {
     const parameters = input.parameters || {};
+    const path = this.requestPath(input);
     const body = {
       model: this.model(input),
       prompt: input.prompt,
       duration: parameters.duration,
       seed: parameters.seed,
-      aspect_ratio: parameters.aspectRatio,
+      ...(path === '/ent/v2/img2video' ? {} : { aspect_ratio: parameters.aspectRatio }),
       resolution: parameters.resolution
     };
     const images = this.images(input);
-    const path = this.requestPath(input);
     if (input.mediaType === 'image' && images.length > 7) throw new Error('Vidu reference2image hanya menerima maksimal tujuh gambar');
     if (path === '/ent/v2/img2video' && images.length > 1) throw new Error('Vidu img2video hanya menerima satu gambar');
     if (path === '/ent/v2/reference2video' && images.length > 7) throw new Error('Vidu reference2video hanya menerima maksimal tujuh gambar');
