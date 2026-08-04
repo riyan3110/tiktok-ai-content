@@ -16,6 +16,14 @@ const delay = (milliseconds, signal) => new Promise((resolve, reject) => {
 class ViduProvider extends BaseProvider {
   headers() { return { 'Content-Type': 'application/json', Authorization: `Token ${this.config.api_key}` }; }
 
+  model(input = {}) {
+    if (input.mediaType === 'image') {
+      if (['viduq2', 'viduq1'].includes(input.model)) return input.model;
+      return ['viduq2', 'viduq1'].includes(this.config.image_model) ? this.config.image_model : 'viduq2';
+    }
+    return [input.model, this.config.video_model, this.config.default_model].find(model => model && model !== 'vidu2.0') || 'viduq3-turbo';
+  }
+
   images(input = {}) {
     return (input.assets || []).map(asset => {
       if (typeof asset === 'string') return asset;
@@ -36,7 +44,7 @@ class ViduProvider extends BaseProvider {
   buildRequest(input) {
     const parameters = input.parameters || {};
     const body = {
-      model: input.model || this.config.video_model || this.config.default_model || 'viduq3-turbo',
+      model: this.model(input),
       prompt: input.prompt,
       duration: parameters.duration,
       seed: parameters.seed,
@@ -45,6 +53,7 @@ class ViduProvider extends BaseProvider {
     };
     const images = this.images(input);
     const path = this.requestPath(input);
+    if (input.mediaType === 'image' && images.length > 7) throw new Error('Vidu reference2image hanya menerima maksimal tujuh gambar');
     if (path === '/ent/v2/img2video' && images.length > 1) throw new Error('Vidu img2video hanya menerima satu gambar');
     if (path === '/ent/v2/reference2video' && images.length > 7) throw new Error('Vidu reference2video hanya menerima maksimal tujuh gambar');
     if (images.length) body.images = images;
@@ -84,7 +93,10 @@ class ViduProvider extends BaseProvider {
       }
     } catch (error) {
       const normalized = normalizeError(error);
-      if (taskId) normalized.nonRetryable = true;
+      if (taskId) {
+        normalized.nonRetryable = true;
+        normalized.providerRequestId = taskId;
+      }
       throw normalized;
     }
   }
@@ -93,7 +105,7 @@ class ViduProvider extends BaseProvider {
     const started = Date.now();
     const response = await this.transport(this.endpoint('/ent/v2/tasks'), { method: 'GET', headers: this.headers(), signal });
     if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
-    return { connected: true, providerVersion: response.headers?.get?.('x-api-version') || 'Available', defaultModel: this.config.video_model || this.config.default_model || 'viduq3-turbo', responseTime: Date.now() - started };
+    return { connected: true, providerVersion: response.headers?.get?.('x-api-version') || 'Available', defaultModel: this.model({ mediaType: 'video' }), responseTime: Date.now() - started };
   }
 }
 
