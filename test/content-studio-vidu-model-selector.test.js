@@ -1,33 +1,43 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const vidu = require('../public/content-studio-vidu-models');
 
-const script = fs.readFileSync('public/content-studio.js', 'utf8');
+const dropdown = (media,assetCount,saved,configured) => vidu.stateFor({ media, assetCount, saved, configured });
 
-test('Vidu model selector defines capability-specific, non-empty option lists', () => {
-  assert.match(script, /VIDU_MODELS=\{image:\['viduq2','viduq1'\],video:\['viduq3-turbo','viduq3-pro','viduq2','viduq1'\]\}/);
-  assert.match(script, /input\.innerHTML=models\.map\(model=>`<option value=/);
-  assert.match(script, /choice=models\.includes\(saved\)\?saved:models\.includes\(configured\)\?configured:models\[0\]\|\|''/);
-  assert.match(script, /return Boolean\(choice&&models\.includes\(choice\)\)/);
+test('Image dropdown follows reference2image eligibility', () => {
+  assert.deepEqual(dropdown('image', 0), { models: ['viduq2'], choice: 'viduq2', valid: true, message: '' });
+  assert.deepEqual(dropdown('image', 1).models, ['viduq2', 'viduq1']);
+  assert.equal(dropdown('image', 1, 'viduq1').choice, 'viduq1');
 });
 
-test('Vidu remembers image and video selections independently', () => {
-  assert.match(script, /contentStudio\.vidu\.imageModel/);
-  assert.match(script, /contentStudio\.vidu\.videoModel/);
-  assert.match(script, /localStorage\.setItem\(VIDU_MODEL_KEYS\[media\],input\.value\)/);
-  assert.match(script, /configureMode\(b\.dataset\.studioType\)/);
-  assert.match(script, /renderProviders\(media\)/);
+test('Video dropdown follows text2video, img2video, and reference2video endpoints', () => {
+  assert.deepEqual(dropdown('video', 0).models, ['viduq3-turbo','viduq3-pro','viduq2','viduq1']);
+  assert.deepEqual(dropdown('video', 1).models, ['viduq3-pro-fast','viduq3-turbo','viduq3-pro','viduq2-pro-fast','viduq2-pro','viduq2-turbo','viduq1','viduq1-classic']);
+  assert.deepEqual(dropdown('video', 2).models, ['viduq3-turbo','viduq3','viduq2','viduq1']);
+  assert.equal(dropdown('video', 0).choice, 'viduq3-turbo');
 });
 
-test('Vidu rejects an empty or capability-invalid model before generation', () => {
-  assert.match(script, /provider==='vidu'&&!VIDU_MODELS\[media\]\?\.includes\(model\)/);
-  assert.match(script, /Pilih model Vidu yang tersedia untuk capability ini\./);
-  assert.match(script, /studio-generate'\)\.disabled=empty\|\|!modelsReady/);
+test('adding and removing assets updates options without retaining an invalid model', () => {
+  const noAsset = dropdown('video', 0, 'viduq3-pro');
+  const oneAsset = dropdown('video', 1, noAsset.choice);
+  const twoAssets = dropdown('video', 2, 'viduq3-pro-fast');
+  const removed = dropdown('video', 0, twoAssets.choice);
+  assert.equal(oneAsset.choice, 'viduq3-pro');
+  assert.equal(twoAssets.choice, 'viduq3-turbo');
+  assert.equal(removed.choice, 'viduq3-turbo');
 });
 
-test('OrcaRouter and 9Router retain their dedicated model selector paths', () => {
-  assert.match(script, /if\(isNine\)\{/);
-  assert.match(script, /if\(!isOrca\)/);
-  assert.match(script, /ORCA_MODEL_KEYS\[media\]/);
-  assert.match(script, /NINE_MODEL_KEYS\[media\]/);
+test('more than seven references leaves no selectable model and blocks generation', () => {
+  const state = dropdown('image', 8, 'viduq2');
+  assert.deepEqual(state.models, []);
+  assert.equal(state.choice, '');
+  assert.equal(state.valid, false);
+  assert.match(state.message, /maksimal 7 gambar/);
+  assert.equal(vidu.validate('video', 8, 'viduq3-turbo').valid, false);
+});
+
+test('invalid and reference-only image models cannot be submitted', () => {
+  assert.deepEqual(vidu.validate('image', 0, 'viduq1'), { valid: false, message: 'Model viduq1 Image memerlukan setidaknya satu gambar referensi.' });
+  assert.equal(vidu.validate('video', 1, 'viduq3').valid, false);
+  assert.equal(vidu.validate('video', 1, 'viduq3-pro-fast').valid, true);
 });
