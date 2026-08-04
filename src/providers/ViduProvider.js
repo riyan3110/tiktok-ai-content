@@ -60,6 +60,38 @@ class ViduProvider extends BaseProvider {
     return Object.fromEntries(Object.entries(body).filter(([, value]) => value !== undefined));
   }
 
+  async poll(taskId, signal) {
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const response = await this.transport(this.endpoint(`/ent/v2/tasks/${encodeURIComponent(taskId)}/creations`), {
+          method: 'GET', headers: this.headers(), signal
+        });
+        if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
+        return await response.json();
+      } catch (error) {
+        lastError = error;
+        const status = Number(error.status || 0);
+        const networkError = error instanceof TypeError || /ECONN|ENOTFOUND|EAI_AGAIN|UND_ERR/i.test(error.code || '');
+        const transient = status === 429 || status >= 500 && status <= 599 || networkError;
+        if (!transient || attempt === 3 || error.name === 'AbortError' || signal?.aborted) throw error;
+        await delay((Number(this.config.poll_retry_backoff_ms) || 250) * attempt, signal);
+      }
+    }
+    throw lastError;
+  }
+
+  async cancelTask(taskId) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number(this.config.cancel_timeout_ms) || 2000);
+    try {
+      await this.transport(this.endpoint(`/ent/v2/tasks/${encodeURIComponent(taskId)}/cancel`), {
+        method: 'POST', headers: this.headers(), body: JSON.stringify({ id: taskId }), signal: controller.signal
+      });
+    } catch {}
+    finally { clearTimeout(timeout); }
+  }
+
   async execute(input, { signal, onProgress = () => {} } = {}) {
     let taskId;
     try {
@@ -75,11 +107,7 @@ class ViduProvider extends BaseProvider {
       onProgress('Generating');
       while (true) {
         await delay(Number(this.config.video_poll_interval_ms) || 5000, signal);
-        const response = await this.transport(this.endpoint(`/ent/v2/tasks/${encodeURIComponent(taskId)}/creations`), {
-          method: 'GET', headers: this.headers(), signal
-        });
-        if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
-        const payload = await response.json();
+        const payload = await this.poll(taskId, signal);
         const data = payload.data || payload;
         const status = String(data.state || data.status || '').toLowerCase();
         if (['failed', 'failure'].includes(status)) throw Object.assign(new Error(data.err_code || data.message || 'Video generation failed'), { type: 'Provider Error' });
@@ -92,6 +120,7 @@ class ViduProvider extends BaseProvider {
         onProgress(['created', 'queueing', 'queued'].includes(status) ? 'Waiting' : 'Generating');
       }
     } catch (error) {
+      if (taskId && signal?.aborted) await this.cancelTask(taskId);
       const normalized = normalizeError(error);
       if (taskId) {
         normalized.nonRetryable = true;

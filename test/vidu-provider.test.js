@@ -12,7 +12,7 @@ const response = (body, { ok = true, status = 200 } = {}) => ({
   json: async () => body,
   text: async () => typeof body === 'string' ? body : JSON.stringify(body)
 });
-const config = { provider: 'vidu', base_url: 'https://api.vidu.test', api_key: 'secret', default_model: 'viduq3-turbo', video_poll_interval_ms: 1 };
+const config = { provider: 'vidu', base_url: 'https://api.vidu.test', api_key: 'secret', default_model: 'viduq3-turbo', video_poll_interval_ms: 1, poll_retry_backoff_ms: 1, cancel_timeout_ms: 20 };
 
 const successfulTransport = calls => async (url, options) => {
   calls.push({ url, options });
@@ -114,7 +114,24 @@ test('Vidu marks polling GET errors non-retryable and never sends a second POST'
   });
 
   await assert.rejects(provider.execute({ mediaType: 'video', prompt: 'Generate', parameters: {} }), error => error.nonRetryable === true && error.status === 503 && error.providerRequestId === 'created-task');
-  assert.deepEqual(calls.map(call => call.options.method), ['POST', 'GET']);
+  assert.equal(calls.filter(call => call.options.method === 'POST').length, 1);
+  assert.deepEqual(calls.map(call => call.options.method), ['POST', 'GET', 'GET', 'GET']);
+});
+
+test('Vidu retries two transient polling failures and succeeds without another POST', async () => {
+  const calls = [];
+  let polls = 0;
+  const provider = new ViduProvider(config, async (url, options) => {
+    calls.push({ url, options });
+    if (options.method === 'POST') return response({ task_id: 'retry-task' });
+    polls += 1;
+    return polls < 3 ? response('temporarily unavailable', { ok: false, status: 503 }) : response({ state: 'success', creations: [{ url: 'https://cdn.test/retried.mp4' }] });
+  });
+
+  const result = await provider.execute({ mediaType: 'video', prompt: 'Retry polling', parameters: {} });
+  assert.equal(calls.filter(call => call.options.method === 'POST').length, 1);
+  assert.equal(calls.filter(call => call.options.method === 'GET').length, 3);
+  assert.deepEqual(result.media, [{ url: 'https://cdn.test/retried.mp4' }]);
 });
 
 test('Vidu normalizes the legacy vidu2.0 model for text2video', async () => {
@@ -146,7 +163,7 @@ test('connector does not retry a paid Vidu POST after polling fails', async () =
 
   assert.equal(db.prepare("SELECT retry_count FROM ai_provider_settings WHERE provider='vidu'").get().retry_count, 2);
   assert.equal(calls.filter(call => call.options.method === 'POST').length, 1);
-  assert.deepEqual(calls.map(call => call.options.method), ['POST', 'GET']);
+  assert.deepEqual(calls.map(call => call.options.method), ['POST', 'GET', 'GET', 'GET']);
   assert.equal(db.prepare('SELECT provider_request_id FROM ai_generations WHERE id=?').get(generationId).provider_request_id, 'connector-task');
   db.close();
 });
@@ -161,14 +178,38 @@ test('Vidu forwards AbortSignal and stops polling when aborted', async () => {
   const calls = [];
   const provider = new ViduProvider({ ...config, video_poll_interval_ms: 50 }, async (url, options) => {
     calls.push({ url, options });
-    if (options.method === 'POST') {
+    if (url.endsWith('/text2video')) {
       controller.abort();
       return response({ task_id: 'cancelled-task' });
     }
+    if (url.endsWith('/cancel')) return response({ status: 'success' });
     throw new Error('poll must not run');
   });
 
   await assert.rejects(provider.execute({ mediaType: 'video', prompt: 'Stop', parameters: {} }, { signal: controller.signal }), error => error.type === 'Timeout');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[1].url, 'https://api.vidu.test/ent/v2/tasks/cancelled-task/cancel');
+  assert.equal(calls[1].options.method, 'POST');
+  assert.equal(calls[1].options.headers.Authorization, 'Token secret');
+  assert.deepEqual(JSON.parse(calls[1].options.body), { id: 'cancelled-task' });
+  assert.notEqual(calls[1].options.signal, controller.signal);
+});
+
+test('Vidu local cancellation survives a failed remote cancel request', async () => {
+  const controller = new AbortController();
+  const calls = [];
+  const provider = new ViduProvider(config, async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith('/text2video')) {
+      controller.abort();
+      return response({ task_id: 'failed-cancel-task' });
+    }
+    if (url.endsWith('/cancel')) throw new TypeError('cancel network failure');
+    throw new Error('poll must not run');
+  });
+
+  await assert.rejects(provider.execute({ mediaType: 'video', prompt: 'Stop locally', parameters: {} }, { signal: controller.signal }), error => error.type === 'Timeout' && error.providerRequestId === 'failed-cancel-task');
+  assert.equal(calls.filter(call => call.url.endsWith('/text2video')).length, 1);
+  assert.equal(calls.filter(call => call.url.endsWith('/cancel')).length, 1);
 });
