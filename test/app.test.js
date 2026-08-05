@@ -11,11 +11,54 @@ function setup(overrides = {}) {
   const content = overrides.content || { generateContent: async (topics, options) => ({ topic: options.requestedTopic || (topics.length ? 'Topik Baru' : 'Storyboard AI'), hook: 'Hook kuat', body: '1. Tulis brief\n2. Buat visual', caption: 'Coba cara ini', hashtags: ['#AIAds'], cta: 'Simpan dan ikuti' }) };
   const images = overrides.images || { createSlides: async (id) => [`/generated/${id}-1.jpg`, `/generated/${id}-2.jpg`, `/generated/${id}-3.jpg`], validateSlides: async () => {} };
   const tiktok = overrides.tiktok || { randomState: () => 'state', authorizationUrl: () => 'https://example.com/oauth', validateImageUrls: async () => {}, publishPhotos: async () => ({ data: { publish_id: 'pub-1' } }), status: async () => ({ data: { status: 'SEND_TO_USER_INBOX' } }) };
-  return { db, app: createApp({ db, content, images, tiktok, trending: overrides.trending || { getLatest: async () => [] } }) };
+  return { db, app: createApp({ db, content, images, tiktok, trending: overrides.trending || { getLatest: async () => [] }, sourceFetcher: overrides.sourceFetcher }) };
 }
 test('generate menyimpan struktur konten dan tiga slide', async () => { const { app } = setup(); const r = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200); assert.equal(r.body.topic, 'Storyboard AI'); assert.equal(r.body.topic_source, 'ai'); assert.equal(r.body.slides.length, 3); assert.deepEqual(r.body.hashtags, ['#AIAds']); });
 test('topik manual wajib dipakai dan disimpan bersama sumber serta input asli', async () => { const { app } = setup(); const r = await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: '  Tutorial   sepatu AI  ' }).expect(200); assert.equal(r.body.topic, 'Tutorial sepatu AI'); assert.equal(r.body.requested_topic, 'Tutorial sepatu AI'); assert.equal(r.body.topic_source, 'manual'); });
 test('topik manual kosong ditolak', async () => { const { app } = setup(); await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: ' ' }).expect(400); });
+
+test('useSources manual tanpa URL menghasilkan 400 dan proses lama tetap tanpa sumber', async () => {
+  let options; const content = { generateContent: async (topics, value) => { options = value; return { topic: value.requestedTopic, hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }; } };
+  const { app } = setup({ content });
+  await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Tema', useSources: true, sourceUrls: [] }).expect(400);
+  await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Tema', useSources: false, sourceUrls: [] }).expect(200);
+  assert.equal(options.useSources, false);
+  assert.deepEqual(options.sources, []);
+});
+
+test('sumber URL dikirim sebagai SOURCE_CONTEXT dan metadata tersimpan', async () => {
+  let options; const fetchedAt = new Date().toISOString();
+  let receivedUrls; const sourceFetcher = { validateSourceUrls: urls => [...new Set(urls)], fetchSources: async urls => { receivedUrls = urls; return [{ url: urls[0], finalUrl: urls[0], title: 'Dokumen', text: 'Teks sumber bersih yang panjang dan relevan.', fetchedAt }]; }, buildSourceContext: sources => `SOURCE 1\nTITLE: ${sources[0].title}\nURL: ${sources[0].url}\nCONTENT:\n${sources[0].text}` };
+  const content = { generateContent: async (topics, value) => { options = value; return { topic: value.requestedTopic, hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }; } };
+  const { app } = setup({ content, sourceFetcher });
+  const r = await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Tema sumber', useSources: true, sourceUrls: ['https://example.com/a','https://example.com/a'] }).expect(200);
+  assert.deepEqual(receivedUrls, ['https://example.com/a']);
+  assert.equal(options.useSources, true);
+  assert.match(options.sourceContext, /SOURCE 1/);
+  assert.match(options.sourceContext, /Teks sumber bersih/);
+  assert.equal(r.body.render_source.verificationStatus, 'source_based');
+  assert.equal(r.body.render_source.sourceCount, 1);
+  assert.equal(r.body.render_source.sources[0].title, 'Dokumen');
+});
+
+test('fetch sumber gagal menghentikan pembuatan konten', async () => {
+  let called = false;
+  const sourceFetcher = { fetchSources: async () => { throw Object.assign(new Error('Gagal mengambil sumber https://example.com: Timeout'), { status: 400 }); }, buildSourceContext: () => '' };
+  const content = { generateContent: async () => { called = true; } };
+  const { app } = setup({ content, sourceFetcher });
+  await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Tema gagal', useSources: true, sourceUrls: ['https://example.com'] }).expect(400);
+  assert.equal(called, false);
+});
+
+
+test('konten gagal grounding tidak disimpan', async () => {
+  const content = { generateContent: async () => { throw Object.assign(new Error('Konten tidak dapat dibuat karena sebagian klaim tidak didukung sumber.'), { status: 422 }); } };
+  const sourceFetcher = { validateSourceUrls: urls => urls, fetchSources: async urls => [{ url: urls[0], finalUrl: urls[0], title: 'Sumber', text: 'Isi sumber cukup panjang.', fetchedAt: new Date().toISOString() }], buildSourceContext: () => '<SOURCE id="source-1">CONTENT</SOURCE>' };
+  const { app, db } = setup({ content, sourceFetcher });
+  await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Tema grounding', useSources: true, sourceUrls: ['https://example.com'] }).expect(422);
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM contents').get().count, 0);
+});
+
 test('topik trending memakai topik relevan dari service', async () => { let options; const content = { generateContent: async (topics, value) => { options = value; return { topic: value.requestedTopic, hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }; } }; const { app } = setup({ content, trending: { getLatest: async () => ['Tren Canva AI'] } }); const r = await request(app).post('/generate').send({ topicSource: 'trending' }).expect(200); assert.equal(options.requestedTopic, 'Tren Canva AI'); assert.equal(options.trendingFallback, false); assert.equal(r.body.topic_source, 'trending'); });
 test('topik trending fallback ke AI berdasarkan tanggal saat service gagal', async () => { let options; const content = { generateContent: async (topics, value) => { options = value; return { topic: 'Tren AI Hari Ini', hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }; } }; const { app } = setup({ content, trending: { getLatest: async () => { throw new Error('offline'); } } }); await request(app).post('/generate').send({ topicSource: 'trending' }).expect(200); assert.equal(options.trendingFallback, true); assert.match(options.date, /^\d{4}-\d{2}-\d{2}$/); });
 test('duplikat AI dibandingkan tanpa kapital dan spasi lalu generate ulang', async () => { let calls = 0; const content = { generateContent: async () => ({ topic: ++calls === 1 ? '  STORYBOARD   ai ' : 'Topik Unik', hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }) }; const { app, db } = setup({ content }); db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta) VALUES('Storyboard AI','H','B','C','[]','CTA')").run(); const r = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200); assert.equal(calls, 2); assert.equal(r.body.topic, 'Topik Unik'); });
