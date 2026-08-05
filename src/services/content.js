@@ -193,6 +193,19 @@ function groundingText(value) {
   return decodeGroundingEntities(String(value || '')).toLocaleLowerCase('id-ID').replace(/[#*_`~()[\]{}"'“”‘’.,;:!?/\\|-]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 function sourceGroundingError(message) { return `SOURCE_GROUNDING: ${message}`; }
+
+function hasClaimFor(value, claimNorms) {
+  const normalized = groundingText(String(value || '').replace(/^\\d+[.)\\s-]*/, ''));
+  return Boolean(normalized) && claimNorms.some(claim => claim === normalized || claim.includes(normalized) || normalized.includes(claim));
+}
+function isLikelyFactualStatement(value) {
+  const normalized = groundingText(value);
+  if (!normalized) return false;
+  if (words(normalized).length <= 2 && !/\d/.test(normalized)) return false;
+  if (/^(?:coba|baca|simpan|lihat|jelajahi|ikuti|bagikan|cek)(?:\s|$)/i.test(normalized) && !/(?:lebih|mudah|cepat|profesional|aman|terbaik|semua|otomatis|pasti|dijamin|hasil|manfaat|langkah|membantu|dapat|bisa)/i.test(normalized)) return false;
+  return /\d|%|(?:dalam hitungan menit|tanpa skill|dijamin|pasti|selalu|terbaik|terbukti|profesional|otomatis|konsisten|on brand|siap dipublikasikan|mudah|cepat|aman|cocok|semua bisnis|lebih|manfaat|hasil|fitur|kemampuan|langkah|cara|membantu|membuat|menghasilkan|dapat|bisa|brand kit|opsional|otomatis)/i.test(normalized);
+}
+
 function validateSourceGrounding(content, sourceContext, sources = []) {
   const errors = [];
   const sourceMap = new Map((sources || []).map((source, index) => [`source-${index + 1}`, groundingText(source.text || '')]));
@@ -209,16 +222,20 @@ function validateSourceGrounding(content, sourceContext, sources = []) {
     if (sourceText && claim?.evidence && !sourceText.includes(groundingText(claim.evidence))) errors.push(sourceGroundingError(`Evidence palsu atau tidak ditemukan untuk claim: ${claim.text || index + 1}.`));
   });
   const claimTexts = groundingText(claims.map(claim => `${claim.text} ${claim.evidence}`).join(' '));
+  const claimNorms = claims.map(claim => groundingText(claim.text)).filter(Boolean);
   const claimEvidenceTexts = groundingText(claims.map(claim => claim.evidence).join(' '));
   const renderedText = groundingText([content?.topic, content?.hook, content?.body, content?.caption, content?.cta, content?.result, content?.tip, ...(content?.slides || []).flatMap(slide => [slide.title, slide.body, ...(slide.points || [])])].join(' '));
   RISKY_SOURCE_PHRASES.forEach(phrase => {
     const normalized = groundingText(phrase);
     if (renderedText.includes(normalized) && !claimEvidenceTexts.includes(normalized)) errors.push(sourceGroundingError(`Klaim berisiko tidak memiliki bukti sumber: ${phrase}.`));
   });
-  const factualLines = (content?.slides || []).flatMap(slide => [slide.body, ...(slide.points || [])]).map(value => String(value || '').trim()).filter(value => words(value).length >= 4);
+  const factualLines = (content?.slides || []).flatMap(slide => [slide.body, ...(slide.points || [])]).map(value => String(value || '').trim()).filter(Boolean);
   factualLines.forEach(line => {
-    const normalized = groundingText(line.replace(/^\d+[.)\s-]*/, ''));
-    if (normalized && !claimTexts.includes(normalized)) errors.push(sourceGroundingError(`Klaim berikut tidak memiliki bukti sumber: ${line}.`));
+    if (!hasClaimFor(line, claimNorms)) errors.push(sourceGroundingError(`Klaim berikut tidak memiliki bukti sumber: ${line}.`));
+  });
+  const maybeFactualFields = [content?.topic, content?.hook, content?.result, content?.tip, content?.cta, ...(content?.slides || []).map(slide => slide.title)].map(value => String(value || '').trim()).filter(Boolean);
+  maybeFactualFields.forEach(line => {
+    if (isLikelyFactualStatement(line) && !hasClaimFor(line, claimNorms)) errors.push(sourceGroundingError(`Pernyataan faktual wajib memiliki evidence: ${line}.`));
   });
   const captionClaims = String(content?.caption || '').split(/[.!?]\s+/).map(value => value.trim()).filter(value => words(value).length >= 4);
   captionClaims.forEach(sentence => {

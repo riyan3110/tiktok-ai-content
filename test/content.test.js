@@ -155,3 +155,15 @@ test('repair prompt grounding menyebut klaim yang tidak didukung sumber', async 
   assert.match(requests[1].messages.at(-1).content, /dalam hitungan menit/);
   assert.match(requests[1].messages.at(-1).content, /Jangan membuat evidence baru/);
 });
+
+test('validasi grounding konservatif untuk point pendek title hook dan CTA', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Desain cepat untuk konten visual. Mudah digunakan oleh tim kecil. Coba jelajahi fiturnya.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Desain cepat', hook: 'Eksplorasi fitur', cta: 'Coba jelajahi fiturnya', slides: [{ title: 'Eksplorasi', body: '', points: ['Desain cepat'], claims: [{ text: 'Desain cepat', sourceId: 'source-1', evidence: 'Desain cepat untuk konten visual' }] }] };
+  assert.match(validateSourceGrounding({ ...valid, slides: [{ ...valid.slides[0], points: ['Desain lebih cepat'], claims: [] }] }, '', sources).join(' '), /Desain lebih cepat/);
+  assert.match(validateSourceGrounding({ ...valid, slides: [{ ...valid.slides[0], points: ['Mudah digunakan'], claims: [] }] }, '', sources).join(' '), /Mudah digunakan/);
+  assert.match(validateSourceGrounding({ ...valid, slides: [{ ...valid.slides[0], title: 'Cocok untuk semua bisnis', points: ['Desain cepat'], claims: valid.slides[0].claims }] }, '', sources).join(' '), /Cocok untuk semua bisnis/);
+  assert.match(validateSourceGrounding({ ...valid, hook: 'Desain lebih cepat untuk tim kecil' }, '', sources).join(' '), /Desain lebih cepat untuk tim kecil/);
+  assert.deepEqual(validateSourceGrounding({ ...valid, cta: 'Coba jelajahi fiturnya' }, '', sources), []);
+  assert.deepEqual(validateSourceGrounding(valid, '', sources), []);
+});
