@@ -191,13 +191,14 @@ test('validasi grounding menerima klaim dengan evidence valid dan menolak klaim 
 
 test('repair prompt grounding menyebut klaim yang tidak didukung sumber', async () => {
   const sources = [{ url: 'https://example.com', finalUrl: 'https://example.com', title: 'Canva AI', fetchedAt: '2026-08-05T00:00:00.000Z', text: 'Canva AI membantu membuat desain dari prompt teks.' }];
-  const bad = { focus: { masalah: 'Butuh desain', penyebab: 'Belum ada bahan', solusi: 'Pakai sumber', hasil: 'Hasil tidak dijelaskan secara eksplisit pada sumber' }, topic: 'Canva AI', hook: 'Canva AI Untuk Desain', body: 'Desain selesai dalam hitungan menit', caption: 'Desain selesai dalam hitungan menit', hashtags: ['#CanvaAI'], cta: 'Baca sumber', trendKeywordsUsed: [], content_angle: 'source', primary_tool: 'Canva AI', hook_pattern: 'source', verificationStatus: 'source_based', unsupportedClaims: [], slides: [{ section: 'PEMBUKA', title: 'Canva AI', body: 'Desain selesai dalam hitungan menit', points: [], claims: [] }, { section: 'ISI', title: 'Kemampuan', body: 'Canva AI membantu membuat desain dari prompt teks', points: [], claims: [{ text: 'Canva AI membantu membuat desain dari prompt teks', sourceId: 'source-1', evidence: 'Canva AI membantu membuat desain dari prompt teks' }] }, { section: 'PENUTUP', title: 'Baca Sumber', body: '', points: [], claims: [] }] };
+  const bad = { focus: { masalah: 'Butuh desain', penyebab: 'Belum ada bahan', solusi: 'Pakai sumber', hasil: 'Hasil tidak dijelaskan secara eksplisit pada sumber' }, topic: 'Canva AI', hook: 'Canva AI Untuk Desain', body: 'Desain selesai dalam hitungan menit', caption: 'Desain selesai dalam hitungan menit', hashtags: ['#CanvaAI'], cta: 'Baca sumber', trendKeywordsUsed: [], content_angle: 'source', primary_tool: 'Canva AI', hook_pattern: 'source', verificationStatus: 'source_based', unsupportedClaims: [], slides: [{ section: 'PEMBUKA', title: 'Pengalaman Suara Dihasilkan AI', body: 'Desain selesai dalam hitungan menit', points: [], claims: [] }, { section: 'ISI', title: 'Kemampuan', body: 'Canva AI membantu membuat desain dari prompt teks', points: [], claims: [{ text: 'Canva AI membantu membuat desain dari prompt teks', sourceId: 'source-1', evidence: 'Canva AI membantu membuat desain dari prompt teks' }] }, { section: 'PENUTUP', title: 'Baca Sumber', body: '', points: [], claims: [] }] };
   const good = { ...bad, body: 'Canva AI membantu membuat desain dari prompt teks', caption: 'Canva AI membantu membuat desain dari prompt teks', slides: [{ ...bad.slides[0], body: 'Canva AI membantu membuat desain dari prompt teks', claims: [{ text: 'Canva AI membantu membuat desain dari prompt teks', sourceId: 'source-1', evidence: 'Canva AI membantu membuat desain dari prompt teks' }] }, bad.slides[1], { section: 'TRANSISI', title: 'Cek konteks lengkapnya', body: '', points: [], claims: [] }, bad.slides[2]] };
   const requests = [];
   const client = { chat: { completions: { create: async value => { requests.push(value); return { choices: [{ message: { content: JSON.stringify(requests.length === 1 ? bad : good) } }] }; } } } };
   const repaired = await generateContent([], { useSources: true, sourceContext: '<SOURCE id="source-1">\nCONTENT:\nCanva AI membantu membuat desain dari prompt teks.\n</SOURCE>', sources }, client);
   assert.equal(requests.length, 2);
   assert.equal(repaired.slides.length, 4);
+  assert.equal(repaired.slides[0].title, 'Pengalaman Suara Dihasilkan AI');
   assert.match(requests[1].messages.at(-1).content, /Klaim berikut tidak memiliki bukti sumber/);
   assert.match(requests[1].messages.at(-1).content, /dalam hitungan menit/);
   assert.match(requests[1].messages.at(-1).content, /Jangan membuat evidence baru/);
@@ -221,6 +222,27 @@ test('isLikelyFactualStatement tidak false positive pada kata kepastian', () => 
   const sources = [{ text: 'Fitur ini memberikan kepastian jadwal bagi pengguna.' }];
   const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Jadwal pasti', focus: { masalah: 'Butuh kepastian', penyebab: 'Jadwal tidak pasti', solusi: 'Gunakan fitur', hasil: 'Kepastian jadwal' }, hook: 'Kepastian Jadwal', cta: 'Coba sekarang', slides: [{ title: 'Kepastian', body: '', points: ['Kepastian jadwal'], claims: [{ text: 'Kepastian jadwal', sourceId: 'source-1', evidence: 'memberikan kepastian jadwal bagi pengguna' }] }] };
   assert.deepEqual(validateSourceGrounding(valid, '', sources), []);
+});
+
+test('isLikelyFactualStatement mencocokkan keyword sebagai kata utuh', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const base = { verificationStatus: 'source_based', unsupportedClaims: [], slides: [] };
+  const errorsForTitle = title => validateSourceGrounding({ ...base, slides: [{ title, body: '', points: [], claims: [] }] }, '', []);
+
+  for (const title of [
+    'Pengalaman Suara Dihasilkan AI',
+    'Pengalaman pengguna modern',
+    'Pengamanan data pengguna',
+    'Video yang dihasilkan AI'
+  ]) assert.deepEqual(errorsForTitle(title), [], title);
+
+  for (const title of [
+    'Fitur ini aman',
+    'Hasil meningkat pesat',
+    'AI menghasilkan video'
+  ]) assert.match(errorsForTitle(title).join(' '), /Pernyataan faktual wajib memiliki evidence/, title);
+
+  assert.match(errorsForTitle('Dipakai oleh 80% pengguna').join(' '), /Pernyataan faktual wajib memiliki evidence/);
 });
 
 test('isLikelyFactualStatement mendeteksi klaim pasti yang tidak didukung sumber', () => {
