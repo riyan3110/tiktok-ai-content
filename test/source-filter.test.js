@@ -81,7 +81,12 @@ test('validator menjaga struktur normal dan menolak judul mentah, filler, slide 
   const candidate = {
     slides: base.slides.map((slide, index) => ({
       ...slide,
-      claims: index === 1 ? [{
+      claims: index === 0 ? [{
+        field: 'slide:0:body',
+        text: slide.body,
+        sourceId: 'source-1',
+        evidence: 'The researcher says AI agents can work across longer tasks when goals and limits are clear.'
+      }] : index === 1 ? [{
         field: 'slide:1:title',
         text: slide.title,
         sourceId: 'source-1',
