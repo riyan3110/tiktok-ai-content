@@ -258,12 +258,29 @@ function hasClaimFor(value, claimNorms) {
   const normalized = groundingText(String(value || '').replace(/^\\d+[.)\\s-]*/, ''));
   return Boolean(normalized) && claimNorms.some(claim => claim === normalized || claim.includes(normalized) || normalized.includes(claim));
 }
+const FACTUAL_SINGLE_WORDS = new Set([
+  'dijamin', 'pasti', 'selalu', 'terbaik', 'terbukti', 'profesional', 'otomatis',
+  'konsisten', 'mudah', 'cepat', 'aman', 'cocok', 'lebih', 'manfaat', 'hasil',
+  'fitur', 'kemampuan', 'langkah', 'cara', 'membantu', 'membuat', 'menghasilkan',
+  'dapat', 'bisa', 'opsional'
+]);
+const FACTUAL_PHRASES = [
+  'dalam hitungan menit', 'tanpa skill', 'on brand', 'siap dipublikasikan',
+  'semua bisnis', 'brand kit'
+];
+function hasFactualKeyword(value) {
+  const normalized = groundingText(value);
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.some(token => FACTUAL_SINGLE_WORDS.has(token))) return true;
+  const padded = ` ${normalized} `;
+  return FACTUAL_PHRASES.some(phrase => padded.includes(` ${phrase} `));
+}
 function isLikelyFactualStatement(value) {
   const normalized = groundingText(value);
   if (!normalized) return false;
   if (words(normalized).length <= 2 && !/\d/.test(normalized)) return false;
-  if (/^(?:coba|baca|simpan|lihat|jelajahi|ikuti|bagikan|cek)(?:\s|$)/i.test(normalized) && !/(?:lebih|mudah|cepat|profesional|aman|terbaik|semua|otomatis|\bpasti\b|dijamin|hasil|manfaat|langkah|membantu|dapat|bisa)/i.test(normalized)) return false;
-  return /\d|%|rp\.?\s*\d|[Rr]p\b|\b\d+\s*(?:rb|jt|miliar|triliun|ribu|juta|orang|jiwa|kasus|unit|kali|hari|bulan|tahun|menit|jam|detik)\b|(?:dalam hitungan menit|tanpa skill|dijamin|\bpasti\b|selalu|terbaik|terbukti|profesional|otomatis|konsisten|on brand|siap dipublikasikan|mudah|cepat|aman|cocok|semua bisnis|lebih|manfaat|hasil|fitur|kemampuan|langkah|cara|membantu|membuat|menghasilkan|dapat|bisa|brand kit|opsional|otomatis)/i.test(normalized);
+  if (/^(?:coba|baca|simpan|lihat|jelajahi|ikuti|bagikan|cek)(?:\s|$)/i.test(normalized) && !hasFactualKeyword(normalized)) return false;
+  return /\d|%|rp\.?\s*\d|\b\d+\s*(?:rb|jt|miliar|triliun|ribu|juta|orang|jiwa|kasus|unit|kali|hari|bulan|tahun|menit|jam|detik)\b/i.test(normalized) || hasFactualKeyword(normalized);
 }
 
 function validateSourceGrounding(content, sourceContext, sources = []) {
