@@ -32,7 +32,7 @@ const TOPIC_FILLER_WORDS = new Set(['yang', 'dan', 'atau', 'dari', 'untuk', 'den
 const COPY_FILLER_WORDS = new Set([...TOPIC_FILLER_WORDS, 'langkah', 'tutorial', 'fakta', 'singkat']);
 
 function meaningfulTokens(value, ignored = COPY_FILLER_WORDS) {
-  return normalizedLine(value).split(' ').filter(token => token.length > 2 && !ignored.has(token));
+  return normalizedLine(value).split(' ').filter(token => (token.length > 2 || token === 'ai') && !ignored.has(token));
 }
 
 function duplicateSlideCopy(slide) {
@@ -193,14 +193,17 @@ function validateSlides(input, { format = 'Tutorial langkah', manualTopic = '', 
   });
   if (format === 'Fakta singkat') {
     slides.forEach((slide, index) => {
-      if (/\b(?:tutorial|langkah)(?:\s+(?:praktis|pertama|\d+))?\b/i.test(`${slide.section} ${slide.title} ${slide.body} ${slide.points.join(' ')}`)) errors.push(`Slide ${index + 1}: format Fakta singkat dilarang memakai TUTORIAL atau LANGKAH.`);
+      const copy = `${slide.section} ${slide.title} ${slide.body} ${slide.points.join(' ')}`;
+      const hasTutorialStructure = /\btutorial\b|\blangkah\s+(?:praktis|\d+)\b/i.test(copy);
+      const hasNumberedStep = [slide.body, ...slide.points].some(value => /^\s*\d+[.)]\s+/.test(value));
+      if (hasTutorialStructure || hasNumberedStep) errors.push(`Slide ${index + 1}: format Fakta singkat dilarang memakai struktur TUTORIAL atau LANGKAH bernomor.`);
     });
   }
   const anchors = manualTopicAnchors(manualTopic);
   if (anchors.length) {
     slides.forEach((slide, index) => {
       const slideTokens = new Set(meaningfulTokens(mainSlideText(slide), TOPIC_FILLER_WORDS));
-      if (!anchors.some(anchor => slideTokens.has(anchor))) errors.push(`Slide ${index + 1}: isi menyimpang dari inti topik manual; pertahankan ${anchors.join(' / ')}.`);
+      if (!anchors.every(anchor => slideTokens.has(anchor))) errors.push(`Slide ${index + 1}: isi menyimpang dari inti topik manual; pertahankan ${anchors.join(' ')}.`);
     });
   }
   if (format === 'Tutorial langkah') {
