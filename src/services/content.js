@@ -225,8 +225,16 @@ function validateSourceGrounding(content, sourceContext, sources = []) {
     if (sourceText && claim?.evidence && !sourceText.includes(groundingText(claim.evidence))) errors.push(sourceGroundingError(`Evidence palsu atau tidak ditemukan untuk claim: ${claim.text || index + 1}.`));
   });
   if (content?.verificationStatus === 'needs_review') return [...new Set(errors)];
+  const validClaims = claims.filter(claim => {
+    const text = String(claim?.text || '').trim();
+    const evidence = String(claim?.evidence || '').trim();
+    const sourceText = sourceMap.get(claim?.sourceId);
+    const evidenceWords = words(evidence).length;
+    return text && evidence && sourceText && evidenceWords >= 4 && evidenceWords <= 25 && sourceText.includes(groundingText(evidence));
+  });
   const claimTexts = groundingText(claims.map(claim => `${claim.text} ${claim.evidence}`).join(' '));
   const claimNorms = claims.map(claim => groundingText(claim.text)).filter(Boolean);
+  const validClaimAndEvidenceNorms = validClaims.flatMap(claim => [groundingText(claim.text), groundingText(claim.evidence)]).filter(Boolean);
   const claimEvidenceTexts = groundingText(claims.map(claim => claim.evidence).join(' '));
   const renderedFields = [content?.topic, content?.hook, content?.body, content?.caption, content?.cta, content?.result, content?.tip, ...(content?.slides || []).flatMap(slide => [slide.title, slide.body, ...(slide.points || [])])];
   const renderedText = groundingText(renderedFields.join(' '));
@@ -238,7 +246,8 @@ function validateSourceGrounding(content, sourceContext, sources = []) {
     const focusFields = ['masalah', 'penyebab', 'solusi', 'hasil'];
     focusFields.forEach(field => {
       const value = String(content.focus[field] || '').trim();
-      if (!value || hasClaimFor(value, claimNorms)) return;
+      const supportingClaims = field === 'hasil' ? validClaimAndEvidenceNorms : claimNorms;
+      if (!value || hasClaimFor(value, supportingClaims)) return;
       const normalizedValue = groundingText(value);
       const hasUnsupportedRisky = RISKY_SOURCE_PHRASES.some(phrase => {
         const norm = groundingText(phrase);

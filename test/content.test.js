@@ -219,6 +219,22 @@ test('validasi grounding memvalidasi field focus masalah penyebab solusi hasil',
   assert.ok(errors.some(e => e.includes('FOCUS_PENYEBAB')), 'focus.penyebab harus divalidasi');
 });
 
+test('focus.hasil yang tercakup evidence claim valid lolos tanpa evidence terpisah', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Fitur penjadwalan membantu tim membuat jadwal konten konsisten setiap minggu.' }];
+  const content = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Fitur penjadwalan membantu tim', focus: { masalah: 'Jadwal manual', penyebab: 'Proses terpisah', solusi: 'Gunakan fitur', hasil: 'Jadwal konten konsisten' }, hook: 'Fitur Penjadwalan', cta: 'Coba fitur', slides: [{ title: 'Fitur Penjadwalan', body: 'Fitur penjadwalan membantu tim', points: [], claims: [{ text: 'Fitur penjadwalan membantu tim', sourceId: 'source-1', evidence: 'membuat jadwal konten konsisten setiap minggu' }] }] };
+
+  assert.deepEqual(validateSourceGrounding(content, '', sources), []);
+});
+
+test('focus.hasil faktual tanpa dukungan source tetap ditolak', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Fitur penjadwalan membantu tim menyusun rencana konten mingguan.' }];
+  const content = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Fitur penjadwalan membantu tim', focus: { masalah: 'Jadwal manual', penyebab: 'Proses terpisah', solusi: 'Gunakan fitur', hasil: 'Jadwal konten otomatis konsisten' }, hook: 'Fitur Penjadwalan', cta: 'Coba fitur', slides: [{ title: 'Fitur Penjadwalan', body: 'Fitur penjadwalan membantu tim', points: [], claims: [{ text: 'Fitur penjadwalan membantu tim', sourceId: 'source-1', evidence: 'membantu tim menyusun rencana konten mingguan' }] }] };
+
+  assert.match(validateSourceGrounding(content, '', sources).join(' '), /FOCUS_HASIL: Pernyataan faktual wajib memiliki evidence/);
+});
+
 test('validasi grounding memvalidasi body dan points di section MASALAH dan SOLUSI', () => {
   const { validateSourceGrounding } = require('../src/services/content');
   const sources = [{ text: 'Brief yang jelas membantu desainer memahami kebutuhan.' }];
