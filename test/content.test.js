@@ -82,6 +82,71 @@ test('prompt mengikuti kategori, format, dan menjaga inti topik manual', async (
   assert.match(prompt, /Jangan memaksakan isi menjadi video iklan/);
 });
 
+test('regression topik manual Fakta singkat tetap fokus, non-tutorial, ringkas, dan tanpa copy duplikat', async () => {
+  const topic = 'Mengeluarkan biaya mahal untuk proyek besar itu penting, dan itu yang terjadi pada agen AI';
+  const base = {
+    focus: { masalah: 'Biaya agen AI besar', penyebab: 'Infrastruktur kompleks', solusi: 'Memahami komponen biaya', hasil: 'Investasi lebih masuk akal' },
+    topic, hook: 'Mengapa Agen AI Butuh Biaya Besar', body: 'Biaya besar mendukung kemampuan agen AI menangani proyek kompleks.',
+    caption: 'Biaya agen AI berkaitan dengan kompleksitas proyek yang ditangani.', hashtags: ['#AgenAI'], cta: 'Ikuti pembahasan agen AI', trendKeywordsUsed: [],
+    content_angle: 'biaya proyek agen AI', primary_tool: 'agen AI', hook_pattern: 'fakta biaya'
+  };
+  const invalid = { ...base, slides: [
+    { section: 'TUTORIAL', title: 'Langkah 1: Analisis Nilai Proyek', body: 'Mulai dengan menilai proyek secara umum.', points: ['LANGKAH 1 – Identifikasi nilai'] },
+    { section: 'LANGKAH 2', title: 'Susun Anggaran', body: 'Buat anggaran proyek.', points: [] },
+    { section: 'LANGKAH 3', title: 'Kelola Tim', body: 'Atur tim proyek.', points: [] },
+    { section: 'PENUTUP', title: 'Evaluasi Proyek', body: 'Tinjau hasil manajemen proyek.', points: [] }
+  ] };
+  const final = { ...base, slides: [
+    { section: 'PEMBUKA', title: 'Biaya Besar di Balik Agen AI', body: 'Proyek besar menuntut agen AI yang mampu bekerja dalam alur kompleks.', points: [] },
+    { section: 'FAKTA', title: 'Komputasi Menjadi Beban Utama', body: 'Agen AI menjalankan pemrosesan berulang selama menyelesaikan tugas proyek.', points: ['Pemakaian sumber daya intensif'] },
+    { section: 'PENJELASAN', title: 'Kompleksitas Mendorong Investasi', body: 'Semakin rumit peran agen AI, semakin besar dukungan sistem yang dibutuhkan.', points: ['Integrasi banyak layanan'] },
+    { section: 'KESIMPULAN', title: 'Mahal Bukan Tanpa Alasan', body: 'Nilai agen AI terletak pada kapasitasnya menangani pekerjaan proyek berskala besar.', points: ['Biaya mengikuti skala kerja'] }
+  ] };
+  const requests = [];
+  let calls = 0;
+  const client = { chat: { completions: { create: async request => {
+    requests.push(request);
+    return { choices: [{ message: { content: JSON.stringify(calls++ ? final : invalid) } }] };
+  } } } };
+  const output = await generateContent([], { topicSource: 'manual', requestedTopic: topic, contentFormat: 'Fakta singkat' }, client);
+  assert.equal(calls, 2);
+  assert.deepEqual(output.slides, final.slides);
+  assert.equal(output.slides.length, 4);
+  assert.ok(output.slides.every(slide => /agen AI/i.test(`${slide.title} ${slide.body} ${slide.points.join(' ')}`)));
+  assert.doesNotMatch(JSON.stringify(output.slides), /tutorial|langkah/i);
+  assert.match(requests[0].messages[1].content, /setiap slide, termasuk slide terakhir/i);
+  assert.match(requests[0].messages[1].content, /Dilarang memakai section atau copy TUTORIAL, LANGKAH/i);
+});
+
+test('validator menolak label Fakta singkat dan copy antarkolom yang berulang', () => {
+  const { validateSlides } = require('../src/services/content');
+  const slides = [
+    { section: 'FAKTA', title: 'Biaya Agen AI Meningkat', body: 'Biaya agen AI meningkat.', points: [] },
+    { section: 'LANGKAH 1', title: 'Komputasi Agen AI', body: 'Beban komputasi menopang agen.', points: [] },
+    { section: 'PENJELASAN', title: 'Sistem Agen AI', body: 'Integrasi menjaga kerja agen.', points: [] },
+    { section: 'PENUTUP', title: 'Skala Agen AI', body: 'Biaya mengikuti skala agen.', points: [] }
+  ];
+  const errors = validateSlides(slides, { format: 'Fakta singkat' });
+  assert.ok(errors.some(error => /mengulang kalimat atau ide/i.test(error)));
+  assert.ok(errors.some(error => /dilarang memakai struktur TUTORIAL atau LANGKAH bernomor/i.test(error)));
+});
+
+test('anchor manual menjaga agen AI dan Fakta singkat menerima kata langkah dalam kalimat fakta', () => {
+  const { validateSlides } = require('../src/services/content');
+  const topic = 'Mengeluarkan biaya mahal untuk proyek besar itu penting, dan itu yang terjadi pada agen AI';
+  const projectOnly = Array.from({ length: 4 }, (_, index) => ({
+    section: index ? 'FAKTA' : 'PEMBUKA', title: `Skala Proyek Besar ${index + 1}`, body: 'Proyek besar membutuhkan biaya dan dukungan sistem.', points: []
+  }));
+  const topicErrors = validateSlides(projectOnly, { format: 'Fakta singkat', manualTopic: topic });
+  assert.ok(topicErrors.some(error => /pertahankan agen ai/i.test(error)));
+
+  const naturalFact = Array.from({ length: 4 }, (_, index) => ({
+    section: index ? 'FAKTA' : 'PEMBUKA', title: `Konteks Agen AI ${index + 1}`, body: 'Langkah industri ini menunjukkan besarnya investasi untuk agen AI.', points: []
+  }));
+  const formatErrors = validateSlides(naturalFact, { format: 'Fakta singkat', manualTopic: topic });
+  assert.ok(!formatErrors.some(error => /struktur TUTORIAL atau LANGKAH bernomor/i.test(error)));
+});
+
 test('prompt memisahkan keyword, gaya hook, dan pola konten sesuai kegunaannya', async () => {
   let request;
   const result = { focus: { masalah: 'Waktu habis', penyebab: 'Proses manual', solusi: 'Otomasi', hasil: 'Lebih cepat' }, topic: 'Otomasi', hook: 'Kerja Manual Menghabiskan Waktu', body: '1. Otomatiskan satu tugas yang berulang setiap hari agar waktu kerja lebih terjaga', caption: 'Mulai dari satu otomasi sederhana.', hashtags: ['#AI'], cta: 'Coba hari ini', trendKeywordsUsed: ['#AI'] };

@@ -28,6 +28,31 @@ const words = (value) => String(value || '').trim().split(/\s+/).filter(Boolean)
 const normalizedLine = (value) => String(value || '').toLocaleLowerCase('id-ID').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 const MAX_REPAIR_ATTEMPTS = 2;
 const RISKY_SOURCE_PHRASES = ['dalam hitungan menit', 'tanpa skill', 'tanpa skill tinggi', 'dijamin', 'pasti', 'selalu', '100%', 'terbaik', 'terbukti', 'profesional', 'otomatis konsisten', 'on-brand', 'siap dipublikasikan'];
+const TOPIC_FILLER_WORDS = new Set(['yang', 'dan', 'atau', 'dari', 'untuk', 'dengan', 'tentang', 'cara', 'adalah', 'pada', 'itu', 'ini', 'sebagai', 'terjadi', 'penting']);
+const COPY_FILLER_WORDS = new Set([...TOPIC_FILLER_WORDS, 'langkah', 'tutorial', 'fakta', 'singkat']);
+
+function meaningfulTokens(value, ignored = COPY_FILLER_WORDS) {
+  return normalizedLine(value).split(' ').filter(token => (token.length > 2 || token === 'ai') && !ignored.has(token));
+}
+
+function duplicateSlideCopy(slide) {
+  const fields = [slide.title, slide.body, ...(slide.points || [])]
+    .map(value => ({ raw: String(value || ''), tokens: [...new Set(meaningfulTokens(value))] }))
+    .filter(field => field.tokens.length);
+  for (let left = 0; left < fields.length; left += 1) {
+    for (let right = left + 1; right < fields.length; right += 1) {
+      const a = fields[left].tokens;
+      const b = fields[right].tokens;
+      const shared = a.filter(token => b.includes(token));
+      if (normalizedLine(fields[left].raw) === normalizedLine(fields[right].raw) || (shared.length >= 2 && shared.length / Math.min(a.length, b.length) >= 0.75)) return true;
+    }
+  }
+  return false;
+}
+
+function manualTopicAnchors(topic) {
+  return [...new Set(meaningfulTokens(topic, TOPIC_FILLER_WORDS).slice(-2))];
+}
 
 function mainSlideText(slide) {
   const clean = (value) => String(value || '')
@@ -51,7 +76,7 @@ function numberedValues(body, label) {
   return [...String(body || '').matchAll(pattern)].map((match) => Number(match[1]));
 }
 
-function validateContent(content, { format = 'Tutorial langkah' } = {}) {
+function validateContent(content, { format = 'Tutorial langkah', manualTopic = '', validateCopy = true } = {}) {
   const errors = [];
   const strings = ['topic', 'hook', 'body', 'caption', 'cta'];
   if (!content || strings.some((key) => typeof content[key] !== 'string' || !content[key].trim()) ||
@@ -62,7 +87,7 @@ function validateContent(content, { format = 'Tutorial langkah' } = {}) {
     errors.push('Fokus utama (masalah, penyebab, solusi, hasil) belum lengkap.');
   }
   if (words(content.hook).length > 18) errors.push(`Slide 1 memiliki ${words(content.hook).length} kata, batas maksimal 18 kata.`);
-  errors.push(...validateSlides(content.slides, { format }));
+  errors.push(...validateSlides(content.slides, { format, manualTopic, validateCopy }));
 
   const nonEmptyLines = content.body.split('\n').map((line) => line.trim()).filter(Boolean);
   const seen = new Set();
@@ -142,7 +167,7 @@ function sectionRange(section) {
   return match ? [Number(match[1]), Number(match[2] || match[1])] : null;
 }
 
-function validateSlides(input, { format = 'Tutorial langkah' } = {}) {
+function validateSlides(input, { format = 'Tutorial langkah', manualTopic = '', validateCopy = true } = {}) {
   if (!Array.isArray(input)) return ['Tahap normalisasi: response AI tidak memiliki array slides.'];
   const errors = [];
   input.forEach((raw, index) => {
@@ -150,7 +175,8 @@ function validateSlides(input, { format = 'Tutorial langkah' } = {}) {
     if (!slide) errors.push(`Slide ${index + 1} tidak memiliki title, body, atau points.`);
   });
   const slides = normalizeSlides(input);
-  if (slides.length < 3) errors.push(`Tahap validasi: hanya ${slides.length} slide berisi; minimal 3 slide.`);
+  const minimumSlides = format === 'Fakta singkat' ? 4 : 3;
+  if (slides.length < minimumSlides) errors.push(`Tahap validasi: hanya ${slides.length} slide berisi; minimal ${minimumSlides} slide.`);
   if (slides.length > 5) errors.push(`Tahap validasi: ada ${slides.length} slide; maksimal 5 slide.`);
   slides.forEach((slide, index) => {
     if (words(slide.title).length > 12) errors.push(`Slide ${index + 1}: title maksimal 12 kata.`);
@@ -160,10 +186,26 @@ function validateSlides(input, { format = 'Tutorial langkah' } = {}) {
       if (words(point).length > 7) errors.push(`Slide ${index + 1}: point ${pointIndex + 1} maksimal 7 kata.`);
     });
     if (/\r|\n/.test(slide.title) || /\r|\n/.test(slide.body)) errors.push(`Slide ${index + 1}: line break mentah tidak boleh dirender.`);
+    if (validateCopy && duplicateSlideCopy(slide)) errors.push(`Slide ${index + 1}: title, body, dan points mengulang kalimat atau ide yang sama.`);
     const count = words(mainSlideText(slide)).length;
     const limit = slideWordLimit(slide, index, slides.length);
     if (count > limit) errors.push(`Slide ${index + 1} memiliki ${count} kata, batas maksimal ${limit} kata.`);
   });
+  if (format === 'Fakta singkat') {
+    slides.forEach((slide, index) => {
+      const copy = `${slide.section} ${slide.title} ${slide.body} ${slide.points.join(' ')}`;
+      const hasTutorialStructure = /\btutorial\b|\blangkah\s+(?:praktis|\d+)\b/i.test(copy);
+      const hasNumberedStep = [slide.body, ...slide.points].some(value => /^\s*\d+[.)]\s+/.test(value));
+      if (hasTutorialStructure || hasNumberedStep) errors.push(`Slide ${index + 1}: format Fakta singkat dilarang memakai struktur TUTORIAL atau LANGKAH bernomor.`);
+    });
+  }
+  const anchors = manualTopicAnchors(manualTopic);
+  if (anchors.length) {
+    slides.forEach((slide, index) => {
+      const slideTokens = new Set(meaningfulTokens(mainSlideText(slide), TOPIC_FILLER_WORDS));
+      if (!anchors.every(anchor => slideTokens.has(anchor))) errors.push(`Slide ${index + 1}: isi menyimpang dari inti topik manual; pertahankan ${anchors.join(' ')}.`);
+    });
+  }
   if (format === 'Tutorial langkah') {
     let expected = 1;
     slides.forEach((slide, index) => {
@@ -538,7 +580,7 @@ async function generateContent(previousTopics, options = {}, client) {
     'Edukasi teknologi': 'Gunakan bahasa sederhana dan satu contoh yang mudah dipahami.', Motivasi: 'Gunakan motivasi yang membumi.',
     'Konten kreator': 'Berikan tindakan praktis untuk proses kreator.', 'Iklan & UGC': 'Fokus pada konsep atau produksi konten promosi.'
   };
-  const source = options.topicSource === 'manual' ? `Gunakan topik pengguna: "${options.requestedTopic}" dan jangan mengubah inti topiknya.`
+  const source = options.topicSource === 'manual' ? `Gunakan topik pengguna: "${options.requestedTopic}" dan jangan mengubah inti topiknya. Ini adalah batas pembahasan wajib: setiap slide, termasuk slide terakhir, harus tetap menyebut dan membahas objek inti topik tersebut. Jangan mengalihkannya menjadi tutorial umum, manajemen proyek, atau topik lain.`
     : options.topicSource === 'trending' && options.requestedTopic ? `Gunakan topik tren: "${options.requestedTopic}".`
       : `Pilih topik baru dalam kategori "${category}".`;
   const specialStructure = options.useSources
@@ -547,7 +589,9 @@ async function generateContent(previousTopics, options = {}, client) {
     ? 'Slide pertama ber-section MASALAH dengan title dan body singkat. Slide berikutnya ber-section SOLUSI; body kosong dan points berisi maksimal 3 tindakan. Gunakan bullet tanpa nomor; bila solusi lebih dari 3, lanjutkan pada slide SOLUSI berikutnya.'
     : format === 'Tutorial langkah'
       ? 'Gunakan default 3 slide: hook + hasil; satu slide LANGKAH PRAKTIS berisi 3–5 langkah bernomor dengan total maksimal 45 kata; lalu hasil akhir + tip relevan + CTA. Hanya pecah menjadi 4 slide untuk 6–7 langkah atau isi sedang, dan maksimal 5 untuk isi panjang. Gabungkan langkah terkait; jangan buat slide untuk satu kalimat pendek. Isi kolom result dan tip secara spesifik.'
-      : 'Body berisi poin slide yang berurutan dan gabungkan poin yang saling berkaitan.';
+      : format === 'Fakta singkat'
+        ? 'Gunakan 4–5 slide dengan alur fakta atau penjelasan yang natural. Dilarang memakai section atau copy TUTORIAL, LANGKAH, LANGKAH PRAKTIS, maupun penomoran langkah.'
+        : 'Body berisi poin slide yang berurutan dan gabungkan poin yang saling berkaitan.';
   const categorizedKeywords = (options.trendReference?.keyword_categories || options.trendReference?.keywords?.map(keyword => ({ keyword, category: 'UMUM' })) || []).map(({ category, keyword }) => `[${category}] ${keyword}`).join(' | ');
   const trendDirection = options.trendReference ? `Referensi tren aktif memiliki tiga daftar terpisah. KEYWORD/HASHTAG BERKATEGORI: ${categorizedKeywords || 'tidak ada'}; gunakan hanya untuk memilih istilah dan konteks yang relevan. Sebelum menulis, baca topik dan kategori konten, lalu pilih nol sampai maksimal 3 keyword yang paling relevan. Prioritaskan kategori konten pengguna jika topik ambigu. Abaikan seluruh keyword dari kategori yang tidak sesuai dan keyword yang tidak berkaitan langsung; jangan mencampur lintas kategori hanya karena sedang tren dan jangan memaksakan tren bila tidak ada yang relevan. Gunakan ejaan keyword persis pada trendKeywordsUsed. Jangan mencampurkan ketiganya sebagai satu daftar. GAYA HOOK: ${(options.trendReference.trend_hooks || []).join(' | ') || 'tidak ada'}; gunakan hanya sebagai referensi kalimat pembuka, jangan menyalin hook mentah terus-menerus dan buat variasi yang natural. POLA KONTEN: ${(options.trendReference.trend_content_patterns || []).join(' | ') || 'tidak ada'}; gunakan hanya sebagai referensi struktur penyampaian. Jangan ubah inti topik atau membuat klaim tren tanpa dasar catatan: "${options.trendReference.notes || ''}".` : 'Tidak ada referensi tren aktif; isi trendKeywordsUsed dengan array kosong.';
   const history = (options.recentContents || []).map(item => `${item.content_angle || item.topic}; tool=${item.primary_tool || '-'}; hook=${item.hook_pattern || item.hook || '-'}; langkah=${item.body || '-'}; CTA=${item.cta || '-'}`).join(' || ');
@@ -556,12 +600,12 @@ async function generateContent(previousTopics, options = {}, client) {
 ${serializeUntrustedSourceContext(options.sourceContext)}
 </UNTRUSTED_SOURCE_CONTEXT>` : '';
   const diversity = category === 'Tutorial AI' && format === 'Tutorial langkah' ? `Sebelum memilih, susun minimal 8 kandidat angle yang berbeda dari: tutorial pemula, kesalahan umum, perbandingan tools, workflow praktis, fitur tersembunyi, masalah dan solusi, before-after, studi kasus, tips meningkatkan hasil, alternatif gratis. Pilih satu yang paling berbeda dari 15 riwayat. Variasikan ranah gambar, video, audio, produktivitas, penulisan, presentasi, bisnis, riset, desain, dan otomatisasi. Jangan gunakan tool yang muncul 2 kali dalam 10 riwayat kecuali topik manual. Simpan pilihan pada content_angle, nama aplikasi pada primary_tool, dan bentuk pembuka pada hook_pattern. ${options.rejectedAngle || ''} Riwayat: ${history || 'belum ada'}.` : `Tetapkan content_angle, primary_tool (boleh "tanpa tool"), dan hook_pattern yang spesifik. ${options.rejectedAngle || ''}`;
-  const slideRange = options.useSources ? '4–5' : '3–5';
+  const slideRange = options.useSources || format === 'Fakta singkat' ? '4–5' : '3–5';
   const prompt = `${source} ${sourceOnlyInstruction} ${trendDirection} Referensi tren hanya tambahan gaya dan keyword, bukan alasan mengubah bahasan menjadi AI tools umum. ${diversity} Pertahankan inti topik dan kategori "${category}". ${categoryDirections[category] || 'Pastikan isi relevan dengan kategori khusus ini.'} Jangan memaksakan isi menjadi video iklan. Format "${format}". Sebelum menulis, tetapkan tepat satu fokus pada objek focus: satu masalah utama, penyebab utama, solusi utama, dan hasil yang diharapkan. Jangan campur masalah lain. ${specialStructure} Kembalikan ${slideRange} slides dengan schema konsisten {section,title,body,points}. Setiap slide hanya membahas satu ide. Title wajib satu judul natural (maksimal 12 kata), bukan gabungan beberapa judul. Body wajib satu atau dua kalimat bahasa Indonesia yang utuh dan alami (maksimal 24 kata), jangan menulis potongan seperti "Kewalahan pagi hilangkan motivasi" dan jangan menaruh daftar atau line break di body. Points wajib array terpisah, maksimal 3 item dan masing-masing 3–7 kata. Jangan mengulang title di body atau points.
 
 Gunakan bahasa Indonesia sehari-hari yang rapi, dengan kalimat lengkap dan mengalir. Tulis seperti kreator Indonesia sedang menjelaskan kepada penonton: natural, luwes, ringkas, dan conversational, bukan seperti buku pelajaran, laporan, atau presentasi perusahaan. Buat judul yang spesifik, relatable, dan mudah dipahami. Variasikan bentuk hook antarkonten secara alami dan jangan memakai pola judul yang sama terus-menerus. Pertanyaan hanya digunakan ketika cocok dengan topik; jangan memaksa setiap judul menjadi pertanyaan atau memakai kata "kamu", "ternyata", "pernah nggak", atau "kenapa". Hindari pembuka dan susunan template AI seperti "Di era digital ini", "Tahukah Anda", "Dalam dunia yang semakin berkembang", "Penting untuk diketahui", "Merupakan salah satu", "Solusi inovatif", "Konsistensi output AI itu penting", "Kenali ... sebelum memakai", "Banyak orang ... padahal ...", "Dapat mencapai ...", "Memiliki peran penting dalam ...", dan "Dengan memanfaatkan teknologi ..." sebagai pola default; gunakan hanya jika konteks benar-benar membutuhkannya. Pertahankan istilah teknis yang diperlukan, lalu jelaskan dengan bahasa sederhana. Tetap informatif: jangan menjadi bahasa alay, jangan sengaja membuat typo, jangan memakai clickbait berlebihan, dan jangan memakai hiperbola yang tidak dapat dibuktikan. Jangan menambahkan pengalaman pribadi palsu maupun fakta, angka, tren, atau klaim yang tidak tersedia.
 
-section tutorial memakai LANGKAH 1 atau rentang LANGKAH 2–3 yang sama dengan nomor di points; slide non-tutorial tidak memakai nomor. Slide pembuka/penutup boleh memakai section non-langkah. Gunakan kalimat langsung, mudah dipahami, tidak berulang, tanpa klaim berlebihan. Semua saran harus berupa tindakan konkret dan solusi harus menjawab masalah. Caption hanya merangkum slide tanpa klaim baru. Nomor selalu mulai 1 dan berurutan. Hindari topik lama: ${previousTopics.join(' | ') || 'belum ada'}. Hashtag diawali #. Field inti: {"required":["focus","topic","hook","body","caption","hashtags","cta","trendKeywordsUsed"]}. Kembalikan hanya JSON sesuai schema: ${JSON.stringify(options.useSources ? { ...schema, properties: { ...schema.properties, verificationStatus: { enum: ['source_based', 'needs_review'] }, unsupportedClaims: { type: 'array', items: { type: 'string' } }, slides: { ...schema.properties.slides, minItems: 4, items: { ...schema.properties.slides.items, properties: { ...schema.properties.slides.items.properties, claims: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, sourceId: { type: 'string' }, evidence: { type: 'string' } }, required: ['text', 'sourceId', 'evidence'] } } } } } }, required: [...schema.required, 'verificationStatus', 'unsupportedClaims'] } : schema)}`;
+${format === 'Tutorial langkah' ? 'Section tutorial memakai LANGKAH 1 atau rentang LANGKAH 2–3 yang sama dengan nomor di points; slide pembuka/penutup boleh memakai section non-langkah. Nomor selalu mulai 1 dan berurutan.' : 'Slide non-tutorial tidak memakai nomor atau label langkah.'} Gunakan kalimat langsung, mudah dipahami, tidak berulang, tanpa klaim berlebihan. Title, body, dan setiap point harus membawa informasi berbeda; jangan mengulang kalimat, ide, maupun nomor/label yang sudah ada di field lain. Semua saran harus berupa tindakan konkret dan solusi harus menjawab masalah. Caption hanya merangkum slide tanpa klaim baru. Hindari topik lama: ${previousTopics.join(' | ') || 'belum ada'}. Hashtag diawali #. Field inti: {"required":["focus","topic","hook","body","caption","hashtags","cta","trendKeywordsUsed"]}. Kembalikan hanya JSON sesuai schema: ${JSON.stringify(options.useSources ? { ...schema, properties: { ...schema.properties, verificationStatus: { enum: ['source_based', 'needs_review'] }, unsupportedClaims: { type: 'array', items: { type: 'string' } }, slides: { ...schema.properties.slides, minItems: 4, items: { ...schema.properties.slides.items, properties: { ...schema.properties.slides.items.properties, claims: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, sourceId: { type: 'string' }, evidence: { type: 'string' } }, required: ['text', 'sourceId', 'evidence'] } } } } } }, required: [...schema.required, 'verificationStatus', 'unsupportedClaims'] } : schema)}`;
   const messages = [
     { role: 'system', content: 'Anda editor carousel TikTok Indonesia yang cermat, menulis secara natural, ringkas, conversational, dan tetap akurat. Utamakan satu fokus dan langkah konkret.' },
     { role: 'user', content: prompt }
@@ -572,9 +616,10 @@ section tutorial memakai LANGKAH 1 atau rentang LANGKAH 2–3 yang sama dengan n
   const validationContent = value => value.slides === undefined
     ? { ...value, slides: format === 'Masalah dan solusi' ? normalizeProblemSolutionSlides(legacyProblemSolutionSlides(value)) : legacySlides(value) }
     : value;
+  const manualTopic = options.topicSource === 'manual' ? options.requestedTopic : '';
   const validateGeneratedContent = value => {
     const normalized = validationContent(value);
-    const result = validateContent(normalized, { format });
+    const result = validateContent(normalized, { format, manualTopic: value.slides === undefined ? '' : manualTopic, validateCopy: !options.useSources });
     if (options.useSources && normalized.slides.length < 4) result.push(`SOURCE_GROUNDING: Mode source-backed hanya memiliki ${normalized.slides.length} slide; wajib 4–5 slide.`);
     return result;
   };
@@ -588,7 +633,7 @@ section tutorial memakai LANGKAH 1 atau rentang LANGKAH 2–3 yang sama dengan n
 Hapus atau ubah klaim tersebut menggunakan fakta yang benar-benar memiliki evidence. Jangan membuat evidence baru yang tidak terdapat dalam SOURCE_CONTEXT.` : '';
     content = parseOutput(await openai.chat.completions.create({
       model: config.aiModel,
-      messages: [...messages, { role: 'assistant', content: JSON.stringify(content) }, { role: 'user', content: `Perbaikan ${repair} dari ${MAX_REPAIR_ATTEMPTS}. Hasil belum lolos validasi: ${errors.join(' ')} ${groundingRepair} FACT_BANK terverifikasi: ${JSON.stringify(factBank)}. Hapus klaim unsupported atau ganti hanya dengan satu fakta terdekat dari bank. sourceId dan evidence wajib disalin persis dari pasangan FACT_BANK yang sama; evidence tidak boleh diterjemahkan, diparafrasekan, dibuat, atau diubah. claim.text wajib menjadi terjemahan/ringkasan/parafrase bahasa Indonesia yang setia jika evidence berbahasa Inggris, bukan salinan Inggris mentah. Semua display title, body, points, hook, caption, CTA, dan claim.text wajib bahasa Indonesia. Jangan menambah fakta, angka, tanggal, nama, manfaat, sebab-akibat, kesimpulan, atau pengetahuan internal. Pertahankan struktur bila aman; kurangi point jika fakta terbatas dan gunakan kalimat netral untuk transisi. ${repair === 1 ? 'Ringkas kalimat, hapus kata berulang, dan pertahankan makna utama.' : 'Susun ulang section, title, body, dan points sesuai struktur format; pindahkan daftar body ke points.'} Jika ada dua poin berbeda, pecah atau pindahkan poin kedua ke slide berikutnya. ${options.useSources ? 'Wajib gunakan 4–5 slide; jika fakta sedikit, pakai pembuka, fakta utama, transisi netral tanpa klaim baru, dan penutup.' : 'Tetap gunakan 3–5 slide.'} Caption tidak boleh menambah klaim. Kembalikan JSON lengkap saja.` }],
+      messages: [...messages, { role: 'assistant', content: JSON.stringify(content) }, { role: 'user', content: `Perbaikan ${repair} dari ${MAX_REPAIR_ATTEMPTS}. Hasil belum lolos validasi: ${errors.join(' ')} ${groundingRepair} ${manualTopic ? `Topik manual tetap persis \"${manualTopic}\"; setiap slide sampai slide terakhir wajib membahas objek intinya.` : ''} ${format === 'Fakta singkat' ? 'Format Fakta singkat wajib 4–5 slide fakta/penjelasan natural tanpa TUTORIAL, LANGKAH, penomoran langkah, atau langkah praktis.' : ''} FACT_BANK terverifikasi: ${JSON.stringify(factBank)}. Hapus klaim unsupported atau ganti hanya dengan satu fakta terdekat dari bank. sourceId dan evidence wajib disalin persis dari pasangan FACT_BANK yang sama; evidence tidak boleh diterjemahkan, diparafrasekan, dibuat, atau diubah. claim.text wajib menjadi terjemahan/ringkasan/parafrase bahasa Indonesia yang setia jika evidence berbahasa Inggris, bukan salinan Inggris mentah. Semua display title, body, points, hook, caption, CTA, dan claim.text wajib bahasa Indonesia. Jangan menambah fakta, angka, tanggal, nama, manfaat, sebab-akibat, kesimpulan, atau pengetahuan internal. Pertahankan struktur bila aman; kurangi point jika fakta terbatas dan gunakan kalimat netral untuk transisi. ${repair === 1 ? 'Ringkas kalimat, hapus kata berulang, dan pertahankan makna utama.' : 'Susun ulang section, title, body, dan points sesuai struktur format; pindahkan daftar body ke points.'} Jika ada dua poin berbeda, pecah atau pindahkan poin kedua ke slide berikutnya. ${options.useSources ? 'Wajib gunakan 4–5 slide; jika fakta sedikit, pakai pembuka, fakta utama, transisi netral tanpa klaim baru, dan penutup.' : 'Tetap gunakan 3–5 slide.'} Caption tidak boleh menambah klaim. Kembalikan JSON lengkap saja.` }],
       response_format: { type: 'json_object' }
     }));
     if (format === 'Masalah dan solusi') content.body = normalizeLegacySolutionBody(content.body);
@@ -609,7 +654,7 @@ Hapus atau ubah klaim tersebut menggunakan fakta yang benar-benar memiliki evide
         localizedFacts = genericLocalizedFacts(selectedFacts, options.requestedTopic || content?.topic || 'Topik sumber');
       }
       content = buildSafeSourceFallback(content, factBank, { ...options, localizedFacts });
-      const fallbackErrors = [...validateContent(content, { format }), ...validateSourceGrounding(content, options.sourceContext, options.sources)];
+      const fallbackErrors = [...validateContent(content, { format, manualTopic, validateCopy: false }), ...validateSourceGrounding(content, options.sourceContext, options.sources)];
       if (fallbackErrors.length) throw Object.assign(new Error(`Konten AI tidak lolos validasi: ${fallbackErrors[0]}`), { status: 422, validationErrors: fallbackErrors });
     } else {
       throw Object.assign(new Error(`Konten AI tidak lolos validasi: ${errors[0]}`), { status: 422, validationErrors: errors });
