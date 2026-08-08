@@ -41,6 +41,14 @@ test('sumber URL dikirim sebagai SOURCE_CONTEXT dan metadata tersimpan', async (
   assert.equal(r.body.render_source.sources[0].title, 'Dokumen');
 });
 
+test('draft needs_review dari sumber tetap dikembalikan sebagai 200, bukan 422', async () => {
+  const sourceFetcher = { validateSourceUrls: urls => urls, fetchSources: async urls => [{ url: urls[0], finalUrl: urls[0], title: 'Sumber terbatas', text: 'Sumber ini hanya memuat satu fakta yang dapat digunakan.', fetchedAt: new Date().toISOString() }], buildSourceContext: () => '<SOURCE id="source-1">CONTENT</SOURCE>' };
+  const content = { generateContent: async options => ({ topic: 'Ringkasan', hook: 'Ringkasan sumber', body: 'Satu fakta', caption: 'Satu fakta', hashtags: [], cta: 'Baca sumber', verificationStatus: 'needs_review', unsupportedClaims: [] }) };
+  const { app } = setup({ content, sourceFetcher });
+  const response = await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Sumber terbatas', useSources: true, sourceUrls: ['https://example.com'] }).expect(200);
+  assert.equal(response.body.render_source.verificationStatus, 'needs_review');
+});
+
 test('fetch sumber gagal menghentikan pembuatan konten', async () => {
   let called = false;
   const sourceFetcher = { fetchSources: async () => { throw Object.assign(new Error('Gagal mengambil sumber https://example.com: Timeout'), { status: 400 }); }, buildSourceContext: () => '' };
