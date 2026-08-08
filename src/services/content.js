@@ -355,14 +355,13 @@ function buildSafeSourceFallback(content, factBank, options = {}) {
   const slides = [opening, ...factSlides, { section: 'PENUTUP', title: `Lanjut baca tentang ${topic}`, body: '', points: [], claims: [] }].slice(0, 5);
   const first = selected[0];
   return {
-    ...content,
     contentCategory: options.contentCategory || content?.contentCategory,
     contentFormat: format,
     focus: { masalah: `Memahami ${topic}`, penyebab: 'Informasi tersebar di sumber', solusi: 'Fokus pada fakta yang tersedia', hasil: `Gambaran tentang ${topic}` },
     topic, hook: `Apa yang sumber jelaskan tentang ${topic}?`, body: first.text,
-    caption: first.text, hashtags: Array.isArray(content?.hashtags) ? content.hashtags : [],
-    cta: `Lanjut baca tentang ${topic}`, trendKeywordsUsed: [], content_angle: content?.content_angle || `fakta tentang ${topic}`,
-    primary_tool: content?.primary_tool || 'tanpa tool', hook_pattern: content?.hook_pattern || 'pertanyaan langsung',
+    caption: first.text, hashtags: [],
+    cta: `Lanjut baca tentang ${topic}`, trendKeywordsUsed: [], content_angle: `fakta dari sumber tentang ${topic}`,
+    primary_tool: 'tanpa tool', hook_pattern: 'pertanyaan berbasis sumber',
     result: '', tip: '', slides, verificationStatus: 'needs_review', unsupportedClaims: []
   };
 }

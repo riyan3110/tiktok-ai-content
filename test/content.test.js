@@ -291,9 +291,14 @@ test('fallback mempertahankan requestedTopic dan tetap lolos source grounding', 
   const { buildSafeSourceFallback, extractVerifiedFacts, validateContent, validateSourceGrounding } = require('../src/services/content');
   const sources = [{ text: 'RANS menerbitkan program hiburan keluarga. RANS bekerja bersama kreator lokal.' }];
   const facts = extractVerifiedFacts(sources, { topic: 'RANS' });
-  const fallback = buildSafeSourceFallback({ hashtags: ['#RANS'] }, facts, { requestedTopic: 'RANS', contentCategory: 'Konten kreator', contentFormat: 'Tutorial langkah' });
+  const fallback = buildSafeSourceFallback({ hashtags: ['#IPO2026'], content_angle: 'RANS akan IPO pada 2026', primary_tool: 'Aplikasi IPO Otomatis', hook_pattern: 'harga saham naik' }, facts, { requestedTopic: 'RANS', contentCategory: 'Konten kreator', contentFormat: 'Tutorial langkah' });
   assert.equal(fallback.topic, 'RANS');
   assert.equal(fallback.contentCategory, 'Konten kreator');
+  assert.deepEqual(fallback.hashtags, []);
+  assert.doesNotMatch(JSON.stringify(fallback), /IPO2026|IPO Otomatis|harga saham naik/);
+  assert.equal(fallback.content_angle, 'fakta dari sumber tentang RANS');
+  assert.equal(fallback.primary_tool, 'tanpa tool');
+  assert.equal(fallback.hook_pattern, 'pertanyaan berbasis sumber');
   assert.ok(fallback.slides.some(slide => slide.title === 'RANS'));
   assert.ok(!fallback.slides.some(slide => /^(?:Ringkasan sumber|Informasi utama|Informasi berikutnya)$/i.test(slide.title)));
   assert.deepEqual(validateContent(fallback, { format: 'Tutorial langkah' }), []);
