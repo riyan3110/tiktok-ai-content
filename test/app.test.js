@@ -50,6 +50,15 @@ test('fetch sumber gagal menghentikan pembuatan konten', async () => {
   assert.equal(called, false);
 });
 
+
+test('konten gagal grounding tidak disimpan', async () => {
+  const content = { generateContent: async () => { throw Object.assign(new Error('Konten tidak dapat dibuat karena sebagian klaim tidak didukung sumber.'), { status: 422 }); } };
+  const sourceFetcher = { validateSourceUrls: urls => urls, fetchSources: async urls => [{ url: urls[0], finalUrl: urls[0], title: 'Sumber', text: 'Isi sumber cukup panjang.', fetchedAt: new Date().toISOString() }], buildSourceContext: () => '<SOURCE id="source-1">CONTENT</SOURCE>' };
+  const { app, db } = setup({ content, sourceFetcher });
+  await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: 'Tema grounding', useSources: true, sourceUrls: ['https://example.com'] }).expect(422);
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM contents').get().count, 0);
+});
+
 test('topik trending memakai topik relevan dari service', async () => { let options; const content = { generateContent: async (topics, value) => { options = value; return { topic: value.requestedTopic, hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }; } }; const { app } = setup({ content, trending: { getLatest: async () => ['Tren Canva AI'] } }); const r = await request(app).post('/generate').send({ topicSource: 'trending' }).expect(200); assert.equal(options.requestedTopic, 'Tren Canva AI'); assert.equal(options.trendingFallback, false); assert.equal(r.body.topic_source, 'trending'); });
 test('topik trending fallback ke AI berdasarkan tanggal saat service gagal', async () => { let options; const content = { generateContent: async (topics, value) => { options = value; return { topic: 'Tren AI Hari Ini', hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }; } }; const { app } = setup({ content, trending: { getLatest: async () => { throw new Error('offline'); } } }); await request(app).post('/generate').send({ topicSource: 'trending' }).expect(200); assert.equal(options.trendingFallback, true); assert.match(options.date, /^\d{4}-\d{2}-\d{2}$/); });
 test('duplikat AI dibandingkan tanpa kapital dan spasi lalu generate ulang', async () => { let calls = 0; const content = { generateContent: async () => ({ topic: ++calls === 1 ? '  STORYBOARD   ai ' : 'Topik Unik', hook: 'H', body: '1. B', caption: 'C', hashtags: ['#AI'], cta: 'CTA' }) }; const { app, db } = setup({ content }); db.prepare("INSERT INTO contents(topic,hook,body,caption,hashtags,cta) VALUES('Storyboard AI','H','B','C','[]','CTA')").run(); const r = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200); assert.equal(calls, 2); assert.equal(r.body.topic, 'Topik Unik'); });

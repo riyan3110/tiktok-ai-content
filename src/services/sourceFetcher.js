@@ -81,5 +81,5 @@ async function fetchOne(rawUrl, { fetchImpl, lookup = dns.lookup } = {}, redirec
   finally { clearTimeout(timer); }
 }
 async function fetchSources(urls, options = {}) { return Promise.all(validateSourceUrls(urls).map(url => fetchOne(url, options))); }
-function buildSourceContext(sources) { return sources.map((s, i) => `SOURCE ${i + 1}\nTITLE: ${s.title || '-'}\nURL: ${s.finalUrl || s.url}\nCONTENT:\n${s.text}`).join('\n\n').slice(0, MAX_CONTEXT_LENGTH); }
+function buildSourceContext(sources) { return sources.map((s, i) => `<SOURCE id="source-${i + 1}">\nTITLE: ${s.title || '-'}\nURL: ${s.finalUrl || s.url}\nCONTENT:\n${s.text}\n</SOURCE>`).join('\n\n').slice(0, MAX_CONTEXT_LENGTH); }
 module.exports = { fetchSources, buildSourceContext, validateSourceUrls, validateUrl, extractText, SourceFetchError, MAX_CONTEXT_LENGTH };

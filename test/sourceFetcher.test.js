@@ -21,7 +21,7 @@ test('sourceFetcher membersihkan HTML dan menolak halaman terlalu kecil', async 
   assert.equal(source.title, 'Judul & Sumber');
   assert.match(source.text, /Isi penting/);
   assert.doesNotMatch(source.text, /bad\(\)|\.x|Menu|Kaki/);
-  assert.match(buildSourceContext([source]), /SOURCE 1\nTITLE: Judul & Sumber\nURL:/);
+  assert.match(buildSourceContext([source]), /<SOURCE id="source-1">\nTITLE: Judul & Sumber\nURL:/);
   await assert.rejects(() => fetchSources(['https://example.com/small'], { fetchImpl: async () => new Response('<p>pendek</p>', { headers: { 'content-type': 'text/html' } }), lookup: publicLookup }), /terlalu pendek/);
 });
 
