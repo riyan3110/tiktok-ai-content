@@ -14,6 +14,14 @@ test('Content Studio UI provides generation, batch, realtime queue, history, and
   for (const action of ['download', 'duplicate', 'retry', 'Copy URL', 'Delete']) assert.match(script, new RegExp(action, 'i'));
 });
 
+test('Content Studio refreshes signed media URLs from stored assets before rendering history', () => {
+  const script = fs.readFileSync('public/content-studio.js', 'utf8');
+  assert.match(script, /api\('\/api\/assets\/resolve'/);
+  assert.match(script, /assetIds:ids/);
+  assert.match(script, /asset\.url\|\|asset\.preview_url/);
+  assert.match(script, /jobs=await refreshResultUrls\(jobs\)/);
+});
+
 test('Content Studio queues image jobs, keeps history, duplicates, retries, and deletes', async () => {
   const db = createDatabase(':memory:'); const app = createApp({ db, aiTransport: async () => response({ output: 'generated' }) });
   await request(app).put('/api/ai/providers/openai-images').send({ apiKey: 'secret', enabled: true }).expect(200);
