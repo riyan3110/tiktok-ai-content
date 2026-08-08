@@ -280,8 +280,8 @@ function validateSourceGrounding(content, sourceContext, sources = []) {
     if (claim?.evidence && (evidenceWords < 4 || evidenceWords > 25)) errors.push(sourceGroundingError(`Evidence untuk claim "${claim?.text || index + 1}" harus 4 sampai 25 kata.`));
     const sourceText = sourceMap.get(claim?.sourceId);
     if (sourceText && claim?.evidence && !sourceText.includes(groundingText(claim.evidence))) errors.push(sourceGroundingError(`Evidence palsu atau tidak ditemukan untuk claim: ${claim.text || index + 1}.`));
-    if (groundingText(claim?.text) === groundingText(claim?.evidence) && isLikelyEnglishSentence(claim?.evidence)) {
-      errors.push(sourceGroundingError(`claim.text wajib berupa display bahasa Indonesia, bukan salinan evidence Inggris: ${claim.text || index + 1}.`));
+    if (isLikelyEnglishSentence(claim?.evidence) && isLikelyEnglishSentence(claim?.text)) {
+      errors.push(sourceGroundingError(`claim.text wajib berupa display bahasa Indonesia, bukan kalimat Inggris: ${claim.text || index + 1}.`));
     }
   });
   const validClaims = claims.filter(claim => {

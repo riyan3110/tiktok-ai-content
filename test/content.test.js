@@ -158,13 +158,21 @@ test('initial source generation Inggris valid langsung memakai display Indonesia
   assert.ok(!visual.includes(evidence));
 });
 
-test('grounding menolak claim.text yang menyalin evidence Inggris mentah', () => {
+test('grounding menolak claim Inggris identik dan paraphrase tetapi menerima display Indonesia serta istilah teknis', () => {
   const { validateSourceGrounding } = require('../src/services/content');
-  const evidence = 'The service is available for teams in the city.';
-  const content = { verificationStatus: 'source_based', unsupportedClaims: [], caption: evidence, slides: [
-    { title: 'Service update', body: evidence, points: [], claims: [{ text: evidence, sourceId: 'source-1', evidence }] }
+  const evidence = 'The company introduced a remote work policy for its employees.';
+  const makeContent = text => ({ verificationStatus: 'source_based', unsupportedClaims: [], caption: '', slides: [
+    { title: 'Kebijakan kerja', body: text, points: [], claims: [{ text, sourceId: 'source-1', evidence }] }
+  ] });
+  assert.match(validateSourceGrounding(makeContent(evidence), '', [{ text: evidence }]).join(' '), /display bahasa Indonesia/);
+  assert.match(validateSourceGrounding(makeContent('The company launched a remote work policy for employees.'), '', [{ text: evidence }]).join(' '), /display bahasa Indonesia/);
+  assert.deepEqual(validateSourceGrounding(makeContent('Perusahaan memperkenalkan kebijakan kerja jarak jauh untuk karyawannya.'), '', [{ text: evidence }]), []);
+
+  const technicalEvidence = 'OpenAI provides an API for AI Agent workflows.';
+  const technical = { verificationStatus: 'source_based', unsupportedClaims: [], caption: '', slides: [
+    { title: 'OpenAI API', body: 'OpenAI menyediakan API untuk alur AI Agent.', points: [], claims: [{ text: 'OpenAI menyediakan API untuk alur AI Agent.', sourceId: 'source-1', evidence: technicalEvidence }] }
   ] };
-  assert.match(validateSourceGrounding(content, '', [{ text: evidence }]).join(' '), /display bahasa Indonesia/);
+  assert.deepEqual(validateSourceGrounding(technical, '', [{ text: technicalEvidence }]), []);
 });
 
 test('validasi grounding menerima klaim dengan evidence valid dan menolak klaim unsupported', () => {
