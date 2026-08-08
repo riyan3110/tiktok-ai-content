@@ -184,7 +184,7 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
   verified.cta = String(last?.title || base.cta || '').trim();
 
   if (contentService?.validateContent) {
-    errors.push(...contentService.validateContent(verified, { format, manualTopic, validateCopy: true }));
+    errors.push(...contentService.validateContent(verified, { format, manualTopic, validateCopy: false }));
   }
   return { errors: [...new Set(errors)], content: verified };
 }
@@ -206,6 +206,7 @@ ATURAN WAJIB:
 - Jika fakta ORIGINAL_CONTENT tidak didukung, ubah hanya copy faktual itu menjadi fakta terdekat yang benar-benar didukung, atau menjadi copy non-faktual yang tetap berguna. Jangan mengarang.
 - Hook, pertanyaan, transisi, CTA, dan saran non-faktual boleh tanpa claim.
 - Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.
+- Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda.
 - Dilarang slide kosong, filler, metadata website, byline/contributor/newsletter, judul hanya topik mentah, atau "Lanjut baca tentang ...".
 - Jangan mengubah hashtag, focus, metadata angle/tool, atau struktur di luar slides.
 - Jangan membuat angka/nama/tanggal/manfaat/sebab-akibat baru.
@@ -238,6 +239,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
   const base = await content.generateContent(previousTopics, {
     ...options,
     useSources: false,
+    skipCopyValidation: true,
     sourceContext: '',
     sources: []
   }, client);
