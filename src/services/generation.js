@@ -95,8 +95,9 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     }
     const similarityScore = similarityToHistory(generated, history);
     const sameToolCount = recentContents(db, 10).filter(item => normalizeTopic(item.primary_tool) === normalizeTopic(generated.primary_tool) && normalizeTopic(generated.primary_tool) !== 'tanpa tool').length;
-    if ((similarityScore > 0.55 || (mode !== 'manual' && sameToolCount >= 2)) && attempt < MAX_GENERATION_ATTEMPTS) continue;
-    if (similarityScore > 0.55 || (mode !== 'manual' && sameToolCount >= 2)) throw Object.assign(new Error('Konten terlalu mirip dengan 15 konten terakhir setelah 2 kali pembuatan ulang angle.'), { status: 422 });
+    const failsHistoryDiversity = mode !== 'manual' && (similarityScore > 0.55 || sameToolCount >= 2);
+    if (failsHistoryDiversity && attempt < MAX_GENERATION_ATTEMPTS) continue;
+    if (failsHistoryDiversity) throw Object.assign(new Error('Konten terlalu mirip dengan 15 konten terakhir setelah 2 kali pembuatan ulang angle.'), { status: 422 });
     if (isDuplicate(db, generated.topic)) {
       if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
       trends = trends.filter((topic) => normalizeTopic(topic) !== normalizeTopic(basis));
