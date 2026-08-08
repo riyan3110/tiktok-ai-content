@@ -207,6 +207,17 @@ test('source filter mempertahankan mode manual dan hanya melewati validator lite
 
 
 
+
+
+test('slide tengah netral untuk cek konteks sumber tidak dianggap drift topik', () => {
+  const slides = [
+    { section: 'PEMBUKA', title: 'OpenAI dan Keselamatan AI', body: 'Cek konteks sumber terlebih dahulu.', points: [] },
+    { section: 'POIN 1', title: 'Perhatikan konteks temuan', body: 'Bandingkan sumber sebelum membagikan.', points: [] },
+    { section: 'PENUTUP', title: 'Baca sumber lengkapnya', body: 'Simpan poin yang paling relevan.', points: [] }
+  ];
+  assert.deepEqual(validateSlideTopicRelevance('OpenAI temukan resiko', slides, new Set()), []);
+});
+
 test('Era efisiensi AI menolak slide tengah generik prompt dan batch automation', () => {
   const slides = [
     { section: 'PEMBUKA', title: 'Efisiensi AI Jadi Fokus Baru', body: 'Cek perubahan cara perusahaan memakai AI.', points: [], claims: [] },
