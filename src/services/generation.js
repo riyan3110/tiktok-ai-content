@@ -4,6 +4,7 @@ const defaultTrending = require('./trendingTopics');
 const { resolveCategory, resolveFormat } = require('./contentOptions');
 const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
+const defaultSourceFilter = require('./sourceFilter');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -41,7 +42,7 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = defaultSourceFilter, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -51,11 +52,9 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   if (mode === 'manual' && isDuplicate(db, manualTopic)) throw Object.assign(new Error('Topik tersebut sudah pernah dibuat'), { status: 409 });
   const shouldUseSources = mode === 'manual' && useSources === true;
   let sources = [];
-  let sourceContext = '';
   if (shouldUseSources) {
     const cleanSourceUrls = sourceFetcher.validateSourceUrls ? sourceFetcher.validateSourceUrls(sourceUrls) : sourceUrls;
     sources = await sourceFetcher.fetchSources(cleanSourceUrls);
-    sourceContext = sourceFetcher.buildSourceContext(sources);
   }
 
   let trends = [];
@@ -70,7 +69,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     const history = recentContents(db);
     const availableTrend = trends.find((topic) => !used.some((old) => normalizeTopic(old) === normalizeTopic(topic)));
     const basis = mode === 'manual' ? manualTopic : mode === 'trending' ? availableTrend : undefined;
-    const generated = await content.generateContent(used, {
+    const generationOptions = {
       topicSource: mode,
       requestedTopic: basis,
       trendingFallback: mode === 'trending' && (!basis || trendingFallback),
@@ -80,16 +79,16 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       recentContents: history,
       rejectedAngle: attempt > 1 || forceNewAngle ? 'Angle sebelumnya gagal atau terlalu mirip; pilih kandidat lain dengan tool, hook, langkah, dan CTA berbeda.' : null,
       trendReference: trendReference ? { keywords: trendReference.keywords, keyword_categories: trendReference.keyword_categories, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null,
-      useSources: shouldUseSources,
-      sourceContext,
-      sources
-    });
+      useSources: shouldUseSources
+    };
+    const generated = shouldUseSources
+      ? await sourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
+      : await content.generateContent(used, generationOptions);
     generated.content_angle ||= angle || generated.topic;
     generated.primary_tool ||= 'tanpa tool';
     generated.hook_pattern ||= generated.hook;
     if (shouldUseSources) {
-      const status = generated.verificationStatus === 'needs_review' ? 'needs_review' : 'source_based';
-      generated.verificationStatus = status;
+      generated.verificationStatus = 'source_based';
       generated.sources = sources.map(({ url, finalUrl, title, fetchedAt }) => ({ url, finalUrl, title, fetchedAt }));
       generated.sourceCount = generated.sources.length;
     }
