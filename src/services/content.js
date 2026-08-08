@@ -392,6 +392,7 @@ Hapus atau ubah klaim tersebut menggunakan fakta yang benar-benar memiliki evide
   }
   if (errors.length) {
     console.error('[AI raw response][validasi perbaikan gagal]', content._rawAiResponse);
+    console.error('[AI validation errors]', errors);
     const groundingFailed = options.useSources && errors.some(error => error.startsWith('SOURCE_GROUNDING:'));
     throw Object.assign(new Error(groundingFailed ? 'Konten tidak dapat dibuat karena sebagian klaim tidak didukung sumber.' : `Konten AI tidak lolos validasi: ${errors[0]}`), { status: 422, validationErrors: errors });
   }

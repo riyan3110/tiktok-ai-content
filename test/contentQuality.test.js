@@ -66,7 +66,21 @@ test('slide masalah tanpa solusi gagal dengan satu pesan spesifik', () => {
 test('error validasi akhir tidak menggabungkan dua masalah', async () => {
   const invalid = { focus: { masalah: 'A', penyebab: 'B', solusi: 'C', hasil: 'D' }, topic: 'Topik', hook: sentence(19), body: 'Isi', caption: 'Caption', hashtags: [], cta: 'Simpan', trendKeywordsUsed: [], slides: carousel(slide('ISI', sentence(25))) };
   const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(invalid) } }] }) } } };
-  await assert.rejects(() => generateContent([], {}, client), error => error.validationErrors.length > 1 && !error.message.includes(error.validationErrors[1]));
+  const errorLogs = [];
+  let validationErrors;
+  const originalConsoleError = console.error;
+  console.error = (...args) => errorLogs.push(args);
+  try {
+    await assert.rejects(() => generateContent([], {}, client), error => {
+      validationErrors = error.validationErrors;
+      return validationErrors.length > 1 && !error.message.includes(validationErrors[1]);
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
+  const validationLog = errorLogs.find(([label]) => label === '[AI validation errors]');
+  assert.ok(validationLog);
+  assert.deepEqual(validationLog[1], validationErrors);
 });
 
 test('hook 19 kata diperbaiki menjadi maksimal 18 kata', async () => {
