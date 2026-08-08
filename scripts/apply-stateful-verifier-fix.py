@@ -117,7 +117,7 @@ test('retry verifier memperbaiki CURRENT_DRAFT dan tidak mengulang draft awal', 
         return { choices: [{ message: { content: JSON.stringify({ slides: firstDraft }) } }] };
       }
       assert.match(prompt, /CURRENT_DRAFT/);
-      assert.ok(prompt.includes(longBody));
+      assert.ok(prompt.includes(longBody), prompt.match(/CURRENT_DRAFT[\s\S]{0,1400}/)?.[0] || prompt);
       assert.match(prompt, /body maksimal 24 kata/);
       assert.match(prompt, /slide:0:title: klaim faktual tidak memiliki evidence/);
       return { choices: [{ message: { content: JSON.stringify({ slides: repairedDraft }) } }] };
