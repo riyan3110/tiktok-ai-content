@@ -316,11 +316,19 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
   return { errors: [...new Set(errors)], content: verified };
 }
 
-function verifierPrompt({ base, bank, topic, format, errors = [] }) {
+function verifierPrompt({ base, draft = base, bank, topic, format, errors = [] }) {
+  const requiredClaimFields = (draft?.slides || []).flatMap((slide, slideIndex) =>
+    slideFields(slide, slideIndex)
+      .filter(field => field.value && requiresEvidence(field.value, slide.section, field.kind))
+      .map(field => ({ field: field.key, text: field.value }))
+  );
   return `Anda adalah FILTER/VERIFIER fakta untuk carousel Indonesia. Anda BUKAN pembuat struktur carousel baru.
 
 TOPIK REFERENSI: ${JSON.stringify(topic || '')}
 FORMAT: ${JSON.stringify(format || '')}
+
+FIELD FAKTUAL CURRENT_DRAFT YANG WAJIB PUNYA CLAIM JIKA COPY-NYA DIPERTAHANKAN:
+${JSON.stringify(requiredClaimFields)}
 
 ATURAN WAJIB:
 - Pertahankan JUMLAH slide, URUTAN slide, dan SECTION persis seperti ORIGINAL_CONTENT.
@@ -336,6 +344,9 @@ ATURAN WAJIB:
 - Hook, pertanyaan, transisi, CTA, saran, dan instruksi non-faktual boleh tanpa claim.
 - Jangan memberi claim pada copy yang sebenarnya hanya saran/CTA jika tidak ada fakta di dalamnya.
 - Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.
+- BATAS COPY FINAL: title maksimal 12 kata; body maksimal 24 kata; points maksimal 3 item; tiap point maksimal 7 kata.
+- Jika error sebelumnya menyebut body/title/point terlalu panjang, ringkas field itu pada percobaan ini tanpa menambah fakta baru.
+- Jika error sebelumnya menyebut slide:X:... klaim faktual tidak memiliki evidence, wajib lakukan salah satu: tambahkan claim untuk FIELD PERSIS itu memakai satu evidence FACT_BANK yang benar-benar mendukung, atau ubah field tersebut menjadi copy non-faktual yang akurat. Jangan kembalikan field faktual yang sama tanpa claim.
 - Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda.
 - Dilarang slide kosong, filler, metadata website, byline/contributor/newsletter, judul hanya topik mentah, atau "Lanjut baca tentang ...".
 - Jangan mengubah hashtag, focus, metadata angle/tool, atau struktur di luar slides.
@@ -351,8 +362,11 @@ claim.text harus sama persis dengan copy field yang didukung.
 FACT_BANK (hanya dari URL yang diberikan user):
 ${JSON.stringify(bank)}
 
-ORIGINAL_CONTENT:
-${JSON.stringify(base)}
+ORIGINAL_STRUCTURE (jumlah, urutan, dan section tidak boleh berubah):
+${JSON.stringify((base?.slides || []).map(slide => ({ section: slide.section })))}
+
+CURRENT_DRAFT (perbaiki versi ini; jangan kembali mengulang versi awal):
+${JSON.stringify(draft)}
 ${errors.length ? `\nERROR VERIFIKASI SEBELUMNYA YANG HARUS DIPERBAIKI:\n- ${errors.join('\n- ')}` : ''}
 
 Kembalikan HANYA JSON:
@@ -389,12 +403,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
 
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   let errors = [];
+  let draft = base;
   for (let attempt = 1; attempt <= MAX_VERIFY_ATTEMPTS; attempt += 1) {
     const response = await openai.chat.completions.create({
       model: config.aiModel,
       messages: [
         { role: 'system', content: 'Anda memfilter fakta carousel. Sumber hanya untuk verifikasi fakta; jangan mengganti struktur konten.' },
-        { role: 'user', content: verifierPrompt({ base, bank, topic, format: options.contentFormat, errors }) }
+        { role: 'user', content: verifierPrompt({ base, draft, bank, topic, format: options.contentFormat, errors }) }
       ],
       response_format: { type: 'json_object' }
     });
@@ -410,6 +425,10 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     });
     if (!checked.errors.length) return checked.content;
     errors = checked.errors;
+    draft = {
+      ...base,
+      slides: Array.isArray(candidate.slides) ? candidate.slides : draft.slides
+    };
   }
 
   throw Object.assign(new Error(`Konten tidak lolos filter fakta sumber: ${errors[0] || 'verifikasi gagal'}`), {
