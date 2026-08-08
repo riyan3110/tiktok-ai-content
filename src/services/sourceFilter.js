@@ -18,6 +18,18 @@ const FACT_VERBS = /\b(?:adalah|merupakan|memiliki|menggunakan|digunakan|dipakai
 const FACT_MARKERS = /\b(?:risiko|temuan|fitur|kemampuan|resmi|gratis|berbayar|rilis|peluncuran|versi|akurasi|kinerja|statistik|persentase|pengguna|pelanggan|perusahaan|model)\b/i;
 const ASSERTIVE_FACT_MARKERS = /\b(?:resmi|gratis|berbayar|rilis|peluncuran|versi|akurasi|kinerja|statistik|persentase)\b/i;
 const NON_FACTUAL_START = /^(?:coba|baca|lihat|simpan|cek|pilih|mulai|bandingkan|pertimbangkan|fokus|jelajahi|ikuti|bagikan|tanyakan|pikirkan|perhatikan|gunakan|buat|atur|hindari|pastikan|sesuaikan|tentukan|uji|evaluasi|catat|pelajari)\b/i;
+const ENGLISH_DISPLAY_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'with', 'from', 'by',
+  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'has', 'have', 'had', 'do', 'does',
+  'did', 'not', "don't", "doesn't", 'can', 'could', 'should', 'would', 'will', 'most',
+  'about', 'without', 'into', 'that', 'this', 'these', 'those', 'as', 'than', 'which', 'who',
+  'when', 'why', 'how'
+]);
+const INDONESIAN_DISPLAY_WORDS = new Set([
+  'yang', 'dan', 'atau', 'untuk', 'dengan', 'dari', 'di', 'pada', 'adalah', 'merupakan',
+  'tidak', 'bukan', 'belum', 'bisa', 'dapat', 'akan', 'ini', 'itu', 'agar', 'karena',
+  'sebagai', 'tentang', 'sebelum', 'setelah', 'lebih', 'oleh', 'dalam', 'juga', 'saat'
+]);
 
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '')
@@ -105,6 +117,18 @@ function numericTokens(value) {
 
 function isQuestion(value) {
   return /\?\s*$/.test(String(value || '').trim());
+}
+
+function likelyEnglishDisplayText(value) {
+  const displayTokens = String(value || '')
+    .toLocaleLowerCase('en-US')
+    .match(/[a-z]+(?:'[a-z]+)?/g) || [];
+  if (displayTokens.length < 4) return false;
+
+  const englishScore = displayTokens.filter(token => ENGLISH_DISPLAY_WORDS.has(token)).length;
+  const indonesianScore = displayTokens.filter(token => INDONESIAN_DISPLAY_WORDS.has(token)).length;
+  if (englishScore >= 2 && englishScore > indonesianScore) return true;
+  return displayTokens.length >= 6 && englishScore >= 1 && indonesianScore === 0;
 }
 
 function requiresEvidence(value, section = '', kind = 'body') {
@@ -248,6 +272,11 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
     if (!String(slide.title || '').trim()) errors.push(`Slide ${index + 1}: title kosong.`);
     if (!String(slide.body || '').trim() && !(slide.points || []).length) errors.push(`Slide ${index + 1}: tidak memiliki isi bermakna.`);
     if (requestedNorm && normalize(slide.title) === requestedNorm) errors.push(`Slide ${index + 1}: requestedTopic dipakai mentah sebagai judul.`);
+    for (const field of slideFields(slide, index)) {
+      if (field.value && likelyEnglishDisplayText(field.value)) {
+        errors.push(`${field.key}: copy tampil harus Bahasa Indonesia.`);
+      }
+    }
     const rendered = `${slide.title || ''} ${slide.body || ''} ${(slide.points || []).join(' ')}`;
     if (/lanjut\s+baca\s+tentang/i.test(rendered)) errors.push(`Slide ${index + 1}: memakai filler "Lanjut baca tentang".`);
     if (BOILERPLATE.test(rendered)) errors.push(`Slide ${index + 1}: metadata/boilerplate website masuk ke konten.`);
@@ -335,6 +364,8 @@ ATURAN WAJIB:
 - requestedTopic hanya referensi topik. Jangan menjadikannya judul mentah.
 - Jika topik menyebut nama orang, produk, model, atau perusahaan, identitas itu harus tetap muncul secara natural dalam carousel.
 - Pertahankan gaya natural ORIGINAL_CONTENT sebanyak mungkin.
+- SEMUA COPY YANG TAMPIL (title, body, points) WAJIB Bahasa Indonesia natural. Istilah brand/produk/AI/API boleh tetap asli, tetapi jangan salin kalimat bahasa Inggris dari sumber ke copy tampil.
+- Evidence di dalam claims WAJIB tetap kutipan asli dari FACT_BANK dan BOLEH berbahasa Inggris; jangan menerjemahkan evidence.
 - Source hanya untuk FILTER/VERIFIKASI fakta, bukan untuk menentukan struktur atau jumlah slide.
 - Jangan menambah URL/sumber apa pun.
 - Untuk copy faktual yang tetap dipakai, sertakan claim dengan sourceId + evidence PERSIS dari FACT_BANK.
@@ -346,6 +377,7 @@ ATURAN WAJIB:
 - Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.
 - BATAS COPY FINAL: title maksimal 12 kata; body maksimal 24 kata; points maksimal 3 item; tiap point maksimal 7 kata.
 - Jika error sebelumnya menyebut body/title/point terlalu panjang, ringkas field itu pada percobaan ini tanpa menambah fakta baru.
+- Jika error sebelumnya menyebut copy tampil harus Bahasa Indonesia, terjemahkan/parafrase FIELD PERSIS itu ke Bahasa Indonesia natural tanpa menambah fakta; evidence claim tetap kutipan asli FACT_BANK.
 - Jika error sebelumnya menyebut slide:X:... klaim faktual tidak memiliki evidence, wajib lakukan salah satu: tambahkan claim untuk FIELD PERSIS itu memakai satu evidence FACT_BANK yang benar-benar mendukung, atau ubah field tersebut menjadi copy non-faktual yang akurat. Jangan kembalikan field faktual yang sama tanpa claim.
 - Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda.
 - Dilarang slide kosong, filler, metadata website, byline/contributor/newsletter, judul hanya topik mentah, atau "Lanjut baca tentang ...".
@@ -447,5 +479,6 @@ module.exports = {
   evidenceCandidates,
   recoverMissingClaims,
   evidenceSupport,
+  likelyEnglishDisplayText,
   MAX_VERIFY_ATTEMPTS
 };
