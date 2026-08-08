@@ -202,12 +202,12 @@ test('source filter mempertahankan requestedTopic tetapi tidak menjalankan liter
   assert.equal(result.verificationStatus, 'source_based');
 });
 
-
-test('retry verifier memperbaiki CURRENT_DRAFT dan tidak mengulang draft awal', async () => {
-  const title = 'Menurut Survei Strategi AI Perusahaan 2026';
+test('retry verifier membawa draft sebelumnya dan memperbaiki body panjang + claim title', async () => {
+  const requestedTopic = 'Menurut Survei Strategi AI Perusahaan 2026';
+  const generatedTitle = 'Survei 2026 Ungkap Strategi AI Perusahaan';
   const longBody = 'Cek rincian survei ini secara lengkap sebelum menarik kesimpulan agar konteks temuan metode responden tujuan penerapan batasan strategi perusahaan dan dampaknya tetap dipahami dengan benar oleh setiap pembaca.';
   const baseSlides = [
-    { section: 'PEMBUKA', title, body: 'Cek konteks survei sebelum menyimpulkan.', points: [] },
+    { section: 'PEMBUKA', title: generatedTitle, body: 'Cek konteks survei sebelum menyimpulkan.', points: [] },
     { section: 'POIN 1', title: 'Cek Temuan Utama', body: 'Bandingkan konteks sumber sebelum menyimpulkan.', points: [] },
     { section: 'PENUTUP', title: 'Baca Detail Survei', body: 'Simpan bagian yang paling relevan.', points: [] }
   ];
@@ -225,42 +225,45 @@ test('retry verifier memperbaiki CURRENT_DRAFT dan tidak mengulang draft awal', 
   };
   const evidence = 'The 2026 Enterprise AI Strategy Survey reports company plans for artificial intelligence.';
   const firstDraft = [
-    { section: 'PEMBUKA', title, body: longBody, points: [], claims: [] },
+    { section: 'PEMBUKA', title: generatedTitle, body: longBody, points: [], claims: [] },
     { section: 'POIN 1', title: 'Cek Temuan Utama', body: 'Bandingkan konteks sumber sebelum menyimpulkan.', points: [], claims: [] },
     { section: 'PENUTUP', title: 'Baca Detail Survei', body: 'Simpan bagian yang paling relevan.', points: [], claims: [] }
   ];
   const repairedDraft = [
     {
-      section: 'PEMBUKA', title, body: 'Cek rincian survei sebelum menarik kesimpulan.', points: [],
-      claims: [{ field: 'slide:0:title', text: title, sourceId: 'source-1', evidence }]
+      section: 'PEMBUKA', title: generatedTitle, body: 'Cek rincian survei sebelum menarik kesimpulan.', points: [],
+      claims: [{ field: 'slide:0:title', text: generatedTitle, sourceId: 'source-1', evidence }]
     },
     { section: 'POIN 1', title: 'Cek Temuan Utama', body: 'Bandingkan konteks sumber sebelum menyimpulkan.', points: [], claims: [] },
     { section: 'PENUTUP', title: 'Baca Detail Survei', body: 'Simpan bagian yang paling relevan.', points: [], claims: [] }
   ];
+  const prompts = [];
   let calls = 0;
   const client = {
     chat: { completions: { async create({ messages }) {
       calls += 1;
       const prompt = messages[1].content;
+      prompts.push(prompt);
       if (calls === 1) {
-        assert.match(prompt, /FIELD FAKTUAL CURRENT_DRAFT/);
-        assert.match(prompt, /slide:0:title/);
         return { choices: [{ message: { content: JSON.stringify({ slides: firstDraft }) } }] };
       }
-      assert.match(prompt, /CURRENT_DRAFT/);
-      assert.ok(prompt.includes(longBody), prompt.match(/CURRENT_DRAFT[\s\S]{0,1400}/)?.[0] || prompt);
-      assert.match(prompt, /body maksimal 24 kata/);
-      assert.match(prompt, /slide:0:title: klaim faktual tidak memiliki evidence/);
       return { choices: [{ message: { content: JSON.stringify({ slides: repairedDraft }) } }] };
     } } }
   };
   const result = await generateFilteredContent({
     content,
-    options: { topicSource: 'manual', requestedTopic: title, contentFormat: 'Listicle' },
+    options: { topicSource: 'manual', requestedTopic, contentFormat: 'Listicle' },
     sources: [{ text: evidence }],
     client
   });
+
   assert.equal(calls, 2);
+  assert.match(prompts[0], /FIELD FAKTUAL CURRENT_DRAFT/);
+  assert.match(prompts[0], /slide:0:title/);
+  assert.match(prompts[1], /CURRENT_DRAFT/);
+  assert.ok(prompts[1].includes(longBody));
+  assert.match(prompts[1], /Slide 1: body maksimal 24 kata/);
+  assert.match(prompts[1], /slide:0:title: klaim faktual tidak memiliki evidence/);
   assert.equal(result.verificationStatus, 'source_based');
   assert.equal(result.slides[0].body, 'Cek rincian survei sebelum menarik kesimpulan.');
   assert.equal(result.slides[0].claims[0].field, 'slide:0:title');
