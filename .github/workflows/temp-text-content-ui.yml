@@ -18,13 +18,21 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          old = r"assert.match(index, /Buat konten yang<br><em>layak dihentikan\.<\/em>/, 'Heading Content Studio lama harus tetap tersedia');"
-          new = r"assert.match(index, /<h1>Text Content<\/h1>/, 'Heading Text Content harus tersedia');"
+          needle = 'Heading Content Studio lama harus tetap tersedia'
           matches = []
           for path in Path('test').rglob('*.js'):
-              text = path.read_text()
-              if old in text:
-                  path.write_text(text.replace(old, new, 1))
+              lines = path.read_text().splitlines()
+              changed = False
+              output = []
+              for line in lines:
+                  if needle in line:
+                      indent = line[:len(line) - len(line.lstrip())]
+                      output.append(indent + "assert.match(index, /<h1>Text Content<\\/h1>/, 'Heading Text Content harus tersedia');")
+                      changed = True
+                  else:
+                      output.append(line)
+              if changed:
+                  path.write_text('\n'.join(output) + '\n')
                   matches.append(str(path))
           if len(matches) != 1:
               raise SystemExit(f'Expected exactly one stale heading assertion, found {matches}')
