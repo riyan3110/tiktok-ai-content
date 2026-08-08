@@ -5,7 +5,8 @@ const {
   generateFilteredContent,
   requiresEvidence,
   validateVerifiedContent,
-  validateManualTopicIdentity
+  validateManualTopicIdentity,
+  validateSlideTopicRelevance
 } = require('../src/services/sourceFilter');
 
 function baseContent(slides) {
@@ -161,7 +162,7 @@ test('fakta tanpa dukungan sumber tetap ditolak setelah recovery evidence', () =
   assert.ok(checked.errors.some(error => /slide:0:point:0: klaim faktual tidak memiliki evidence/i.test(error)));
 });
 
-test('source filter mempertahankan requestedTopic tetapi tidak menjalankan literal manual-topic gate pada base generation', async () => {
+test('source filter mempertahankan mode manual dan hanya melewati validator literal lama', async () => {
   let baseOptions;
   const slides = [
     { section: 'PEMBUKA', title: 'OpenAI dan Keselamatan AI', body: 'Cek konteks sumber terlebih dahulu.', points: [] },
@@ -171,7 +172,8 @@ test('source filter mempertahankan requestedTopic tetapi tidak menjalankan liter
   const content = {
     async generateContent(_previous, options) {
       baseOptions = options;
-      if (options.topicSource === 'manual') throw new Error('literal manual-topic gate masih aktif');
+      if (options.topicSource !== 'manual') throw new Error('mode manual berubah sebelum base generation');
+      if (options.skipManualTopicValidation !== true) throw new Error('validator literal lama belum dilewati');
       return baseContent(slides);
     },
     validateContent() { return []; }
@@ -198,8 +200,55 @@ test('source filter mempertahankan requestedTopic tetapi tidak menjalankan liter
     client
   });
   assert.equal(baseOptions.requestedTopic, 'OpenAI temukan resiko');
-  assert.notEqual(baseOptions.topicSource, 'manual');
+  assert.equal(baseOptions.topicSource, 'manual');
+  assert.equal(baseOptions.skipManualTopicValidation, true);
   assert.equal(result.verificationStatus, 'source_based');
+});
+
+
+
+test('Era efisiensi AI menolak slide tengah generik prompt dan batch automation', () => {
+  const slides = [
+    { section: 'PEMBUKA', title: 'Efisiensi AI Jadi Fokus Baru', body: 'Cek perubahan cara perusahaan memakai AI.', points: [], claims: [] },
+    { section: 'SOLUSI', title: 'Buat prompt AI yang jelas', body: 'Tentukan input dan format output yang dibutuhkan.', points: [], claims: [] },
+    { section: 'SOLUSI', title: 'Jalankan batch otomatis dengan AI', body: 'Gunakan tool tanpa kode untuk mempercepat pekerjaan.', points: [], claims: [] },
+    { section: 'PENUTUP', title: 'Pilih Sesuai Kebutuhan', body: 'Cek sumber sebelum menentukan pendekatan.', points: [], claims: [] }
+  ];
+  const checked = validateVerifiedContent(baseContent(slides), { slides }, {
+    contentService: permissiveContentService,
+    format: 'Listicle',
+    manualTopic: 'Era efisiensi AI',
+    sources: [{ text: "Skyrocketing AI bills have forced companies to realize most tasks don't require expensive frontier models." }]
+  });
+  assert.ok(checked.errors.some(error => /Slide 2: isi claim-free menyimpang/i.test(error)));
+  assert.ok(checked.errors.some(error => /Slide 3: isi claim-free menyimpang/i.test(error)));
+});
+
+test('slide claim-free tetap boleh jika langsung menyebut konsep inti topik manual', () => {
+  const slides = [
+    { section: 'PEMBUKA', title: 'Efisiensi AI Jadi Fokus Baru', body: 'Cek konteks sumbernya.', points: [], claims: [] },
+    { section: 'PENJELASAN', title: 'Fokus pada efisiensi biaya', body: 'Bandingkan kebutuhan sebelum memilih pendekatan AI.', points: [], claims: [] },
+    { section: 'PENUTUP', title: 'Pilih Sesuai Kebutuhan', body: 'Cek detail sumber sebelum memutuskan.', points: [], claims: [] }
+  ];
+  const errors = validateSlideTopicRelevance('Era efisiensi AI', slides, new Set());
+  assert.deepEqual(errors, []);
+});
+
+test('slide tengah dengan claim sumber valid tidak diwajibkan mengulang keyword topik', () => {
+  const evidence = "Skyrocketing AI bills have forced companies to realize most tasks don't require expensive frontier models.";
+  const body = 'Banyak tugas tidak memerlukan model frontier yang mahal.';
+  const slides = [
+    { section: 'PEMBUKA', title: 'Efisiensi AI Jadi Fokus Baru', body: 'Cek konteksnya.', points: [], claims: [] },
+    { section: 'PENJELASAN', title: 'Model terbesar bukan selalu perlu', body, points: [], claims: [{ field: 'slide:1:body', text: body, sourceId: 'source-1', evidence }] },
+    { section: 'PENUTUP', title: 'Pilih Sesuai Kebutuhan', body: 'Baca sumber lengkapnya.', points: [], claims: [] }
+  ];
+  const checked = validateVerifiedContent(baseContent(slides), { slides }, {
+    contentService: permissiveContentService,
+    format: 'Listicle',
+    manualTopic: 'Era efisiensi AI',
+    sources: [{ text: evidence }]
+  });
+  assert.ok(!checked.errors.some(error => /claim-free menyimpang/i.test(error)));
 });
 
 test('retry verifier membawa draft sebelumnya dan memperbaiki body panjang + claim title', async () => {

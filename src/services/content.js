@@ -650,7 +650,7 @@ ${format === 'Tutorial langkah' ? 'Section tutorial memakai LANGKAH 1 atau renta
   const validationContent = value => value.slides === undefined
     ? { ...value, slides: format === 'Masalah dan solusi' ? normalizeProblemSolutionSlides(legacyProblemSolutionSlides(value)) : legacySlides(value) }
     : value;
-  const manualTopic = options.topicSource === 'manual' ? options.requestedTopic : '';
+  const manualTopic = options.topicSource === 'manual' && options.skipManualTopicValidation !== true ? options.requestedTopic : '';
   const validateGeneratedContent = value => {
     const normalized = validationContent(value);
     const result = validateContent(normalized, { format, manualTopic: value.slides === undefined ? '' : manualTopic, validateCopy: !options.useSources && options.skipCopyValidation !== true });
