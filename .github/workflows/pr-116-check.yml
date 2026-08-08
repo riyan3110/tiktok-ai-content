@@ -1,8 +1,8 @@
 name: PR 116 verification
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [fix/source-filter-only-no-fallback]
 
 jobs:
   test:
