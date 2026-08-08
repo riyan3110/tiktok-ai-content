@@ -315,7 +315,7 @@ test('fallback source Inggris melokalkan display tetapi mempertahankan evidence 
   const facts = extractVerifiedFacts(sources, { topic: 'Penetapan harga agen AI' });
   const fallback = buildSafeSourceFallback({}, facts, { requestedTopic: 'Penetapan harga agen AI', contentFormat: 'Fakta singkat' });
 
-  assert.equal(fallback.slides.length, 3);
+  assert.equal(fallback.slides.length, 4);
   assert.ok(fallback.slides.every(slide => wordsForTest(slide.title) <= 8));
   assert.ok(fallback.slides.every(slide => wordsForTest(slide.body) <= 22));
   assert.ok(fallback.slides.every(slide => !slide.body || slide.title.toLowerCase() !== slide.body.toLowerCase()));
@@ -324,6 +324,7 @@ test('fallback source Inggris melokalkan display tetapi mempertahankan evidence 
   assert.equal(fallback.slides[1].claims[0].sourceId, 'source-1');
   assert.equal(fallback.slides[1].claims[0].evidence, 'AI agent pricing models are becoming more diverse.');
   assert.match(fallback.slides[1].claims[0].text, /model harga agen AI makin beragam/i);
+  assert.deepEqual(fallback.slides[2], { section: 'TRANSISI', title: 'Cek konteks lengkapnya', body: '', points: [], claims: [] });
   assert.deepEqual(validateSourceGrounding(fallback, '', sources), []);
 });
 
@@ -347,13 +348,15 @@ test('unsupported angka dan tanggal dibuang oleh fallback tanpa menggagalkan kon
   assert.match(result.body, /kalender konten/);
 });
 
-test('source dengan satu fakta tetap menghasilkan draft sederhana needs_review', async () => {
+test('source dengan satu fakta tetap menghasilkan empat slide tanpa filler faktual', async () => {
   const sources = [{ text: 'Fitur kalender membantu tim menyusun rencana konten mingguan.' }];
   const invalid = { topic: '', hook: '', body: '', caption: '', cta: '', hashtags: [], slides: [] };
   const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(invalid) } }] }) } } };
   const result = await generateContent([], { useSources: true, sources, sourceContext: sources[0].text }, client);
   assert.equal(result.verificationStatus, 'needs_review');
-  assert.equal(result.slides.length, 3);
+  assert.equal(result.slides.length, 4);
+  assert.equal(result.slides.filter(slide => slide.claims.length).length, 1);
+  assert.deepEqual(result.slides[2], { section: 'TRANSISI', title: 'Cek konteks lengkapnya', body: '', points: [], claims: [] });
   assert.match(result.caption, /kalender membantu tim/);
 });
 

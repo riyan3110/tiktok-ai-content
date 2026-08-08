@@ -394,9 +394,10 @@ function buildSafeSourceFallback(content, factBank, options = {}) {
   if (!factBank.length) throw sourceUnavailableError();
   const topic = String(options.requestedTopic || content?.topic || 'Topik sumber').trim();
   const uniqueFacts = factBank.filter((fact, index, all) => all.findIndex(candidate => groundingText(candidate.evidence) === groundingText(fact.evidence)) === index);
-  // One useful fact plus an opening and closing is preferable to filler. Only
-  // expand the carousel when at least three distinct facts are available.
-  const selected = uniqueFacts.slice(0, uniqueFacts.length >= 3 ? 3 : 1);
+  // Use every useful fact up to the visual limit. A source with only one fact
+  // gets a claim-free transition instead of either a fabricated fact or a
+  // three-slide carousel.
+  const selected = uniqueFacts.slice(0, 3);
   const format = options.contentFormat || 'Tutorial langkah';
   const displayTopic = limitDisplayText(topic, 8, 55) || 'Topik sumber';
   const localized = selected.map((fact, index) => localizeFallbackFact(fact, displayTopic, index));
@@ -406,7 +407,10 @@ function buildSafeSourceFallback(content, factBank, options = {}) {
   }));
   const opening = { section: format === 'Masalah dan solusi' ? 'MASALAH' : 'PEMBUKA', title: displayTopic, body: '', points: [], claims: [] };
   const closingTitle = limitDisplayText(`Lanjut baca tentang ${displayTopic}`, 8, 55);
-  const slides = [opening, ...factSlides, { section: 'PENUTUP', title: closingTitle, body: '', points: [], claims: [] }];
+  const neutralTransition = factSlides.length === 1
+    ? [{ section: 'TRANSISI', title: 'Cek konteks lengkapnya', body: '', points: [], claims: [] }]
+    : [];
+  const slides = [opening, ...factSlides, ...neutralTransition, { section: 'PENUTUP', title: closingTitle, body: '', points: [], claims: [] }];
   const first = localized[0];
   return {
     contentCategory: options.contentCategory || content?.contentCategory,
