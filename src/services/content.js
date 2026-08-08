@@ -653,7 +653,7 @@ ${format === 'Tutorial langkah' ? 'Section tutorial memakai LANGKAH 1 atau renta
   const manualTopic = options.topicSource === 'manual' ? options.requestedTopic : '';
   const validateGeneratedContent = value => {
     const normalized = validationContent(value);
-    const result = validateContent(normalized, { format, manualTopic: value.slides === undefined ? '' : manualTopic, validateCopy: !options.useSources });
+    const result = validateContent(normalized, { format, manualTopic: value.slides === undefined ? '' : manualTopic, validateCopy: !options.useSources && options.skipCopyValidation !== true });
     if (options.useSources && normalized.slides.length < 4) result.push(`SOURCE_GROUNDING: Mode source-backed hanya memiliki ${normalized.slides.length} slide; wajib 4–5 slide.`);
     return result;
   };
