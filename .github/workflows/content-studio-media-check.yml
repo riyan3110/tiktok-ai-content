@@ -13,4 +13,14 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run check
-      - run: npm test
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: npm test > test.log 2>&1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: content-studio-test-log
+          path: test.log
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
