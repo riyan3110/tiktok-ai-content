@@ -28,7 +28,7 @@ old = '- Setiap slide wajib tetap memiliki title dan minimal body atau points ya
 new = """- Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.
 - BATAS COPY FINAL: title maksimal 12 kata; body maksimal 24 kata; points maksimal 3 item; tiap point maksimal 7 kata.
 - Jika error sebelumnya menyebut body/title/point terlalu panjang, ringkas field itu pada percobaan ini tanpa menambah fakta baru.
-- Jika error sebelumnya menyebut `slide:X:... klaim faktual tidak memiliki evidence`, wajib lakukan salah satu: tambahkan claim untuk FIELD PERSIS itu memakai satu evidence FACT_BANK yang benar-benar mendukung, atau ubah field tersebut menjadi copy non-faktual yang akurat. Jangan kembalikan field faktual yang sama tanpa claim.
+- Jika error sebelumnya menyebut slide:X:... klaim faktual tidak memiliki evidence, wajib lakukan salah satu: tambahkan claim untuk FIELD PERSIS itu memakai satu evidence FACT_BANK yang benar-benar mendukung, atau ubah field tersebut menjadi copy non-faktual yang akurat. Jangan kembalikan field faktual yang sama tanpa claim.
 - Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda."""
 assert old in text, 'slide rule marker not found'
 text = text.replace(old, new, 1)
