@@ -96,7 +96,7 @@ test('fakta tanpa claim dipulihkan hanya ketika ada evidence sumber yang kuat', 
   const slides = [
     {
       section: 'POIN 1',
-      title: 'Cara AI Dipakai dalam Riset',
+      title: 'Konteks Analisis Data',
       body: 'Cek konteksnya sebelum menyimpulkan.',
       points: ['Peneliti menggunakan AI untuk menganalisis pola data.'],
       claims: []
@@ -121,7 +121,7 @@ test('fakta tanpa dukungan sumber tetap ditolak setelah recovery evidence', () =
   const slides = [
     {
       section: 'POIN 1',
-      title: 'Cara AI Dipakai dalam Riset',
+      title: 'Konteks Analisis Data',
       body: 'Cek konteksnya sebelum menyimpulkan.',
       points: ['Peneliti menggunakan AI untuk menggantikan semua ahli.'],
       claims: []
