@@ -167,3 +167,73 @@ test('validasi grounding konservatif untuk point pendek title hook dan CTA', () 
   assert.deepEqual(validateSourceGrounding({ ...valid, cta: 'Coba jelajahi fiturnya' }, '', sources), []);
   assert.deepEqual(validateSourceGrounding(valid, '', sources), []);
 });
+
+test('isLikelyFactualStatement tidak false positive pada kata kepastian', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Fitur ini memberikan kepastian jadwal bagi pengguna.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Jadwal pasti', focus: { masalah: 'Butuh kepastian', penyebab: 'Jadwal tidak pasti', solusi: 'Gunakan fitur', hasil: 'Kepastian jadwal' }, hook: 'Kepastian Jadwal', cta: 'Coba sekarang', slides: [{ title: 'Kepastian', body: '', points: ['Kepastian jadwal'], claims: [{ text: 'Kepastian jadwal', sourceId: 'source-1', evidence: 'memberikan kepastian jadwal bagi pengguna' }] }] };
+  assert.deepEqual(validateSourceGrounding(valid, '', sources), []);
+});
+
+test('isLikelyFactualStatement mendeteksi klaim pasti yang tidak didukung sumber', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Fitur ini dapat membantu pengguna.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Fitur membantu', focus: { masalah: 'Perlu bantuan', penyebab: 'Manual', solusi: 'Fitur', hasil: 'Terbantu' }, hook: 'Fitur Membantu', cta: 'Coba', slides: [{ title: 'Fitur', body: 'Desain pasti selesai dalam hitungan menit', points: [], claims: [] }] };
+  assert.match(validateSourceGrounding(valid, '', sources).join(' '), /pasti/);
+});
+
+test('validasi grounding mendeteksi angka tanpa klaim pendukung', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Canva AI memiliki berbagai fitur desain.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Fitur desain', focus: { masalah: 'Butuh desain', penyebab: 'Belum ada', solusi: 'Canva AI', hasil: 'Desain jadi' }, hook: 'Canva AI', cta: 'Coba', slides: [{ title: 'Fitur', body: 'Lebih dari 500 template tersedia', points: [], claims: [] }] };
+  assert.match(validateSourceGrounding(valid, '', sources).join(' '), /500/);
+});
+
+test('validasi grounding mendeteksi klaim uang tanpa sumber', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Harga dapat berubah sewaktu-waktu.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Harga', focus: { masalah: 'Mahal', penyebab: 'Harga', solusi: 'Cek', hasil: 'Tahu' }, hook: 'Cek Harga', cta: 'Cek', slides: [{ title: 'Harga', body: 'Hanya Rp 50 ribu per bulan', points: [], claims: [] }] };
+  assert.match(validateSourceGrounding(valid, '', sources).join(' '), /Rp 50/);
+});
+
+test('validasi grounding mendeteksi klaim persen tanpa sumber', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Pengguna dapat mencoba berbagai template.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Template', focus: { masalah: 'Butuh template', penyebab: 'Kurang', solusi: 'Coba', hasil: 'Banyak' }, hook: 'Template', cta: 'Coba', slides: [{ title: 'Hasil', body: '80% pengguna puas dengan hasilnya', points: [], claims: [] }] };
+  assert.match(validateSourceGrounding(valid, '', sources).join(' '), /80%/);
+});
+
+test('validasi grounding mendeteksi klaim waktu tanpa sumber', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Aplikasi ini memiliki fitur penjadwalan.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Jadwal', focus: { masalah: 'Waktu', penyebab: 'Manual', solusi: 'Otomatis', hasil: 'Cepat' }, hook: 'Jadwal', cta: 'Coba', slides: [{ title: 'Cepat', body: 'Selesai dalam 5 menit saja', points: [], claims: [] }] };
+  assert.match(validateSourceGrounding(valid, '', sources).join(' '), /5 menit/);
+});
+
+test('validasi grounding memvalidasi field focus masalah penyebab solusi hasil', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Canva AI membantu membuat desain dari prompt teks.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Desain', focus: { masalah: 'Desain otomatis dalam hitungan menit', penyebab: 'Tanpa skill design', solusi: 'Pakai Canva AI', hasil: 'Desain profesional' }, hook: 'Canva AI', cta: 'Coba', slides: [{ title: 'Canva AI', body: 'Canva AI membantu membuat desain', points: [], claims: [{ text: 'Canva AI membantu membuat desain', sourceId: 'source-1', evidence: 'membuat desain dari prompt teks' }] }] };
+  const errors = validateSourceGrounding(valid, '', sources);
+  assert.ok(errors.some(e => e.includes('FOCUS_MASALAH')), 'focus.masalah harus divalidasi');
+  assert.ok(errors.some(e => e.includes('FOCUS_PENYEBAB')), 'focus.penyebab harus divalidasi');
+});
+
+test('validasi grounding memvalidasi body dan points di section MASALAH dan SOLUSI', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Brief yang jelas membantu desainer memahami kebutuhan.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Brief', focus: { masalah: 'Brief tidak jelas', penyebab: 'Klien', solusi: 'Tulis brief', hasil: 'Brief jelas' }, hook: 'Brief', cta: 'Tulis', slides: [
+    { section: 'MASALAH', title: 'Brief', body: 'Brief kabur bikin desain selalu salah arah', points: [], claims: [] },
+    { section: 'SOLUSI', title: 'Solusi', body: '', points: ['Tulis brief otomatis dalam 2 menit'], claims: [] }
+  ] };
+  const errors = validateSourceGrounding(valid, '', sources);
+  assert.ok(errors.some(e => e.includes('BODY') && e.includes('selalu')), 'body MASALAH harus divalidasi');
+  assert.ok(errors.some(e => e.includes('POINT') && e.includes('2 menit')), 'points SOLUSI harus divalidasi');
+});
+
+test('kepastian diterima jika didukung evidence eksplisit', () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'Pengguna mendapatkan kepastian jadwal dan hasil desain yang pasti selesai.' }];
+  const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Kepastian', focus: { masalah: 'Jadwal', penyebab: 'Manual', solusi: 'Fitur', hasil: 'Pasti' }, hook: 'Kepastian', cta: 'Coba', slides: [{ title: 'Kepastian', body: '', points: ['Hasil pasti selesai'], claims: [{ text: 'Hasil pasti selesai', sourceId: 'source-1', evidence: 'hasil desain yang pasti selesai' }] }] };
+  assert.deepEqual(validateSourceGrounding(valid, '', sources), []);
+});
