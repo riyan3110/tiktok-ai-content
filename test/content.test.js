@@ -114,7 +114,7 @@ test('regression topik manual Fakta singkat tetap fokus, non-tutorial, ringkas, 
   assert.equal(output.slides.length, 4);
   assert.ok(output.slides.every(slide => /agen AI/i.test(`${slide.title} ${slide.body} ${slide.points.join(' ')}`)));
   assert.doesNotMatch(JSON.stringify(output.slides), /tutorial|langkah/i);
-  assert.match(requests[0].messages[1].content, /setiap slide, termasuk slide terakhir/i);
+  assert.match(requests[0].messages[1].content, /carousel secara keseluruhan/i);
   assert.match(requests[0].messages[1].content, /Dilarang memakai section atau copy TUTORIAL, LANGKAH/i);
 });
 
@@ -138,13 +138,63 @@ test('anchor manual menjaga agen AI dan Fakta singkat menerima kata langkah dala
     section: index ? 'FAKTA' : 'PEMBUKA', title: `Skala Proyek Besar ${index + 1}`, body: 'Proyek besar membutuhkan biaya dan dukungan sistem.', points: []
   }));
   const topicErrors = validateSlides(projectOnly, { format: 'Fakta singkat', manualTopic: topic });
-  assert.ok(topicErrors.some(error => /pertahankan agen ai/i.test(error)));
+  assert.ok(topicErrors.some(error => /carousel secara keseluruhan menyimpang/i.test(error)));
 
   const naturalFact = Array.from({ length: 4 }, (_, index) => ({
     section: index ? 'FAKTA' : 'PEMBUKA', title: `Konteks Agen AI ${index + 1}`, body: 'Langkah industri ini menunjukkan besarnya investasi untuk agen AI.', points: []
   }));
   const formatErrors = validateSlides(naturalFact, { format: 'Fakta singkat', manualTopic: topic });
   assert.ok(!formatErrors.some(error => /struktur TUTORIAL atau LANGKAH bernomor/i.test(error)));
+});
+
+test('validator topik manual menerima carousel Agen AI tanpa memaksa dua kata terakhir topik', () => {
+  const { validateSlides } = require('../src/services/content');
+  const slides = [
+    { section: 'PEMBUKA', title: 'Tim Butuh Bantuan Baru', body: 'Pekerjaan kompleks sering tersendat saat tugas saling bergantung.', points: [] },
+    { section: 'PENJELASAN', title: 'Agen AI Menjaga Alur Kerja', body: 'Sistem ini menangani rangkaian tugas dan meneruskan hasil antarproses.', points: [] },
+    { section: 'TRANSISI', title: 'Bukan Sekadar Satu Prompt', body: 'Setiap tahap tetap perlu tujuan dan batas yang jelas.', points: [] },
+    { section: 'PENUTUP', title: 'Pilih Sesuai Kebutuhan Tim', body: 'Mulai dari alur kerja yang paling mudah dievaluasi.', points: [] }
+  ];
+  const errors = validateSlides(slides, { format: 'Fakta singkat', manualTopic: 'Agen AI yang bagus untuk mengerjakan proyek' });
+  assert.ok(!errors.some(error => /topik manual|pertahankan mengerjakan proyek/i.test(error)));
+});
+
+test('validator topik manual menerima Ethan Mollick pada tingkat carousel dengan dan tanpa source URL', () => {
+  const { validateContent, validateSourceGrounding, buildSafeSourceFallback, extractVerifiedFacts } = require('../src/services/content');
+  const slides = [
+    { section: 'PEMBUKA', title: 'Gagasan yang Layak Dibahas', body: 'Satu sudut pandang dapat membuka diskusi lebih luas.', points: [] },
+    { section: 'PENJELASAN', title: 'Ethan Mollick Membahas AI', body: 'Pembahasannya menempatkan teknologi dalam konteks kerja.', points: [] },
+    { section: 'TRANSISI', title: 'Konteks Tetap Penting', body: 'Baca argumen lengkap sebelum menarik kesimpulan.', points: [] },
+    { section: 'PENUTUP', title: 'Lanjutkan ke Sumber Utama', body: 'Gunakan materi asli untuk memahami penjelasannya.', points: [] }
+  ];
+  const content = { focus: { masalah: 'Konteks terbatas', penyebab: 'Ringkasan singkat', solusi: 'Baca sumber', hasil: 'Argumen dipahami' }, topic: 'Ethan Mollick', hook: 'Gagasan tentang AI', body: 'Ethan Mollick membahas AI dalam konteks kerja.', caption: 'Ringkasan pembahasan Ethan Mollick.', hashtags: [], cta: 'Baca sumbernya', slides };
+  assert.ok(!validateContent(content, { format: 'Fakta singkat', manualTopic: 'Ethan Mollick' }).some(error => /topik manual/i.test(error)));
+
+  const sources = [{ url: 'https://example.com/ethan-mollick', text: 'Ethan Mollick membahas penggunaan AI dalam pekerjaan.' }];
+  const facts = extractVerifiedFacts(sources, { topic: 'Ethan Mollick' });
+  const fallback = buildSafeSourceFallback(content, facts, { requestedTopic: 'Ethan Mollick', contentFormat: 'Tutorial langkah' });
+  assert.ok(!validateContent(fallback, { format: 'Tutorial langkah', manualTopic: 'Ethan Mollick', validateCopy: false }).some(error => /topik manual/i.test(error)));
+  assert.deepEqual(validateSourceGrounding(fallback, '', sources), []);
+  assert.ok(fallback.slides.some(slide => slide.section === 'TRANSISI'));
+});
+
+test('validator mengisi copy top-level kosong secara deterministik dari slide valid', () => {
+  const { validateContent } = require('../src/services/content');
+  const content = {
+    focus: { masalah: 'Alur rumit', penyebab: 'Tugas berantai', solusi: 'Gunakan agen', hasil: 'Alur terbantu' },
+    topic: 'Agen AI', hook: '', body: '', caption: '', cta: '', hashtags: [],
+    slides: [
+      { section: 'PEMBUKA', title: 'Kenali Alur Kerjanya', body: '', points: [] },
+      { section: 'PENJELASAN', title: 'Agen AI Menangani Tugas', body: 'Sistem meneruskan hasil dari satu tahap ke tahap berikutnya.', points: [] },
+      { section: 'PENUTUP', title: 'Mulai dari Alur Kecil', body: '', points: [] }
+    ]
+  };
+  const errors = validateContent(content, { manualTopic: 'Agen AI' });
+  assert.ok(!errors.some(error => /kolom wajib/i.test(error)));
+  assert.equal(content.hook, 'Kenali Alur Kerjanya');
+  assert.equal(content.body, 'Agen AI Menangani Tugas Sistem meneruskan hasil dari satu tahap ke tahap berikutnya.');
+  assert.equal(content.caption, content.body);
+  assert.equal(content.cta, 'Mulai dari Alur Kecil');
 });
 
 test('prompt memisahkan keyword, gaya hook, dan pola konten sesuai kegunaannya', async () => {

@@ -50,8 +50,36 @@ function duplicateSlideCopy(slide) {
   return false;
 }
 
-function manualTopicAnchors(topic) {
-  return [...new Set(meaningfulTokens(topic, TOPIC_FILLER_WORDS).slice(-2))];
+function manualTopicSignals(topic) {
+  const tokens = [...new Set(meaningfulTokens(topic, TOPIC_FILLER_WORDS))];
+  const rawTokens = String(topic || '').match(/[A-Za-z0-9]+/g) || [];
+  const named = new Set();
+  rawTokens.forEach((token, index) => {
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(token)) return;
+    const isAcronym = /^[A-Z0-9]{2,}$/.test(token);
+    const previousIsName = index && /^[A-Z][A-Za-z0-9]*$/.test(rawTokens[index - 1]);
+    const nextIsName = index + 1 < rawTokens.length && /^[A-Z][A-Za-z0-9]*$/.test(rawTokens[index + 1]);
+    if (isAcronym || previousIsName || nextIsName) named.add(normalizedLine(token));
+    if (isAcronym && index) named.add(normalizedLine(rawTokens[index - 1]));
+    if (previousIsName) named.add(normalizedLine(rawTokens[index - 1]));
+    if (nextIsName) named.add(normalizedLine(rawTokens[index + 1]));
+  });
+  return { tokens, named: [...named].filter(token => tokens.includes(token)) };
+}
+
+function fillEmptyTopLevelCopy(content) {
+  if (!content || !Array.isArray(content.slides)) return content;
+  const slides = normalizeSlides(content.slides);
+  if (!slides.length) return content;
+  const first = slides[0];
+  const middle = slides.find((slide, index) => index > 0 && index < slides.length - 1 && mainSlideText(slide)) || first;
+  const last = slides.at(-1);
+  const copy = slide => mainSlideText(slide).trim();
+  if (!String(content.hook || '').trim()) content.hook = first.title || copy(first);
+  if (!String(content.body || '').trim()) content.body = copy(middle);
+  if (!String(content.caption || '').trim()) content.caption = copy(middle);
+  if (!String(content.cta || '').trim()) content.cta = last.title || copy(last);
+  return content;
 }
 
 function mainSlideText(slide) {
@@ -78,6 +106,7 @@ function numberedValues(body, label) {
 
 function validateContent(content, { format = 'Tutorial langkah', manualTopic = '', validateCopy = true } = {}) {
   const errors = [];
+  fillEmptyTopLevelCopy(content);
   const strings = ['topic', 'hook', 'body', 'caption', 'cta'];
   if (!content || strings.some((key) => typeof content[key] !== 'string' || !content[key].trim()) ||
       !Array.isArray(content?.hashtags) || content.hashtags.some((tag) => typeof tag !== 'string')) {
@@ -199,12 +228,14 @@ function validateSlides(input, { format = 'Tutorial langkah', manualTopic = '', 
       if (hasTutorialStructure || hasNumberedStep) errors.push(`Slide ${index + 1}: format Fakta singkat dilarang memakai struktur TUTORIAL atau LANGKAH bernomor.`);
     });
   }
-  const anchors = manualTopicAnchors(manualTopic);
-  if (anchors.length) {
-    slides.forEach((slide, index) => {
-      const slideTokens = new Set(meaningfulTokens(mainSlideText(slide), TOPIC_FILLER_WORDS));
-      if (!anchors.every(anchor => slideTokens.has(anchor))) errors.push(`Slide ${index + 1}: isi menyimpang dari inti topik manual; pertahankan ${anchors.join(' ')}.`);
-    });
+  const signals = manualTopicSignals(manualTopic);
+  if (signals.tokens.length) {
+    const carouselTokens = new Set(meaningfulTokens(slides.map(mainSlideText).join(' '), TOPIC_FILLER_WORDS));
+    const matched = signals.tokens.filter(token => carouselTokens.has(token));
+    const hasNamedTopic = signals.named.length >= 2;
+    const namedTopicMatches = hasNamedTopic && signals.named.every(token => carouselTokens.has(token));
+    const enoughOverallOverlap = matched.length >= Math.max(1, Math.ceil(signals.tokens.length * 0.4));
+    if (!(hasNamedTopic ? namedTopicMatches : enoughOverallOverlap)) errors.push('Isi carousel secara keseluruhan menyimpang dari inti topik manual.');
   }
   if (format === 'Tutorial langkah') {
     let expected = 1;
@@ -580,7 +611,7 @@ async function generateContent(previousTopics, options = {}, client) {
     'Edukasi teknologi': 'Gunakan bahasa sederhana dan satu contoh yang mudah dipahami.', Motivasi: 'Gunakan motivasi yang membumi.',
     'Konten kreator': 'Berikan tindakan praktis untuk proses kreator.', 'Iklan & UGC': 'Fokus pada konsep atau produksi konten promosi.'
   };
-  const source = options.topicSource === 'manual' ? `Gunakan topik pengguna: "${options.requestedTopic}" dan jangan mengubah inti topiknya. Ini adalah batas pembahasan wajib: setiap slide, termasuk slide terakhir, harus tetap menyebut dan membahas objek inti topik tersebut. Jangan mengalihkannya menjadi tutorial umum, manajemen proyek, atau topik lain.`
+  const source = options.topicSource === 'manual' ? `Gunakan topik pengguna: "${options.requestedTopic}" dan jangan mengubah inti topiknya. Carousel secara keseluruhan wajib membahas objek inti topik tersebut, tetapi slide pembuka, transisi, dan penutup tidak wajib mengulang nama atau keyword topik secara mentah. Jangan mengalihkannya menjadi tutorial umum, manajemen proyek, atau topik lain.`
     : options.topicSource === 'trending' && options.requestedTopic ? `Gunakan topik tren: "${options.requestedTopic}".`
       : `Pilih topik baru dalam kategori "${category}".`;
   const specialStructure = options.useSources
@@ -633,7 +664,7 @@ ${format === 'Tutorial langkah' ? 'Section tutorial memakai LANGKAH 1 atau renta
 Hapus atau ubah klaim tersebut menggunakan fakta yang benar-benar memiliki evidence. Jangan membuat evidence baru yang tidak terdapat dalam SOURCE_CONTEXT.` : '';
     content = parseOutput(await openai.chat.completions.create({
       model: config.aiModel,
-      messages: [...messages, { role: 'assistant', content: JSON.stringify(content) }, { role: 'user', content: `Perbaikan ${repair} dari ${MAX_REPAIR_ATTEMPTS}. Hasil belum lolos validasi: ${errors.join(' ')} ${groundingRepair} ${manualTopic ? `Topik manual tetap persis \"${manualTopic}\"; setiap slide sampai slide terakhir wajib membahas objek intinya.` : ''} ${format === 'Fakta singkat' ? 'Format Fakta singkat wajib 4–5 slide fakta/penjelasan natural tanpa TUTORIAL, LANGKAH, penomoran langkah, atau langkah praktis.' : ''} FACT_BANK terverifikasi: ${JSON.stringify(factBank)}. Hapus klaim unsupported atau ganti hanya dengan satu fakta terdekat dari bank. sourceId dan evidence wajib disalin persis dari pasangan FACT_BANK yang sama; evidence tidak boleh diterjemahkan, diparafrasekan, dibuat, atau diubah. claim.text wajib menjadi terjemahan/ringkasan/parafrase bahasa Indonesia yang setia jika evidence berbahasa Inggris, bukan salinan Inggris mentah. Semua display title, body, points, hook, caption, CTA, dan claim.text wajib bahasa Indonesia. Jangan menambah fakta, angka, tanggal, nama, manfaat, sebab-akibat, kesimpulan, atau pengetahuan internal. Pertahankan struktur bila aman; kurangi point jika fakta terbatas dan gunakan kalimat netral untuk transisi. ${repair === 1 ? 'Ringkas kalimat, hapus kata berulang, dan pertahankan makna utama.' : 'Susun ulang section, title, body, dan points sesuai struktur format; pindahkan daftar body ke points.'} Jika ada dua poin berbeda, pecah atau pindahkan poin kedua ke slide berikutnya. ${options.useSources ? 'Wajib gunakan 4–5 slide; jika fakta sedikit, pakai pembuka, fakta utama, transisi netral tanpa klaim baru, dan penutup.' : 'Tetap gunakan 3–5 slide.'} Caption tidak boleh menambah klaim. Kembalikan JSON lengkap saja.` }],
+      messages: [...messages, { role: 'assistant', content: JSON.stringify(content) }, { role: 'user', content: `Perbaikan ${repair} dari ${MAX_REPAIR_ATTEMPTS}. Hasil belum lolos validasi: ${errors.join(' ')} ${groundingRepair} ${manualTopic ? `Topik manual tetap persis \"${manualTopic}\"; carousel secara keseluruhan wajib membahas objek intinya tanpa harus mengulang keyword mentah di setiap slide.` : ''} ${format === 'Fakta singkat' ? 'Format Fakta singkat wajib 4–5 slide fakta/penjelasan natural tanpa TUTORIAL, LANGKAH, penomoran langkah, atau langkah praktis.' : ''} FACT_BANK terverifikasi: ${JSON.stringify(factBank)}. Hapus klaim unsupported atau ganti hanya dengan satu fakta terdekat dari bank. sourceId dan evidence wajib disalin persis dari pasangan FACT_BANK yang sama; evidence tidak boleh diterjemahkan, diparafrasekan, dibuat, atau diubah. claim.text wajib menjadi terjemahan/ringkasan/parafrase bahasa Indonesia yang setia jika evidence berbahasa Inggris, bukan salinan Inggris mentah. Semua display title, body, points, hook, caption, CTA, dan claim.text wajib bahasa Indonesia. Jangan menambah fakta, angka, tanggal, nama, manfaat, sebab-akibat, kesimpulan, atau pengetahuan internal. Pertahankan struktur bila aman; kurangi point jika fakta terbatas dan gunakan kalimat netral untuk transisi. ${repair === 1 ? 'Ringkas kalimat, hapus kata berulang, dan pertahankan makna utama.' : 'Susun ulang section, title, body, dan points sesuai struktur format; pindahkan daftar body ke points.'} Jika ada dua poin berbeda, pecah atau pindahkan poin kedua ke slide berikutnya. ${options.useSources ? 'Wajib gunakan 4–5 slide; jika fakta sedikit, pakai pembuka, fakta utama, transisi netral tanpa klaim baru, dan penutup.' : 'Tetap gunakan 3–5 slide.'} Caption tidak boleh menambah klaim. Kembalikan JSON lengkap saja.` }],
       response_format: { type: 'json_object' }
     }));
     if (format === 'Masalah dan solusi') content.body = normalizeLegacySolutionBody(content.body);
