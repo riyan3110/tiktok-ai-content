@@ -41,6 +41,8 @@ test('instruksi listicle tidak berubah menjadi klaim faktual hanya karena mengan
   assert.equal(requiresEvidence('Pelajari fitur AI sebelum digunakan', 'POIN 2', 'point'), false);
   assert.equal(requiresEvidence('Fitur AI untuk riset', 'POIN 3', 'point'), false);
   assert.equal(requiresEvidence('Peneliti menggunakan AI untuk membaca data', 'POIN 4', 'point'), true);
+  assert.equal(requiresEvidence('Google Maps rilis fitur AI', 'POIN 5', 'point'), true);
+  assert.equal(requiresEvidence('Resmi rilis fitur AI baru', 'POIN 6', 'point'), true);
 });
 
 test('topik manual dengan nama entitas menerima paraphrase dan tidak menuntut overlap kata literal', () => {
@@ -92,7 +94,7 @@ test('Google Maps tidak gagal hanya karena nama produk dipendekkan menjadi Maps'
   assert.ok(errors.some(error => /google \/ maps/i.test(error)));
 });
 
-test('fakta tanpa claim dipulihkan hanya ketika ada evidence sumber yang kuat', () => {
+test('fakta tanpa claim dipulihkan hanya ketika ada evidence sumber yang sangat kuat', () => {
   const slides = [
     {
       section: 'POIN 1',
@@ -115,6 +117,26 @@ test('fakta tanpa claim dipulihkan hanya ketika ada evidence sumber yang kuat', 
   assert.equal(checked.content.slides[0].claims.length, 1);
   assert.equal(checked.content.slides[0].claims[0].field, 'slide:0:point:0');
   assert.match(checked.content.slides[0].claims[0].evidence, /menganalisis pola data/i);
+});
+
+test('kemiripan kata generik tidak boleh mengubah klaim berbeda menjadi terverifikasi', () => {
+  const slides = [
+    {
+      section: 'POIN 1',
+      title: 'Konteks Penggunaan AI',
+      body: 'Cek konteksnya sebelum menyimpulkan.',
+      points: ['AI membantu diagnosis penyakit.'],
+      claims: []
+    }
+  ];
+  const sources = [{ text: 'AI membantu pemasaran produk untuk tim bisnis.' }];
+  const checked = validateVerifiedContent(baseContent(slides), { slides }, {
+    contentService: permissiveContentService,
+    format: 'Listicle',
+    manualTopic: '',
+    sources
+  });
+  assert.ok(checked.errors.some(error => /slide:0:point:0: klaim faktual tidak memiliki evidence/i.test(error)));
 });
 
 test('fakta tanpa dukungan sumber tetap ditolak setelah recovery evidence', () => {
