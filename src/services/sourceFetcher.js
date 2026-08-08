@@ -57,11 +57,35 @@ async function secureFetch(url, { lookup = dns.lookup, signal } = {}) {
 function uniqueUrls(urls = []) { return [...new Map(urls.map(v => [String(v || '').trim(), String(v || '').trim()]).filter(([k]) => k)).values()]; }
 function validateSourceUrls(urls) { const values = uniqueUrls(Array.isArray(urls) ? urls : []); if (!values.length) throw Object.assign(new Error('Minimal 1 URL sumber wajib diisi'), { status: 400 }); if (values.length > MAX_URLS) throw Object.assign(new Error('Maksimal 3 URL sumber'), { status: 400 }); return values; }
 function decodeBasicEntities(text) { return text.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))); }
+
+function preferredHtmlRegion(html) {
+  const articles = [...String(html || '').matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)].map(match => match[1]).filter(Boolean);
+  if (articles.length) return articles.join('\n');
+  const main = String(html || '').match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1];
+  return main || html;
+}
+
+function cleanHtmlText(html) {
+  return String(html || '')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, ' ')
+    .replace(/<form\b[\s\S]*?<\/form>/gi, ' ')
+    .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ')
+    .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
+    .replace(/<aside\b[\s\S]*?<\/aside>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+}
+
 function extractText(raw, contentType = '') {
-  let html = String(raw || '');
-  const title = decodeBasicEntities((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim());
-  if (/text\/html/i.test(contentType)) html = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ').replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ').replace(/<iframe\b[\s\S]*?<\/iframe>/gi, ' ').replace(/<form\b[\s\S]*?<\/form>/gi, ' ').replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ').replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ').replace(/<header\b[\s\S]*?<\/header>/gi, ' ').replace(/<[^>]+>/g, ' ');
-  const text = decodeBasicEntities(html).replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+  const original = String(raw || '');
+  const title = decodeBasicEntities((original.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim());
+  const selected = /text\/html/i.test(contentType) ? preferredHtmlRegion(original) : original;
+  const stripped = /text\/html/i.test(contentType) ? cleanHtmlText(selected) : selected;
+  const text = decodeBasicEntities(stripped).replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
   return { title, text };
 }
 async function readLimited(response) { const reader = response.body?.getReader?.(); if (!reader) { const text = await response.text(); if (Buffer.byteLength(text) > MAX_BYTES) throw new Error('Response sumber terlalu besar'); return text; } let size = 0, chunks = []; while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX_BYTES) throw new Error('Response sumber terlalu besar'); chunks.push(value); } return new TextDecoder().decode(Buffer.concat(chunks.map(v => Buffer.from(v)))); }
