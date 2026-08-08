@@ -5,7 +5,7 @@ on:
 permissions:
   contents: write
 jobs:
-  patch-test:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,20 +14,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Apply UI patch
-        run: python3 scripts/patch-text-content-ui.py
+      - name: Update stale heading assertion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          old = r"assert.match(index, /Buat konten yang<br><em>layak dihentikan\.<\/em>/, 'Heading Content Studio lama harus tetap tersedia');"
+          new = r"assert.match(index, /<h1>Text Content<\/h1>/, 'Heading Text Content harus tersedia');"
+          matches = []
+          for path in Path('test').rglob('*.js'):
+              text = path.read_text()
+              if old in text:
+                  path.write_text(text.replace(old, new, 1))
+                  matches.append(str(path))
+          if len(matches) != 1:
+              raise SystemExit(f'Expected exactly one stale heading assertion, found {matches}')
+          print('Updated:', matches[0])
+          PY
       - name: Verify requested UI changes
         run: |
           grep -Fq '<h1>Text Content</h1>' public/index.html
           grep -Fq '/* Text Content responsive layout */' public/style.css
           ! grep -Fq 'Buat konten yang<br><em>layak dihentikan.</em>' public/index.html
-      - name: Persist branch patch
+      - name: Persist test update
         run: |
           git config user.name 'Riyan3w'
           git config user.email '129081548+riyan3110@users.noreply.github.com'
-          git add public/index.html public/style.css
-          git commit -m 'fix: tidy Text Content layout on desktop and mobile'
-          git push origin HEAD:fix/text-content-responsive-ui
+          git add test
+          if ! git diff --cached --quiet; then
+            git commit -m 'test: expect Text Content heading'
+            git push origin HEAD:fix/text-content-responsive-ui
+          fi
       - name: Install dependencies
         run: npm install
       - name: Run check
@@ -35,4 +51,4 @@ jobs:
       - name: Run tests
         run: npm test
       - name: Diff check
-        run: git diff --check HEAD~1 HEAD
+        run: git diff --check
