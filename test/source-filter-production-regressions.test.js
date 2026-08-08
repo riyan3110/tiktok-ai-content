@@ -268,3 +268,60 @@ test('retry verifier membawa draft sebelumnya dan memperbaiki body panjang + cla
   assert.equal(result.slides[0].body, 'Cek rincian survei sebelum menarik kesimpulan.');
   assert.equal(result.slides[0].claims[0].field, 'slide:0:title');
 });
+
+
+test('source verifier menerjemahkan copy Inggris ke Indonesia tetapi mempertahankan evidence asli', async () => {
+  const evidence = "Skyrocketing AI bills have forced companies to realize most tasks don't require expensive frontier models.";
+  const englishBody = evidence;
+  const indonesianBody = 'Lonjakan biaya AI membuat perusahaan sadar banyak tugas tidak memerlukan model frontier mahal.';
+  const baseSlides = [
+    { section: 'MASALAH', title: 'Proses manual menghambat produktivitas', body: 'Biaya AI perlu ditinjau sesuai kebutuhan.', points: [] },
+    { section: 'SOLUSI', title: 'Buat prompt AI yang jelas', body: 'Tentukan input dan format output yang dibutuhkan.', points: [] },
+    { section: 'SOLUSI', title: 'Jalankan batch otomatis dengan AI', body: 'Gunakan alat yang sesuai alur kerja.', points: [] }
+  ];
+  const content = {
+    async generateContent() { return baseContent(baseSlides); },
+    validateContent() { return []; }
+  };
+  const firstDraft = [
+    {
+      ...baseSlides[0],
+      body: englishBody,
+      claims: [{ field: 'slide:0:body', text: englishBody, sourceId: 'source-1', evidence }]
+    },
+    { ...baseSlides[1], claims: [] },
+    { ...baseSlides[2], claims: [] }
+  ];
+  const repairedDraft = [
+    {
+      ...baseSlides[0],
+      body: indonesianBody,
+      claims: [{ field: 'slide:0:body', text: indonesianBody, sourceId: 'source-1', evidence }]
+    },
+    { ...baseSlides[1], claims: [] },
+    { ...baseSlides[2], claims: [] }
+  ];
+  const prompts = [];
+  let calls = 0;
+  const client = {
+    chat: { completions: { async create({ messages }) {
+      calls += 1;
+      prompts.push(messages[1].content);
+      return { choices: [{ message: { content: JSON.stringify({ slides: calls === 1 ? firstDraft : repairedDraft }) } }] };
+    } } }
+  };
+
+  const result = await generateFilteredContent({
+    content,
+    options: { topicSource: 'trending', requestedTopic: 'Efisiensi biaya AI', contentFormat: 'Listicle' },
+    sources: [{ text: evidence }],
+    client
+  });
+
+  assert.equal(calls, 2);
+  assert.match(prompts[0], /SEMUA COPY YANG TAMPIL.*Bahasa Indonesia/);
+  assert.match(prompts[1], /slide:0:body: copy tampil harus Bahasa Indonesia/);
+  assert.equal(result.slides[0].body, indonesianBody);
+  assert.equal(result.caption, indonesianBody);
+  assert.equal(result.slides[0].claims[0].evidence, evidence);
+});
