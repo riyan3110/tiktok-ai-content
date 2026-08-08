@@ -197,16 +197,45 @@ function serializeUntrustedSourceContext(value) {
   return JSON.stringify(String(value || '')).replace(/[<>&]/g, character => ({ '<': '\\u003C', '>': '\\u003E', '&': '\\u0026' })[character]);
 }
 
-/** Build a source-owned fact bank before asking the model to write anything. */
-function extractVerifiedFacts(sources = [], limit = 12) {
+const BOILERPLATE_FACT_PATTERN = /(?:cookie|privasi|privacy|syarat dan ketentuan|terms of use|hak cipta|copyright|semua hak dilindungi|berlangganan newsletter|subscribe|masuk|login|daftar akun|menu navigasi|ikuti kami|contact us|hubungi kami)/i;
+
+function factTopicTokens(value) {
+  const ignored = new Set(['yang', 'dan', 'atau', 'dari', 'untuk', 'dengan', 'tentang', 'cara', 'adalah', 'pada']);
+  return [...tokensForFacts(value)].filter(token => token.length > 2 && !ignored.has(token));
+}
+function tokensForFacts(value) { return new Set(groundingText(value).split(' ').filter(Boolean)); }
+function completeEvidenceCandidates(text) {
+  const sentences = String(text || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/);
+  return sentences.flatMap(sentence => {
+    if (words(sentence).length <= 25) return [sentence.trim()];
+    // A long sentence is usable only through complete, source-owned clauses.
+    // Never cut it at an arbitrary word boundary.
+    return sentence.split(/(?<=[;:])\s+|\s+[—–]\s+|,\s+(?=(?:sedangkan|sementara|tetapi|namun|dan)\s+)/i)
+      .map(clause => clause.trim()).filter(clause => words(clause).length >= 4 && words(clause).length <= 25);
+  }).filter(evidence => words(evidence).length >= 4 && !BOILERPLATE_FACT_PATTERN.test(evidence));
+}
+
+/** Build a relevant, source-owned fact bank before asking the model to write. */
+function extractVerifiedFacts(sources = [], settings = {}) {
+  const { limit = 12, topic = '' } = typeof settings === 'number' ? { limit: settings } : settings;
+  const topicTokens = factTopicTokens(topic);
+  const queues = sources.map((source, sourceIndex) => {
+    const sourceRelevance = topicTokens.filter(token => tokensForFacts(`${source?.title || ''} ${source?.url || ''}`).has(token)).length;
+    return completeEvidenceCandidates(source?.text).map((evidence, order) => {
+      const evidenceTokens = tokensForFacts(evidence);
+      const relevance = topicTokens.filter(token => evidenceTokens.has(token)).length * 10 + sourceRelevance;
+      return { text: evidence, sourceId: `source-${sourceIndex + 1}`, evidence, relevance, order };
+    }).sort((a, b) => b.relevance - a.relevance || a.order - b.order);
+  });
+  const hasRelevantFacts = queues.some(queue => queue.some(fact => fact.relevance > 0));
+  const eligible = queues.map(queue => hasRelevantFacts ? queue.filter(fact => fact.relevance > 0) : queue);
   const facts = [];
-  for (const [sourceIndex, source] of sources.entries()) {
-    const sentences = String(source?.text || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+|\n+/);
-    for (const sentence of sentences) {
-      const evidence = words(sentence).slice(0, 24).join(' ').trim();
-      if (words(evidence).length < 4) continue;
-      facts.push({ text: evidence, sourceId: `source-${sourceIndex + 1}`, evidence });
-      if (facts.length >= limit) return facts;
+  // Round-robin prevents an early, verbose URL from consuming the global cap.
+  while (facts.length < limit && eligible.some(queue => queue.length)) {
+    for (const queue of eligible) {
+      const fact = queue.shift();
+      if (fact) facts.push({ text: fact.text, sourceId: fact.sourceId, evidence: fact.evidence });
+      if (facts.length >= limit) break;
     }
   }
   return facts;
@@ -308,26 +337,32 @@ function validateSourceGrounding(content, sourceContext, sources = []) {
   return [...new Set(errors)];
 }
 
-function buildSafeSourceFallback(content, factBank) {
+function factTitle(fact, topic) {
+  const firstClause = fact.text.split(/[,:;.!?]/)[0].trim();
+  return words(firstClause).length <= 12 ? firstClause : `${topic} dari sumber`;
+}
+
+function buildSafeSourceFallback(content, factBank, options = {}) {
   if (!factBank.length) throw sourceUnavailableError();
   const selected = factBank.slice(0, 3);
-  const factSlides = selected.map((fact, index) => ({
-    section: 'RINGKASAN', title: index ? 'Informasi berikutnya' : 'Informasi utama', body: fact.text,
+  const topic = String(options.requestedTopic || content?.topic || 'Topik sumber').trim();
+  const format = options.contentFormat || 'Tutorial langkah';
+  const factSlides = selected.map(fact => ({
+    section: format === 'Masalah dan solusi' ? 'SOLUSI' : 'PENJELASAN', title: factTitle(fact, topic), body: fact.text,
     points: [], claims: [{ ...fact }]
   }));
-  const slides = [
-    { section: 'PEMBUKA', title: 'Ringkasan dari sumber', body: '', points: [], claims: [] },
-    ...factSlides,
-    { section: 'PENUTUP', title: 'Baca sumber lengkap', body: '', points: [], claims: [] }
-  ].slice(0, 5);
+  const opening = { section: format === 'Masalah dan solusi' ? 'MASALAH' : 'PEMBUKA', title: topic, body: '', points: [], claims: [] };
+  const slides = [opening, ...factSlides, { section: 'PENUTUP', title: `Lanjut baca tentang ${topic}`, body: '', points: [], claims: [] }].slice(0, 5);
   const first = selected[0];
   return {
     ...content,
-    focus: { masalah: 'Informasi perlu diringkas', penyebab: 'Rincian berasal dari sumber', solusi: 'Baca fakta yang tersedia', hasil: 'Ringkasan sumber' },
-    topic: 'Ringkasan sumber', hook: 'Fakta yang tersedia di sumber', body: first.text,
+    contentCategory: options.contentCategory || content?.contentCategory,
+    contentFormat: format,
+    focus: { masalah: `Memahami ${topic}`, penyebab: 'Informasi tersebar di sumber', solusi: 'Fokus pada fakta yang tersedia', hasil: `Gambaran tentang ${topic}` },
+    topic, hook: `Apa yang sumber jelaskan tentang ${topic}?`, body: first.text,
     caption: first.text, hashtags: Array.isArray(content?.hashtags) ? content.hashtags : [],
-    cta: 'Baca sumber lengkap', trendKeywordsUsed: [], content_angle: content?.content_angle || 'ringkasan sumber',
-    primary_tool: content?.primary_tool || 'tanpa tool', hook_pattern: content?.hook_pattern || 'ringkasan langsung',
+    cta: `Lanjut baca tentang ${topic}`, trendKeywordsUsed: [], content_angle: content?.content_angle || `fakta tentang ${topic}`,
+    primary_tool: content?.primary_tool || 'tanpa tool', hook_pattern: content?.hook_pattern || 'pertanyaan langsung',
     result: '', tip: '', slides, verificationStatus: 'needs_review', unsupportedClaims: []
   };
 }
@@ -375,7 +410,7 @@ async function generateContent(previousTopics, options = {}, client) {
   if (options?.chat) { client = options; options = {}; }
   if (!client) config.validateAiConfig();
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
-  const factBank = options.useSources ? extractVerifiedFacts(options.sources) : [];
+  const factBank = options.useSources ? extractVerifiedFacts(options.sources, { topic: options.requestedTopic || options.mainTopic || '' }) : [];
   if (options.useSources && !factBank.length) throw sourceUnavailableError();
   const category = options.contentCategory || 'Iklan & UGC';
   const format = options.contentFormat || 'Tutorial langkah';
@@ -438,7 +473,7 @@ Hapus atau ubah klaim tersebut menggunakan fakta yang benar-benar memiliki evide
     console.error('[AI raw response][validasi perbaikan gagal]', content._rawAiResponse);
     console.error('[AI validation errors]', errors);
     if (options.useSources) {
-      content = buildSafeSourceFallback(content, factBank);
+      content = buildSafeSourceFallback(content, factBank, options);
       const fallbackErrors = [...validateContent(content, { format }), ...validateSourceGrounding(content, options.sourceContext, options.sources)];
       if (fallbackErrors.length) throw Object.assign(new Error(`Konten AI tidak lolos validasi: ${fallbackErrors[0]}`), { status: 422, validationErrors: fallbackErrors });
     } else {

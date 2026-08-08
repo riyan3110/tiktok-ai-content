@@ -262,6 +262,44 @@ test('source-first fact bank hanya berisi evidence yang benar-benar ada di sumbe
   assert.ok(facts.every(fact => sources[0].text.includes(fact.evidence)));
 });
 
+test('fact bank tidak memotong kalimat panjang pada kata ke-24', () => {
+  const { extractVerifiedFacts } = require('../src/services/content');
+  const longOpening = 'RANS membangun lini konten yang membahas hiburan keluarga, aktivitas kreator, kolaborasi komunitas, dan cerita di balik produksi untuk penonton di berbagai kanal setiap minggu tanpa jeda';
+  const completeClause = 'RANS juga menerbitkan wawancara dengan kreator lokal.';
+  const sourceText = `${longOpening}; ${completeClause}`;
+  const facts = extractVerifiedFacts([{ text: sourceText }], { topic: 'RANS' });
+  assert.ok(facts.length > 0);
+  assert.ok(facts.every(fact => wordsForTest(fact.text) <= 25));
+  assert.ok(facts.every(fact => sourceText.includes(fact.evidence)));
+  assert.ok(!facts.some(fact => fact.text === longOpening.split(' ').slice(0, 24).join(' ')));
+  assert.ok(facts.some(fact => fact.text === completeClause));
+});
+
+test('fact bank relevan memakai round-robin agar semua source terwakili', () => {
+  const { extractVerifiedFacts } = require('../src/services/content');
+  const sources = [
+    { title: 'RANS Media', text: 'RANS menerbitkan program hiburan keluarga. RANS bekerja bersama kreator lokal. Cookie diperlukan untuk membuka situs.' },
+    { title: 'RANS Community', text: 'Komunitas RANS mengadakan sesi bersama penggemar. RANS membagikan dokumentasi acara komunitas.' },
+    { title: 'RANS Production', text: 'Tim RANS memproduksi konten di beberapa kanal. RANS menampilkan proses produksi dalam programnya.' }
+  ];
+  const facts = extractVerifiedFacts(sources, { topic: 'RANS', limit: 6 });
+  assert.deepEqual([...new Set(facts.map(fact => fact.sourceId))], ['source-1', 'source-2', 'source-3']);
+  assert.ok(!facts.some(fact => /cookie/i.test(fact.text)));
+});
+
+test('fallback mempertahankan requestedTopic dan tetap lolos source grounding', () => {
+  const { buildSafeSourceFallback, extractVerifiedFacts, validateContent, validateSourceGrounding } = require('../src/services/content');
+  const sources = [{ text: 'RANS menerbitkan program hiburan keluarga. RANS bekerja bersama kreator lokal.' }];
+  const facts = extractVerifiedFacts(sources, { topic: 'RANS' });
+  const fallback = buildSafeSourceFallback({ hashtags: ['#RANS'] }, facts, { requestedTopic: 'RANS', contentCategory: 'Konten kreator', contentFormat: 'Tutorial langkah' });
+  assert.equal(fallback.topic, 'RANS');
+  assert.equal(fallback.contentCategory, 'Konten kreator');
+  assert.ok(fallback.slides.some(slide => slide.title === 'RANS'));
+  assert.ok(!fallback.slides.some(slide => /^(?:Ringkasan sumber|Informasi utama|Informasi berikutnya)$/i.test(slide.title)));
+  assert.deepEqual(validateContent(fallback, { format: 'Tutorial langkah' }), []);
+  assert.deepEqual(validateSourceGrounding(fallback, '', sources), []);
+});
+
 test('unsupported angka dan tanggal dibuang oleh fallback tanpa menggagalkan konten', async () => {
   const sources = [{ text: 'Platform membantu tim menyusun kalender konten bersama. Anggota tim dapat meninjau rencana yang sama.' }];
   const unsupported = { focus: { masalah: 'Proses lama', penyebab: 'Manual', solusi: 'Pakai platform', hasil: 'Cepat' }, topic: 'Platform', hook: 'Platform Naik 90 Persen', body: 'IPO berlangsung 12 Mei 2026', caption: 'IPO berlangsung 12 Mei 2026', hashtags: ['#Platform'], cta: 'Baca', trendKeywordsUsed: [], content_angle: 'data', primary_tool: 'platform', hook_pattern: 'angka', verificationStatus: 'source_based', unsupportedClaims: [], slides: [{ section: 'PEMBUKA', title: 'IPO 2026', body: 'Harga saham naik 90 persen', points: [], claims: [] }, { section: 'ISI', title: 'SID', body: 'Ada 2 juta SID', points: [], claims: [] }, { section: 'PENUTUP', title: 'Baca', body: '', points: [], claims: [] }] };
@@ -288,3 +326,5 @@ test('source tanpa teks yang dapat dijadikan fakta tetap hard fail sebelum pangg
   await assert.rejects(generateContent([], { useSources: true, sources: [{ text: 'kosong' }], sourceContext: '' }, client), /tidak memiliki teks/);
   assert.equal(called, false);
 });
+
+function wordsForTest(value) { return String(value).trim().split(/\s+/).filter(Boolean).length; }
