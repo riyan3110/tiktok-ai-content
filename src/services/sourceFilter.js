@@ -103,11 +103,11 @@ function requiresEvidence(value, section = '', kind = 'body') {
   if (numericTokens(text).length) return true;
   if (/\b(?:rp|usd|dolar|persen|tahun|bulan|hari|jam|menit|juta|miliar|triliun)\b/i.test(text)) return true;
 
-  // Advice, CTA, questions, and short list labels are not facts merely because
-  // they live in body/points. They need evidence only when they actually make
-  // an assertive factual claim.
-  if (NON_FACTUAL_START.test(text) && !FACT_VERBS.test(text) && !FACT_MARKERS.test(text)) return false;
-  if (isQuestion(text) && !FACT_VERBS.test(text) && !FACT_MARKERS.test(text)) return false;
+  // Imperative advice/CTA can mention a factual noun (for example "temuan")
+  // without asserting that fact. Require evidence only if the copy itself also
+  // contains an assertive factual verb. Questions are handled the same way.
+  if (NON_FACTUAL_START.test(text) && !FACT_VERBS.test(text)) return false;
+  if (isQuestion(text) && !FACT_VERBS.test(text)) return false;
   if (FACT_VERBS.test(text) || FACT_MARKERS.test(text)) return true;
   return false;
 }
