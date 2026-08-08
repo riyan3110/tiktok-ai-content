@@ -42,7 +42,7 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = defaultSourceFilter, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -52,9 +52,11 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   if (mode === 'manual' && isDuplicate(db, manualTopic)) throw Object.assign(new Error('Topik tersebut sudah pernah dibuat'), { status: 409 });
   const shouldUseSources = mode === 'manual' && useSources === true;
   let sources = [];
+  let sourceContext = '';
   if (shouldUseSources) {
     const cleanSourceUrls = sourceFetcher.validateSourceUrls ? sourceFetcher.validateSourceUrls(sourceUrls) : sourceUrls;
     sources = await sourceFetcher.fetchSources(cleanSourceUrls);
+    sourceContext = sourceFetcher.buildSourceContext ? sourceFetcher.buildSourceContext(sources) : '';
   }
 
   let trends = [];
@@ -79,16 +81,24 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       recentContents: history,
       rejectedAngle: attempt > 1 || forceNewAngle ? 'Angle sebelumnya gagal atau terlalu mirip; pilih kandidat lain dengan tool, hook, langkah, dan CTA berbeda.' : null,
       trendReference: trendReference ? { keywords: trendReference.keywords, keyword_categories: trendReference.keyword_categories, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null,
-      useSources: shouldUseSources
+      useSources: shouldUseSources,
+      sourceContext: shouldUseSources ? sourceContext : '',
+      sources: shouldUseSources ? sources : []
     };
-    const generated = shouldUseSources
-      ? await sourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
-      : await content.generateContent(used, generationOptions);
+    let generated;
+    if (shouldUseSources) {
+      const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
+      generated = activeSourceFilter
+        ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
+        : await content.generateContent(used, generationOptions);
+    } else {
+      generated = await content.generateContent(used, generationOptions);
+    }
     generated.content_angle ||= angle || generated.topic;
     generated.primary_tool ||= 'tanpa tool';
     generated.hook_pattern ||= generated.hook;
     if (shouldUseSources) {
-      generated.verificationStatus = 'source_based';
+      generated.verificationStatus = generated.verificationStatus === 'needs_review' ? 'needs_review' : 'source_based';
       generated.sources = sources.map(({ url, finalUrl, title, fetchedAt }) => ({ url, finalUrl, title, fetchedAt }));
       generated.sourceCount = generated.sources.length;
     }
