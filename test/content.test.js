@@ -157,6 +157,29 @@ test('validator topik manual menerima carousel Agen AI tanpa memaksa dua kata te
   ];
   const errors = validateSlides(slides, { format: 'Fakta singkat', manualTopic: 'Agen AI yang bagus untuk mengerjakan proyek' });
   assert.ok(!errors.some(error => /topik manual|pertahankan mengerjakan proyek/i.test(error)));
+
+  const projectOnly = slides.map((slide, index) => ({
+    ...slide, title: index === 1 ? 'Proyek Menjaga Alur Kerja' : slide.title,
+    body: index === 1 ? 'Tim menangani rangkaian tugas dan meneruskan hasil antarproses.' : slide.body
+  }));
+  assert.ok(validateSlides(projectOnly, { format: 'Fakta singkat', manualTopic: 'Agen AI yang bagus untuk mengerjakan proyek' })
+    .some(error => /carousel secara keseluruhan menyimpang/i.test(error)));
+});
+
+test('acronym AI menjadi sinyal kuat tanpa mewajibkan kata sebelumnya', () => {
+  const { validateSlides } = require('../src/services/content');
+  const slides = [
+    { section: 'PEMBUKA', title: 'Teknologi Terus Berkembang', body: 'Perubahan hadir dalam berbagai alat digital.', points: [] },
+    { section: 'PENJELASAN', title: 'Fitur AI Makin Beragam', body: 'Model baru membantu pengguna mengolah masukan dengan lebih terarah.', points: [] },
+    { section: 'TRANSISI', title: 'Konteks Penggunaan Tetap Penting', body: 'Setiap alat perlu dinilai sesuai kebutuhan.', points: [] },
+    { section: 'PENUTUP', title: 'Coba Secara Bertahap', body: 'Bandingkan hasil sebelum mengubah seluruh alur kerja.', points: [] }
+  ];
+  assert.ok(!validateSlides(slides, { format: 'Fakta singkat', manualTopic: 'Kemampuan AI terbaru' })
+    .some(error => /topik manual/i.test(error)));
+
+  const withoutFeature = slides.map(slide => ({ ...slide, title: slide.title.replace('Fitur AI', 'Teknologi AI') }));
+  assert.ok(!validateSlides(withoutFeature, { format: 'Fakta singkat', manualTopic: 'Fitur AI baru' })
+    .some(error => /topik manual/i.test(error)));
 });
 
 test('validator topik manual menerima Ethan Mollick pada tingkat carousel dengan dan tanpa source URL', () => {

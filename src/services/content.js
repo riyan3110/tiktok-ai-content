@@ -53,18 +53,21 @@ function duplicateSlideCopy(slide) {
 function manualTopicSignals(topic) {
   const tokens = [...new Set(meaningfulTokens(topic, TOPIC_FILLER_WORDS))];
   const rawTokens = String(topic || '').match(/[A-Za-z0-9]+/g) || [];
-  const named = new Set();
+  const strong = new Set();
   rawTokens.forEach((token, index) => {
     if (!/^[A-Z][A-Za-z0-9]*$/.test(token)) return;
     const isAcronym = /^[A-Z0-9]{2,}$/.test(token);
-    const previousIsName = index && /^[A-Z][A-Za-z0-9]*$/.test(rawTokens[index - 1]);
-    const nextIsName = index + 1 < rawTokens.length && /^[A-Z][A-Za-z0-9]*$/.test(rawTokens[index + 1]);
-    if (isAcronym || previousIsName || nextIsName) named.add(normalizedLine(token));
-    if (isAcronym && index) named.add(normalizedLine(rawTokens[index - 1]));
-    if (previousIsName) named.add(normalizedLine(rawTokens[index - 1]));
-    if (nextIsName) named.add(normalizedLine(rawTokens[index + 1]));
+    const previous = rawTokens[index - 1];
+    const previousIsProperName = previous && /^[A-Z][a-z0-9]*$/.test(previous);
+    const isProperName = /^[A-Z][a-z0-9]*$/.test(token);
+    if (isAcronym) strong.add(normalizedLine(token));
+    if (isProperName && previousIsProperName) {
+      strong.add(normalizedLine(previous));
+      strong.add(normalizedLine(token));
+    }
   });
-  return { tokens, named: [...named].filter(token => tokens.includes(token)) };
+  const named = [...strong].filter(token => tokens.includes(token));
+  return { tokens: named.length ? named : tokens, named };
 }
 
 function fillEmptyTopLevelCopy(content) {
