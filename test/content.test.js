@@ -305,26 +305,42 @@ test('fallback mempertahankan requestedTopic dan tetap lolos source grounding', 
   assert.deepEqual(validateSourceGrounding(fallback, '', sources), []);
 });
 
-test('fallback source Inggris melokalkan display tetapi mempertahankan evidence asli', () => {
-  const { buildSafeSourceFallback, extractVerifiedFacts, validateSourceGrounding } = require('../src/services/content');
-  const articleTitle = 'Is AI Agent Pricing Getting Better? Grading My 2025 Predictions';
-  const sources = [{
-    title: articleTitle,
-    text: `${articleTitle}. By Jason Andersen. AI agent pricing models are becoming more diverse.`
-  }];
-  const facts = extractVerifiedFacts(sources, { topic: 'Penetapan harga agen AI' });
-  const fallback = buildSafeSourceFallback({}, facts, { requestedTopic: 'Penetapan harga agen AI', contentFormat: 'Fakta singkat' });
+test('AI melokalkan beragam evidence Inggris tanpa mengubah evidence atau sourceId', async () => {
+  const { validateSourceGrounding } = require('../src/services/content');
+  const evidence = [
+    'Coastal cities are testing electric ferries for short passenger routes.',
+    'The museum extended evening hours during the summer exhibition.',
+    'Researchers published an open dataset for independent review.'
+  ];
+  const sources = [{ text: evidence.join(' ') }];
+  const invalid = { topic: '', hook: '', body: '', caption: '', cta: '', hashtags: [], slides: [] };
+  let calls = 0;
+  const localized = { items: [
+    { index: 0, title: 'Uji feri listrik', body: 'Kota pesisir menguji feri listrik untuk rute penumpang jarak pendek.' },
+    { index: 1, title: 'Jam museum diperpanjang', body: 'Museum menambah jam malam selama pameran musim panas.' },
+    { index: 2, title: 'Dataset dibuka untuk tinjauan', body: 'Peneliti menerbitkan dataset terbuka agar dapat ditinjau secara independen.' }
+  ] };
+  const client = { chat: { completions: { create: async request => {
+    calls += 1;
+    if (calls === 4) {
+      assert.match(request.messages[1].content, /hanya boleh menerjemahkan, meringkas, atau memparafrasekan/i);
+      return { choices: [{ message: { content: JSON.stringify(localized) } }] };
+    }
+    return { choices: [{ message: { content: JSON.stringify(invalid) } }] };
+  } } } };
+  const fallback = await generateContent([], { useSources: true, sources, sourceContext: sources[0].text, requestedTopic: 'Inovasi layanan publik', contentFormat: 'Fakta singkat' }, client);
 
-  assert.equal(fallback.slides.length, 4);
+  assert.equal(fallback.slides.length, 5);
   assert.ok(fallback.slides.every(slide => wordsForTest(slide.title) <= 8));
   assert.ok(fallback.slides.every(slide => wordsForTest(slide.body) <= 22));
   assert.ok(fallback.slides.every(slide => !slide.body || slide.title.toLowerCase() !== slide.body.toLowerCase()));
-  assert.doesNotMatch(JSON.stringify(fallback.slides), /Grading My 2025 Predictions|Jason Andersen/);
-  assert.doesNotMatch(`${fallback.hook} ${fallback.body} ${fallback.caption} ${fallback.slides.map(slide => `${slide.title} ${slide.body}`).join(' ')}`, /\b(?:is|are|becoming|pricing|better|predictions|by)\b/i);
-  assert.equal(fallback.slides[1].claims[0].sourceId, 'source-1');
-  assert.equal(fallback.slides[1].claims[0].evidence, 'AI agent pricing models are becoming more diverse.');
-  assert.match(fallback.slides[1].claims[0].text, /model harga agen AI makin beragam/i);
-  assert.deepEqual(fallback.slides[2], { section: 'TRANSISI', title: 'Cek konteks lengkapnya', body: '', points: [], claims: [] });
+  const visual = fallback.slides.map(slide => `${slide.title} ${slide.body} ${slide.points.join(' ')}`).join(' ');
+  assert.ok(evidence.every(sentence => !visual.includes(sentence)));
+  fallback.slides.slice(1, 4).forEach((slide, index) => {
+    assert.equal(slide.claims[0].sourceId, 'source-1');
+    assert.equal(slide.claims[0].evidence, evidence[index]);
+    assert.equal(slide.claims[0].text, localized.items[index].body);
+  });
   assert.deepEqual(validateSourceGrounding(fallback, '', sources), []);
 });
 
@@ -341,11 +357,19 @@ test('fallback memakai lima slide hanya saat tersedia cukup fakta berbeda', () =
 test('unsupported angka dan tanggal dibuang oleh fallback tanpa menggagalkan konten', async () => {
   const sources = [{ text: 'Platform membantu tim menyusun kalender konten bersama. Anggota tim dapat meninjau rencana yang sama.' }];
   const unsupported = { focus: { masalah: 'Proses lama', penyebab: 'Manual', solusi: 'Pakai platform', hasil: 'Cepat' }, topic: 'Platform', hook: 'Platform Naik 90 Persen', body: 'IPO berlangsung 12 Mei 2026', caption: 'IPO berlangsung 12 Mei 2026', hashtags: ['#Platform'], cta: 'Baca', trendKeywordsUsed: [], content_angle: 'data', primary_tool: 'platform', hook_pattern: 'angka', verificationStatus: 'source_based', unsupportedClaims: [], slides: [{ section: 'PEMBUKA', title: 'IPO 2026', body: 'Harga saham naik 90 persen', points: [], claims: [] }, { section: 'ISI', title: 'SID', body: 'Ada 2 juta SID', points: [], claims: [] }, { section: 'PENUTUP', title: 'Baca', body: '', points: [], claims: [] }] };
-  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(unsupported) } }] }) } } };
+  let calls = 0;
+  const fabricatedLocalization = { items: [
+    { index: 0, title: 'Kalender konten 2026', body: 'Platform membantu dua juta tim pada 12 Mei 2026.' },
+    { index: 1, title: 'Tinjauan bersama', body: 'Anggota tim meninjau rencana yang sama.' }
+  ] };
+  const client = { chat: { completions: { create: async () => {
+    calls += 1;
+    return { choices: [{ message: { content: JSON.stringify(calls === 4 ? fabricatedLocalization : unsupported) } }] };
+  } } } };
   const result = await generateContent([], { useSources: true, sources, sourceContext: sources[0].text }, client);
   assert.equal(result.verificationStatus, 'needs_review');
   assert.doesNotMatch(JSON.stringify(result), /90 persen|12 Mei 2026|2 juta SID/);
-  assert.match(result.body, /kalender konten/);
+  assert.match(result.body, /Sumber membahas fakta tentang Platform/);
 });
 
 test('source dengan satu fakta tetap menghasilkan empat slide tanpa filler faktual', async () => {
@@ -357,7 +381,7 @@ test('source dengan satu fakta tetap menghasilkan empat slide tanpa filler faktu
   assert.equal(result.slides.length, 4);
   assert.equal(result.slides.filter(slide => slide.claims.length).length, 1);
   assert.deepEqual(result.slides[2], { section: 'TRANSISI', title: 'Cek konteks lengkapnya', body: '', points: [], claims: [] });
-  assert.match(result.caption, /kalender membantu tim/);
+  assert.match(result.caption, /Sumber membahas fakta tentang Topik sumber/);
 });
 
 test('source tanpa teks yang dapat dijadikan fakta tetap hard fail sebelum panggilan model', async () => {

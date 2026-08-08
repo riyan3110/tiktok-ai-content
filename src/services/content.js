@@ -351,56 +351,92 @@ function limitDisplayText(value, maxWords, maxCharacters = Infinity) {
   return selected.join(' ').replace(/[,:;.!?]+$/, '').trim();
 }
 
-function looksEnglish(value) {
-  const tokens = groundingText(value).split(' ');
-  const markers = new Set(['the', 'is', 'are', 'was', 'were', 'and', 'or', 'of', 'to', 'for', 'from', 'with', 'that', 'this', 'how', 'what', 'why', 'getting', 'better', 'pricing', 'predictions']);
-  return tokens.filter(token => markers.has(token)).length >= 1;
+function fallbackFacts(factBank) {
+  const unique = factBank.filter((fact, index, all) => all.findIndex(candidate => groundingText(candidate.evidence) === groundingText(fact.evidence)) === index);
+  return unique.slice(0, 3);
 }
 
-/** Localize presentation copy without ever changing the source-owned evidence. */
-function localizeFallbackFact(fact, topic, index) {
-  let copy = String(fact.text || '').trim()
-    .replace(/^AI agents? pricing models? are becoming more diverse\.?$/i, 'Model harga agen AI makin beragam.')
-    .replace(/^Companies use more flexible pricing\.?$/i, 'Perusahaan memakai penetapan harga yang lebih fleksibel.')
-    .replace(/^Users compare AI agents? pricing\.?$/i, 'Pengguna membandingkan harga agen AI.')
-    .replace(/^is\s+(.+?)\s+getting better\??$/i, 'Apakah $1 makin membaik?')
-    .replace(/\bpricing models?\b/gi, 'model harga')
-    .replace(/\bpricing\b/gi, 'penetapan harga')
-    .replace(/\bAI agents?\b/gi, 'agen AI')
-    .replace(/\bis becoming\b/gi, 'mulai menjadi')
-    .replace(/\bare becoming\b/gi, 'mulai menjadi')
-    .replace(/\bcontinues? to\b/gi, 'terus')
-    .replace(/\bcompanies\b/gi, 'perusahaan')
-    .replace(/\bcustomers\b/gi, 'pelanggan')
-    .replace(/\busers\b/gi, 'pengguna')
-    .replace(/\bmore diverse\b/gi, 'makin beragam')
-    .replace(/\bmore flexible\b/gi, 'makin fleksibel');
-  if (looksEnglish(copy)) copy = `Sumber membahas fakta tentang ${topic}.`;
-  copy = limitDisplayText(copy, 22, 150);
-  const generic = groundingText(copy) === groundingText(`Sumber membahas fakta tentang ${topic}`);
-  const titleCandidates = [
-    index === 0 ? `Fakta utama tentang ${topic}` : `Fakta berikutnya tentang ${topic}`,
-    `Sorotan tentang ${topic}`
-  ];
-  let title = generic ? titleCandidates[index ? 1 : 0] : copy.split(/[.!?]/)[0];
-  title = limitDisplayText(title, 8, 55) || 'Fakta dari sumber';
-  if (groundingText(title) === groundingText(copy) || groundingText(copy).includes(groundingText(title))) {
-    title = limitDisplayText(titleCandidates[index ? 1 : 0], 8, 55);
-  }
-  return { title, displayText: copy, sourceId: fact.sourceId, evidence: fact.evidence };
+function localizedNumbersAreGrounded(copy, evidence) {
+  const numbers = String(copy || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || [];
+  const evidenceNumbers = new Set(String(evidence || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || []);
+  if (!numbers.every(number => evidenceNumbers.has(number))) return false;
+  const numberWords = new Map([
+    ['nol', '0'], ['zero', '0'], ['satu', '1'], ['one', '1'], ['dua', '2'], ['two', '2'], ['tiga', '3'], ['three', '3'],
+    ['empat', '4'], ['four', '4'], ['lima', '5'], ['five', '5'], ['enam', '6'], ['six', '6'], ['tujuh', '7'], ['seven', '7'],
+    ['delapan', '8'], ['eight', '8'], ['sembilan', '9'], ['nine', '9'], ['sepuluh', '10'], ['ten', '10'],
+    ['sebelas', '11'], ['eleven', '11'], ['dua belas', '12'], ['twelve', '12'], ['ratus', 'hundred'], ['hundred', 'hundred'],
+    ['ribu', 'thousand'], ['thousand', 'thousand'], ['juta', 'million'], ['million', 'million'], ['miliar', 'billion'], ['billion', 'billion']
+  ]);
+  const concepts = value => {
+    const normalized = groundingText(value);
+    return [...numberWords].filter(([word]) => new RegExp(`\\b${word}\\b`, 'i').test(normalized)).map(([, concept]) => concept);
+  };
+  const evidenceConcepts = new Set(concepts(evidence));
+  return concepts(copy).every(concept => evidenceConcepts.has(concept));
+}
+
+function localizedNamesAreGrounded(body, evidence) {
+  const possibleNames = [...String(body || '').matchAll(/\b[A-Z][\p{L}\d.-]*(?:\s+[A-Z][\p{L}\d.-]*)*/gu)]
+    .map(match => match[0]).filter((_, index) => index > 0 || !String(body).startsWith(_));
+  const normalizedEvidence = groundingText(evidence);
+  return possibleNames.every(name => normalizedEvidence.includes(groundingText(name)));
+}
+
+function validateLocalizedItem(item, fact) {
+  const title = String(item?.title || '').trim();
+  const body = String(item?.body || '').trim();
+  if (!title || !body || words(title).length > 8 || title.length > 55 || words(body).length > 22) return false;
+  const titleNorm = groundingText(title);
+  const bodyNorm = groundingText(body);
+  const titleTokens = new Set(titleNorm.split(' '));
+  const bodyTokens = new Set(bodyNorm.split(' '));
+  const overlap = [...titleTokens].filter(token => bodyTokens.has(token)).length;
+  const similarity = overlap / Math.max(titleTokens.size, bodyTokens.size, 1);
+  if (titleNorm === bodyNorm || similarity >= 0.8) return false;
+  if (groundingText(fact.evidence).includes(bodyNorm) || bodyNorm.includes(groundingText(fact.evidence))) return false;
+  return localizedNumbersAreGrounded(`${title} ${body}`, fact.evidence) && localizedNamesAreGrounded(body, fact.evidence);
+}
+
+/** Ask the model only for display copy; evidence and source IDs never leave application ownership. */
+async function localizeFallbackFacts(openai, facts, topic) {
+  const response = await openai.chat.completions.create({
+    model: config.aiModel,
+    messages: [
+      { role: 'system', content: 'Anda penerjemah dan editor ringkas bahasa Indonesia dalam mode SOURCE-LOCKED. Jangan gunakan pengetahuan internal.' },
+      { role: 'user', content: `Lokalkan setiap evidence menjadi display copy bahasa Indonesia yang natural untuk topik "${topic}". Anda hanya boleh menerjemahkan, meringkas, atau memparafrasekan isi evidence. Dilarang menambah fakta, angka, tanggal, nama, manfaat, sebab-akibat, atau kesimpulan. Pertahankan nama resmi produk, perusahaan, orang, dan istilah teknis umum. Title maksimal 8 kata dan 55 karakter. Body tepat satu kalimat, maksimal 22 kata, dan tidak boleh mengulang title. Jangan salin satu kalimat Inggris mentah ke display. Kembalikan tepat JSON {"items":[{"index":0,"title":"...","body":"..."}]}, satu item untuk setiap index dan tanpa field lain. EVIDENCE: ${JSON.stringify(facts.map((fact, index) => ({ index, evidence: fact.evidence })))}` }
+    ],
+    response_format: { type: 'json_object' }
+  });
+  const parsed = parseOutput(response);
+  if (!Array.isArray(parsed.items) || parsed.items.length !== facts.length) throw new Error('Localization AI tidak mengembalikan semua item.');
+  return facts.map((fact, index) => {
+    const item = parsed.items.find(candidate => candidate?.index === index);
+    if (!item || !validateLocalizedItem(item, fact)) throw new Error(`Localization AI tidak valid untuk fakta ${index + 1}.`);
+    return { title: item.title.trim(), displayText: item.body.trim(), sourceId: fact.sourceId, evidence: fact.evidence };
+  });
+}
+
+function genericLocalizedFacts(facts, topic) {
+  return facts.map((fact, index) => ({
+    title: limitDisplayText(index ? `Fakta berikutnya tentang ${topic}` : `Fakta utama tentang ${topic}`, 8, 55),
+    displayText: limitDisplayText(`Sumber membahas fakta tentang ${topic}.`, 22, 150),
+    sourceId: fact.sourceId,
+    evidence: fact.evidence
+  }));
 }
 
 function buildSafeSourceFallback(content, factBank, options = {}) {
   if (!factBank.length) throw sourceUnavailableError();
   const topic = String(options.requestedTopic || content?.topic || 'Topik sumber').trim();
-  const uniqueFacts = factBank.filter((fact, index, all) => all.findIndex(candidate => groundingText(candidate.evidence) === groundingText(fact.evidence)) === index);
   // Use every useful fact up to the visual limit. A source with only one fact
   // gets a claim-free transition instead of either a fabricated fact or a
   // three-slide carousel.
-  const selected = uniqueFacts.slice(0, 3);
+  const selected = fallbackFacts(factBank);
   const format = options.contentFormat || 'Tutorial langkah';
   const displayTopic = limitDisplayText(topic, 8, 55) || 'Topik sumber';
-  const localized = selected.map((fact, index) => localizeFallbackFact(fact, displayTopic, index));
+  const localized = Array.isArray(options.localizedFacts) && options.localizedFacts.length === selected.length
+    ? options.localizedFacts
+    : genericLocalizedFacts(selected, displayTopic);
   const factSlides = localized.map(claim => ({
     section: format === 'Masalah dan solusi' ? 'SOLUSI' : 'PENJELASAN', title: claim.title, body: claim.displayText,
     points: [], claims: [{ text: claim.displayText, sourceId: claim.sourceId, evidence: claim.evidence }]
@@ -530,7 +566,15 @@ Hapus atau ubah klaim tersebut menggunakan fakta yang benar-benar memiliki evide
     console.error('[AI raw response][validasi perbaikan gagal]', content._rawAiResponse);
     console.error('[AI validation errors]', errors);
     if (options.useSources) {
-      content = buildSafeSourceFallback(content, factBank, options);
+      const selectedFacts = fallbackFacts(factBank);
+      let localizedFacts;
+      try {
+        localizedFacts = await localizeFallbackFacts(openai, selectedFacts, options.requestedTopic || content?.topic || 'Topik sumber');
+      } catch (error) {
+        console.error('[AI source localization gagal]', error.message);
+        localizedFacts = genericLocalizedFacts(selectedFacts, options.requestedTopic || content?.topic || 'Topik sumber');
+      }
+      content = buildSafeSourceFallback(content, factBank, { ...options, localizedFacts });
       const fallbackErrors = [...validateContent(content, { format }), ...validateSourceGrounding(content, options.sourceContext, options.sources)];
       if (fallbackErrors.length) throw Object.assign(new Error(`Konten AI tidak lolos validasi: ${fallbackErrors[0]}`), { status: 422, validationErrors: fallbackErrors });
     } else {
