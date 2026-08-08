@@ -253,3 +253,38 @@ test('kepastian diterima jika didukung evidence eksplisit', () => {
   const valid = { verificationStatus: 'source_based', unsupportedClaims: [], caption: 'Kepastian', focus: { masalah: 'Jadwal', penyebab: 'Manual', solusi: 'Fitur', hasil: 'Pasti' }, hook: 'Kepastian', cta: 'Coba', slides: [{ title: 'Kepastian', body: '', points: ['Hasil pasti selesai'], claims: [{ text: 'Hasil pasti selesai', sourceId: 'source-1', evidence: 'hasil desain yang pasti selesai' }] }] };
   assert.deepEqual(validateSourceGrounding(valid, '', sources), []);
 });
+
+test('source-first fact bank hanya berisi evidence yang benar-benar ada di sumber', () => {
+  const { extractVerifiedFacts } = require('../src/services/content');
+  const sources = [{ text: 'Produk diluncurkan pada 12 Mei 2026. Fitur ini membantu tim menyusun kalender konten.' }];
+  const facts = extractVerifiedFacts(sources);
+  assert.deepEqual(facts[0], { text: 'Produk diluncurkan pada 12 Mei 2026.', sourceId: 'source-1', evidence: 'Produk diluncurkan pada 12 Mei 2026.' });
+  assert.ok(facts.every(fact => sources[0].text.includes(fact.evidence)));
+});
+
+test('unsupported angka dan tanggal dibuang oleh fallback tanpa menggagalkan konten', async () => {
+  const sources = [{ text: 'Platform membantu tim menyusun kalender konten bersama. Anggota tim dapat meninjau rencana yang sama.' }];
+  const unsupported = { focus: { masalah: 'Proses lama', penyebab: 'Manual', solusi: 'Pakai platform', hasil: 'Cepat' }, topic: 'Platform', hook: 'Platform Naik 90 Persen', body: 'IPO berlangsung 12 Mei 2026', caption: 'IPO berlangsung 12 Mei 2026', hashtags: ['#Platform'], cta: 'Baca', trendKeywordsUsed: [], content_angle: 'data', primary_tool: 'platform', hook_pattern: 'angka', verificationStatus: 'source_based', unsupportedClaims: [], slides: [{ section: 'PEMBUKA', title: 'IPO 2026', body: 'Harga saham naik 90 persen', points: [], claims: [] }, { section: 'ISI', title: 'SID', body: 'Ada 2 juta SID', points: [], claims: [] }, { section: 'PENUTUP', title: 'Baca', body: '', points: [], claims: [] }] };
+  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(unsupported) } }] }) } } };
+  const result = await generateContent([], { useSources: true, sources, sourceContext: sources[0].text }, client);
+  assert.equal(result.verificationStatus, 'needs_review');
+  assert.doesNotMatch(JSON.stringify(result), /90 persen|12 Mei 2026|2 juta SID/);
+  assert.match(result.body, /kalender konten/);
+});
+
+test('source dengan satu fakta tetap menghasilkan draft sederhana needs_review', async () => {
+  const sources = [{ text: 'Fitur kalender membantu tim menyusun rencana konten mingguan.' }];
+  const invalid = { topic: '', hook: '', body: '', caption: '', cta: '', hashtags: [], slides: [] };
+  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify(invalid) } }] }) } } };
+  const result = await generateContent([], { useSources: true, sources, sourceContext: sources[0].text }, client);
+  assert.equal(result.verificationStatus, 'needs_review');
+  assert.equal(result.slides.length, 3);
+  assert.match(result.caption, /kalender membantu tim/);
+});
+
+test('source tanpa teks yang dapat dijadikan fakta tetap hard fail sebelum panggilan model', async () => {
+  let called = false;
+  const client = { chat: { completions: { create: async () => { called = true; } } } };
+  await assert.rejects(generateContent([], { useSources: true, sources: [{ text: 'kosong' }], sourceContext: '' }, client), /tidak memiliki teks/);
+  assert.equal(called, false);
+});
