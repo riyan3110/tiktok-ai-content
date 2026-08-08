@@ -305,6 +305,38 @@ test('fallback mempertahankan requestedTopic dan tetap lolos source grounding', 
   assert.deepEqual(validateSourceGrounding(fallback, '', sources), []);
 });
 
+test('fallback source Inggris melokalkan display tetapi mempertahankan evidence asli', () => {
+  const { buildSafeSourceFallback, extractVerifiedFacts, validateSourceGrounding } = require('../src/services/content');
+  const articleTitle = 'Is AI Agent Pricing Getting Better? Grading My 2025 Predictions';
+  const sources = [{
+    title: articleTitle,
+    text: `${articleTitle}. By Jason Andersen. AI agent pricing models are becoming more diverse.`
+  }];
+  const facts = extractVerifiedFacts(sources, { topic: 'Penetapan harga agen AI' });
+  const fallback = buildSafeSourceFallback({}, facts, { requestedTopic: 'Penetapan harga agen AI', contentFormat: 'Fakta singkat' });
+
+  assert.equal(fallback.slides.length, 3);
+  assert.ok(fallback.slides.every(slide => wordsForTest(slide.title) <= 8));
+  assert.ok(fallback.slides.every(slide => wordsForTest(slide.body) <= 22));
+  assert.ok(fallback.slides.every(slide => !slide.body || slide.title.toLowerCase() !== slide.body.toLowerCase()));
+  assert.doesNotMatch(JSON.stringify(fallback.slides), /Grading My 2025 Predictions|Jason Andersen/);
+  assert.doesNotMatch(`${fallback.hook} ${fallback.body} ${fallback.caption} ${fallback.slides.map(slide => `${slide.title} ${slide.body}`).join(' ')}`, /\b(?:is|are|becoming|pricing|better|predictions|by)\b/i);
+  assert.equal(fallback.slides[1].claims[0].sourceId, 'source-1');
+  assert.equal(fallback.slides[1].claims[0].evidence, 'AI agent pricing models are becoming more diverse.');
+  assert.match(fallback.slides[1].claims[0].text, /model harga agen AI makin beragam/i);
+  assert.deepEqual(validateSourceGrounding(fallback, '', sources), []);
+});
+
+test('fallback memakai lima slide hanya saat tersedia cukup fakta berbeda', () => {
+  const { buildSafeSourceFallback, extractVerifiedFacts } = require('../src/services/content');
+  const sources = [{ text: 'AI agent pricing models are becoming more diverse. Companies use more flexible pricing. Users compare AI agent pricing.' }];
+  const facts = extractVerifiedFacts(sources, { topic: 'Penetapan harga agen AI' });
+  const fallback = buildSafeSourceFallback({}, facts, { requestedTopic: 'Penetapan harga agen AI', contentFormat: 'Fakta singkat' });
+  assert.equal(fallback.slides.length, 5);
+  assert.equal(fallback.slides.filter(slide => slide.claims.length).length, 3);
+  assert.ok(fallback.slides.flatMap(slide => slide.claims).every(claim => claim.sourceId && claim.evidence));
+});
+
 test('unsupported angka dan tanggal dibuang oleh fallback tanpa menggagalkan konten', async () => {
   const sources = [{ text: 'Platform membantu tim menyusun kalender konten bersama. Anggota tim dapat meninjau rencana yang sama.' }];
   const unsupported = { focus: { masalah: 'Proses lama', penyebab: 'Manual', solusi: 'Pakai platform', hasil: 'Cepat' }, topic: 'Platform', hook: 'Platform Naik 90 Persen', body: 'IPO berlangsung 12 Mei 2026', caption: 'IPO berlangsung 12 Mei 2026', hashtags: ['#Platform'], cta: 'Baca', trendKeywordsUsed: [], content_angle: 'data', primary_tool: 'platform', hook_pattern: 'angka', verificationStatus: 'source_based', unsupportedClaims: [], slides: [{ section: 'PEMBUKA', title: 'IPO 2026', body: 'Harga saham naik 90 persen', points: [], claims: [] }, { section: 'ISI', title: 'SID', body: 'Ada 2 juta SID', points: [], claims: [] }, { section: 'PENUTUP', title: 'Baca', body: '', points: [], claims: [] }] };

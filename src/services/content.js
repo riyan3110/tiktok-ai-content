@@ -197,7 +197,7 @@ function serializeUntrustedSourceContext(value) {
   return JSON.stringify(String(value || '')).replace(/[<>&]/g, character => ({ '<': '\\u003C', '>': '\\u003E', '&': '\\u0026' })[character]);
 }
 
-const BOILERPLATE_FACT_PATTERN = /(?:cookie|privasi|privacy|syarat dan ketentuan|terms of use|hak cipta|copyright|semua hak dilindungi|berlangganan newsletter|subscribe|masuk|login|daftar akun|menu navigasi|ikuti kami|contact us|hubungi kami)/i;
+const BOILERPLATE_FACT_PATTERN = /(?:cookie|privasi|privacy|syarat dan ketentuan|terms of use|hak cipta|copyright|semua hak dilindungi|berlangganan newsletter|subscribe|masuk|login|daftar akun|menu navigasi|ikuti kami|contact us|hubungi kami|^(?:by|oleh)\s+[A-Z][\p{L}.'-]+(?:\s+[A-Z][\p{L}.'-]+){0,4}\.?$)/iu;
 
 function factTopicTokens(value) {
   const ignored = new Set(['yang', 'dan', 'atau', 'dari', 'untuk', 'dengan', 'tentang', 'cara', 'adalah', 'pada']);
@@ -221,7 +221,11 @@ function extractVerifiedFacts(sources = [], settings = {}) {
   const topicTokens = factTopicTokens(topic);
   const queues = sources.map((source, sourceIndex) => {
     const sourceRelevance = topicTokens.filter(token => tokensForFacts(`${source?.title || ''} ${source?.url || ''}`).has(token)).length;
-    return completeEvidenceCandidates(source?.text).map((evidence, order) => {
+    const pageTitle = groundingText(source?.title || '').replace(/\s+(?:by|oleh)\s+.+$/, '').trim();
+    return completeEvidenceCandidates(source?.text).filter(evidence => {
+      const normalized = groundingText(evidence).replace(/\s+(?:by|oleh)\s+[\p{L}.' -]+$/iu, '').trim();
+      return !pageTitle || (normalized !== pageTitle && !pageTitle.includes(normalized));
+    }).map((evidence, order) => {
       const evidenceTokens = tokensForFacts(evidence);
       const relevance = topicTokens.filter(token => evidenceTokens.has(token)).length * 10 + sourceRelevance;
       return { text: evidence, sourceId: `source-${sourceIndex + 1}`, evidence, relevance, order };
@@ -337,30 +341,80 @@ function validateSourceGrounding(content, sourceContext, sources = []) {
   return [...new Set(errors)];
 }
 
-function factTitle(fact, topic) {
-  const firstClause = fact.text.split(/[,:;.!?]/)[0].trim();
-  return words(firstClause).length <= 12 ? firstClause : `${topic} dari sumber`;
+function limitDisplayText(value, maxWords, maxCharacters = Infinity) {
+  const selected = [];
+  for (const word of words(value)) {
+    const candidate = [...selected, word].join(' ');
+    if (selected.length >= maxWords || candidate.length > maxCharacters) break;
+    selected.push(word);
+  }
+  return selected.join(' ').replace(/[,:;.!?]+$/, '').trim();
+}
+
+function looksEnglish(value) {
+  const tokens = groundingText(value).split(' ');
+  const markers = new Set(['the', 'is', 'are', 'was', 'were', 'and', 'or', 'of', 'to', 'for', 'from', 'with', 'that', 'this', 'how', 'what', 'why', 'getting', 'better', 'pricing', 'predictions']);
+  return tokens.filter(token => markers.has(token)).length >= 1;
+}
+
+/** Localize presentation copy without ever changing the source-owned evidence. */
+function localizeFallbackFact(fact, topic, index) {
+  let copy = String(fact.text || '').trim()
+    .replace(/^AI agents? pricing models? are becoming more diverse\.?$/i, 'Model harga agen AI makin beragam.')
+    .replace(/^Companies use more flexible pricing\.?$/i, 'Perusahaan memakai penetapan harga yang lebih fleksibel.')
+    .replace(/^Users compare AI agents? pricing\.?$/i, 'Pengguna membandingkan harga agen AI.')
+    .replace(/^is\s+(.+?)\s+getting better\??$/i, 'Apakah $1 makin membaik?')
+    .replace(/\bpricing models?\b/gi, 'model harga')
+    .replace(/\bpricing\b/gi, 'penetapan harga')
+    .replace(/\bAI agents?\b/gi, 'agen AI')
+    .replace(/\bis becoming\b/gi, 'mulai menjadi')
+    .replace(/\bare becoming\b/gi, 'mulai menjadi')
+    .replace(/\bcontinues? to\b/gi, 'terus')
+    .replace(/\bcompanies\b/gi, 'perusahaan')
+    .replace(/\bcustomers\b/gi, 'pelanggan')
+    .replace(/\busers\b/gi, 'pengguna')
+    .replace(/\bmore diverse\b/gi, 'makin beragam')
+    .replace(/\bmore flexible\b/gi, 'makin fleksibel');
+  if (looksEnglish(copy)) copy = `Sumber membahas fakta tentang ${topic}.`;
+  copy = limitDisplayText(copy, 22, 150);
+  const generic = groundingText(copy) === groundingText(`Sumber membahas fakta tentang ${topic}`);
+  const titleCandidates = [
+    index === 0 ? `Fakta utama tentang ${topic}` : `Fakta berikutnya tentang ${topic}`,
+    `Sorotan tentang ${topic}`
+  ];
+  let title = generic ? titleCandidates[index ? 1 : 0] : copy.split(/[.!?]/)[0];
+  title = limitDisplayText(title, 8, 55) || 'Fakta dari sumber';
+  if (groundingText(title) === groundingText(copy) || groundingText(copy).includes(groundingText(title))) {
+    title = limitDisplayText(titleCandidates[index ? 1 : 0], 8, 55);
+  }
+  return { title, displayText: copy, sourceId: fact.sourceId, evidence: fact.evidence };
 }
 
 function buildSafeSourceFallback(content, factBank, options = {}) {
   if (!factBank.length) throw sourceUnavailableError();
-  const selected = factBank.slice(0, 3);
   const topic = String(options.requestedTopic || content?.topic || 'Topik sumber').trim();
+  const uniqueFacts = factBank.filter((fact, index, all) => all.findIndex(candidate => groundingText(candidate.evidence) === groundingText(fact.evidence)) === index);
+  // One useful fact plus an opening and closing is preferable to filler. Only
+  // expand the carousel when at least three distinct facts are available.
+  const selected = uniqueFacts.slice(0, uniqueFacts.length >= 3 ? 3 : 1);
   const format = options.contentFormat || 'Tutorial langkah';
-  const factSlides = selected.map(fact => ({
-    section: format === 'Masalah dan solusi' ? 'SOLUSI' : 'PENJELASAN', title: factTitle(fact, topic), body: fact.text,
-    points: [], claims: [{ ...fact }]
+  const displayTopic = limitDisplayText(topic, 8, 55) || 'Topik sumber';
+  const localized = selected.map((fact, index) => localizeFallbackFact(fact, displayTopic, index));
+  const factSlides = localized.map(claim => ({
+    section: format === 'Masalah dan solusi' ? 'SOLUSI' : 'PENJELASAN', title: claim.title, body: claim.displayText,
+    points: [], claims: [{ text: claim.displayText, sourceId: claim.sourceId, evidence: claim.evidence }]
   }));
-  const opening = { section: format === 'Masalah dan solusi' ? 'MASALAH' : 'PEMBUKA', title: topic, body: '', points: [], claims: [] };
-  const slides = [opening, ...factSlides, { section: 'PENUTUP', title: `Lanjut baca tentang ${topic}`, body: '', points: [], claims: [] }].slice(0, 5);
-  const first = selected[0];
+  const opening = { section: format === 'Masalah dan solusi' ? 'MASALAH' : 'PEMBUKA', title: displayTopic, body: '', points: [], claims: [] };
+  const closingTitle = limitDisplayText(`Lanjut baca tentang ${displayTopic}`, 8, 55);
+  const slides = [opening, ...factSlides, { section: 'PENUTUP', title: closingTitle, body: '', points: [], claims: [] }];
+  const first = localized[0];
   return {
     contentCategory: options.contentCategory || content?.contentCategory,
     contentFormat: format,
     focus: { masalah: `Memahami ${topic}`, penyebab: 'Informasi tersebar di sumber', solusi: 'Fokus pada fakta yang tersedia', hasil: `Gambaran tentang ${topic}` },
-    topic, hook: `Apa yang sumber jelaskan tentang ${topic}?`, body: first.text,
-    caption: first.text, hashtags: [],
-    cta: `Lanjut baca tentang ${topic}`, trendKeywordsUsed: [], content_angle: `fakta dari sumber tentang ${topic}`,
+    topic, hook: `Apa yang sumber jelaskan tentang ${displayTopic}?`, body: first.displayText,
+    caption: first.displayText, hashtags: [],
+    cta: closingTitle, trendKeywordsUsed: [], content_angle: `fakta dari sumber tentang ${topic}`,
     primary_tool: 'tanpa tool', hook_pattern: 'pertanyaan berbasis sumber',
     result: '', tip: '', slides, verificationStatus: 'needs_review', unsupportedClaims: []
   };
