@@ -331,7 +331,7 @@ function sourceUnavailableError() {
 }
 
 function hasClaimFor(value, claimNorms) {
-  const normalized = groundingText(String(value || '').replace(/^\d+[.)\s-]*/, ''));
+  const normalized = groundingText(String(value || '').replace(/^\\d+[.)\\s-]*/, ''));
   return Boolean(normalized) && claimNorms.some(claim => claim === normalized || claim.includes(normalized) || normalized.includes(claim));
 }
 const FACTUAL_SINGLE_WORDS = new Set([
@@ -403,9 +403,9 @@ function validateSourceGrounding(content, sourceContext, sources = []) {
       const normalizedValue = groundingText(value);
       const hasUnsupportedRisky = RISKY_SOURCE_PHRASES.some(phrase => {
         const norm = groundingText(phrase);
-        const pattern = new RegExp('\b' + norm.replace(/[.*+?^${}()|[\]\\]/g, '\$&') + '\b', 'i');
+        const pattern = new RegExp('\\b' + norm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
         if (!pattern.test(normalizedValue)) return false;
-        const negated = new RegExp('\b(?:tidak|belum|bukan)\s+' + norm.replace(/[.*+?^${}()|[\]\\]/g, '\$&') + '\b', 'i');
+        const negated = new RegExp('\\b(?:tidak|belum|bukan)\\s+' + norm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
         return !negated.test(normalizedValue);
       });
       if (hasUnsupportedRisky) {
@@ -470,7 +470,7 @@ function localizedNumbersAreGrounded(copy, evidence) {
   ]);
   const concepts = value => {
     const normalized = groundingText(value);
-    return [...numberWords].filter(([word]) => new RegExp(`\b${word}\b`, 'i').test(normalized)).map(([, concept]) => concept);
+    return [...numberWords].filter(([word]) => new RegExp(`\\b${word}\\b`, 'i').test(normalized)).map(([, concept]) => concept);
   };
   const evidenceConcepts = new Set(concepts(evidence));
   return concepts(copy).every(concept => evidenceConcepts.has(concept));
