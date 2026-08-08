@@ -82,11 +82,21 @@ test('validator menjaga struktur normal dan menolak judul mentah, filler, slide 
     slides: base.slides.map((slide, index) => ({
       ...slide,
       claims: index === 1 ? [{
+        field: 'slide:1:title',
+        text: slide.title,
+        sourceId: 'source-1',
+        evidence: 'The researcher says AI agents can work across longer tasks when goals and limits are clear.'
+      }, {
         field: 'slide:1:body',
         text: slide.body,
         sourceId: 'source-1',
         evidence: 'The researcher says AI agents can work across longer tasks when goals and limits are clear.'
       }] : index === 2 ? [{
+        field: 'slide:2:title',
+        text: slide.title,
+        sourceId: 'source-2',
+        evidence: 'Independent testing found that human oversight remains important when agents handle multi-step work.'
+      }, {
         field: 'slide:2:body',
         text: slide.body,
         sourceId: 'source-1',
