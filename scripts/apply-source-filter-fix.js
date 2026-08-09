@@ -1,0 +1,11 @@
+const fs = require('fs');
+const path = 'src/services/sourceFilter.js';
+let s = fs.readFileSync(path, 'utf8');
+s = s.replace("  if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;\n  return words(text).length >= 2;\n}\n\nfunction slideFields", "  if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;\n  // Neutral/problem-framing titles are structural copy, not factual claims.\n  // Numeric/factual titles are already caught by requiresEvidence() above.\n  if (kind === 'title') return false;\n  return words(text).length >= 2;\n}\n\nfunction slideFields");
+const marker = "function normalizeFactSections(slides = [], format = '') {";
+const helper = `function pruneUnneededClaims(content, format = '') {\n  if (!content || !Array.isArray(content.slides)) return content;\n  const totalSlides = content.slides.length;\n  return {\n    ...content,\n    slides: content.slides.map((slide, slideIndex) => ({\n      ...slide,\n      claims: (Array.isArray(slide?.claims) ? slide.claims : []).filter(claim => {\n        const field = slideFields(slide, slideIndex).find(item => item.key === String(claim?.field || ''));\n        return Boolean(field?.value) && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);\n      })\n    }))\n  };\n}\n\n`;
+if (!s.includes('function pruneUnneededClaims(')) s = s.replace(marker, helper + marker);
+s = s.replace("      const semanticErrors = await auditClaimSemantics(openai, checked.content, topic);", "      const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);\n      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic);");
+s = s.replace("  dropUnsupportedPointClaims,\n  dropUnsupportedPointClaims,\n  MAX_VERIFY_ATTEMPTS", "  dropUnsupportedPointClaims,\n  pruneUnneededClaims,\n  MAX_VERIFY_ATTEMPTS");
+if (!s.includes("if (kind === 'title') return false;") || !s.includes('function pruneUnneededClaims(')) throw new Error('patch failed');
+fs.writeFileSync(path, s);
