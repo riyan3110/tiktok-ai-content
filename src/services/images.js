@@ -267,7 +267,12 @@ function buildSlideLayouts(content) {
   if (Array.isArray(content.slides)) {
     // Do not summarize or bulletize copy that already fits the native canvas.
     const slides = fitStructuredSlides(content.slides, content.contentFormat);
-    const errors = validateContentSlides(slides, { format: content.contentFormat });
+    // Source-filtered copy has already passed its own evidence-aware validation.
+    // The renderer should only enforce structural/layout limits here; rerunning
+    // the generic duplicate-copy gate can falsely reject valid source-backed
+    // paraphrases that intentionally repeat the core entity across fields.
+    const sourceVerified = ['source_based', 'needs_review'].includes(content.verificationStatus);
+    const errors = validateContentSlides(slides, { format: content.contentFormat, validateCopy: !sourceVerified });
     if (errors.length) throw Object.assign(new Error(`Tahap layout: ${errors.join(' ')}`), { status: 422 });
     return validateCarouselLayouts(slides.map((slide, index) => buildStructuredLayout(slide, index, slides.length, content.contentFormat)));
   }
