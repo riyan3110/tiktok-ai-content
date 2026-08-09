@@ -14,11 +14,11 @@ test('Content Studio UI provides generation, batch, realtime queue, history, and
   for (const action of ['download', 'duplicate', 'retry', 'Copy URL', 'Delete']) assert.match(script, new RegExp(action, 'i'));
 });
 
-test('Content Studio refreshes signed media URLs from stored assets before rendering history', () => {
+test('Content Studio refreshes stored media previews before rendering history', () => {
   const script = fs.readFileSync('public/content-studio.js', 'utf8');
   assert.match(script, /api\('\/api\/assets\/resolve'/);
   assert.match(script, /assetIds:ids/);
-  assert.match(script, /asset\.url\|\|asset\.preview_url/);
+  assert.match(script, /asset\.preview_url\|\|asset\.url/);
   assert.match(script, /jobs=await refreshResultUrls\(jobs\)/);
 });
 
@@ -57,6 +57,7 @@ test('live carousel preview memakai layer terlihat lalu menggantinya dengan JPEG
 
 test('live preview membatalkan request lama dan membersihkan overlay pada error legacy', () => {
   const script = fs.readFileSync('public/app.js', 'utf8');
+  const css = fs.readFileSync('public/style.css', 'utf8');
   assert.match(script, /schedulePreviewRender\.controller\?\.abort\(\)/);
   assert.match(script, /version !== schedulePreviewRender\.version/);
   assert.match(script, /signal: schedulePreviewRender\.controller\.signal/);
