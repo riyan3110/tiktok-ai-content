@@ -1,0 +1,26 @@
+name: Source filter fix runner
+on:
+  push:
+    branches:
+      - fix/source-filter-ai-identity-semantic-point
+jobs:
+  verify:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: python3 scripts/fix_source_filter_regressions.py
+      - run: npm install
+      - run: npm run check
+      - run: npm test
+      - run: git diff --check
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/services/sourceFilter.js test/source-filter.test.js
+          git commit -m "fix: stabilize source semantic validation"
+          git push
