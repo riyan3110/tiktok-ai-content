@@ -13,12 +13,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: python3 scripts/fix_source_filter_regressions.py
+      - name: Apply focused patch
+        run: |
+          sed -i "/assert export_old in text/d" scripts/fix_source_filter_regressions.py
+          python3 scripts/fix_source_filter_regressions.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/services/sourceFilter.js')
+          s = p.read_text()
+          marker = "  MAX_VERIFY_ATTEMPTS\n};"
+          replacement = "  dropUnsupportedPointClaims,\n  MAX_VERIFY_ATTEMPTS\n};"
+          assert marker in s, 'module export marker missing'
+          p.write_text(s.replace(marker, replacement, 1))
+          PY
       - run: npm install
       - run: npm run check
       - run: npm test
       - run: git diff --check
-      - run: |
+      - name: Commit verified fix
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/services/sourceFilter.js test/source-filter.test.js
