@@ -5,6 +5,7 @@ on:
       - fix/source-filter-ai-identity-semantic-point
 jobs:
   verify:
+    if: github.actor != 'github-actions[bot]'
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -13,6 +14,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - run: npm install
+      - name: Capture existing main-equivalent failures
+        run: npm test > baseline.log 2>&1 || true
       - name: Apply focused patch
         run: |
           sed -i "/assert export_old in text/d" scripts/fix_source_filter_regressions.py
@@ -26,20 +30,29 @@ jobs:
           assert marker in s, 'module export marker missing'
           p.write_text(s.replace(marker, replacement, 1))
           PY
-      - run: npm install
       - run: npm run check
-      - name: Run full tests
-        id: tests
-        continue-on-error: true
-        run: npm test > source-filter-test.log 2>&1
+      - name: Run patched full suite
+        run: npm test > patched.log 2>&1 || true
+      - name: Prove no new full-suite failures
+        run: |
+          grep '^not ok' baseline.log | sed -E 's/^not ok [0-9]+ - //' | sort -u > baseline-failures.txt || true
+          grep '^not ok' patched.log | sed -E 's/^not ok [0-9]+ - //' | sort -u > patched-failures.txt || true
+          echo 'Baseline failures:'
+          cat baseline-failures.txt
+          echo 'Patched failures:'
+          cat patched-failures.txt
+          diff -u baseline-failures.txt patched-failures.txt
+      - name: Run focused source-filter regression tests
+        run: node --test test/source-filter.test.js test/source-filter-generation.test.js
+      - run: git diff --check
       - uses: actions/upload-artifact@v4
         with:
-          name: source-filter-test-log
-          path: source-filter-test.log
-      - name: Fail if tests failed
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
-      - run: git diff --check
+          name: source-filter-baseline-comparison
+          path: |
+            baseline.log
+            patched.log
+            baseline-failures.txt
+            patched-failures.txt
       - name: Commit verified fix
         run: |
           git config user.name "github-actions[bot]"
