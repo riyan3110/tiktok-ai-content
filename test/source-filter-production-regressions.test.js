@@ -239,7 +239,7 @@ test('slide claim-free tetap boleh jika langsung menyebut konsep inti topik manu
   const slides = [
     { section: 'PEMBUKA', title: 'Efisiensi AI Jadi Fokus Baru', body: 'Cek konteks sumbernya.', points: [], claims: [] },
     { section: 'PENJELASAN', title: 'Fokus pada efisiensi biaya', body: 'Bandingkan kebutuhan sebelum memilih pendekatan AI.', points: [], claims: [] },
-    { section: 'PENUTUP', title: 'Pilih Sesuai Kebutuhan', body: 'Cek detail sumber sebelum memutuskan.', points: [], claims: [] }
+    { section: 'PENUTUP', title: 'Pilih Sesuai Kebutuhan', body: 'Cek detail sumber sebelum memutuskan.', points: [] }
   ];
   const errors = validateSlideTopicRelevance('Era efisiensi AI', slides, new Set());
   assert.deepEqual(errors, []);
@@ -295,14 +295,17 @@ test('retry verifier membawa draft sebelumnya dan memperbaiki body panjang + cla
       claims: [{ field: 'slide:0:title', text: generatedTitle, sourceId: 'source-1', evidence }]
     },
     { section: 'POIN 1', title: 'Cek Temuan Utama', body: 'Bandingkan konteks sumber sebelum menyimpulkan.', points: [], claims: [] },
-    { section: 'PENUTUP', title: 'Baca Detail Survei', body: 'Simpan bagian yang paling relevan.', points: [], claims: [] }
+    { section: 'PENUTUP', title: 'Baca Detail Survei', body: 'Simpan bagian yang paling relevan.', points: [] }
   ];
   const prompts = [];
   let calls = 0;
   const client = {
     chat: { completions: { async create({ messages }) {
-      calls += 1;
       const prompt = messages[1].content;
+      if (/auditor entailment fakta bilingual/i.test(prompt)) {
+        return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+      }
+      calls += 1;
       prompts.push(prompt);
       if (calls === 1) {
         return { choices: [{ message: { content: JSON.stringify({ slides: firstDraft }) } }] };
@@ -365,8 +368,12 @@ test('source verifier menerjemahkan copy Inggris ke Indonesia tetapi mempertahan
   let calls = 0;
   const client = {
     chat: { completions: { async create({ messages }) {
+      const prompt = messages[1].content;
+      if (/auditor entailment fakta bilingual/i.test(prompt)) {
+        return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+      }
       calls += 1;
-      prompts.push(messages[1].content);
+      prompts.push(prompt);
       return { choices: [{ message: { content: JSON.stringify({ slides: calls === 1 ? firstDraft : repairedDraft }) } }] };
     } } }
   };
