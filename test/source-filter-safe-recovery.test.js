@@ -18,7 +18,7 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
   const baseSlides = [
     { section: 'PEMBUKA', title: 'Sekilas tentang robot rumah', body: 'Lihat fakta utama dari sumber.', points: [] },
     { section: 'FAKTA UTAMA', title: 'Fakta utama', body: 'Robot rumah dapat menyelesaikan semua pekerjaan.', points: ['Resmi menghemat waktu'] },
-    { section: 'KONTEKS', title: 'Konteks sumber', body: 'Cek batas kemampuan yang dijelaskan.', points: [] },
+    { section: 'KONTEKS', title: 'Konteks sumber', body: 'Robot rumah dapat melipat baju di satu area kerja.', points: [] },
     { section: 'KESIMPULAN', title: 'Baca sesuai konteks', body: 'Simpan temuan yang relevan.', points: [] }
   ];
   const base = {
@@ -26,7 +26,11 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
     hashtags: [], cta: 'Baca sumber', trendKeywordsUsed: [], content_angle: 'fakta', primary_tool: 'tanpa tool',
     hook_pattern: 'langsung', slides: baseSlides
   };
-  const badDraft = baseSlides.map(slide => ({ ...slide, points: [...slide.points], claims: [] }));
+  const badDraft = baseSlides.map((slide, index) => ({
+    ...slide,
+    points: [...slide.points],
+    claims: index === 2 ? [{ field: 'slide:2:body', text: slide.body, sourceId: 'source-1', evidence }] : []
+  }));
   const tooStrongDraft = badDraft.map((slide, index) => index === 1 ? {
     ...slide,
     body: 'Robot rumah pasti dapat melipat baju di satu area kerja.',
@@ -93,7 +97,7 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
   assert.equal(result.slides[0].title, 'Sekilas tentang robot rumah');
   assert.equal(result.slides[0].body, 'Lihat fakta utama dari sumber.');
   assert.equal(result.slides[2].title, 'Konteks sumber');
-  assert.equal(result.slides[2].body, 'Cek batas kemampuan yang dijelaskan.');
+  assert.equal(result.slides[2].body, 'Robot rumah dapat melipat baju di satu area kerja.');
   assert.equal(validatedRecoveredOutput, true);
   assert.ok(auditCalls >= 2, 'hasil recovery harus tetap melewati semantic audit');
   assert.deepEqual(result.slides.map(slide => slide.section), ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN']);
@@ -112,6 +116,60 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
       }
     });
   });
+});
+
+test('Fakta singkat me-retry body question-only hingga menjadi fakta tanpa mengubah field non-target', async () => {
+  const evidence = 'User-generated content can help brands build trust with their audiences.';
+  const opening = { section: 'PEMBUKA', title: 'Apa itu UGC?', body: 'Kenali perannya dalam pemasaran.', points: [], claims: [] };
+  const main = { section: 'FAKTA UTAMA', title: 'Mengapa UGC penting?', body: 'Bagaimana UGC membantu membangun kepercayaan?', points: [], claims: [] };
+  const context = {
+    section: 'KONTEKS', title: 'Konteks UGC', body: 'UGC dapat membantu brand membangun kepercayaan audiens.', points: [],
+    claims: [{ field: 'slide:2:body', text: 'UGC dapat membantu brand membangun kepercayaan audiens.', sourceId: 'source-1', evidence }]
+  };
+  const conclusion = { section: 'KESIMPULAN', title: 'Ringkasannya', body: 'Baca sesuai konteks sumber.', points: [], claims: [] };
+  const base = {
+    focus: {}, topic: 'UGC', hook: opening.title, body: opening.body, caption: opening.body,
+    hashtags: [], cta: conclusion.title, trendKeywordsUsed: [], content_angle: 'fakta', primary_tool: 'tanpa tool',
+    hook_pattern: 'pertanyaan', slides: [opening, main, context, conclusion]
+  };
+  let verifierCalls = 0;
+  let safeCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) {
+      safeCalls += 1;
+      const body = safeCalls === 1
+        ? 'Bagaimana manfaat UGC bagi brand?'
+        : 'UGC dapat membantu brand membangun kepercayaan audiens.';
+      return { choices: [{ message: { content: JSON.stringify({ slides: [
+        { ...opening, title: 'Pembuka tidak boleh berubah' },
+        { ...main, title: 'Title non-target tidak boleh berubah', body, claims: safeCalls === 1 ? [] : [{ field: 'slide:1:body', text: body, sourceId: 'source-1', evidence }] },
+        { ...context, body: 'Konteks non-target tidak boleh berubah' },
+        conclusion
+      ] }) } }] };
+    }
+    verifierCalls += 1;
+    return { choices: [{ message: { content: JSON.stringify({ slides: [opening, main, context, conclusion] }) } }] };
+  } } } };
+  const content = { async generateContent() { return base; }, validateContent() { return []; } };
+
+  const result = await generateFilteredContent({
+    content,
+    options: { contentFormat: 'Fakta singkat', requestedTopic: 'UGC' },
+    sources: [{ url: 'https://example.test/ugc', text: evidence }],
+    client
+  });
+
+  assert.equal(verifierCalls, MAX_VERIFY_ATTEMPTS, 'question-only tidak boleh langsung lolos verifier');
+  assert.equal(safeCalls, 2, 'pertanyaan pengganti harus ditolak dan di-retry');
+  assert.equal(result.slides[1].title, main.title);
+  assert.equal(result.slides[1].body, 'UGC dapat membantu brand membangun kepercayaan audiens.');
+  assert.equal(result.slides[1].claims[0].evidence, evidence);
+  assert.deepEqual(result.slides[0], opening);
+  assert.deepEqual(result.slides[2], context);
 });
 
 test('safe recovery berhenti pada hard limit ketika provider selalu memberi draft invalid yang berbeda', async () => {
