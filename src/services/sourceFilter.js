@@ -119,13 +119,8 @@ function extractFactBank(sources = [], topic = '') {
   return bank;
 }
 
-function numericTokens(value) {
-  return String(value || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || [];
-}
-
-function isQuestion(value) {
-  return /\?\s*$/.test(String(value || '').trim());
-}
+function numericTokens(value) { return String(value || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || []; }
+function isQuestion(value) { return /\?\s*$/.test(String(value || '').trim()); }
 
 function likelyEnglishDisplayText(value) {
   const displayTokens = String(value || '').toLocaleLowerCase('en-US').match(/[a-z]+(?:'[a-z]+)?/g) || [];
@@ -163,8 +158,6 @@ function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex =
   if (requiresEvidence(text, section, kind)) return true;
   if (String(format || '').toLocaleLowerCase('id-ID') !== 'masalah dan solusi') return false;
   if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;
-  // Neutral/problem-framing titles are structural copy, not factual claims.
-  // Numeric/factual titles are already caught by requiresEvidence() above.
   if (kind === 'title') return false;
   return words(text).length >= 2;
 }
@@ -174,72 +167,45 @@ function slideFields(slide, slideIndex) {
     { key: `slide:${slideIndex}:title`, value: String(slide?.title || '').trim(), kind: 'title' },
     { key: `slide:${slideIndex}:body`, value: String(slide?.body || '').trim(), kind: 'body' }
   ];
-  (slide?.points || []).forEach((point, pointIndex) => fields.push({
-    key: `slide:${slideIndex}:point:${pointIndex}`,
-    value: String(point || '').trim(),
-    kind: 'point'
-  }));
+  (slide?.points || []).forEach((point, pointIndex) => fields.push({ key: `slide:${slideIndex}:point:${pointIndex}`, value: String(point || '').trim(), kind: 'point' }));
   return fields;
 }
 
-function sourceMap(sources = []) {
-  return new Map(sources.map((source, index) => [`source-${index + 1}`, normalize(source?.text || '')]));
-}
-
+function sourceMap(sources = []) { return new Map(sources.map((source, index) => [`source-${index + 1}`, normalize(source?.text || '')])); }
 function normalizeClaims(slides = []) {
   return slides.flatMap((slide, slideIndex) => (Array.isArray(slide?.claims) ? slide.claims : []).map(claim => ({
-    slideIndex,
-    field: String(claim?.field || '').trim(),
-    text: String(claim?.text || '').trim(),
-    sourceId: String(claim?.sourceId || '').trim(),
-    evidence: String(claim?.evidence || '').trim()
+    slideIndex, field: String(claim?.field || '').trim(), text: String(claim?.text || '').trim(), sourceId: String(claim?.sourceId || '').trim(), evidence: String(claim?.evidence || '').trim()
   })));
 }
 
 function pruneUnneededClaims(content, format = '') {
   if (!content || !Array.isArray(content.slides)) return content;
   const totalSlides = content.slides.length;
-  return {
-    ...content,
-    slides: content.slides.map((slide, slideIndex) => ({
-      ...slide,
-      claims: (Array.isArray(slide?.claims) ? slide.claims : []).filter(claim => {
-        const field = slideFields(slide, slideIndex).find(item => item.key === String(claim?.field || ''));
-        return Boolean(field?.value) && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);
-      })
-    }))
-  };
+  return { ...content, slides: content.slides.map((slide, slideIndex) => ({
+    ...slide,
+    claims: (Array.isArray(slide?.claims) ? slide.claims : []).filter(claim => {
+      const field = slideFields(slide, slideIndex).find(item => item.key === String(claim?.field || ''));
+      return Boolean(field?.value) && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);
+    })
+  })) };
 }
 
 function normalizeFactSections(slides = [], format = '') {
   if (String(format || '').toLocaleLowerCase('id-ID') !== 'fakta singkat' || !Array.isArray(slides)) return slides;
-  const labels = slides.length === 4
-    ? ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN']
-    : slides.length === 5
-      ? ['PEMBUKA', 'FAKTA UTAMA', 'PENJELASAN', 'KONTEKS', 'KESIMPULAN']
-      : slides.map((_, index) => index === 0 ? 'PEMBUKA' : index === slides.length - 1 ? 'KESIMPULAN' : 'PENJELASAN');
+  const labels = slides.length === 4 ? ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'] : slides.length === 5 ? ['PEMBUKA', 'FAKTA UTAMA', 'PENJELASAN', 'KONTEKS', 'KESIMPULAN'] : slides.map((_, index) => index === 0 ? 'PEMBUKA' : index === slides.length - 1 ? 'KESIMPULAN' : 'PENJELASAN');
   return slides.map((slide, index) => ({ ...slide, section: labels[index] }));
 }
 
-function groundingTerms(value) {
-  return [...tokens(value)].filter(token => (token.length > 2 || token === 'ai') && !GROUNDING_STOPWORDS.has(token));
-}
-
+function groundingTerms(value) { return [...tokens(value)].filter(token => (token.length > 2 || token === 'ai') && !GROUNDING_STOPWORDS.has(token)); }
 function evidenceSupport(text, evidence) {
-  const textNorm = normalize(text);
-  const evidenceNorm = normalize(evidence);
+  const textNorm = normalize(text); const evidenceNorm = normalize(evidence);
   if (!textNorm || !evidenceNorm) return { exact: false, matches: 0, total: 0, score: 0 };
-  const claimNumbers = numericTokens(text);
-  const evidenceNumbers = new Set(numericTokens(evidence));
+  const claimNumbers = numericTokens(text); const evidenceNumbers = new Set(numericTokens(evidence));
   if (!claimNumbers.every(number => evidenceNumbers.has(number))) return { exact: false, matches: 0, total: 0, score: 0 };
-  const claimNegations = [...tokens(text)].filter(token => NEGATION_TOKENS.has(token));
-  const evidenceTokenSet = tokens(evidence);
+  const claimNegations = [...tokens(text)].filter(token => NEGATION_TOKENS.has(token)); const evidenceTokenSet = tokens(evidence);
   if (claimNegations.some(token => !evidenceTokenSet.has(token))) return { exact: false, matches: 0, total: 0, score: 0 };
-  const exact = evidenceNorm.includes(textNorm);
-  const terms = groundingTerms(text);
-  const matches = terms.filter(token => evidenceTokenSet.has(token)).length;
-  const score = terms.length ? matches / terms.length : 0;
-  return { exact, matches, total: terms.length, score };
+  const exact = evidenceNorm.includes(textNorm); const terms = groundingTerms(text); const matches = terms.filter(token => evidenceTokenSet.has(token)).length;
+  return { exact, matches, total: terms.length, score: terms.length ? matches / terms.length : 0 };
 }
 
 function recoverMissingClaims(candidate, sources = [], format = '') {
@@ -259,8 +225,7 @@ function recoverMissingClaims(candidate, sources = [], format = '') {
       }
       if (!best) continue;
       if (!Array.isArray(slide.claims)) slide.claims = [];
-      slide.claims.push({ field: field.key, text: field.value, sourceId: best.item.sourceId, evidence: best.item.evidence });
-      existing.add(field.key);
+      slide.claims.push({ field: field.key, text: field.value, sourceId: best.item.sourceId, evidence: best.item.evidence }); existing.add(field.key);
     }
   });
   return candidate;
@@ -271,44 +236,33 @@ function topicRelevanceTerms(manualTopic) {
   if (entityTerms.length) return entityTerms;
   return [...tokens(manualTopic)].filter(token => token.length > 2 && !TOPIC_RELEVANCE_STOPWORDS.has(token));
 }
-
 function validateSlideTopicRelevance(manualTopic, slides = [], verifiedClaimFields = new Set()) {
-  const terms = topicRelevanceTerms(manualTopic);
-  if (!manualTopic || !terms.length) return [];
+  const terms = topicRelevanceTerms(manualTopic); if (!manualTopic || !terms.length) return [];
   const errors = [];
   slides.forEach((slide, index) => {
     const edgeSlide = index === 0 || index === slides.length - 1 || /^(?:PEMBUKA|HOOK|PENUTUP|CTA|TRANSISI)$/i.test(String(slide?.section || '').trim());
     if (edgeSlide) return;
-    const fields = slideFields(slide, index);
-    if (fields.some(field => verifiedClaimFields.has(field.key))) return;
-    const visibleTokens = tokens(fields.map(field => field.value).join(' '));
-    if (terms.some(term => visibleTokens.has(term))) return;
+    const fields = slideFields(slide, index); if (fields.some(field => verifiedClaimFields.has(field.key))) return;
+    const visibleTokens = tokens(fields.map(field => field.value).join(' ')); if (terms.some(term => visibleTokens.has(term))) return;
     const introducedSpecificTerms = [...visibleTokens].filter(token => token.length > 2 && !TOPIC_RELEVANCE_STOPWORDS.has(token) && !NEUTRAL_RELEVANCE_TOKENS.has(token) && !terms.includes(token));
     if (introducedSpecificTerms.length >= 2) errors.push(`Slide ${index + 1}: isi claim-free menyimpang dari inti topik manual; perbaiki agar tetap membahas ${manualTopic}.`);
   });
   return errors;
 }
-
 function validateManualTopicIdentity(manualTopic, slides = []) {
-  const anchors = topicEntityTokens(manualTopic);
-  if (!anchors.length) return [];
-  const required = anchors.filter(anchor => !GENERIC_ENTITY_TOKENS.has(anchor));
-  if (!required.length) return [];
+  const anchors = topicEntityTokens(manualTopic); if (!anchors.length) return [];
+  const required = anchors.filter(anchor => !GENERIC_ENTITY_TOKENS.has(anchor)); if (!required.length) return [];
   const carouselTokens = tokens(slides.map(slide => `${slide?.title || ''} ${slide?.body || ''} ${(slide?.points || []).join(' ')}`).join(' '));
-  if (required.some(anchor => carouselTokens.has(anchor))) return [];
-  return [`Isi carousel kehilangan objek utama topik manual: ${required.join(' / ')}.`];
+  return required.some(anchor => carouselTokens.has(anchor)) ? [] : [`Isi carousel kehilangan objek utama topik manual: ${required.join(' / ')}.`];
 }
 
 function validateVerifiedContent(base, candidate, { contentService, format, manualTopic, sources }) {
   const errors = [];
   if (!candidate || !Array.isArray(candidate.slides)) return ['Verifier tidak mengembalikan slides.'];
   if (candidate.slides.length !== base.slides.length) errors.push('Verifier mengubah jumlah slide.');
-
-  const requestedNorm = normalize(manualTopic);
-  const maps = sourceMap(sources);
+  const requestedNorm = normalize(manualTopic); const maps = sourceMap(sources);
   candidate.slides.forEach((slide, index) => {
-    const baseSlide = base.slides[index];
-    if (!baseSlide) return;
+    const baseSlide = base.slides[index]; if (!baseSlide) return;
     if (String(slide.section || '').trim() !== String(baseSlide.section || '').trim()) errors.push(`Slide ${index + 1}: section berubah.`);
     if (!String(slide.title || '').trim()) errors.push(`Slide ${index + 1}: title kosong.`);
     if (!String(slide.body || '').trim() && !(slide.points || []).length) errors.push(`Slide ${index + 1}: tidak memiliki isi bermakna.`);
@@ -318,105 +272,48 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
     if (/lanjut\s+baca\s+tentang/i.test(rendered)) errors.push(`Slide ${index + 1}: memakai filler "Lanjut baca tentang".`);
     if (BOILERPLATE.test(rendered)) errors.push(`Slide ${index + 1}: metadata/boilerplate website masuk ke konten.`);
   });
-  errors.push(...validateManualTopicIdentity(manualTopic, candidate.slides));
-
-  recoverMissingClaims(candidate, sources, format);
-
-  const claims = normalizeClaims(candidate.slides);
-  const claimByField = new Map();
-  const verifiedClaimFields = new Set();
+  errors.push(...validateManualTopicIdentity(manualTopic, candidate.slides)); recoverMissingClaims(candidate, sources, format);
+  const claims = normalizeClaims(candidate.slides); const claimByField = new Map(); const verifiedClaimFields = new Set();
   for (const claim of claims) {
     let validClaim = true;
-    if (!claim.field || !claim.text || !claim.sourceId || !claim.evidence) {
-      errors.push('Claim verifier tidak lengkap.');
-      continue;
-    }
-    if (!maps.has(claim.sourceId)) {
-      errors.push(`Claim memakai sourceId yang tidak tersedia: ${claim.sourceId}.`);
-      validClaim = false;
-    }
+    if (!claim.field || !claim.text || !claim.sourceId || !claim.evidence) { errors.push('Claim verifier tidak lengkap.'); continue; }
+    if (!maps.has(claim.sourceId)) { errors.push(`Claim memakai sourceId yang tidak tersedia: ${claim.sourceId}.`); validClaim = false; }
     const evidenceNorm = normalize(claim.evidence);
-    if (!evidenceNorm || !maps.get(claim.sourceId)?.includes(evidenceNorm)) {
-      errors.push(`Evidence tidak ditemukan pada ${claim.sourceId}.`);
-      validClaim = false;
-    }
-    if (words(claim.evidence).length < 4 || words(claim.evidence).length > 32) {
-      errors.push('Evidence harus 4–32 kata.');
-      validClaim = false;
-    }
-    const claimNumbers = numericTokens(claim.text);
-    const evidenceNumbers = new Set(numericTokens(claim.evidence));
-    if (!claimNumbers.every(number => evidenceNumbers.has(number))) {
-      errors.push(`Angka pada claim tidak didukung evidence: ${claim.text}.`);
-      validClaim = false;
-    }
-    if (claimByField.has(claim.field)) {
-      errors.push(`Field ${claim.field} memiliki claim ganda.`);
-      validClaim = false;
-    }
-    claimByField.set(claim.field, claim);
-    if (validClaim) verifiedClaimFields.add(claim.field);
+    if (!evidenceNorm || !maps.get(claim.sourceId)?.includes(evidenceNorm)) { errors.push(`Evidence tidak ditemukan pada ${claim.sourceId}.`); validClaim = false; }
+    if (words(claim.evidence).length < 4 || words(claim.evidence).length > 32) { errors.push('Evidence harus 4–32 kata.'); validClaim = false; }
+    const claimNumbers = numericTokens(claim.text); const evidenceNumbers = new Set(numericTokens(claim.evidence));
+    if (!claimNumbers.every(number => evidenceNumbers.has(number))) { errors.push(`Angka pada claim tidak didukung evidence: ${claim.text}.`); validClaim = false; }
+    if (claimByField.has(claim.field)) { errors.push(`Field ${claim.field} memiliki claim ganda.`); validClaim = false; }
+    claimByField.set(claim.field, claim); if (validClaim) verifiedClaimFields.add(claim.field);
   }
-
   const totalSlides = candidate.slides.length;
-  candidate.slides.forEach((slide, slideIndex) => {
-    for (const field of slideFields(slide, slideIndex)) {
-      if (!field.value) continue;
-      const needsEvidence = requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);
-      const claim = claimByField.get(field.key);
-      if (needsEvidence && !claim) errors.push(`${field.key}: klaim faktual tidak memiliki evidence.`);
-      if (claim && normalize(claim.text) !== normalize(field.value)) errors.push(`${field.key}: claim.text tidak sama dengan copy field.`);
-    }
-  });
+  candidate.slides.forEach((slide, slideIndex) => { for (const field of slideFields(slide, slideIndex)) {
+    if (!field.value) continue; const needsEvidence = requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format); const claim = claimByField.get(field.key);
+    if (needsEvidence && !claim) errors.push(`${field.key}: klaim faktual tidak memiliki evidence.`);
+    if (claim && normalize(claim.text) !== normalize(field.value)) errors.push(`${field.key}: claim.text tidak sama dengan copy field.`);
+  }});
   errors.push(...validateSlideTopicRelevance(manualTopic, candidate.slides, verifiedClaimFields));
-
   const verified = { ...base, slides: candidate.slides, verificationStatus: 'source_based', unsupportedClaims: [] };
-  const first = verified.slides[0];
-  const informative = verified.slides.find(slide => String(slide.body || '').trim() || (slide.points || []).length) || first;
-  const last = verified.slides.at(-1);
-  verified.hook = String(first?.title || base.hook || '').trim();
-  verified.body = String(informative?.body || informative?.points?.join(' ') || base.body || '').trim();
-  verified.caption = verified.body;
-  verified.cta = String(last?.title || base.cta || '').trim();
-
+  const first = verified.slides[0]; const informative = verified.slides.find(slide => String(slide.body || '').trim() || (slide.points || []).length) || first; const last = verified.slides.at(-1);
+  verified.hook = String(first?.title || base.hook || '').trim(); verified.body = String(informative?.body || informative?.points?.join(' ') || base.body || '').trim(); verified.caption = verified.body; verified.cta = String(last?.title || base.cta || '').trim();
   if (contentService?.validateContent) errors.push(...contentService.validateContent(verified, { format, manualTopic: '', validateCopy: false }));
   return { errors: [...new Set(errors)], content: verified };
 }
 
 function dropUnsupportedPointClaims(content, semanticErrors = []) {
   if (!content || !Array.isArray(content.slides) || !Array.isArray(semanticErrors)) return null;
-  const targets = semanticErrors.map(error => {
-    const match = String(error || '').match(/SEMANTIC_SUPPORT:\s+slide:(\d+):point:(\d+)\b/);
-    return match ? { slideIndex: Number(match[1]), pointIndex: Number(match[2]) } : null;
-  }).filter(Boolean);
+  const targets = semanticErrors.map(error => { const match = String(error || '').match(/SEMANTIC_SUPPORT:\s+slide:(\d+):point:(\d+)\b/); return match ? { slideIndex: Number(match[1]), pointIndex: Number(match[2]) } : null; }).filter(Boolean);
   if (!targets.length) return null;
-  const slides = content.slides.map(slide => ({
-    ...slide,
-    points: Array.isArray(slide?.points) ? [...slide.points] : [],
-    claims: Array.isArray(slide?.claims) ? slide.claims.map(claim => ({ ...claim })) : []
-  }));
-  let changed = false;
-  const grouped = new Map();
-  for (const target of targets) {
-    if (!grouped.has(target.slideIndex)) grouped.set(target.slideIndex, new Set());
-    grouped.get(target.slideIndex).add(target.pointIndex);
-  }
+  const slides = content.slides.map(slide => ({ ...slide, points: Array.isArray(slide?.points) ? [...slide.points] : [], claims: Array.isArray(slide?.claims) ? slide.claims.map(claim => ({ ...claim })) : [] }));
+  let changed = false; const grouped = new Map();
+  for (const target of targets) { if (!grouped.has(target.slideIndex)) grouped.set(target.slideIndex, new Set()); grouped.get(target.slideIndex).add(target.pointIndex); }
   for (const [slideIndex, pointIndexes] of grouped) {
-    const slide = slides[slideIndex];
-    if (!slide) continue;
+    const slide = slides[slideIndex]; if (!slide) continue;
     for (const pointIndex of [...pointIndexes].sort((a, b) => b - a)) {
       if (pointIndex < 0 || pointIndex >= slide.points.length) continue;
-      const hasOtherContent = Boolean(String(slide.body || '').trim()) || slide.points.length > 1;
-      if (!hasOtherContent) continue;
+      if (!String(slide.body || '').trim() && slide.points.length <= 1) continue;
       slide.points.splice(pointIndex, 1);
-      slide.claims = slide.claims.flatMap(claim => {
-        const match = String(claim?.field || '').match(new RegExp(`^slide:${slideIndex}:point:(\\d+)$`));
-        if (!match) return [claim];
-        const claimPointIndex = Number(match[1]);
-        if (claimPointIndex === pointIndex) return [];
-        if (claimPointIndex > pointIndex) return [{ ...claim, field: `slide:${slideIndex}:point:${claimPointIndex - 1}` }];
-        return [claim];
-      });
+      slide.claims = slide.claims.flatMap(claim => { const match = String(claim?.field || '').match(new RegExp(`^slide:${slideIndex}:point:(\\d+)$`)); if (!match) return [claim]; const i = Number(match[1]); if (i === pointIndex) return []; return i > pointIndex ? [{ ...claim, field: `slide:${slideIndex}:point:${i - 1}` }] : [claim]; });
       changed = true;
     }
   }
@@ -425,142 +322,63 @@ function dropUnsupportedPointClaims(content, semanticErrors = []) {
 
 function semanticAuditPrompt(content, topic) {
   const claims = normalizeClaims(content?.slides || []).map(({ field, text, sourceId, evidence }) => ({ field, text, sourceId, evidence }));
-  return `Anda auditor entailment fakta bilingual Indonesia-Inggris. Gunakan HANYA pasangan claim.text dan evidence yang diberikan. Jangan memakai pengetahuan luar.\n\nTOPIK UTAMA: ${JSON.stringify(topic || '')}\nCLAIMS: ${JSON.stringify(claims)}\n\nUntuk setiap claim, tandai unsupported bila salah satu berlaku:\n1. evidence tidak menyatakan makna yang sama dengan claim.text;\n2. claim menambahkan tujuan, sebab-akibat, manfaat, aplikasi, risiko, keselamatan, masa depan, atau kesimpulan yang tidak dinyatakan evidence;\n3. claim bertentangan dengan evidence, termasuk menyebut sesuatu sederhana ketika evidence menyebutnya sulit;\n4. claim mungkin benar secara umum tetapi evidence yang dipasangkan tidak membuktikannya;\n5. claim/evidence menyimpang jauh dari TOPIK UTAMA dan hanya mengambil side-note artikel yang tidak membantu menjawab topik.\n\nTerjemahan/parafrase Indonesia dari evidence Inggris boleh dan harus dianggap supported bila maknanya setia. Jangan menolak hanya karena beda bahasa.\nKembalikan HANYA JSON {"unsupported":[{"field":"slide:0:body","reason":"alasan singkat"}]}. Jika semua didukung, kembalikan {"unsupported":[]}.`;
+  const slides = (content?.slides || []).map((slide, index) => ({ index, section: slide?.section || '', title: slide?.title || '', body: slide?.body || '', points: slide?.points || [] }));
+  return `Anda auditor entailment dan koherensi carousel bilingual Indonesia-Inggris. Gunakan HANYA SLIDES dan pasangan claim.text/evidence yang diberikan. Jangan memakai pengetahuan luar.\n\nTOPIK UTAMA: ${JSON.stringify(topic || '')}\nSLIDES: ${JSON.stringify(slides)}\nCLAIMS: ${JSON.stringify(claims)}\n\nUntuk setiap claim, tandai unsupported bila salah satu berlaku:\n1. evidence tidak menyatakan makna yang sama dengan claim.text;\n2. claim menambahkan tujuan, sebab-akibat, manfaat, aplikasi, risiko, keselamatan, masa depan, atau kesimpulan yang tidak dinyatakan evidence;\n3. claim bertentangan dengan evidence;\n4. claim mungkin benar secara umum tetapi evidence yang dipasangkan tidak membuktikannya;\n5. claim/evidence menyimpang jauh dari TOPIK UTAMA atau hanya mengambil side-note artikel;\n6. pada alur masalah-solusi, sebuah solusi/tips tidak benar-benar menjawab masalah yang dijelaskan sebelumnya, walaupun keduanya secara terpisah ada di sumber; tandai field solusi/tips itu unsupported;\n7. sebuah hasil/manfaat tidak merupakan konsekuensi yang didukung dari solusi sebelumnya; tandai field hasil/manfaat itu unsupported;\n8. title, body, dan points dalam slide membahas objek/masalah berbeda sehingga maknanya tidak nyambung; tandai field substantif yang menyimpang.\n\nJangan menolak hanya karena beda bahasa. Parafrase Indonesia dianggap supported jika maknanya setia. Fokus pada hubungan makna, bukan kemiripan kata.\nKembalikan HANYA JSON {"unsupported":[{"field":"slide:0:body","reason":"alasan singkat"}]}. Jika semua didukung dan koheren, kembalikan {"unsupported":[]}.`;
 }
 
 async function auditClaimSemantics(openai, content, topic) {
-  const claims = normalizeClaims(content?.slides || []);
-  if (!claims.length) return [];
-  const response = await openai.chat.completions.create({
-    model: config.aiModel,
-    messages: [
-      { role: 'system', content: 'Anda auditor fakta ketat. Evidence harus benar-benar mendukung arti claim, bukan sekadar membahas tema serupa.' },
-      { role: 'user', content: semanticAuditPrompt(content, topic) }
-    ],
-    response_format: { type: 'json_object' }
-  });
-  let parsed;
-  try { parsed = parseJsonResponse(response); }
-  catch (error) { return [`SEMANTIC_SUPPORT: audit tidak mengembalikan JSON valid: ${error.message}`]; }
+  const claims = normalizeClaims(content?.slides || []); if (!claims.length) return [];
+  const response = await openai.chat.completions.create({ model: config.aiModel, messages: [
+    { role: 'system', content: 'Anda auditor fakta dan koherensi ketat. Evidence harus mendukung arti claim, dan hubungan masalah-solusi-hasil harus benar-benar nyambung.' },
+    { role: 'user', content: semanticAuditPrompt(content, topic) }
+  ], response_format: { type: 'json_object' } });
+  let parsed; try { parsed = parseJsonResponse(response); } catch (error) { return [`SEMANTIC_SUPPORT: audit tidak mengembalikan JSON valid: ${error.message}`]; }
   if (!Array.isArray(parsed.unsupported)) return ['SEMANTIC_SUPPORT: audit tidak mengembalikan array unsupported.'];
   const known = new Set(claims.map(claim => claim.field));
-  return parsed.unsupported
-    .filter(item => item?.field && known.has(String(item.field)))
-    .map(item => `SEMANTIC_SUPPORT: ${String(item.field)} tidak didukung evidence: ${String(item.reason || 'makna claim melampaui evidence')}`);
+  return parsed.unsupported.filter(item => item?.field && known.has(String(item.field))).map(item => `SEMANTIC_SUPPORT: ${String(item.field)} tidak didukung evidence: ${String(item.reason || 'makna claim melampaui evidence')}`);
 }
 
 function verifierPrompt({ base, draft = base, bank, topic, format, errors = [] }) {
   const totalSlides = draft?.slides?.length || base?.slides?.length || 0;
-  const requiredClaimFields = (draft?.slides || []).flatMap((slide, slideIndex) =>
-    slideFields(slide, slideIndex)
-      .filter(field => field.value && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format))
-      .map(field => ({ field: field.key, text: field.value }))
-  );
-  const factFormatRules = String(format || '').toLocaleLowerCase('id-ID') === 'fakta singkat'
-    ? '- FORMAT FAKTA SINGKAT: section sudah dikunci sebagai label netral fakta. Dilarang mengubahnya menjadi MASALAH, PENYEBAB, SOLUSI, HASIL, TUTORIAL, atau LANGKAH. Jangan memaksa alur sebab-solusi-hasil. Susun isi sebagai pembuka → fakta utama → penjelasan/konteks → kesimpulan yang benar-benar berasal dari sumber.'
-    : '';
-  const problemSolutionRule = String(format || '').toLocaleLowerCase('id-ID') === 'masalah dan solusi'
-    ? '- FORMAT MASALAH DAN SOLUSI: semua masalah, solusi, tips, rekomendasi, dan instruksi konkret wajib didukung FACT_BANK. Dilarang menciptakan langkah perbaikan yang tidak disebut sumber.'
-    : '';
-  return `Anda adalah FILTER/VERIFIER fakta untuk carousel Indonesia. Anda BUKAN pembuat struktur carousel baru.\n\nTOPIK REFERENSI: ${JSON.stringify(topic || '')}\nFORMAT: ${JSON.stringify(format || '')}\n\nFIELD SUBSTANTIF CURRENT_DRAFT YANG WAJIB PUNYA CLAIM JIKA COPY-NYA DIPERTAHANKAN:\n${JSON.stringify(requiredClaimFields)}\n\nATURAN WAJIB:\n- Pertahankan JUMLAH slide, URUTAN slide, dan SECTION persis seperti ORIGINAL_CONTENT.\n${factFormatRules}\n${problemSolutionRule}\n- requestedTopic hanya referensi topik. Jangan menjadikannya judul mentah.\n- Jika topik menyebut nama orang, produk, model, atau perusahaan, identitas itu harus tetap muncul secara natural dalam carousel.\n- Pertahankan gaya natural ORIGINAL_CONTENT sebanyak mungkin.\n- SETIAP slide wajib tetap berada pada inti TOPIK REFERENSI dan tema FACT_BANK. Jangan mengambil side-note artikel yang tidak membantu menjawab topik hanya karena faktanya benar.\n- Dilarang memperkenalkan tutorial, tool, workflow, prompting, otomatisasi, strategi, aplikasi baru, atau saran baru yang tidak benar-benar terkait dengan topik/sumber hanya untuk mengisi slide.\n- Jika CURRENT_DRAFT punya slide generik atau menyimpang, tulis ulang slide itu memakai fakta/sudut yang relevan dari FACT_BANK; jangan mempertahankan isi generik hanya karena non-faktual.\n- SEMUA COPY YANG TAMPIL (title, body, points) WAJIB Bahasa Indonesia natural. Istilah brand/produk/AI/API boleh tetap asli, tetapi jangan salin kalimat bahasa Inggris dari sumber ke copy tampil.\n- Evidence di dalam claims WAJIB tetap kutipan asli dari FACT_BANK dan BOLEH berbahasa Inggris; jangan menerjemahkan evidence.\n- Source hanya untuk FILTER/VERIFIKASI fakta, bukan untuk menentukan struktur atau jumlah slide.\n- Jangan menambah URL/sumber apa pun.\n- Untuk copy yang masuk FIELD SUBSTANTIF di atas, sertakan claim dengan sourceId + evidence PERSIS dari FACT_BANK.\n- Pada format Masalah dan solusi, dilarang mengakali evidence dengan mengubah klaim menjadi perintah. Contoh “Koreksi warna batch”, “Tambahkan transisi halus”, atau “Periksa audio sinkronisasi” tetap wajib evidence.\n- Evidence harus MEMBUKTIKAN ARTI claim.text, bukan hanya mengandung kata yang mirip atau membahas tema yang sama.\n- Dilarang memasangkan evidence valid ke claim yang menambahkan tujuan, sebab-akibat, manfaat, aplikasi, keselamatan, risiko, atau kesimpulan yang tidak disebut evidence.\n- AUDIT SETIAP title, body, dan point sebelum mengembalikan JSON: semua pernyataan faktual dan semua copy substantif pada format Masalah dan solusi wajib punya claim.\n- Satu claim hanya boleh memakai satu sourceId/evidence. Jangan gabungkan beberapa sumber menjadi kesimpulan baru.\n- Jika fakta ORIGINAL_CONTENT tidak didukung, ubah hanya copy itu menjadi fakta terdekat yang benar-benar didukung, atau menjadi copy netral yang tetap berguna. Jangan mengarang.\n- Hook, pertanyaan, transisi, dan CTA netral boleh tanpa claim jika tidak memuat klaim faktual.\n- Jangan memberi claim pada copy yang sebenarnya hanya CTA/transisi netral jika tidak ada fakta di dalamnya.\n- Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.\n- BATAS COPY FINAL: title maksimal 12 kata; body maksimal 24 kata; points maksimal 3 item; tiap point maksimal 7 kata.\n- Jika error sebelumnya menyebut body/title/point terlalu panjang, ringkas field itu tanpa menambah fakta baru.\n- Jika error sebelumnya menyebut copy tampil harus Bahasa Indonesia, terjemahkan/parafrase FIELD PERSIS itu ke Bahasa Indonesia natural tanpa menambah fakta; evidence tetap kutipan asli.\n- Jika error sebelumnya menyebut slide claim-free menyimpang dari inti topik manual, tulis ulang slide itu agar langsung terkait dengan TOPIK REFERENSI dan FACT_BANK.\n- Jika error sebelumnya diawali SEMANTIC_SUPPORT, ganti claim dengan terjemahan/parafrase setia dari evidence yang benar-benar relevan; jangan mempertahankan klaim lama.\n- Jika SEMANTIC_SUPPORT mengenai sebuah point dan FACT_BANK tidak punya evidence yang benar-benar mendukung point itu, HAPUS point tersebut. Jangan mengarang point pengganti hanya untuk mempertahankan jumlah bullet.\n- Jika error sebelumnya menyebut klaim faktual tidak memiliki evidence, tambahkan claim untuk FIELD PERSIS itu memakai evidence yang benar-benar mendukung, atau ubah field menjadi copy netral yang akurat. Pada format Masalah dan solusi, solusi/tips konkret tidak boleh dijadikan copy netral untuk menghindari evidence.\n- Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda.\n- Dilarang slide kosong, filler, metadata website, byline/contributor/newsletter, judul hanya topik mentah, atau "Lanjut baca tentang ...".\n- Jangan mengubah hashtag, focus, metadata angle/tool, atau struktur di luar slides.\n- Jangan membuat angka/nama/tanggal/manfaat/sebab-akibat baru.\n\nUntuk setiap claim gunakan field key persis:\nslide:<index>:title\nslide:<index>:body\nslide:<index>:point:<pointIndex>\nindex dimulai dari 0.\nclaim.text harus sama persis dengan copy field yang didukung.\n\nFACT_BANK (hanya dari URL yang diberikan user):\n${JSON.stringify(bank)}\n\nORIGINAL_STRUCTURE (jumlah, urutan, dan section tidak boleh berubah):\n${JSON.stringify((base?.slides || []).map(slide => ({ section: slide.section })))}\n\nCURRENT_DRAFT (perbaiki versi ini; jangan kembali mengulang versi awal):\n${JSON.stringify(draft)}\n${errors.length ? `\nERROR VERIFIKASI SEBELUMNYA YANG HARUS DIPERBAIKI:\n- ${errors.join('\n- ')}` : ''}\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  const requiredClaimFields = (draft?.slides || []).flatMap((slide, slideIndex) => slideFields(slide, slideIndex).filter(field => field.value && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format)).map(field => ({ field: field.key, text: field.value })));
+  const factFormatRules = String(format || '').toLocaleLowerCase('id-ID') === 'fakta singkat' ? '- FORMAT FAKTA SINGKAT: section sudah dikunci sebagai label netral fakta. Dilarang mengubahnya menjadi MASALAH, PENYEBAB, SOLUSI, HASIL, TUTORIAL, atau LANGKAH. Jangan memaksa alur sebab-solusi-hasil.' : '';
+  const problemSolutionRule = String(format || '').toLocaleLowerCase('id-ID') === 'masalah dan solusi' ? '- FORMAT MASALAH DAN SOLUSI: semua masalah, solusi, tips, rekomendasi, dan instruksi konkret wajib didukung FACT_BANK. Setiap SOLUSI harus langsung menjawab MASALAH yang dibahas, dan HASIL harus benar-benar mengikuti solusi berdasarkan sumber. Jangan mencampur masalah A dengan solusi B hanya karena keduanya ada di artikel.' : '';
+  return `Anda adalah FILTER/VERIFIER fakta untuk carousel Indonesia. Anda BUKAN pembuat struktur carousel baru.\n\nTOPIK REFERENSI: ${JSON.stringify(topic || '')}\nFORMAT: ${JSON.stringify(format || '')}\nFIELD SUBSTANTIF YANG WAJIB PUNYA CLAIM: ${JSON.stringify(requiredClaimFields)}\n\nATURAN WAJIB:\n- Pertahankan JUMLAH slide, URUTAN slide, dan SECTION persis seperti ORIGINAL_CONTENT.\n${factFormatRules}\n${problemSolutionRule}\n- requestedTopic hanya referensi; jangan jadikan judul mentah.\n- Pertahankan identitas objek utama dan gaya natural ORIGINAL_CONTENT.\n- Setiap slide harus berada pada inti TOPIK dan FACT_BANK; jangan ambil side-note hanya karena faktanya benar.\n- Jangan memperkenalkan tutorial, tool, workflow, strategi, atau saran yang tidak ada di sumber.\n- COPY TAMPIL wajib Bahasa Indonesia natural, seperti manusia menjelaskan dengan ringkas; hindari kalimat kaku, terjemahan literal, jargon tak perlu, dan pengulangan ide.\n- Rapikan hierarki teks: title = satu ide utama singkat; body = penjelasan inti; points = detail pendukung. Jangan menaruh ide berbeda yang saling berebut dalam satu slide.\n- Title, body, dan points pada slide yang sama wajib membahas objek/masalah yang sama dan saling melengkapi.\n- Pada Masalah dan solusi, cek hubungan antarslide: MASALAH → penyebab/konteks → SOLUSI → HASIL harus logis dan didukung sumber. Jika sumber tidak menghubungkan dua hal, jangan hubungkan sendiri.\n- Evidence dalam claims wajib kutipan asli FACT_BANK; jangan diterjemahkan.\n- Semua copy substantif format Masalah dan solusi wajib punya claim. Perintah/tips tetap wajib evidence.\n- Evidence harus MEMBUKTIKAN ARTI claim.text, bukan sekadar punya kata mirip.\n- Satu claim hanya satu sourceId/evidence; jangan gabungkan sumber menjadi kesimpulan baru.\n- Jika copy tidak didukung, ubah hanya copy itu ke fakta terdekat yang didukung. Jangan mengarang.\n- Hook/pertanyaan/transisi/CTA netral boleh tanpa claim jika tidak faktual.\n- BATAS COPY: title maks 12 kata; body maks 24 kata; points maks 3; tiap point maks 7 kata.\n- Jika SEMANTIC_SUPPORT muncul, perbaiki FIELD PERSIS itu dengan evidence yang relevan. Jika point tak punya dukungan, hapus point.\n- Dilarang filler, metadata website, byline, newsletter, judul topik mentah, atau "Lanjut baca tentang ...".\n- Jangan mengubah hashtag, focus, metadata angle/tool, atau struktur di luar slides.\n- Jangan membuat angka/nama/tanggal/manfaat/sebab-akibat baru.\n\nField claim: slide:<index>:title | slide:<index>:body | slide:<index>:point:<pointIndex>. claim.text harus sama persis dengan copy field.\n\nFACT_BANK: ${JSON.stringify(bank)}\nORIGINAL_STRUCTURE: ${JSON.stringify((base?.slides || []).map(slide => ({ section: slide.section })))}\nCURRENT_DRAFT: ${JSON.stringify(draft)}\n${errors.length ? `ERROR SEBELUMNYA:\n- ${errors.join('\n- ')}` : ''}\n\nKembalikan HANYA JSON: {"slides":[{"section":"...","title":"...","body":"...","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
-function parseJsonResponse(response) {
-  const raw = response?.choices?.[0]?.message?.content;
-  if (!raw) throw new Error('Verifier sumber tidak mengembalikan konten.');
-  return JSON.parse(raw);
-}
+function parseJsonResponse(response) { const raw = response?.choices?.[0]?.message?.content; if (!raw) throw new Error('Verifier sumber tidak mengembalikan konten.'); return JSON.parse(raw); }
 
 async function generateFilteredContent({ content, previousTopics = [], options = {}, sources = [], client }) {
-  let base = await content.generateContent(previousTopics, {
-    ...options,
-    useSources: false,
-    skipCopyValidation: true,
-    skipManualTopicValidation: true,
-    sourceContext: '',
-    sources: []
-  }, client);
-
+  let base = await content.generateContent(previousTopics, { ...options, useSources: false, skipCopyValidation: true, skipManualTopicValidation: true, sourceContext: '', sources: [] }, client);
   if (!Array.isArray(base?.slides) || !base.slides.length) throw Object.assign(new Error('Konten normal tidak memiliki slide terstruktur untuk diverifikasi sumber.'), { status: 422 });
   base = { ...base, slides: normalizeFactSections(base.slides, options.contentFormat) };
-
-  const topic = options.requestedTopic || options.mainTopic || base.topic || '';
-  const bank = extractFactBank(sources, topic);
+  const topic = options.requestedTopic || options.mainTopic || base.topic || ''; const bank = extractFactBank(sources, topic);
   if (!bank.length) throw Object.assign(new Error('Sumber tidak memiliki fakta yang layak untuk memverifikasi konten.'), { status: 422 });
-
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
-  let errors = [];
-  let draft = base;
+  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl }); let errors = []; let draft = base;
   for (let attempt = 1; attempt <= MAX_VERIFY_ATTEMPTS; attempt += 1) {
-    const response = await openai.chat.completions.create({
-      model: config.aiModel,
-      messages: [
-        { role: 'system', content: 'Anda memfilter fakta carousel. Sumber hanya untuk verifikasi fakta; jangan mengganti struktur konten.' },
-        { role: 'user', content: verifierPrompt({ base, draft, bank, topic, format: options.contentFormat, errors }) }
-      ],
-      response_format: { type: 'json_object' }
-    });
-    let candidate;
-    try { candidate = parseJsonResponse(response); }
-    catch (error) { errors = [`JSON verifier tidak valid: ${error.message}`]; continue; }
-
-    const checked = validateVerifiedContent(base, candidate, {
-      contentService: content,
-      format: options.contentFormat,
-      manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
-      sources
-    });
+    const response = await openai.chat.completions.create({ model: config.aiModel, messages: [
+      { role: 'system', content: 'Anda memfilter fakta dan koherensi carousel. Sumber hanya untuk verifikasi; jangan mengganti struktur.' },
+      { role: 'user', content: verifierPrompt({ base, draft, bank, topic, format: options.contentFormat, errors }) }
+    ], response_format: { type: 'json_object' } });
+    let candidate; try { candidate = parseJsonResponse(response); } catch (error) { errors = [`JSON verifier tidak valid: ${error.message}`]; continue; }
+    const checked = validateVerifiedContent(base, candidate, { contentService: content, format: options.contentFormat, manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '', sources });
     if (!checked.errors.length) {
-      const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
-      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic);
+      const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat); const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic);
       if (!semanticErrors.length) return checked.content;
       const reduced = dropUnsupportedPointClaims(checked.content, semanticErrors);
       if (reduced) {
-        const reducedChecked = validateVerifiedContent(base, { slides: reduced.slides }, {
-          contentService: content,
-          format: options.contentFormat,
-          manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
-          sources
-        });
+        const reducedChecked = validateVerifiedContent(base, { slides: reduced.slides }, { contentService: content, format: options.contentFormat, manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '', sources });
         if (!reducedChecked.errors.length) {
           const remainingSemanticErrors = await auditClaimSemantics(openai, reducedChecked.content, topic);
           if (!remainingSemanticErrors.length) return reducedChecked.content;
-          errors = remainingSemanticErrors;
-          draft = { ...base, slides: reducedChecked.content.slides };
-          continue;
+          errors = remainingSemanticErrors; draft = { ...base, slides: reducedChecked.content.slides }; continue;
         }
       }
-      errors = semanticErrors;
-      draft = { ...base, slides: checked.content.slides };
-      continue;
+      errors = semanticErrors; draft = { ...base, slides: checked.content.slides }; continue;
     }
-    errors = checked.errors;
-    draft = { ...base, slides: Array.isArray(candidate.slides) ? candidate.slides : draft.slides };
+    errors = checked.errors; draft = { ...base, slides: Array.isArray(candidate.slides) ? candidate.slides : draft.slides };
   }
-
-  throw Object.assign(new Error(`Konten tidak lolos filter fakta sumber: ${errors[0] || 'verifikasi gagal'}`), {
-    status: 422,
-    validationErrors: errors
-  });
+  throw Object.assign(new Error(`Konten tidak lolos filter fakta sumber: ${errors[0] || 'verifikasi gagal'}`), { status: 422, validationErrors: errors });
 }
 
-module.exports = {
-  generateFilteredContent,
-  extractFactBank,
-  requiresEvidence,
-  requiresSourceEvidence,
-  validateVerifiedContent,
-  validateManualTopicIdentity,
-  validateSlideTopicRelevance,
-  topicRelevanceTerms,
-  topicEntityTokens,
-  evidenceCandidates,
-  recoverMissingClaims,
-  evidenceSupport,
-  likelyEnglishDisplayText,
-  normalizeFactSections,
-  auditClaimSemantics,
-  dropUnsupportedPointClaims,
-  pruneUnneededClaims,
-  MAX_VERIFY_ATTEMPTS
-};
+module.exports = { generateFilteredContent, extractFactBank, requiresEvidence, requiresSourceEvidence, validateVerifiedContent, validateManualTopicIdentity, validateSlideTopicRelevance, topicRelevanceTerms, topicEntityTokens, evidenceCandidates, recoverMissingClaims, evidenceSupport, likelyEnglishDisplayText, normalizeFactSections, auditClaimSemantics, dropUnsupportedPointClaims, pruneUnneededClaims, MAX_VERIFY_ATTEMPTS };
