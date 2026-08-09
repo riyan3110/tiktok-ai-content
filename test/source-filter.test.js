@@ -78,6 +78,73 @@ test('copy non-faktual tidak dipaksa punya evidence tetapi klaim faktual iya', (
   assert.equal(requiresEvidence('Dipakai oleh 80% tim', 'PENJELASAN', 'body'), true);
 });
 
+test('Fakta singkat menolak isi tengah question-only tetapi tetap membolehkan title dan pembuka berupa pertanyaan', () => {
+  const evidence = 'Teams still need to review important outputs before acting on them.';
+  const base = {
+    ...baseContent(),
+    slides: [
+      { section: 'PEMBUKA', title: 'Apa itu pengawasan AI?', body: 'Kenali konteksnya sebelum bertindak.', points: [] },
+      { section: 'FAKTA UTAMA', title: 'Mengapa tinjauan penting?', body: 'Bagaimana tim meninjau keluaran penting?', points: [] },
+      { section: 'KONTEKS', title: 'Apa konteksnya?', body: 'Tim tetap perlu meninjau keluaran penting sebelum bertindak.', points: [] },
+      { section: 'KESIMPULAN', title: 'Ringkasannya', body: 'Baca sesuai konteks sumber.', points: [] }
+    ]
+  };
+  const candidate = {
+    slides: base.slides.map((slide, index) => ({
+      ...slide,
+      claims: index === 2 ? [{ field: 'slide:2:body', text: slide.body, sourceId: 'source-1', evidence }] : []
+    }))
+  };
+
+  const rejected = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.ok(rejected.errors.includes('slide:1:body: format Fakta singkat membutuhkan fakta terverifikasi dari sumber, bukan pertanyaan saja.'));
+  assert.ok(!rejected.errors.some(error => /^slide:0:/i.test(error)), 'PEMBUKA question-only tetap boleh');
+
+  candidate.slides[1].body = 'Tim tetap perlu meninjau keluaran penting sebelum bertindak.';
+  candidate.slides[1].claims = [{ field: 'slide:1:body', text: candidate.slides[1].body, sourceId: 'source-1', evidence }];
+  const accepted = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.deepEqual(accepted.errors, []);
+  assert.equal(accepted.content.slides[1].title, 'Mengapa tinjauan penting?');
+
+  candidate.slides[3].body = 'Apa manfaat utama pengawasan AI?';
+  const questionConclusion = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.ok(questionConclusion.errors.includes('slide:3:body: format Fakta singkat membutuhkan kesimpulan bermakna, bukan pertanyaan saja.'));
+  assert.ok(!questionConclusion.errors.some(error => /^slide:0:/i.test(error)), 'PEMBUKA question-only tetap boleh');
+
+  candidate.slides[3].body = 'Ringkas fakta utama sebelum menerapkannya.';
+  const neutralConclusion = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.deepEqual(neutralConclusion.errors, [], 'kesimpulan netral non-faktual tidak wajib claim');
+
+  candidate.slides[3].body = 'Sistem dapat menggantikan semua keputusan manusia.';
+  const factualConclusion = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.ok(factualConclusion.errors.includes('slide:3:body: klaim faktual tidak memiliki evidence.'));
+});
+
 test('validator menjaga struktur normal dan menolak judul mentah, filler, slide kosong, serta claim tanpa evidence', () => {
   const base = baseContent();
   const candidate = {

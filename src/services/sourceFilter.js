@@ -162,7 +162,12 @@ function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex =
   const text = String(value || '').trim();
   if (!text) return false;
   if (requiresEvidence(text, section, kind)) return true;
-  if (String(format || '').toLocaleLowerCase('id-ID') !== 'masalah dan solusi') return false;
+  const normalizedFormat = String(format || '').toLocaleLowerCase('id-ID');
+  if (normalizedFormat === 'fakta singkat'
+    && kind !== 'title'
+    && !isQuestion(text)
+    && /^(?:FAKTA UTAMA|PENJELASAN|KONTEKS)$/i.test(String(section || '').trim())) return true;
+  if (normalizedFormat !== 'masalah dan solusi') return false;
   if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;
   // Neutral/problem-framing titles are structural copy, not factual claims.
   // Numeric/factual titles are already caught by requiresEvidence() above.
@@ -369,6 +374,30 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
       if (claim && normalize(claim.text) !== normalize(field.value)) errors.push(`${field.key}: claim.text tidak sama dengan copy field.`);
     }
   });
+  if (String(format || '').toLocaleLowerCase('id-ID') === 'fakta singkat') {
+    candidate.slides.forEach((slide, slideIndex) => {
+      const section = String(slide?.section || '').trim();
+      const substantiveFields = slideFields(slide, slideIndex).filter(field => field.kind !== 'title');
+      if (/^KESIMPULAN$/i.test(section)) {
+        const hasMeaningfulConclusion = substantiveFields.some(field => field.value && !isQuestion(field.value));
+        if (!hasMeaningfulConclusion) {
+          errors.push(`slide:${slideIndex}:body: format Fakta singkat membutuhkan kesimpulan bermakna, bukan pertanyaan saja.`);
+        }
+        return;
+      }
+      if (!/^(?:FAKTA UTAMA|PENJELASAN|KONTEKS)$/i.test(section)) return;
+      const hasVerifiedSourceFact = substantiveFields.some(field => {
+        const claim = claimByField.get(field.key);
+        return Boolean(field.value)
+          && !isQuestion(field.value)
+          && verifiedClaimFields.has(field.key)
+          && normalize(claim?.text) === normalize(field.value);
+      });
+      if (!hasVerifiedSourceFact) {
+        errors.push(`slide:${slideIndex}:body: format Fakta singkat membutuhkan fakta terverifikasi dari sumber, bukan pertanyaan saja.`);
+      }
+    });
+  }
   errors.push(...validateSlideTopicRelevance(manualTopic, candidate.slides, verifiedClaimFields));
 
   const verified = { ...base, slides: candidate.slides, verificationStatus: 'source_based', unsupportedClaims: [] };
@@ -528,7 +557,7 @@ function verifierPrompt({ base, draft = base, bank, topic, format, errors = [] }
 }
 
 function safeRecoveryPrompt({ base, draft, bank, topic, format, errors }) {
-  return `${verifierPrompt({ base, draft, bank, topic, format, errors })}\n\nFINAL SAFE RECOVERY:\n- Perbaiki HANYA field yang disebut dalam error; pertahankan field lain yang sudah valid.\n- Untuk body/title yang gagal, pilih SATU fakta paling relevan dari FACT_BANK lalu tulis paraphrase Bahasa Indonesia yang singkat dan setia, beserta satu claim/evidence yang tepat.\n- Jangan menambah sebab-akibat, manfaat, kesimpulan, atau modalitas yang lebih kuat daripada evidence. Jika evidence menyebut can/could/may/help/potential, gunakan dapat/bisa/mungkin/membantu/berpotensi, bukan kepastian.\n- Untuk point yang gagal dan tidak punya dukungan tepat, hapus point serta claim-nya; 1–2 point yang valid lebih baik daripada bullet rekaan.\n- Title boleh dijadikan label struktural/netral yang natural dan selaras dengan body valid tanpa claim faktual baru.\n- PEMBUKA dan KESIMPULAN format Fakta singkat boleh memakai copy struktural/netral tanpa fakta baru.\n- Jumlah slide, urutan, section, dan format HARUS persis sama. Jangan mengosongkan slide.`;
+  return `${verifierPrompt({ base, draft, bank, topic, format, errors })}\n\nFINAL SAFE RECOVERY:\n- Perbaiki HANYA field yang disebut dalam error; pertahankan field lain yang sudah valid.\n- Untuk body/title yang gagal, pilih SATU fakta paling relevan dari FACT_BANK lalu tulis paraphrase Bahasa Indonesia yang singkat dan setia, beserta satu claim/evidence yang tepat.\n- Jika error format Fakta singkat menyebut fakta terverifikasi, field target WAJIB menjadi pernyataan yang menjawab topik dengan satu evidence relevan dari FACT_BANK, bukan pertanyaan lain, CTA, filler, atau copy netral kosong. Sertakan claim dengan field, text, sourceId, dan evidence. Jika evidence tidak cocok dengan ide lama, gunakan fakta relevan lain yang masih menjawab TOPIK UTAMA; jangan mengarang demi mempertahankan sudut lama.\n- Jangan menambah sebab-akibat, manfaat, kesimpulan, atau modalitas yang lebih kuat daripada evidence. Jika evidence menyebut can/could/may/help/potential, gunakan dapat/bisa/mungkin/membantu/berpotensi, bukan kepastian.\n- Untuk point yang gagal dan tidak punya dukungan tepat, hapus point serta claim-nya; 1–2 point yang valid lebih baik daripada bullet rekaan.\n- Title boleh dijadikan label struktural/netral yang natural dan selaras dengan body valid tanpa claim faktual baru.\n- PEMBUKA format Fakta singkat boleh berupa pertanyaan atau copy struktural/netral. KESIMPULAN harus merangkum fakta yang sudah didukung atau menjadi penutup netral yang bermakna, bukan pertanyaan kosong; fakta/manfaat di dalamnya tetap wajib evidence.\n- Jumlah slide, urutan, section, dan format HARUS persis sama. Jangan mengosongkan slide.`;
 }
 
 function parseJsonResponse(response) {
