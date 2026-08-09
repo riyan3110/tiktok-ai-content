@@ -28,7 +28,17 @@ jobs:
           PY
       - run: npm install
       - run: npm run check
-      - run: npm test
+      - name: Run full tests
+        id: tests
+        continue-on-error: true
+        run: npm test > source-filter-test.log 2>&1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-filter-test-log
+          path: source-filter-test.log
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
       - run: git diff --check
       - name: Commit verified fix
         run: |
