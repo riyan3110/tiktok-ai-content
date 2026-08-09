@@ -5,7 +5,9 @@ const {
   extractFactBank,
   requiresEvidence,
   validateVerifiedContent,
-  evidenceCandidates
+  evidenceCandidates,
+  validateManualTopicIdentity,
+  dropUnsupportedPointClaims
 } = require('../src/services/sourceFilter');
 
 const contentService = {
@@ -160,4 +162,38 @@ test('claim tidak boleh meminjam evidence dari sourceId lain', () => {
     sources
   });
   assert.ok(checked.errors.some(error => /Evidence tidak ditemukan pada source-2/i.test(error)));
+});
+
+
+test('AI API dan GPT tidak diperlakukan sebagai identitas unik yang wajib muncul literal', () => {
+  const genericSlides = [
+    { title: 'Hambatan saat membuat video', body: 'Proses produksi bisa memiliki beberapa kendala.', points: [] },
+    { title: 'Kenali sumber masalah', body: 'Periksa bagian proses yang paling sering menghambat.', points: [] }
+  ];
+  assert.deepEqual(validateManualTopicIdentity('Menghadapi masalah saat membuat video AI', genericSlides), []);
+  const namedErrors = validateManualTopicIdentity('Google Maps rilis fitur AI', genericSlides);
+  assert.ok(namedErrors.some(error => /google \/ maps/i.test(error)));
+});
+
+test('point yang gagal semantic support dibuang dengan aman dan claim point berikutnya dinomori ulang', () => {
+  const content = {
+    slides: [{
+      section: 'MASALAH',
+      title: 'Hambatan produksi video',
+      body: 'Ada beberapa sumber hambatan dalam proses produksi.',
+      points: ['Waktu render terlalu lama', 'Berpindah tool membuang waktu'],
+      claims: [
+        { field: 'slide:0:point:0', text: 'Waktu render terlalu lama', sourceId: 'source-1', evidence: 'Switching between tools can waste a significant amount of time during production.' },
+        { field: 'slide:0:point:1', text: 'Berpindah tool membuang waktu', sourceId: 'source-1', evidence: 'Switching between tools can waste a significant amount of time during production.' }
+      ]
+    }]
+  };
+  const reduced = dropUnsupportedPointClaims(content, [
+    'SEMANTIC_SUPPORT: slide:0:point:0 tidak didukung evidence: evidence mentions time loss due to tool switching, not specifically long render time'
+  ]);
+  assert.ok(reduced);
+  assert.deepEqual(reduced.slides[0].points, ['Berpindah tool membuang waktu']);
+  assert.equal(reduced.slides[0].claims.length, 1);
+  assert.equal(reduced.slides[0].claims[0].field, 'slide:0:point:0');
+  assert.equal(content.slides[0].points.length, 2);
 });
