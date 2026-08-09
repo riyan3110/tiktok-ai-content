@@ -453,6 +453,11 @@ async function auditClaimSemantics(openai, content, topic, format = '') {
   catch (error) { return [`SEMANTIC_SUPPORT: audit tidak mengembalikan JSON valid: ${error.message}`]; }
   if (!Array.isArray(parsed.unsupported)) return ['SEMANTIC_SUPPORT: audit tidak mengembalikan array unsupported.'];
   const known = new Set(claims.map(claim => claim.field));
+  if (String(format || '').toLocaleLowerCase('id-ID') === 'masalah dan solusi') {
+    (content?.slides || []).forEach((slide, slideIndex) => {
+      if (String(slide?.title || '').trim()) known.add(`slide:${slideIndex}:title`);
+    });
+  }
   return parsed.unsupported
     .filter(item => item?.field && known.has(String(item.field)))
     .map(item => `SEMANTIC_SUPPORT: ${String(item.field)} tidak didukung evidence: ${String(item.reason || 'makna claim melampaui evidence')}`);

@@ -117,3 +117,26 @@ test('audit hasil menjaga modalitas kemungkinan dari evidence', async () => {
   assert.deepEqual(accepted, []);
   assert.ok(prompts.every(prompt => /Jangan mengubah kemungkinan menjadi kepastian/.test(prompt)));
 });
+
+test('audit coherence meneruskan error title solusi structural tanpa claim', async () => {
+  const content = { slides: [
+    {
+      section: 'MASALAH', title: 'Hook iklan terasa lemah', body: 'Pembuka video AI terasa generik.', points: [],
+      claims: [{ field: 'slide:0:body', text: 'Pembuka video AI terasa generik.', sourceId: 'source-1', evidence: 'Weak hooks can make AI video ads feel generic.' }]
+    },
+    {
+      section: 'SOLUSI', title: 'Pertahankan konsistensi merek', body: 'Perkuat hook pada awal video.', points: [],
+      claims: [{ field: 'slide:1:body', text: 'Perkuat hook pada awal video.', sourceId: 'source-1', evidence: 'Strengthen the hook at the start of the video.' }]
+    }
+  ] };
+  const client = { chat: { completions: { async create() {
+    return { choices: [{ message: { content: JSON.stringify({ unsupported: [{
+      field: 'slide:1:title',
+      reason: 'Title membahas konsistensi merek, sedangkan isi slide membahas hook.'
+    }] }) } }] };
+  } } } };
+
+  const errors = await auditClaimSemantics(client, content, 'Kualitas iklan video AI', 'Masalah dan solusi');
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /SEMANTIC_SUPPORT: slide:1:title/);
+});
