@@ -32,7 +32,7 @@ test('fact bank memprioritaskan bagian artikel yang sejalur dengan judul/topik',
       'Laundry folding requires robots to handle changing fabric shapes.',
       'Robots can practice folding clothes while staying in one area.',
       'Folding laundry is being used as an entry task for home robots.',
-      'The company also discussed an unrelated mine-clearing research project.'
+      'Company additionally discussed an unrelated mine-clearing research project.'
     ].join(' ')
   }];
 
