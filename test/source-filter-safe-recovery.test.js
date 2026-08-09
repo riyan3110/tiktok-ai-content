@@ -172,6 +172,65 @@ test('Fakta singkat me-retry body question-only hingga menjadi fakta tanpa mengu
   assert.deepEqual(result.slides[2], context);
 });
 
+test('filler + unrelated evidence tidak dapat memenuhi Fakta singkat middle-slide fact gate', async () => {
+  const evidence = 'User-generated content can help brands build trust with their audiences.';
+  const filler = 'Baca informasi selengkapnya.';
+  const fact = 'UGC dapat membantu brand membangun kepercayaan audiens.';
+  const opening = { section: 'PEMBUKA', title: 'Apa itu UGC?', body: 'Kenali perannya dalam pemasaran.', points: [], claims: [] };
+  const main = {
+    section: 'FAKTA UTAMA', title: 'Mengapa UGC penting?', body: filler, points: [],
+    claims: [{ field: 'slide:1:body', text: filler, sourceId: 'source-1', evidence }]
+  };
+  const context = {
+    section: 'KONTEKS', title: 'Konteks UGC', body: fact, points: [],
+    claims: [{ field: 'slide:2:body', text: fact, sourceId: 'source-1', evidence }]
+  };
+  const conclusion = { section: 'KESIMPULAN', title: 'Ringkasannya', body: 'Baca sesuai konteks sumber.', points: [], claims: [] };
+  const base = {
+    focus: {}, topic: 'UGC', hook: opening.title, body: opening.body, caption: opening.body,
+    hashtags: [], cta: conclusion.title, trendKeywordsUsed: [], content_angle: 'fakta', primary_tool: 'tanpa tool',
+    hook_pattern: 'pertanyaan', slides: [opening, main, context, conclusion]
+  };
+  let fillerAuditCalls = 0;
+  let safeCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      const claims = JSON.parse(prompt.match(/CLAIMS: (\[[^\n]*\])/)[1]);
+      const fillerClaim = claims.find(claim => claim.field === 'slide:1:body' && claim.text === filler);
+      if (fillerClaim) fillerAuditCalls += 1;
+      return { choices: [{ message: { content: JSON.stringify({
+        unsupported: fillerClaim ? [{ field: 'slide:1:body', reason: 'Evidence tidak mendukung filler.' }] : []
+      }) } }] };
+    }
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) {
+      safeCalls += 1;
+      return { choices: [{ message: { content: JSON.stringify({ slides: [
+        { ...opening, title: 'Pembuka non-target tidak boleh berubah' },
+        { ...main, title: 'Title non-target tidak boleh berubah', body: fact, claims: [{ field: 'slide:1:body', text: fact, sourceId: 'source-1', evidence }] },
+        { ...context, body: 'Konteks non-target tidak boleh berubah' },
+        conclusion
+      ] }) } }] };
+    }
+    return { choices: [{ message: { content: JSON.stringify({ slides: [opening, main, context, conclusion] }) } }] };
+  } } } };
+  const content = { async generateContent() { return base; }, validateContent() { return []; } };
+
+  const result = await generateFilteredContent({
+    content,
+    options: { contentFormat: 'Fakta singkat', requestedTopic: 'UGC' },
+    sources: [{ url: 'https://example.test/ugc', text: evidence }],
+    client
+  });
+
+  assert.equal(fillerAuditCalls, MAX_VERIFY_ATTEMPTS, 'claim filler harus dipertahankan dan diperiksa semantic audit');
+  assert.equal(safeCalls, 1);
+  assert.equal(result.slides[1].body, fact);
+  assert.equal(result.slides[1].claims[0].evidence, evidence);
+  assert.deepEqual(result.slides[0], opening);
+  assert.deepEqual(result.slides[2], context);
+});
+
 test('safe recovery berhenti pada hard limit ketika provider selalu memberi draft invalid yang berbeda', async () => {
   const evidence = 'Home robots can fold laundry while staying in one work area.';
   const slides = [{

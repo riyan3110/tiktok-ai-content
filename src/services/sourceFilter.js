@@ -162,7 +162,12 @@ function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex =
   const text = String(value || '').trim();
   if (!text) return false;
   if (requiresEvidence(text, section, kind)) return true;
-  if (String(format || '').toLocaleLowerCase('id-ID') !== 'masalah dan solusi') return false;
+  const normalizedFormat = String(format || '').toLocaleLowerCase('id-ID');
+  if (normalizedFormat === 'fakta singkat'
+    && kind !== 'title'
+    && !isQuestion(text)
+    && /^(?:FAKTA UTAMA|PENJELASAN|KONTEKS)$/i.test(String(section || '').trim())) return true;
+  if (normalizedFormat !== 'masalah dan solusi') return false;
   if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;
   // Neutral/problem-framing titles are structural copy, not factual claims.
   // Numeric/factual titles are already caught by requiresEvidence() above.
