@@ -16,7 +16,7 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
   const source = { url: 'https://example.test/robots', text: evidence };
   const baseSlides = [
     { section: 'PEMBUKA', title: 'Sekilas tentang robot rumah', body: 'Lihat fakta utama dari sumber.', points: [] },
-    { section: 'FAKTA UTAMA', title: 'Fakta utama', body: 'Robot rumah pasti menyelesaikan semua pekerjaan.', points: ['Resmi menghemat waktu'] },
+    { section: 'FAKTA UTAMA', title: 'Fakta utama', body: 'Robot rumah dapat menyelesaikan semua pekerjaan.', points: ['Resmi menghemat waktu'] },
     { section: 'KONTEKS', title: 'Konteks sumber', body: 'Cek batas kemampuan yang dijelaskan.', points: [] },
     { section: 'KESIMPULAN', title: 'Baca sesuai konteks', body: 'Simpan temuan yang relevan.', points: [] }
   ];
@@ -31,18 +31,23 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
     body: 'Robot rumah pasti dapat melipat baju di satu area kerja.',
     claims: [{ field: 'slide:1:body', text: 'Robot rumah pasti dapat melipat baju di satu area kerja.', sourceId: 'source-1', evidence }]
   } : slide);
+  tooStrongDraft[0] = { ...tooStrongDraft[0], title: 'Judul valid ikut diubah', body: 'Body valid ikut diubah' };
   const repairedDraft = badDraft.map((slide, index) => index === 1 ? {
     ...slide,
     body: 'Robot rumah dapat melipat baju di satu area kerja.',
     points: [],
     claims: [{ field: 'slide:1:body', text: 'Robot rumah dapat melipat baju di satu area kerja.', sourceId: 'source-1', evidence }]
   } : slide);
+  repairedDraft[2] = { ...repairedDraft[2], title: 'Konteks valid ikut diubah', body: 'Field ini bukan target recovery.' };
 
   let verifierCalls = 0;
   let safeCalls = 0;
+  let auditCalls = 0;
+  let validatedRecoveredOutput = false;
   const client = { chat: { completions: { async create({ messages }) {
     const prompt = messages[1].content;
     if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      auditCalls += 1;
       const claims = JSON.parse(prompt.match(/CLAIMS: (\[[^\n]*\])/)[1]);
       const unsupported = [];
       if (claims.some(claim => claim.field === 'slide:1:body' && /pasti/i.test(claim.text))) {
@@ -67,7 +72,10 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
 
   const content = {
     async generateContent() { return base; },
-    validateContent(value) { return value.slides.length === 4 ? [] : ['jumlah slide berubah']; }
+    validateContent(value) {
+      if (value.slides[1]?.body === 'Robot rumah dapat melipat baju di satu area kerja.') validatedRecoveredOutput = true;
+      return value.slides.length === 4 ? [] : ['jumlah slide berubah'];
+    }
   };
   const result = await generateFilteredContent({
     content,
@@ -81,6 +89,12 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
   assert.equal(result.verificationStatus, 'source_based');
   assert.equal(result.slides[1].body, 'Robot rumah dapat melipat baju di satu area kerja.');
   assert.deepEqual(result.slides[1].points, []);
+  assert.equal(result.slides[0].title, 'Sekilas tentang robot rumah');
+  assert.equal(result.slides[0].body, 'Lihat fakta utama dari sumber.');
+  assert.equal(result.slides[2].title, 'Konteks sumber');
+  assert.equal(result.slides[2].body, 'Cek batas kemampuan yang dijelaskan.');
+  assert.equal(validatedRecoveredOutput, true);
+  assert.ok(auditCalls >= 2, 'hasil recovery harus tetap melewati semantic audit');
   assert.deepEqual(result.slides.map(slide => slide.section), ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN']);
   assert.equal(result.slides.length, 4);
 

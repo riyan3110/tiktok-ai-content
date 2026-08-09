@@ -3,7 +3,6 @@ const config = require('../config');
 
 const MAX_FACTS = 36;
 const MAX_VERIFY_ATTEMPTS = 3;
-const MAX_SAFE_RECOVERY_ATTEMPTS = 2;
 const TOPIC_STOPWORDS = new Set(['yang', 'dan', 'atau', 'dari', 'untuk', 'dengan', 'tentang', 'cara', 'adalah', 'pada', 'itu', 'ini', 'sebagai']);
 const GROUNDING_STOPWORDS = new Set([
   ...TOPIC_STOPWORDS,
@@ -424,6 +423,53 @@ function dropUnsupportedPointClaims(content, semanticErrors = []) {
   return changed ? { ...content, slides } : null;
 }
 
+function recoveryFieldKeys(errors = []) {
+  return new Set(errors.flatMap(error => {
+    const matches = [...String(error || '').matchAll(/slide:(\d+):(title|body|point:\d+)\b/gi)];
+    return matches.map(match => `slide:${Number(match[1])}:${match[2].toLocaleLowerCase('id-ID')}`);
+  }));
+}
+
+function mergeRecoveryFields(draft, candidate, fieldKeys) {
+  if (!draft || !Array.isArray(draft.slides) || !candidate || !Array.isArray(candidate.slides) || !fieldKeys?.size) return draft;
+  const slides = draft.slides.map((slide, slideIndex) => {
+    const incoming = candidate.slides[slideIndex];
+    if (!incoming) return slide;
+    const next = {
+      ...slide,
+      points: Array.isArray(slide?.points) ? [...slide.points] : [],
+      claims: Array.isArray(slide?.claims) ? slide.claims.map(claim => ({ ...claim })) : []
+    };
+    for (const kind of ['title', 'body']) {
+      const field = `slide:${slideIndex}:${kind}`;
+      if (fieldKeys.has(field)) next[kind] = String(incoming?.[kind] || '').trim();
+    }
+
+    const targetForSlide = field => fieldKeys.has(String(field || ''));
+    next.claims = next.claims.filter(claim => !targetForSlide(claim?.field));
+    const pointTargets = [...fieldKeys].map(field => {
+      const match = field.match(new RegExp(`^slide:${slideIndex}:point:(\\d+)$`));
+      return match ? Number(match[1]) : null;
+    }).filter(index => index !== null).sort((a, b) => b - a);
+    for (const pointIndex of pointTargets) {
+      if (!Array.isArray(incoming.points) || incoming.points.length <= pointIndex) {
+        next.points.splice(pointIndex, 1);
+        next.claims = next.claims.map(claim => {
+          const match = String(claim?.field || '').match(new RegExp(`^slide:${slideIndex}:point:(\\d+)$`));
+          if (!match || Number(match[1]) < pointIndex) return claim;
+          return { ...claim, field: `slide:${slideIndex}:point:${Number(match[1]) - 1}` };
+        });
+      } else next.points[pointIndex] = String(incoming.points[pointIndex] || '').trim();
+    }
+
+    for (const claim of Array.isArray(incoming?.claims) ? incoming.claims : []) {
+      if (targetForSlide(claim?.field)) next.claims.push({ ...claim });
+    }
+    return next;
+  });
+  return { ...draft, slides };
+}
+
 function semanticAuditPrompt(content, topic, format = '') {
   const claims = normalizeClaims(content?.slides || []).map(({ field, text, sourceId, evidence }) => ({ field, text, sourceId, evidence }));
   const slides = (content?.slides || []).map(slide => ({
@@ -560,7 +606,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
   // The strict verifier remains the gate. This last, focused pass gives the model
   // a chance to replace only bad fields from the existing fact bank instead of
   // discarding an otherwise valid carousel.
-  for (let attempt = 1; attempt <= MAX_SAFE_RECOVERY_ATTEMPTS; attempt += 1) {
+  const recoveryStates = new Set();
+  while (true) {
+    const fieldKeys = recoveryFieldKeys(errors);
+    if (!fieldKeys.size) break;
+    const recoveryState = JSON.stringify({ fields: [...fieldKeys].sort(), slides: draft.slides });
+    if (recoveryStates.has(recoveryState)) break;
+    recoveryStates.add(recoveryState);
     const response = await openai.chat.completions.create({
       model: config.aiModel,
       messages: [
@@ -572,6 +624,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     let candidate;
     try { candidate = parseJsonResponse(response); }
     catch (error) { errors = [`JSON safe recovery tidak valid: ${error.message}`]; continue; }
+    candidate = mergeRecoveryFields(draft, candidate, fieldKeys);
 
     const checked = validateVerifiedContent(base, candidate, {
       contentService: content,
@@ -612,7 +665,11 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     draft = { ...base, slides: checked.content.slides };
   }
 
-  throw Object.assign(new Error(`Konten tidak lolos filter fakta sumber: ${errors[0] || 'verifikasi gagal'}`), {
+  const recoveryFailed = recoveryFieldKeys(errors).size > 0;
+  const failure = recoveryFailed
+    ? `Response provider tidak dapat diproses setelah safe recovery: ${errors[0] || 'verifikasi gagal'}`
+    : `Konten tidak lolos filter fakta sumber: ${errors[0] || 'verifikasi gagal'}`;
+  throw Object.assign(new Error(failure), {
     status: 422,
     validationErrors: errors
   });
@@ -635,7 +692,8 @@ module.exports = {
   normalizeFactSections,
   auditClaimSemantics,
   dropUnsupportedPointClaims,
+  recoveryFieldKeys,
+  mergeRecoveryFields,
   pruneUnneededClaims,
-  MAX_VERIFY_ATTEMPTS,
-  MAX_SAFE_RECOVERY_ATTEMPTS
+  MAX_VERIFY_ATTEMPTS
 };
