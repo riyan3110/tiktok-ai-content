@@ -371,8 +371,16 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
   });
   if (String(format || '').toLocaleLowerCase('id-ID') === 'fakta singkat') {
     candidate.slides.forEach((slide, slideIndex) => {
-      if (!/^(?:FAKTA UTAMA|PENJELASAN|KONTEKS)$/i.test(String(slide?.section || '').trim())) return;
+      const section = String(slide?.section || '').trim();
       const substantiveFields = slideFields(slide, slideIndex).filter(field => field.kind !== 'title');
+      if (/^KESIMPULAN$/i.test(section)) {
+        const hasMeaningfulConclusion = substantiveFields.some(field => field.value && !isQuestion(field.value));
+        if (!hasMeaningfulConclusion) {
+          errors.push(`slide:${slideIndex}:body: format Fakta singkat membutuhkan kesimpulan bermakna, bukan pertanyaan saja.`);
+        }
+        return;
+      }
+      if (!/^(?:FAKTA UTAMA|PENJELASAN|KONTEKS)$/i.test(section)) return;
       const hasVerifiedSourceFact = substantiveFields.some(field => {
         const claim = claimByField.get(field.key);
         return Boolean(field.value)

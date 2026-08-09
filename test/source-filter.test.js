@@ -115,6 +115,34 @@ test('Fakta singkat menolak isi tengah question-only tetapi tetap membolehkan ti
   });
   assert.deepEqual(accepted.errors, []);
   assert.equal(accepted.content.slides[1].title, 'Mengapa tinjauan penting?');
+
+  candidate.slides[3].body = 'Apa manfaat utama pengawasan AI?';
+  const questionConclusion = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.ok(questionConclusion.errors.includes('slide:3:body: format Fakta singkat membutuhkan kesimpulan bermakna, bukan pertanyaan saja.'));
+  assert.ok(!questionConclusion.errors.some(error => /^slide:0:/i.test(error)), 'PEMBUKA question-only tetap boleh');
+
+  candidate.slides[3].body = 'Ringkas fakta utama sebelum menerapkannya.';
+  const neutralConclusion = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.deepEqual(neutralConclusion.errors, [], 'kesimpulan netral non-faktual tidak wajib claim');
+
+  candidate.slides[3].body = 'Sistem dapat menggantikan semua keputusan manusia.';
+  const factualConclusion = validateVerifiedContent(base, candidate, {
+    contentService,
+    format: 'Fakta singkat',
+    manualTopic: '',
+    sources
+  });
+  assert.ok(factualConclusion.errors.includes('slide:3:body: klaim faktual tidak memiliki evidence.'));
 });
 
 test('validator menjaga struktur normal dan menolak judul mentah, filler, slide kosong, serta claim tanpa evidence', () => {
