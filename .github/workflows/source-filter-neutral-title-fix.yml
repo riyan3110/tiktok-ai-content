@@ -1,0 +1,116 @@
+name: Source Filter Neutral Title Fix
+on:
+  push:
+    branches: [fix/source-filter-neutral-titles]
+permissions:
+  contents: write
+jobs:
+  patch-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/source-filter-neutral-titles
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Patch source filter
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/services/sourceFilter.js')
+          s=p.read_text()
+          old="""function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex = 0, totalSlides = 0, format = '') {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (requiresEvidence(text, section, kind)) return true;
+  if (String(format || '').toLocaleLowerCase('id-ID') !== 'masalah dan solusi') return false;
+  if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;
+  return words(text).length >= 2;
+}"""
+          new="""function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex = 0, totalSlides = 0, format = '') {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (requiresEvidence(text, section, kind)) return true;
+  if (String(format || '').toLocaleLowerCase('id-ID') !== 'masalah dan solusi') return false;
+  if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;
+  // Titles are structural copy. A neutral/problem framing title must not be forced
+  // into a factual claim just because the selected format is Masalah dan solusi.
+  // Factual/numeric titles are already caught by requiresEvidence() above.
+  if (kind === 'title') return false;
+  return words(text).length >= 2;
+}"""
+          if old not in s: raise SystemExit('requiresSourceEvidence block not found')
+          s=s.replace(old,new)
+          marker="""function normalizeClaims(slides = []) {
+  return slides.flatMap((slide, slideIndex) => (Array.isArray(slide?.claims) ? slide.claims : []).map(claim => ({
+    slideIndex,
+    field: String(claim?.field || '').trim(),
+    text: String(claim?.text || '').trim(),
+    sourceId: String(claim?.sourceId || '').trim(),
+    evidence: String(claim?.evidence || '').trim()
+  })));
+}
+"""
+          addition=marker+"""
+function pruneUnneededClaims(content, format = '') {
+  if (!content || !Array.isArray(content.slides)) return content;
+  const totalSlides = content.slides.length;
+  return {
+    ...content,
+    slides: content.slides.map((slide, slideIndex) => ({
+      ...slide,
+      claims: (Array.isArray(slide?.claims) ? slide.claims : []).filter(claim => {
+        const field = slideFields(slide, slideIndex).find(item => item.key === String(claim?.field || ''));
+        if (!field || !field.value) return false;
+        return requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);
+      })
+    }))
+  };
+}
+"""
+          if marker not in s: raise SystemExit('normalizeClaims marker not found')
+          s=s.replace(marker,addition)
+          old2="""    if (!checked.errors.length) {
+      const semanticErrors = await auditClaimSemantics(openai, checked.content, topic);
+"""
+          new2="""    if (!checked.errors.length) {
+      const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
+      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic);
+"""
+          if old2 not in s: raise SystemExit('semantic audit block not found')
+          s=s.replace(old2,new2)
+          s=s.replace("""  dropUnsupportedPointClaims,
+  dropUnsupportedPointClaims,
+  MAX_VERIFY_ATTEMPTS""","""  dropUnsupportedPointClaims,
+  pruneUnneededClaims,
+  MAX_VERIFY_ATTEMPTS""")
+          p.write_text(s)
+          PY
+      - name: Add regression tests
+        run: |
+          cat >> test/source-filter.test.js <<'EOF'
+
+          test('neutral Masalah dan solusi title does not require source evidence', () => {
+            assert.equal(sourceFilter.requiresSourceEvidence('Masalah yang sering muncul', 'MASALAH', 'title', 1, 4, 'Masalah dan solusi'), false);
+            assert.equal(sourceFilter.requiresSourceEvidence('Hook di 3 detik pertama', 'HOOK', 'title', 0, 4, 'Masalah dan solusi'), true);
+          });
+
+          test('pruneUnneededClaims removes semantic-audit claims from neutral titles', () => {
+            const content = { slides: [{ section: 'MASALAH', title: 'Artefak visual yang mengganggu', body: '', points: [], claims: [{ field: 'slide:0:title', text: 'Artefak visual yang mengganggu', sourceId: 'source-1', evidence: 'Some unrelated evidence words live here.' }] }] };
+            const pruned = sourceFilter.pruneUnneededClaims(content, 'Masalah dan solusi');
+            assert.equal(pruned.slides[0].claims.length, 0);
+          });
+          EOF
+      - run: npm run check
+      - run: node --test test/source-filter.test.js
+      - run: git diff --check
+      - name: Commit tested fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/services/sourceFilter.js test/source-filter.test.js
+          git commit -m 'fix: stop over-validating neutral source titles'
+          git push origin fix/source-filter-neutral-titles
