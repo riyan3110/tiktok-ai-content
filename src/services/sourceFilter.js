@@ -3,6 +3,7 @@ const config = require('../config');
 
 const MAX_FACTS = 36;
 const MAX_VERIFY_ATTEMPTS = 3;
+const MAX_SAFE_RECOVERY_ATTEMPTS = 2;
 const TOPIC_STOPWORDS = new Set(['yang', 'dan', 'atau', 'dari', 'untuk', 'dengan', 'tentang', 'cara', 'adalah', 'pada', 'itu', 'ini', 'sebagai']);
 const GROUNDING_STOPWORDS = new Set([
   ...TOPIC_STOPWORDS,
@@ -479,6 +480,10 @@ function verifierPrompt({ base, draft = base, bank, topic, format, errors = [] }
   return `Anda adalah FILTER/VERIFIER fakta untuk carousel Indonesia. Anda BUKAN pembuat struktur carousel baru.\n\nTOPIK REFERENSI: ${JSON.stringify(topic || '')}\nFORMAT: ${JSON.stringify(format || '')}\n\nFIELD FAKTUAL CURRENT_DRAFT DAN COPY SUBSTANTIF YANG WAJIB PUNYA CLAIM JIKA DIPERTAHANKAN:\n${JSON.stringify(requiredClaimFields)}\n\nATURAN WAJIB:\n- Pertahankan JUMLAH slide, URUTAN slide, dan SECTION persis seperti ORIGINAL_CONTENT.\n${factFormatRules}\n${problemSolutionRule}\n- requestedTopic hanya referensi topik. Jangan menjadikannya judul mentah.\n- Jika topik menyebut nama orang, produk, model, atau perusahaan, identitas itu harus tetap muncul secara natural dalam carousel.\n- Pertahankan gaya natural ORIGINAL_CONTENT sebanyak mungkin.\n- SETIAP slide wajib tetap berada pada inti TOPIK REFERENSI dan tema FACT_BANK. Jangan mengambil side-note artikel yang tidak membantu menjawab topik hanya karena faktanya benar.\n- Dilarang memperkenalkan tutorial, tool, workflow, prompting, otomatisasi, strategi, aplikasi baru, atau saran baru yang tidak benar-benar terkait dengan topik/sumber hanya untuk mengisi slide.\n- Jika CURRENT_DRAFT punya slide generik atau menyimpang, tulis ulang slide itu memakai fakta/sudut yang relevan dari FACT_BANK; jangan mempertahankan isi generik hanya karena non-faktual.\n- SEMUA COPY YANG TAMPIL (title, body, points) WAJIB Bahasa Indonesia natural. Istilah brand/produk/AI/API boleh tetap asli, tetapi jangan salin kalimat bahasa Inggris dari sumber ke copy tampil.\n- Evidence di dalam claims WAJIB tetap kutipan asli dari FACT_BANK dan BOLEH berbahasa Inggris; jangan menerjemahkan evidence.\n- Source hanya untuk FILTER/VERIFIKASI fakta, bukan untuk menentukan struktur atau jumlah slide.\n- Jangan menambah URL/sumber apa pun.\n- Untuk copy yang masuk FIELD SUBSTANTIF di atas, sertakan claim dengan sourceId + evidence PERSIS dari FACT_BANK.\n- Pada format Masalah dan solusi, dilarang mengakali evidence dengan mengubah klaim menjadi perintah. Contoh “Koreksi warna batch”, “Tambahkan transisi halus”, atau “Periksa audio sinkronisasi” tetap wajib evidence.\n- Evidence harus MEMBUKTIKAN ARTI claim.text, bukan hanya mengandung kata yang mirip atau membahas tema yang sama.\n- Dilarang memasangkan evidence valid ke claim yang menambahkan tujuan, sebab-akibat, manfaat, aplikasi, keselamatan, risiko, atau kesimpulan yang tidak disebut evidence.\n- AUDIT SETIAP title, body, dan point sebelum mengembalikan JSON: semua pernyataan faktual dan semua copy substantif pada format Masalah dan solusi wajib punya claim.\n- Satu claim hanya boleh memakai satu sourceId/evidence. Jangan gabungkan beberapa sumber menjadi kesimpulan baru.\n- Jika fakta ORIGINAL_CONTENT tidak didukung, ubah hanya copy itu menjadi fakta terdekat yang benar-benar didukung, atau menjadi copy netral yang tetap berguna. Jangan mengarang.\n- Hook, pertanyaan, transisi, dan CTA netral boleh tanpa claim jika tidak memuat klaim faktual.\n- Jangan memberi claim pada copy yang sebenarnya hanya CTA/transisi netral jika tidak ada fakta di dalamnya.\n- Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.\n- BATAS COPY FINAL: title maksimal 12 kata; body maksimal 24 kata; points maksimal 3 item; tiap point maksimal 7 kata.\n- Jika error sebelumnya menyebut body/title/point terlalu panjang, ringkas field itu tanpa menambah fakta baru.\n- Jika error sebelumnya menyebut copy tampil harus Bahasa Indonesia, terjemahkan/parafrase FIELD PERSIS itu ke Bahasa Indonesia natural tanpa menambah fakta; evidence tetap kutipan asli.\n- Jika error sebelumnya menyebut slide claim-free menyimpang dari inti topik manual, tulis ulang slide itu agar langsung terkait dengan TOPIK REFERENSI dan FACT_BANK.\n- Jika error sebelumnya diawali SEMANTIC_SUPPORT, ganti claim dengan terjemahan/parafrase setia dari evidence yang benar-benar relevan; jangan mempertahankan klaim lama.\n- Jika SEMANTIC_SUPPORT mengenai sebuah point dan FACT_BANK tidak punya evidence yang benar-benar mendukung point itu, HAPUS point tersebut. Jangan mengarang point pengganti hanya untuk mempertahankan jumlah bullet.\n- Jika error sebelumnya menyebut klaim faktual tidak memiliki evidence, tambahkan claim untuk FIELD PERSIS itu memakai evidence yang benar-benar mendukung, atau ubah field menjadi copy netral yang akurat. Pada format Masalah dan solusi, solusi/tips konkret tidak boleh dijadikan copy netral untuk menghindari evidence.\n- Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda.\n- Dilarang slide kosong, filler, metadata website, byline/contributor/newsletter, judul hanya topik mentah, atau "Lanjut baca tentang ...".\n- Jangan mengubah hashtag, focus, metadata angle/tool, atau struktur di luar slides.\n- Jangan membuat angka/nama/tanggal/manfaat/sebab-akibat baru.\n\nUntuk setiap claim gunakan field key persis:\nslide:<index>:title\nslide:<index>:body\nslide:<index>:point:<pointIndex>\nindex dimulai dari 0.\nclaim.text harus sama persis dengan copy field yang didukung.\n\nFACT_BANK (hanya dari URL yang diberikan user):\n${JSON.stringify(bank)}\n\nORIGINAL_STRUCTURE (jumlah, urutan, dan section tidak boleh berubah):\n${JSON.stringify((base?.slides || []).map(slide => ({ section: slide.section })))}\n\nCURRENT_DRAFT (perbaiki versi ini; jangan kembali mengulang versi awal):\n${JSON.stringify(draft)}\n${errors.length ? `\nERROR VERIFIKASI SEBELUMNYA YANG HARUS DIPERBAIKI:\n- ${errors.join('\n- ')}` : ''}\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
+function safeRecoveryPrompt({ base, draft, bank, topic, format, errors }) {
+  return `${verifierPrompt({ base, draft, bank, topic, format, errors })}\n\nFINAL SAFE RECOVERY:\n- Perbaiki HANYA field yang disebut dalam error; pertahankan field lain yang sudah valid.\n- Untuk body/title yang gagal, pilih SATU fakta paling relevan dari FACT_BANK lalu tulis paraphrase Bahasa Indonesia yang singkat dan setia, beserta satu claim/evidence yang tepat.\n- Jangan menambah sebab-akibat, manfaat, kesimpulan, atau modalitas yang lebih kuat daripada evidence. Jika evidence menyebut can/could/may/help/potential, gunakan dapat/bisa/mungkin/membantu/berpotensi, bukan kepastian.\n- Untuk point yang gagal dan tidak punya dukungan tepat, hapus point serta claim-nya; 1–2 point yang valid lebih baik daripada bullet rekaan.\n- Title boleh dijadikan label struktural/netral yang natural dan selaras dengan body valid tanpa claim faktual baru.\n- PEMBUKA dan KESIMPULAN format Fakta singkat boleh memakai copy struktural/netral tanpa fakta baru.\n- Jumlah slide, urutan, section, dan format HARUS persis sama. Jangan mengosongkan slide.`;
+}
+
 function parseJsonResponse(response) {
   const raw = response?.choices?.[0]?.message?.content;
   if (!raw) throw new Error('Verifier sumber tidak mengembalikan konten.');
@@ -552,6 +557,61 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     draft = { ...base, slides: Array.isArray(candidate.slides) ? candidate.slides : draft.slides };
   }
 
+  // The strict verifier remains the gate. This last, focused pass gives the model
+  // a chance to replace only bad fields from the existing fact bank instead of
+  // discarding an otherwise valid carousel.
+  for (let attempt = 1; attempt <= MAX_SAFE_RECOVERY_ATTEMPTS; attempt += 1) {
+    const response = await openai.chat.completions.create({
+      model: config.aiModel,
+      messages: [
+        { role: 'system', content: 'Anda melakukan recovery field secara ketat. Jangan mengarang dan jangan mengubah struktur carousel.' },
+        { role: 'user', content: safeRecoveryPrompt({ base, draft, bank, topic, format: options.contentFormat, errors }) }
+      ],
+      response_format: { type: 'json_object' }
+    });
+    let candidate;
+    try { candidate = parseJsonResponse(response); }
+    catch (error) { errors = [`JSON safe recovery tidak valid: ${error.message}`]; continue; }
+
+    const checked = validateVerifiedContent(base, candidate, {
+      contentService: content,
+      format: options.contentFormat,
+      manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
+      sources
+    });
+    if (checked.errors.length) {
+      errors = checked.errors;
+      draft = { ...base, slides: Array.isArray(candidate.slides) ? candidate.slides : draft.slides };
+      continue;
+    }
+
+    const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
+    const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, options.contentFormat);
+    if (!semanticErrors.length) return checked.content;
+
+    const reduced = dropUnsupportedPointClaims(checked.content, semanticErrors);
+    if (reduced) {
+      const reducedChecked = validateVerifiedContent(base, { slides: reduced.slides }, {
+        contentService: content,
+        format: options.contentFormat,
+        manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
+        sources
+      });
+      if (!reducedChecked.errors.length) {
+        const remainingSemanticErrors = await auditClaimSemantics(openai, pruneUnneededClaims(reducedChecked.content, options.contentFormat), topic, options.contentFormat);
+        if (!remainingSemanticErrors.length) return reducedChecked.content;
+        errors = remainingSemanticErrors;
+        draft = { ...base, slides: reducedChecked.content.slides };
+        continue;
+      }
+      errors = reducedChecked.errors;
+      draft = { ...base, slides: reduced.slides };
+      continue;
+    }
+    errors = semanticErrors;
+    draft = { ...base, slides: checked.content.slides };
+  }
+
   throw Object.assign(new Error(`Konten tidak lolos filter fakta sumber: ${errors[0] || 'verifikasi gagal'}`), {
     status: 422,
     validationErrors: errors
@@ -576,5 +636,6 @@ module.exports = {
   auditClaimSemantics,
   dropUnsupportedPointClaims,
   pruneUnneededClaims,
-  MAX_VERIFY_ATTEMPTS
+  MAX_VERIFY_ATTEMPTS,
+  MAX_SAFE_RECOVERY_ATTEMPTS
 };
