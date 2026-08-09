@@ -8,7 +8,8 @@ process.env.AI_MODEL ||= 'test-model';
 const {
   generateFilteredContent,
   requiresSourceEvidence,
-  MAX_VERIFY_ATTEMPTS
+  MAX_VERIFY_ATTEMPTS,
+  MAX_SAFE_RECOVERY_ATTEMPTS
 } = require('../src/services/sourceFilter');
 
 test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsupported tanpa mengubah struktur', async () => {
@@ -111,4 +112,42 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
       }
     });
   });
+});
+
+test('safe recovery berhenti pada hard limit ketika provider selalu memberi draft invalid yang berbeda', async () => {
+  const evidence = 'Home robots can fold laundry while staying in one work area.';
+  const slides = [{
+    section: 'PEMBUKA', title: 'Fakta robot rumah', body: 'Robot dapat menyelesaikan 99 pekerjaan.', points: [], claims: []
+  }];
+  const base = {
+    focus: {}, topic: 'Robot rumah', hook: 'Fakta robot rumah', body: slides[0].body, caption: 'Fakta robot',
+    hashtags: [], cta: 'Baca sumber', trendKeywordsUsed: [], content_angle: 'fakta', primary_tool: 'tanpa tool',
+    hook_pattern: 'langsung', slides
+  };
+  let verifierCalls = 0;
+  let safeCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    if (/FINAL SAFE RECOVERY/i.test(messages[1].content)) {
+      safeCalls += 1;
+      return { choices: [{ message: { content: JSON.stringify({
+        slides: [{ ...slides[0], body: `Robot dapat menyelesaikan ${100 + safeCalls} pekerjaan.`, claims: [] }]
+      }) } }] };
+    }
+    verifierCalls += 1;
+    return { choices: [{ message: { content: JSON.stringify({ slides }) } }] };
+  } } } };
+  const content = {
+    async generateContent() { return base; },
+    validateContent() { return []; }
+  };
+
+  await assert.rejects(generateFilteredContent({
+    content,
+    options: { contentFormat: 'Fakta singkat', requestedTopic: 'Robot rumah' },
+    sources: [{ url: 'https://example.test/robots', text: evidence }],
+    client
+  }), error => error.status === 422 && /tidak dapat diproses setelah safe recovery/i.test(error.message));
+
+  assert.equal(verifierCalls, MAX_VERIFY_ATTEMPTS);
+  assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
 });

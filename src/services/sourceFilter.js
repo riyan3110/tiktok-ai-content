@@ -3,6 +3,7 @@ const config = require('../config');
 
 const MAX_FACTS = 36;
 const MAX_VERIFY_ATTEMPTS = 3;
+const MAX_SAFE_RECOVERY_ATTEMPTS = 4;
 const TOPIC_STOPWORDS = new Set(['yang', 'dan', 'atau', 'dari', 'untuk', 'dengan', 'tentang', 'cara', 'adalah', 'pada', 'itu', 'ini', 'sebagai']);
 const GROUNDING_STOPWORDS = new Set([
   ...TOPIC_STOPWORDS,
@@ -607,12 +608,14 @@ async function generateFilteredContent({ content, previousTopics = [], options =
   // a chance to replace only bad fields from the existing fact bank instead of
   // discarding an otherwise valid carousel.
   const recoveryStates = new Set();
-  while (true) {
+  let safeRecoveryAttempts = 0;
+  while (safeRecoveryAttempts < MAX_SAFE_RECOVERY_ATTEMPTS) {
     const fieldKeys = recoveryFieldKeys(errors);
     if (!fieldKeys.size) break;
     const recoveryState = JSON.stringify({ fields: [...fieldKeys].sort(), slides: draft.slides });
     if (recoveryStates.has(recoveryState)) break;
     recoveryStates.add(recoveryState);
+    safeRecoveryAttempts += 1;
     const response = await openai.chat.completions.create({
       model: config.aiModel,
       messages: [
@@ -695,5 +698,6 @@ module.exports = {
   recoveryFieldKeys,
   mergeRecoveryFields,
   pruneUnneededClaims,
-  MAX_VERIFY_ATTEMPTS
+  MAX_VERIFY_ATTEMPTS,
+  MAX_SAFE_RECOVERY_ATTEMPTS
 };
