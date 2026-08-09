@@ -157,13 +157,12 @@ function isNeutralSourceCopy(value, slideIndex, totalSlides) {
   return NEUTRAL_SOURCE_COPY.test(text);
 }
 
-function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex = 0, totalSlides = 0) {
+function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex = 0, totalSlides = 0, format = '') {
   const text = String(value || '').trim();
   if (!text) return false;
   if (requiresEvidence(text, section, kind)) return true;
+  if (String(format || '').toLocaleLowerCase('id-ID') !== 'masalah dan solusi') return false;
   if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;
-  // In source-backed mode, concrete tips/solutions/instructions are substantive
-  // claims about what to do. They must be traceable to the supplied source too.
   return words(text).length >= 2;
 }
 
@@ -225,14 +224,14 @@ function evidenceSupport(text, evidence) {
   return { exact, matches, total: terms.length, score };
 }
 
-function recoverMissingClaims(candidate, sources = []) {
+function recoverMissingClaims(candidate, sources = [], format = '') {
   if (!candidate || !Array.isArray(candidate.slides)) return candidate;
   const existing = new Set(normalizeClaims(candidate.slides).map(claim => claim.field).filter(Boolean));
   const evidence = sources.flatMap((source, index) => evidenceCandidates(source?.text).map(item => ({ sourceId: `source-${index + 1}`, evidence: item })));
   const totalSlides = candidate.slides.length;
   candidate.slides.forEach((slide, slideIndex) => {
     for (const field of slideFields(slide, slideIndex)) {
-      if (!field.value || existing.has(field.key) || !requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides)) continue;
+      if (!field.value || existing.has(field.key) || !requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format)) continue;
       let best = null;
       for (const item of evidence) {
         const support = evidenceSupport(field.value, item.evidence);
@@ -286,7 +285,6 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
   const errors = [];
   if (!candidate || !Array.isArray(candidate.slides)) return ['Verifier tidak mengembalikan slides.'];
   if (candidate.slides.length !== base.slides.length) errors.push('Verifier mengubah jumlah slide.');
-  if (candidate.slides.length < 4 || candidate.slides.length > 5) errors.push(`Verifier menghasilkan ${candidate.slides.length} slide; wajib 4–5 slide.`);
 
   const requestedNorm = normalize(manualTopic);
   const maps = sourceMap(sources);
@@ -304,7 +302,7 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
   });
   errors.push(...validateManualTopicIdentity(manualTopic, candidate.slides));
 
-  recoverMissingClaims(candidate, sources);
+  recoverMissingClaims(candidate, sources, format);
 
   const claims = normalizeClaims(candidate.slides);
   const claimByField = new Map();
@@ -346,7 +344,7 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
   candidate.slides.forEach((slide, slideIndex) => {
     for (const field of slideFields(slide, slideIndex)) {
       if (!field.value) continue;
-      const needsEvidence = requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides);
+      const needsEvidence = requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);
       const claim = claimByField.get(field.key);
       if (needsEvidence && !claim) errors.push(`${field.key}: copy substantif source-backed tidak memiliki evidence.`);
       if (claim && normalize(claim.text) !== normalize(field.value)) errors.push(`${field.key}: claim.text tidak sama dengan copy field.`);
@@ -397,13 +395,16 @@ function verifierPrompt({ base, draft = base, bank, topic, format, errors = [] }
   const totalSlides = draft?.slides?.length || base?.slides?.length || 0;
   const requiredClaimFields = (draft?.slides || []).flatMap((slide, slideIndex) =>
     slideFields(slide, slideIndex)
-      .filter(field => field.value && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides))
+      .filter(field => field.value && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format))
       .map(field => ({ field: field.key, text: field.value }))
   );
   const factFormatRules = String(format || '').toLocaleLowerCase('id-ID') === 'fakta singkat'
     ? '- FORMAT FAKTA SINGKAT: section sudah dikunci sebagai label netral fakta. Dilarang mengubahnya menjadi MASALAH, PENYEBAB, SOLUSI, HASIL, TUTORIAL, atau LANGKAH. Jangan memaksa alur sebab-solusi-hasil. Susun isi sebagai pembuka → fakta utama → penjelasan/konteks → kesimpulan yang benar-benar berasal dari sumber.'
     : '';
-  return `Anda adalah FILTER/VERIFIER fakta untuk carousel Indonesia. Anda BUKAN pembuat struktur carousel baru.\n\nTOPIK REFERENSI: ${JSON.stringify(topic || '')}\nFORMAT: ${JSON.stringify(format || '')}\n\nFIELD SUBSTANTIF CURRENT_DRAFT YANG WAJIB PUNYA CLAIM JIKA COPY-NYA DIPERTAHANKAN:\n${JSON.stringify(requiredClaimFields)}\n\nATURAN WAJIB:\n- Pertahankan JUMLAH slide, URUTAN slide, dan SECTION persis seperti ORIGINAL_CONTENT. Jumlah harus tetap 4–5 slide.\n${factFormatRules}\n- requestedTopic hanya referensi topik. Jangan menjadikannya judul mentah.\n- Jika topik menyebut nama orang, produk, model, atau perusahaan, identitas itu harus tetap muncul secara natural dalam carousel.\n- Pertahankan gaya natural ORIGINAL_CONTENT sebanyak mungkin.\n- SETIAP slide wajib tetap berada pada inti TOPIK REFERENSI dan tema FACT_BANK. Jangan mengambil side-note artikel yang tidak membantu menjawab topik hanya karena faktanya benar.\n- Dilarang memperkenalkan tutorial, tool, workflow, prompting, otomatisasi, strategi, aplikasi baru, atau saran baru yang tidak benar-benar terkait dengan topik/sumber hanya untuk mengisi slide.\n- Jika CURRENT_DRAFT punya slide generik atau menyimpang, tulis ulang slide itu memakai fakta/sudut yang relevan dari FACT_BANK.\n- SEMUA COPY YANG TAMPIL (title, body, points) WAJIB Bahasa Indonesia natural. Istilah brand/produk/AI/API boleh tetap asli, tetapi jangan salin kalimat bahasa Inggris dari sumber ke copy tampil.\n- Evidence di dalam claims WAJIB tetap kutipan asli dari FACT_BANK dan BOLEH berbahasa Inggris; jangan menerjemahkan evidence.\n- Source hanya untuk FILTER/VERIFIKASI fakta, bukan untuk menentukan struktur atau jumlah slide.\n- Untuk SEMUA copy substantif, termasuk solusi, tips, langkah, rekomendasi, dan instruksi konkret, sertakan claim dengan sourceId + evidence PERSIS dari FACT_BANK.\n- Hanya pertanyaan pembuka/penutup atau CTA/transisi netral seperti cek/baca sumber atau konteks yang boleh tanpa claim.\n- Dilarang mengakali evidence dengan mengubah klaim menjadi kalimat perintah. Contoh: “Koreksi warna batch”, “Tambahkan transisi halus”, atau “Periksa audio sinkronisasi” tetap wajib evidence bila ditampilkan sebagai solusi.\n- Evidence harus MEMBUKTIKAN ARTI claim.text, bukan hanya mengandung kata yang mirip atau membahas tema yang sama.\n- Dilarang memasangkan evidence valid ke claim yang menambahkan tujuan, sebab-akibat, manfaat, aplikasi, keselamatan, risiko, atau kesimpulan yang tidak disebut evidence.\n- Satu claim hanya boleh memakai satu sourceId/evidence. Jangan gabungkan beberapa sumber menjadi kesimpulan baru.\n- Jika copy tidak didukung, ganti dengan terjemahan/parafrase fakta yang benar-benar ada di FACT_BANK atau copy netral tentang membaca konteks sumber; jangan membuat tips baru.\n- Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.\n- BATAS COPY FINAL: title maksimal 12 kata; body maksimal 24 kata; points maksimal 3 item; tiap point maksimal 7 kata.\n- Jika error sebelumnya diawali SEMANTIC_SUPPORT, ganti claim dengan paraphrase setia dari evidence yang benar-benar relevan.\n- Jika error sebelumnya menyebut copy substantif source-backed tidak memiliki evidence, tambahkan claim yang benar-benar mendukung FIELD PERSIS itu atau ubah field menjadi copy netral; jangan mempertahankan solusi/tips tanpa bukti.\n- Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda.\n- Dilarang slide kosong, filler, metadata website, byline/contributor/newsletter, judul hanya topik mentah, atau "Lanjut baca tentang ...".\n- Jangan mengubah hashtag, focus, metadata angle/tool, atau struktur di luar slides.\n- Jangan membuat angka/nama/tanggal/manfaat/sebab-akibat baru.\n\nUntuk setiap claim gunakan field key persis:\nslide:<index>:title\nslide:<index>:body\nslide:<index>:point:<pointIndex>\nindex dimulai dari 0.\nclaim.text harus sama persis dengan copy field yang didukung.\n\nFACT_BANK (hanya dari URL yang diberikan user):\n${JSON.stringify(bank)}\n\nORIGINAL_STRUCTURE (jumlah, urutan, dan section tidak boleh berubah):\n${JSON.stringify((base?.slides || []).map(slide => ({ section: slide.section })))}\n\nCURRENT_DRAFT (perbaiki versi ini; jangan kembali mengulang versi awal):\n${JSON.stringify(draft)}\n${errors.length ? `\nERROR VERIFIKASI SEBELUMNYA YANG HARUS DIPERBAIKI:\n- ${errors.join('\n- ')}` : ''}\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  const problemSolutionRule = String(format || '').toLocaleLowerCase('id-ID') === 'masalah dan solusi'
+    ? '- FORMAT MASALAH DAN SOLUSI: semua masalah, solusi, tips, rekomendasi, dan instruksi konkret wajib didukung FACT_BANK. Dilarang menciptakan langkah perbaikan yang tidak disebut sumber.'
+    : '';
+  return `Anda adalah FILTER/VERIFIER fakta untuk carousel Indonesia. Anda BUKAN pembuat struktur carousel baru.\n\nTOPIK REFERENSI: ${JSON.stringify(topic || '')}\nFORMAT: ${JSON.stringify(format || '')}\n\nFIELD SUBSTANTIF CURRENT_DRAFT YANG WAJIB PUNYA CLAIM JIKA COPY-NYA DIPERTAHANKAN:\n${JSON.stringify(requiredClaimFields)}\n\nATURAN WAJIB:\n- Pertahankan JUMLAH slide, URUTAN slide, dan SECTION persis seperti ORIGINAL_CONTENT.\n${factFormatRules}\n${problemSolutionRule}\n- requestedTopic hanya referensi topik. Jangan menjadikannya judul mentah.\n- Jika topik menyebut nama orang, produk, model, atau perusahaan, identitas itu harus tetap muncul secara natural dalam carousel.\n- Pertahankan gaya natural ORIGINAL_CONTENT sebanyak mungkin.\n- SETIAP slide wajib tetap berada pada inti TOPIK REFERENSI dan tema FACT_BANK. Jangan mengambil side-note artikel yang tidak membantu menjawab topik hanya karena faktanya benar.\n- Dilarang memperkenalkan tutorial, tool, workflow, prompting, otomatisasi, strategi, aplikasi baru, atau saran baru yang tidak benar-benar terkait dengan topik/sumber hanya untuk mengisi slide.\n- Jika CURRENT_DRAFT punya slide generik atau menyimpang, tulis ulang slide itu memakai fakta/sudut yang relevan dari FACT_BANK.\n- SEMUA COPY YANG TAMPIL (title, body, points) WAJIB Bahasa Indonesia natural. Istilah brand/produk/AI/API boleh tetap asli, tetapi jangan salin kalimat bahasa Inggris dari sumber ke copy tampil.\n- Evidence di dalam claims WAJIB tetap kutipan asli dari FACT_BANK dan BOLEH berbahasa Inggris; jangan menerjemahkan evidence.\n- Source hanya untuk FILTER/VERIFIKASI fakta, bukan untuk menentukan struktur atau jumlah slide.\n- Untuk copy yang masuk FIELD SUBSTANTIF di atas, sertakan claim dengan sourceId + evidence PERSIS dari FACT_BANK.\n- Pada format Masalah dan solusi, dilarang mengakali evidence dengan mengubah klaim menjadi perintah. Contoh “Koreksi warna batch”, “Tambahkan transisi halus”, atau “Periksa audio sinkronisasi” tetap wajib evidence.\n- Evidence harus MEMBUKTIKAN ARTI claim.text, bukan hanya mengandung kata yang mirip atau membahas tema yang sama.\n- Dilarang memasangkan evidence valid ke claim yang menambahkan tujuan, sebab-akibat, manfaat, aplikasi, keselamatan, risiko, atau kesimpulan yang tidak disebut evidence.\n- Satu claim hanya boleh memakai satu sourceId/evidence. Jangan gabungkan beberapa sumber menjadi kesimpulan baru.\n- Jika copy tidak didukung, ganti dengan terjemahan/parafrase fakta yang benar-benar ada di FACT_BANK atau copy netral tentang membaca konteks sumber; jangan membuat tips baru.\n- Setiap slide wajib tetap memiliki title dan minimal body atau points yang bermakna.\n- BATAS COPY FINAL: title maksimal 12 kata; body maksimal 24 kata; points maksimal 3 item; tiap point maksimal 7 kata.\n- Jika error sebelumnya diawali SEMANTIC_SUPPORT, ganti claim dengan paraphrase setia dari evidence yang benar-benar relevan.\n- Jika error sebelumnya menyebut copy substantif source-backed tidak memiliki evidence, tambahkan claim yang benar-benar mendukung FIELD PERSIS itu atau ubah field menjadi copy netral.\n- Title, body, dan points dalam satu slide harus saling melengkapi. Jangan mengulang kalimat atau ide yang sama di field berbeda.\n- Dilarang slide kosong, filler, metadata website, byline/contributor/newsletter, judul hanya topik mentah, atau "Lanjut baca tentang ...".\n- Jangan mengubah hashtag, focus, metadata angle/tool, atau struktur di luar slides.\n- Jangan membuat angka/nama/tanggal/manfaat/sebab-akibat baru.\n\nUntuk setiap claim gunakan field key persis:\nslide:<index>:title\nslide:<index>:body\nslide:<index>:point:<pointIndex>\nindex dimulai dari 0.\nclaim.text harus sama persis dengan copy field yang didukung.\n\nFACT_BANK (hanya dari URL yang diberikan user):\n${JSON.stringify(bank)}\n\nORIGINAL_STRUCTURE (jumlah, urutan, dan section tidak boleh berubah):\n${JSON.stringify((base?.slides || []).map(slide => ({ section: slide.section })))}\n\nCURRENT_DRAFT (perbaiki versi ini; jangan kembali mengulang versi awal):\n${JSON.stringify(draft)}\n${errors.length ? `\nERROR VERIFIKASI SEBELUMNYA YANG HARUS DIPERBAIKI:\n- ${errors.join('\n- ')}` : ''}\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function parseJsonResponse(response) {
@@ -423,7 +424,6 @@ async function generateFilteredContent({ content, previousTopics = [], options =
   }, client);
 
   if (!Array.isArray(base?.slides) || !base.slides.length) throw Object.assign(new Error('Konten normal tidak memiliki slide terstruktur untuk diverifikasi sumber.'), { status: 422 });
-  if (base.slides.length < 4 || base.slides.length > 5) throw Object.assign(new Error(`Konten dasar menghasilkan ${base.slides.length} slide; wajib 4–5 slide.`), { status: 422 });
   base = { ...base, slides: normalizeFactSections(base.slides, options.contentFormat) };
 
   const topic = options.requestedTopic || options.mainTopic || base.topic || '';
@@ -437,7 +437,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     const response = await openai.chat.completions.create({
       model: config.aiModel,
       messages: [
-        { role: 'system', content: 'Anda memfilter fakta carousel. Semua isi substantif harus dapat ditelusuri ke sumber; jangan mengganti struktur 4–5 slide.' },
+        { role: 'system', content: 'Anda memfilter fakta carousel. Sumber hanya untuk verifikasi fakta; jangan mengganti struktur konten.' },
         { role: 'user', content: verifierPrompt({ base, draft, bank, topic, format: options.contentFormat, errors }) }
       ],
       response_format: { type: 'json_object' }
