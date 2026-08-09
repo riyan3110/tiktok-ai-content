@@ -163,6 +163,9 @@ function requiresSourceEvidence(value, section = '', kind = 'body', slideIndex =
   if (requiresEvidence(text, section, kind)) return true;
   if (String(format || '').toLocaleLowerCase('id-ID') !== 'masalah dan solusi') return false;
   if (isNeutralSourceCopy(text, slideIndex, totalSlides)) return false;
+  // Neutral/problem-framing titles are structural copy, not factual claims.
+  // Numeric/factual titles are already caught by requiresEvidence() above.
+  if (kind === 'title') return false;
   return words(text).length >= 2;
 }
 
@@ -191,6 +194,21 @@ function normalizeClaims(slides = []) {
     sourceId: String(claim?.sourceId || '').trim(),
     evidence: String(claim?.evidence || '').trim()
   })));
+}
+
+function pruneUnneededClaims(content, format = '') {
+  if (!content || !Array.isArray(content.slides)) return content;
+  const totalSlides = content.slides.length;
+  return {
+    ...content,
+    slides: content.slides.map((slide, slideIndex) => ({
+      ...slide,
+      claims: (Array.isArray(slide?.claims) ? slide.claims : []).filter(claim => {
+        const field = slideFields(slide, slideIndex).find(item => item.key === String(claim?.field || ''));
+        return Boolean(field?.value) && requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);
+      })
+    }))
+  };
 }
 
 function normalizeFactSections(slides = [], format = '') {
@@ -493,7 +511,8 @@ async function generateFilteredContent({ content, previousTopics = [], options =
       sources
     });
     if (!checked.errors.length) {
-      const semanticErrors = await auditClaimSemantics(openai, checked.content, topic);
+      const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
+      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic);
       if (!semanticErrors.length) return checked.content;
       const reduced = dropUnsupportedPointClaims(checked.content, semanticErrors);
       if (reduced) {
@@ -542,6 +561,6 @@ module.exports = {
   normalizeFactSections,
   auditClaimSemantics,
   dropUnsupportedPointClaims,
-  dropUnsupportedPointClaims,
+  pruneUnneededClaims,
   MAX_VERIFY_ATTEMPTS
 };
