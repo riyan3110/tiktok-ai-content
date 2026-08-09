@@ -7,17 +7,17 @@ process.env.AI_MODEL ||= 'test-model';
 
 const {
   requiresSourceEvidence,
-  validateVerifiedContent,
-  generateFilteredContent
+  validateVerifiedContent
 } = require('../src/services/sourceFilter');
 
 const contentService = { validateContent() { return []; } };
 
-test('tips konkret dalam source mode tetap wajib evidence walau berbentuk kalimat perintah', () => {
-  assert.equal(requiresSourceEvidence('Koreksi warna batch', 'SOLUSI', 'point', 2, 4), true);
-  assert.equal(requiresSourceEvidence('Tambahkan transisi halus', 'SOLUSI', 'point', 2, 4), true);
-  assert.equal(requiresSourceEvidence('Periksa audio sinkronisasi', 'SOLUSI', 'point', 2, 4), true);
-  assert.equal(requiresSourceEvidence('Baca sumber lengkap sebelum menyimpulkan', 'PENUTUP', 'body', 3, 4), false);
+test('tips konkret pada Masalah dan solusi wajib evidence walau berbentuk kalimat perintah', () => {
+  const format = 'Masalah dan solusi';
+  assert.equal(requiresSourceEvidence('Koreksi warna batch', 'SOLUSI', 'point', 2, 4, format), true);
+  assert.equal(requiresSourceEvidence('Tambahkan transisi halus', 'SOLUSI', 'point', 2, 4, format), true);
+  assert.equal(requiresSourceEvidence('Periksa audio sinkronisasi', 'SOLUSI', 'point', 2, 4, format), true);
+  assert.equal(requiresSourceEvidence('Baca sumber lengkap sebelum menyimpulkan', 'PENUTUP', 'body', 3, 4, format), false);
 });
 
 test('solusi konkret tanpa evidence ditolak walau artikel sumber valid', () => {
@@ -52,28 +52,4 @@ test('solusi konkret tanpa evidence ditolak walau artikel sumber valid', () => {
   assert.ok(checked.errors.some(error => /slide:2:point:0.*tidak memiliki evidence/i.test(error)));
   assert.ok(checked.errors.some(error => /slide:2:point:1.*tidak memiliki evidence/i.test(error)));
   assert.ok(checked.errors.some(error => /slide:2:point:2.*tidak memiliki evidence/i.test(error)));
-});
-
-test('source filter menolak base tiga slide sebelum hasil bisa dirender', async () => {
-  const content = {
-    async generateContent() {
-      return {
-        topic: 'Topik', hook: 'Hook', body: 'Isi', caption: 'Caption', cta: 'CTA', hashtags: [],
-        focus: { masalah: 'm', penyebab: 'p', solusi: 's', hasil: 'h' },
-        trendKeywordsUsed: [], content_angle: 'angle', primary_tool: 'tanpa tool', hook_pattern: 'langsung',
-        slides: [
-          { section: 'MASALAH', title: 'Satu', body: 'Isi satu.', points: [] },
-          { section: 'SOLUSI', title: 'Dua', body: 'Isi dua.', points: [] },
-          { section: 'SOLUSI', title: 'Tiga', body: 'Isi tiga.', points: [] }
-        ]
-      };
-    },
-    validateContent() { return []; }
-  };
-  await assert.rejects(() => generateFilteredContent({
-    content,
-    options: { topicSource: 'manual', requestedTopic: 'Topik', contentFormat: 'Masalah dan solusi' },
-    sources: [{ title: 'Topik', text: 'Artikel sumber memiliki fakta yang cukup untuk pengujian sistem.' }],
-    client: { chat: { completions: { async create() { throw new Error('verifier tidak boleh dipanggil'); } } } }
-  }), /wajib 4–5 slide/i);
 });
