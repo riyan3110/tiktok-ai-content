@@ -6,6 +6,7 @@ const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
+const defaultSourceUrlFinalizer = require('./sourceUrlFinalizer');
 const { buildDeterministicSourceFallback, validateSourceContent } = require('./manualSourceFallback');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
@@ -84,6 +85,30 @@ function deterministicFallback({ generated, sources, topic, requestedFormat }) {
   return fallback;
 }
 
+function safeRecoveryFormat(format) {
+  return ['Listicle', 'Fakta singkat'].includes(format) ? format : 'Fakta singkat';
+}
+
+async function aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content }) {
+  const recoveryFormat = generated?.effectiveContentFormat || requestedFormat;
+  return defaultSourceUrlFinalizer.rewriteAllSourcesWithAi({
+    generated,
+    sources,
+    topic,
+    format: recoveryFormat,
+    mode,
+    contentService: content
+  });
+}
+
+async function aiThenDeterministicFallback({ generated, sources, topic, requestedFormat, mode, content }) {
+  try {
+    return await aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content });
+  } catch {
+    return deterministicFallback({ generated, sources, topic, requestedFormat });
+  }
+}
+
 async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
@@ -142,7 +167,17 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
             });
           } catch (error) {
             if (content !== defaultContent) throw error;
-            generated = deterministicFallback({ generated: seed, sources, topic: basis, requestedFormat: contentFormat });
+            const recoveryFormat = safeRecoveryFormat(contentFormat);
+            const recoverySeed = manualSourceSeed(basis, recoveryFormat);
+            if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
+            generated = await aiThenDeterministicFallback({
+              generated: recoverySeed,
+              sources,
+              topic: basis,
+              requestedFormat: recoveryFormat,
+              mode,
+              content
+            });
           }
         } else {
           generated = await content.generateContent(used, generationOptions);
@@ -156,23 +191,51 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
         } catch (error) {
           if (content !== defaultContent) throw error;
           const sourceTopic = String(sources[0]?.title || 'Ringkasan sumber').trim();
-          generated = deterministicFallback({ generated: manualSourceSeed(sourceTopic, contentFormat), sources, topic: sourceTopic, requestedFormat: contentFormat });
+          const recoveryFormat = safeRecoveryFormat(contentFormat);
+          const recoverySeed = manualSourceSeed(sourceTopic, recoveryFormat);
+          if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
+          generated = await aiThenDeterministicFallback({
+            generated: recoverySeed,
+            sources,
+            topic: sourceTopic,
+            requestedFormat: recoveryFormat,
+            mode,
+            content
+          });
         }
       }
     } else {
       generated = await content.generateContent(used, generationOptions);
     }
+
     if (shouldUseSources && content === defaultContent) {
       let sourceErrors = validateSourceContent(generated, sources);
       if (sourceErrors.length) {
         const sourceTopic = mode === 'manual'
           ? manualTopic
           : String(generated?.topic || sources[0]?.title || 'Ringkasan sumber').trim();
-        generated = deterministicFallback({ generated, sources, topic: sourceTopic, requestedFormat: contentFormat });
+        try {
+          generated = await aiAllSourceRecovery({
+            generated,
+            sources,
+            topic: sourceTopic,
+            requestedFormat: generated?.effectiveContentFormat || contentFormat,
+            mode,
+            content
+          });
+        } catch {
+          generated = deterministicFallback({
+            generated,
+            sources,
+            topic: sourceTopic,
+            requestedFormat: generated?.effectiveContentFormat || contentFormat
+          });
+        }
         sourceErrors = validateSourceContent(generated, sources);
         if (sourceErrors.length) throw Object.assign(new Error(`Konten URL belum memenuhi final source gate: ${sourceErrors[0]}`), { status: 422, validationErrors: sourceErrors });
       }
     }
+
     generated.content_angle ||= angle || generated.topic;
     generated.primary_tool ||= 'tanpa tool';
     generated.hook_pattern ||= generated.hook;
@@ -220,4 +283,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, aiAllSourceRecovery, safeRecoveryFormat, MAX_GENERATION_ATTEMPTS };
