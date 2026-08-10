@@ -77,6 +77,19 @@ test('extractText membuang related block yang nested di dalam wrapper article bi
   assert.doesNotMatch(result.text, /asam urat|lemak perut/i);
 });
 
+test('extractText tidak membuang wrapper artikel hanya karena atribut data mengandung kata widget', () => {
+  const html = `
+    <html><body><article>
+      <div class="content" data-widget-version="1" data-related-mode="off">
+        <p>Fakta utama artikel tetap harus dipertahankan meskipun wrapper memiliki atribut data teknis.</p>
+        <p>Fakta kedua artikel juga tetap tersedia untuk membangun carousel yang benar.</p>
+      </div>
+    </article></body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Fakta utama artikel tetap harus dipertahankan/);
+  assert.match(result.text, /Fakta kedua artikel juga tetap tersedia/);
+});
+
 test('extractText memprioritaskan JSON-LD articleBody dibanding markup halaman yang berisik', () => {
   const articleBody = 'Apel dan buah beri dibahas dalam artikel utama tentang daya ingat. '.repeat(8);
   const html = `<html><head><script type="application/ld+json">${JSON.stringify({ '@type': 'Article', articleBody })}</script></head><body><main>${'Noise artikel rekomendasi. '.repeat(50)}</main></body></html>`;
