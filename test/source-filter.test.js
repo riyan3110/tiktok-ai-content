@@ -231,6 +231,112 @@ test('claim tidak boleh meminjam evidence dari sourceId lain', () => {
   assert.ok(checked.errors.some(error => /Evidence tidak ditemukan pada source-2/i.test(error)));
 });
 
+test('evidence paraphrase diperbaiki menjadi kutipan canonical dari source yang sama', () => {
+  const canonical = 'Astra could reach a critical cybersecurity capability threshold.';
+  const localSources = [{ text: canonical }];
+  const slides = [
+    { section: 'PEMBUKA', title: 'Konteks Astra', body: 'Baca sumbernya.', points: [] },
+    {
+      section: 'PENJELASAN',
+      title: 'Tentang Astra',
+      body: 'Astra dapat mencapai critical cybersecurity capability threshold.',
+      points: [],
+      claims: [{
+        field: 'slide:1:body',
+        text: 'Astra dapat mencapai critical cybersecurity capability threshold.',
+        sourceId: 'source-1',
+        evidence: 'Astra may hit the critical cybersecurity capability threshold.'
+      }]
+    },
+    { section: 'KONTEKS', title: 'Tetap cermati', body: 'Periksa konteks sumber.', points: [] },
+    { section: 'PENUTUP', title: 'Ringkasan', body: 'Simpan informasi ini.', points: [] }
+  ];
+  const checked = validateVerifiedContent({ ...baseContent(), slides }, { slides }, {
+    contentService,
+    format: '',
+    manualTopic: '',
+    sources: localSources
+  });
+
+  assert.deepEqual(checked.errors, []);
+  assert.equal(checked.content.slides[1].claims[0].evidence, canonical);
+});
+
+test('claim dengan evidence invalid tidak memblokir recovery claim canonical', () => {
+  const canonical = 'Astra could reach a critical cybersecurity capability threshold.';
+  const localSources = [{ text: canonical }];
+  const slides = [
+    { section: 'PEMBUKA', title: 'Konteks Astra', body: 'Baca sumbernya.', points: [] },
+    {
+      section: 'PENJELASAN',
+      title: 'Tentang Astra',
+      body: 'Astra dapat mencapai critical cybersecurity capability threshold.',
+      points: [],
+      claims: [{
+        field: 'slide:1:body',
+        text: 'Klaim lain yang tidak didukung sumber',
+        sourceId: 'source-1',
+        evidence: 'Evidence rekaan provider yang tidak ada.'
+      }]
+    },
+    { section: 'KONTEKS', title: 'Tetap cermati', body: 'Periksa konteks sumber.', points: [] },
+    { section: 'PENUTUP', title: 'Ringkasan', body: 'Simpan informasi ini.', points: [] }
+  ];
+  const checked = validateVerifiedContent({ ...baseContent(), slides }, { slides }, {
+    contentService,
+    format: '',
+    manualTopic: '',
+    sources: localSources
+  });
+
+  assert.deepEqual(checked.errors, []);
+  assert.deepEqual(checked.content.slides[1].claims, [{
+    field: 'slide:1:body',
+    text: slides[1].body,
+    sourceId: 'source-1',
+    evidence: canonical
+  }]);
+});
+
+test('evidence invalid tanpa dukungan canonical tetap ditolak dengan field target', () => {
+  const slides = baseContent().slides.map((slide, index) => ({
+    ...slide,
+    claims: index === 1 ? [{
+      field: 'slide:1:body',
+      text: slide.body,
+      sourceId: 'source-1',
+      evidence: 'Evidence rekaan provider yang tidak ada.'
+    }] : []
+  }));
+  const checked = validateVerifiedContent(baseContent(), { slides }, {
+    contentService,
+    format: '',
+    manualTopic: '',
+    sources
+  });
+
+  assert.ok(checked.errors.includes('slide:1:body: Evidence tidak ditemukan pada source-1.'));
+  assert.equal(checked.content.slides[1].claims.length, 0);
+});
+
+test('evidence exact yang sudah valid tidak diubah', () => {
+  const exact = 'The researcher says AI agents can work across longer tasks when goals and limits are clear.';
+  const candidate = {
+    slides: baseContent().slides.map((slide, index) => ({
+      ...slide,
+      claims: index === 1 ? [{ field: 'slide:1:body', text: slide.body, sourceId: 'source-1', evidence: exact }] : []
+    }))
+  };
+  const checked = validateVerifiedContent(baseContent(), candidate, {
+    contentService,
+    format: '',
+    manualTopic: '',
+    sources
+  });
+
+  assert.equal(checked.content.slides[1].claims[0].evidence, exact);
+});
+
 
 test('AI API dan GPT tidak diperlakukan sebagai identitas unik yang wajib muncul literal', () => {
   const genericSlides = [

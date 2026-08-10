@@ -248,6 +248,42 @@ function evidenceSupport(text, evidence) {
   return { exact, matches, total: terms.length, score };
 }
 
+function hasSafeEvidenceSupport(text, evidence) {
+  const support = evidenceSupport(text, evidence);
+  return support.exact || (support.total >= 3 && support.matches >= 3 && support.score >= 0.8);
+}
+
+function repairCanonicalEvidence(candidate, sources = []) {
+  const maps = sourceMap(sources);
+  const candidatesBySource = new Map(sources.map((source, index) => [
+    `source-${index + 1}`,
+    evidenceCandidates(source?.text)
+  ]));
+  const unrepaired = new Map();
+  if (!candidate || !Array.isArray(candidate.slides)) return unrepaired;
+
+  candidate.slides.forEach(slide => {
+    if (!Array.isArray(slide?.claims)) return;
+    slide.claims = slide.claims.filter(claim => {
+      const sourceId = String(claim?.sourceId || '').trim();
+      const field = String(claim?.field || '').trim();
+      if (!maps.has(sourceId)) return true;
+      const evidenceNorm = normalize(claim?.evidence);
+      if (evidenceNorm && maps.get(sourceId).includes(evidenceNorm)) return true;
+
+      const replacement = (candidatesBySource.get(sourceId) || [])
+        .find(evidence => hasSafeEvidenceSupport(claim?.text, evidence));
+      if (replacement) {
+        claim.evidence = replacement;
+        return true;
+      }
+      if (field) unrepaired.set(field, sourceId);
+      return false;
+    });
+  });
+  return unrepaired;
+}
+
 function recoverMissingClaims(candidate, sources = [], format = '') {
   if (!candidate || !Array.isArray(candidate.slides)) return candidate;
   const existing = new Set(normalizeClaims(candidate.slides).map(claim => claim.field).filter(Boolean));
@@ -259,7 +295,7 @@ function recoverMissingClaims(candidate, sources = [], format = '') {
       let best = null;
       for (const item of evidence) {
         const support = evidenceSupport(field.value, item.evidence);
-        const acceptable = support.exact || (support.total >= 3 && support.matches >= 3 && support.score >= 0.8);
+        const acceptable = hasSafeEvidenceSupport(field.value, item.evidence);
         if (!acceptable) continue;
         if (!best || Number(support.exact) > Number(best.support.exact) || support.score > best.support.score) best = { item, support };
       }
@@ -326,6 +362,7 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
   });
   errors.push(...validateManualTopicIdentity(manualTopic, candidate.slides));
 
+  const unrepairedEvidence = repairCanonicalEvidence(candidate, sources);
   recoverMissingClaims(candidate, sources, format);
 
   const claims = normalizeClaims(candidate.slides);
@@ -370,7 +407,12 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
       if (!field.value) continue;
       const needsEvidence = requiresSourceEvidence(field.value, slide.section, field.kind, slideIndex, totalSlides, format);
       const claim = claimByField.get(field.key);
-      if (needsEvidence && !claim) errors.push(`${field.key}: klaim faktual tidak memiliki evidence.`);
+      if (needsEvidence && !claim) {
+        const sourceId = unrepairedEvidence.get(field.key);
+        errors.push(sourceId
+          ? `${field.key}: Evidence tidak ditemukan pada ${sourceId}.`
+          : `${field.key}: klaim faktual tidak memiliki evidence.`);
+      }
       if (claim && normalize(claim.text) !== normalize(field.value)) errors.push(`${field.key}: claim.text tidak sama dengan copy field.`);
     }
   });
