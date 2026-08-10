@@ -43,6 +43,35 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
+function manualSourceSeed(topic, format) {
+  const structures = {
+    'Tutorial langkah': ['PEMBUKA', 'LANGKAH 1', 'LANGKAH 2', 'HASIL/PENUTUP'],
+    'Masalah dan solusi': ['MASALAH', 'SOLUSI', 'SOLUSI', 'PENUTUP'],
+    'Fakta singkat': ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'],
+    Listicle: ['ITEM 1', 'ITEM 2', 'ITEM 3', 'ITEM 4'],
+    'Tips cepat': ['PEMBUKA', 'TIPS 1', 'TIPS 2', 'PENUTUP'],
+    'Before-after': ['BEFORE', 'PERUBAHAN', 'AFTER', 'PENUTUP']
+  };
+  const sections = structures[format] || ['PEMBUKA', 'ISI 1', 'ISI 2', 'PENUTUP'];
+  const slides = sections.map(section => ({ section, title: 'Draf sumber', body: '', points: [], claims: [] }));
+  return {
+    focus: { masalah: 'Konteks dari sumber', penyebab: 'Fakta dari sumber', solusi: 'Poin utama dari sumber', hasil: 'Ringkasan dari sumber' },
+    topic,
+    hook: `Ringkasan sumber tentang ${topic}`,
+    body: 'Konten dibangun dari fakta sumber.',
+    caption: 'Konten dibangun dari fakta sumber.',
+    hashtags: [],
+    cta: 'Ringkasan akhir',
+    trendKeywordsUsed: [],
+    content_angle: `fakta sumber tentang ${topic}`,
+    primary_tool: 'tanpa tool',
+    hook_pattern: 'source-locked',
+    verificationStatus: 'needs_review',
+    unsupportedClaims: [],
+    slides
+  };
+}
+
 async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
@@ -88,10 +117,18 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     };
     let generated;
     if (shouldUseSources) {
-      const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
-      generated = activeSourceFilter
-        ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
-        : await content.generateContent(used, generationOptions);
+      // Manual + URL starts from a deterministic structural seed and is written
+      // exactly once by the final all-format source quality gate below. This avoids
+      // pre-verifier section locking (the old "section berubah" 422) and ensures
+      // Listicle/Tips/Before-after receive the same final source-only checks.
+      if (mode === 'manual') {
+        generated = manualSourceSeed(basis, contentFormat);
+      } else {
+        const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
+        generated = activeSourceFilter
+          ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
+          : await content.generateContent(used, generationOptions);
+      }
       const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
       if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
         generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
@@ -152,4 +189,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, MAX_GENERATION_ATTEMPTS };
