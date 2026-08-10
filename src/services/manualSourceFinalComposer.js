@@ -12,6 +12,37 @@ function normalizedFormat(value) {
   return String(value || '').trim().toLocaleLowerCase('id-ID');
 }
 
+function declaredListCount(sources = []) {
+  for (const source of sources) {
+    const title = String(source?.title || '').trim();
+    const match = title.match(/^\s*(\d{1,2})\b/)
+      || title.match(/\b(?:daftar|list|rekomendasi|pilihan|top)\s*[:\-]?\s*(\d{1,2})\b/i);
+    if (!match) continue;
+    const count = Number(match[1]);
+    if (count >= 3 && count <= 20) return count;
+  }
+  return null;
+}
+
+function listSlideCount(sources = [], bank = []) {
+  const declared = declaredListCount(sources);
+  if (declared) return Math.min(5, Math.max(4, declared));
+  return bank.length >= 8 ? 5 : 4;
+}
+
+function normalizeListSourcesForBase(sources = [], declaredCount = null) {
+  if (!declaredCount) return sources;
+  return sources.map(source => {
+    const title = String(source?.title || '').trim();
+    if (!title || /^\s*\d{1,2}\b/.test(title)) return source;
+    const sourceDeclared = declaredListCount([source]);
+    if (sourceDeclared !== declaredCount) return source;
+    // The legacy base composer only recognizes a count at the first token.
+    // Prefix it internally so base composition and the final gate use the same count.
+    return { ...source, title: `${declaredCount} ${title}` };
+  });
+}
+
 function looksLikeUserAction(value) {
   const text = String(value || '').trim();
   const match = text.match(ACTION_VERB_PATTERN);
@@ -172,12 +203,21 @@ function guardedClient(openai, effectiveFormat, expectedCount) {
 async function composeManualSourceContent(params = {}) {
   const requestedFormat = params?.options?.contentFormat || 'Fakta singkat';
   const requestedTopic = String(params?.options?.requestedTopic || '').trim();
-  const bank = baseComposer.extractManualFactBank(params.sources || [], requestedTopic);
+  const originalSources = params.sources || [];
+  const bank = baseComposer.extractManualFactBank(originalSources, requestedTopic);
   const openai = params.client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   const effectiveFormat = await classifyEffectiveFormat(openai, requestedFormat, bank);
-  const expectedCount = baseComposer.desiredSlideCount(effectiveFormat, params.sources || [], bank);
+  const isListicle = normalizedFormat(effectiveFormat) === 'listicle';
+  const declaredCount = isListicle ? declaredListCount(originalSources) : null;
+  const expectedCount = isListicle
+    ? listSlideCount(originalSources, bank)
+    : baseComposer.desiredSlideCount(effectiveFormat, originalSources, bank);
+  const composerSources = isListicle
+    ? normalizeListSourcesForBase(originalSources, declaredCount)
+    : originalSources;
   const result = await baseComposer.composeManualSourceContent({
     ...params,
+    sources: composerSources,
     options: { ...(params.options || {}), contentFormat: effectiveFormat },
     client: guardedClient(openai, effectiveFormat, expectedCount)
   });
@@ -213,6 +253,8 @@ module.exports = {
   composeManualSourceContent,
   classifyEffectiveFormat,
   beforeAfterRelationshipErrors,
+  declaredListCount,
+  listSlideCount,
   formatStructureErrors,
   looksLikeUserAction,
   MAX_FORMAT_CLASSIFY_ATTEMPTS,
