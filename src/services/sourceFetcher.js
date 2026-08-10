@@ -94,19 +94,55 @@ function extractStructuredArticle(html) {
 }
 
 const NOISY_BLOCK_ATTR = /(?:^|[\s_-])(?:related|recommended|recommendation|baca[-_ ]?juga|read[-_ ]?more|most[-_ ]?popular|be[-_ ]?stories|latest|trending|sidebar|widget|promo|advert|ads?|next[-_ ]?article|more[-_ ]?article|article[-_ ]?list|other[-_ ]?article)(?:$|[\s_-])/i;
+const VOID_HTML_TAGS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+const ALWAYS_NOISY_TAGS = new Set(['aside', 'nav', 'footer', 'header']);
+
+function noisyTagAttributes(attrs = '') {
+  const values = [];
+  for (const match of String(attrs).matchAll(/(?:id|class)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) values.push(match[1] || match[2] || '');
+  return values.some(value => NOISY_BLOCK_ATTR.test(value));
+}
 
 function stripNoisyHtmlBlocks(html) {
-  let output = String(html || '');
-  const tags = ['aside', 'nav', 'footer', 'header'];
-  for (const tag of tags) output = output.replace(new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}>`, 'gi'), ' ');
-  for (const tag of ['section', 'div', 'ul']) {
-    const pattern = new RegExp(`<${tag}\\b([^>]*)>[\\s\\S]*?<\\/${tag}>`, 'gi');
-    output = output.replace(pattern, (block, attrs) => {
-      const marker = String(attrs || '').match(/(?:class|id)\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
-      const value = marker ? (marker[1] || marker[2] || '') : '';
-      return NOISY_BLOCK_ATTR.test(value) ? ' ' : block;
-    });
+  const source = String(html || '');
+  const tagPattern = /<\/?([a-z0-9:-]+)\b([^>]*)>/gi;
+  const stack = [];
+  let output = '';
+  let cursor = 0;
+  let suppressedRoots = 0;
+  let match;
+
+  while ((match = tagPattern.exec(source))) {
+    if (suppressedRoots === 0) output += source.slice(cursor, match.index);
+    const raw = match[0];
+    const tag = String(match[1] || '').toLowerCase();
+    const closing = /^<\//.test(raw);
+    const selfClosing = /\/\s*>$/.test(raw) || VOID_HTML_TAGS.has(tag);
+
+    if (!closing) {
+      const ownNoise = ALWAYS_NOISY_TAGS.has(tag) || noisyTagAttributes(match[2]);
+      const suppressed = suppressedRoots > 0 || ownNoise;
+      if (!suppressed) output += raw;
+      if (!selfClosing) {
+        stack.push({ tag, ownNoise });
+        if (ownNoise) suppressedRoots += 1;
+      }
+    } else {
+      const suppressedBefore = suppressedRoots > 0;
+      let found = -1;
+      for (let index = stack.length - 1; index >= 0; index -= 1) {
+        if (stack[index].tag === tag) { found = index; break; }
+      }
+      if (found >= 0) {
+        const removed = stack.splice(found);
+        suppressedRoots -= removed.filter(entry => entry.ownNoise).length;
+        if (suppressedRoots < 0) suppressedRoots = 0;
+      }
+      if (!suppressedBefore && suppressedRoots === 0) output += raw;
+    }
+    cursor = tagPattern.lastIndex;
   }
+  if (suppressedRoots === 0) output += source.slice(cursor);
   return output;
 }
 
@@ -136,9 +172,7 @@ function extractText(raw, contentType = '') {
   const htmlTitle = decodeBasicEntities((original.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim());
   if (/text\/html/i.test(contentType)) {
     const structured = extractStructuredArticle(original);
-    if (structured?.body && structured.body.length >= MIN_TEXT_LENGTH) {
-      return { title: structured.title || htmlTitle, text: structured.body };
-    }
+    if (structured?.body && structured.body.length >= MIN_TEXT_LENGTH) return { title: structured.title || htmlTitle, text: structured.body };
   }
   const selected = /text\/html/i.test(contentType) ? preferredHtmlRegion(original) : original;
   const stripped = /text\/html/i.test(contentType) ? cleanHtmlText(selected) : selected;
