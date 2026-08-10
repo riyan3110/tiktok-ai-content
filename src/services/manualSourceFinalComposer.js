@@ -8,7 +8,7 @@ const ACTION_FORMATS = new Set(['tutorial langkah', 'masalah dan solusi', 'tips 
 const ACTION_VERB_PATTERN = /\b(?:cek|periksa|memeriksa|buka|membuka|pilih|memilih|aktifkan|mengaktifkan|nonaktifkan|menonaktifkan|hapus|menghapus|keluarkan|mengeluarkan|putuskan|memutuskan|cabut|mencabut|ubah|mengubah|ganti|mengganti|reset|atur|mengatur|tinjau|meninjau|verifikasi|memverifikasi|konfirmasi|mengonfirmasi|gunakan|menggunakan|hindari|pastikan|jangan|laporkan|melaporkan|blokir|memblokir|amankan|mengamankan|perbarui|memperbarui|update|logout|hentikan|menghentikan|batasi|membatasi|simpan|menyimpan|bandingkan|membandingkan|pindai|scan|ketuk|tap|lakukan|ikuti|konsumsi|mengonsumsi|makan|tambahkan|menambahkan|kurangi|mengurangi)\b/i;
 const USER_ACTOR_PATTERN = /\b(?:pengguna|anda|kamu|kita|pemilik akun|pemilik perangkat)\b/i;
 const IMPERATIVE_ACTION_PATTERN = /^(?:(?:di|pada|melalui)\b[^,]{0,60},\s*|(?:setelah itu|kemudian|lalu|selanjutnya)\s*,?\s*)?(?:cek|periksa|buka|pilih|aktifkan|nonaktifkan|hapus|keluarkan|putuskan|cabut|ubah|ganti|reset|atur|tinjau|verifikasi|konfirmasi|gunakan|hindari|pastikan|jangan|laporkan|blokir|amankan|perbarui|update|logout|hentikan|batasi|simpan|bandingkan|pindai|scan|ketuk|tap|lakukan|ikuti|konsumsi|makan|tambahkan|kurangi)\b/i;
-const SHORT_TOPIC_STOPWORDS = new Set(['di', 'ke', 'yg', 'ya', 'ku', 'mu', 'si', 'vs']);
+const SHORT_TOPIC_STOPWORDS = new Set(['di', 'ke', 'yg', 'ya', 'ku', 'mu', 'si', 'vs', 'of', 'to', 'in', 'on', 'an', 'is', 'it', 'or', 'as', 'by']);
 const SHORT_TOPIC_ALIASES = new Map([['wa', 'whatsapp']]);
 
 function normalizedFormat(value) {
@@ -56,14 +56,7 @@ function shortTopicTokens(value) {
 }
 
 function needsShortTopicGuard(value) {
-  const tokens = String(value || '')
-    .toLocaleLowerCase('id-ID')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter(token => !SHORT_TOPIC_STOPWORDS.has(token));
-  return tokens.length > 0 && tokens.every(token => token.length <= 2) && shortTopicTokens(value).length > 0;
+  return shortTopicTokens(value).length > 0;
 }
 
 function shortTopicSourceCompatible(sources = [], topic = '') {
