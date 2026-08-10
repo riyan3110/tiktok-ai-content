@@ -6,7 +6,7 @@ const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
-const defaultManualSourceComposer = require('./manualSourceComposer');
+const defaultManualSourceComposer = require('./manualSourceFinalComposer');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
