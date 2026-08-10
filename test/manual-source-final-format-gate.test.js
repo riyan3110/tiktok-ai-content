@@ -31,13 +31,17 @@ test('Listicle membaca jumlah item setelah prefix judul, bukan hanya jika angka 
   assert.equal(listSlideCount([{ title: 'Daftar 6 Tools AI untuk Konten' }], Array(12).fill({})), 5);
 });
 
-test('topik pendek bermakna tetap menjadi hard relevance guard', () => {
+test('topik pendek bermakna tetap menjadi hard relevance guard termasuk di topik campuran', () => {
   assert.deepEqual(shortTopicTokens('AI'), ['ai']);
   assert.deepEqual(shortTopicTokens('3D'), ['3d']);
+  assert.deepEqual(shortTopicTokens('AI untuk UMKM'), ['ai']);
   assert.equal(needsShortTopicGuard('AI'), true);
   assert.equal(needsShortTopicGuard('VR'), true);
+  assert.equal(needsShortTopicGuard('AI untuk UMKM'), true);
   assert.equal(shortTopicSourceCompatible([{ title: 'Resep Nasi Goreng', text: 'Masak nasi bersama bawang dan telur sampai matang.' }], 'AI'), false);
   assert.equal(shortTopicSourceCompatible([{ title: 'Panduan AI untuk Kreator', text: 'AI membantu beberapa alur kerja konten.' }], 'AI'), true);
+  assert.equal(shortTopicSourceCompatible([{ title: 'Strategi Pemasaran UMKM', text: 'Artikel ini membahas promosi, penjualan, pelanggan, dan pemasaran usaha kecil.' }], 'AI untuk UMKM'), false);
+  assert.equal(shortTopicSourceCompatible([{ title: 'AI untuk UMKM', text: 'AI dapat dipakai pada beberapa alur kerja usaha kecil sesuai pembahasan sumber.' }], 'AI untuk UMKM'), true);
   assert.equal(shortTopicSourceCompatible([{ title: 'Cara mengamankan WhatsApp', text: 'Periksa perangkat tertaut.' }], 'WA'), true);
 });
 
