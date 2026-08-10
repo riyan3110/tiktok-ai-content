@@ -178,7 +178,11 @@ test('fallback format tetap sticky selama repair lanjutan dan tidak kembali ke T
     section: ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'][index],
     title: neutralTitles[index], body: evidence,
     points: [pointText[index]],
-    claims: [claim(`slide:${index}:body`, evidence, evidence), claim(`slide:${index}:point:0`, pointText[index], evidence)]
+    claims: [
+      claim(`slide:${index}:title`, neutralTitles[index], evidence),
+      claim(`slide:${index}:body`, evidence, evidence),
+      claim(`slide:${index}:point:0`, pointText[index], evidence)
+    ]
   }));
 
   let auditCalls = 0;
