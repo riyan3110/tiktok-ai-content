@@ -41,6 +41,23 @@ test('extractText memilih article utama terbesar dan tidak menggabungkan kartu r
   assert.doesNotMatch(result.text, /asam urat|lemak perut/i);
 });
 
+test('extractText mempertahankan article utama yang memakai class latest-news atau trending', () => {
+  const html = `
+    <html><head><title>Berita AI Hari Ini</title></head><body>
+      <article class="latest-news trending">
+        <h1>Berita AI Hari Ini</h1>
+        <p>Artikel utama menjelaskan perkembangan AI terbaru dengan konteks yang relevan untuk pembaca.</p>
+        <p>Paragraf kedua menambahkan fakta utama lain dan tetap merupakan bagian dari artikel halaman ini.</p>
+        <p>Paragraf ketiga memastikan article utama cukup jelas dan tidak boleh dibuang hanya karena nama class.</p>
+      </article>
+      <div class="recommended-article"><p>Artikel rekomendasi yang berbeda topik.</p></div>
+    </body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Artikel utama menjelaskan perkembangan AI terbaru/);
+  assert.match(result.text, /Paragraf ketiga/);
+  assert.doesNotMatch(result.text, /Artikel rekomendasi/);
+});
+
 test('extractText memprioritaskan JSON-LD articleBody dibanding kartu rekomendasi halaman', () => {
   const html = `
     <html><head><title>Judul Browser</title>
@@ -60,6 +77,22 @@ test('extractText memprioritaskan JSON-LD articleBody dibanding kartu rekomendas
   assert.match(result.text, /Apel dibahas sebagai buah pertama/);
   assert.match(result.text, /Jambu biji dibahas sebagai buah kelima/);
   assert.doesNotMatch(result.text, /asam urat|lemak perut/i);
+});
+
+test('extractText memilih JSON-LD yang cocok dengan H1 walau related article lebih panjang', () => {
+  const mainBody = 'FAKTA UTAMA DAYA INGAT menjelaskan apel, alpukat, buah beri, pisang, dan jambu biji dengan rincian yang relevan terhadap memori. '.repeat(3);
+  const relatedBody = 'FAKTA TERKAIT ASAM URAT membahas topik lain yang sengaja dibuat jauh lebih panjang daripada artikel utama dan tidak boleh dipilih. '.repeat(7);
+  const html = `
+    <html><head><title>5 Buah untuk Daya Ingat | Portal Sehat</title>
+      <script type="application/ld+json">${JSON.stringify([
+        { '@type': 'NewsArticle', headline: '5 Buah untuk Daya Ingat', articleBody: mainBody, mainEntityOfPage: true },
+        { '@type': 'NewsArticle', headline: '7 Buah untuk Asam Urat', articleBody: relatedBody }
+      ])}</script>
+    </head><body><main><h1>5 Buah untuk Daya Ingat</h1></main></body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.equal(result.title, '5 Buah untuk Daya Ingat');
+  assert.match(result.text, /FAKTA UTAMA DAYA INGAT/);
+  assert.doesNotMatch(result.text, /FAKTA TERKAIT ASAM URAT/);
 });
 
 test('extractText membersihkan tag HTML di JSON-LD articleBody dan mempertahankan batas paragraf', () => {
