@@ -8,6 +8,8 @@ process.env.AI_MODEL ||= 'test-model';
 const {
   classifyEffectiveFormat,
   beforeAfterRelationshipErrors,
+  declaredListCount,
+  listSlideCount,
   formatStructureErrors,
   looksLikeUserAction,
   MAX_FORMAT_CLASSIFY_ATTEMPTS,
@@ -17,6 +19,14 @@ const {
 function slide(section, body = 'Isi substantif dari sumber yang cukup panjang untuk menguji struktur format carousel secara deterministik dan jelas.') {
   return { section, title: section, body, points: [], claims: [] };
 }
+
+test('Listicle membaca jumlah item setelah prefix judul, bukan hanya jika angka ada di token pertama', () => {
+  assert.equal(declaredListCount([{ title: 'Daftar 4 Buah yang Membantu Menjaga Daya Ingat' }]), 4);
+  assert.equal(declaredListCount([{ title: 'Rekomendasi 6 Tools AI untuk Konten' }]), 6);
+  assert.equal(declaredListCount([{ title: '5 Daftar Buah yang Dapat Meningkatkan Daya Ingat' }]), 5);
+  assert.equal(listSlideCount([{ title: 'Daftar 4 Buah yang Membantu Menjaga Daya Ingat' }], Array(10).fill({})), 4);
+  assert.equal(listSlideCount([{ title: 'Daftar 6 Tools AI untuk Konten' }], Array(12).fill({})), 5);
+});
 
 test('final format gate menolak generic fact slides yang menyamar sebagai Tutorial, Tips, atau Before-after', () => {
   const generic = { slides: [slide('PEMBUKA'), slide('FAKTA UTAMA'), slide('PENJELASAN'), slide('KESIMPULAN')] };
