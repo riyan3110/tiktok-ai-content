@@ -10,7 +10,8 @@ const {
   deterministicRoleErrors,
   contentDensityErrors,
   effectiveManualFormat,
-  extractManualFactBank
+  extractManualFactBank,
+  looksLikeUserAction
 } = require('../src/services/manualSourceRoleGuard');
 
 function claim(field, text, evidence) {
@@ -42,6 +43,17 @@ test('Listicle menangkap struktur fallback, slide tipis, dan coverage rendah', (
   for (let index = 0; index < 4; index += 1) assert.ok(density.some(error => error.startsWith(`slide:${index}:density:`)));
   assert.ok(density.some(error => /^coverage:density:/.test(error)));
   assert.equal(effectiveManualFormat({ ...draft, effectiveContentFormat: 'Fakta singkat' }, 'Listicle'), 'Listicle', 'model tidak boleh override format pengguna');
+});
+
+test('detektor aksi menerima bentuk kata kerja Indonesia berimbuhan', () => {
+  for (const text of [
+    'Pengguna dapat menghapus perangkat yang tidak dikenal.',
+    'Setelah itu, mengeluarkan sesi asing dari akun.',
+    'Gunakan menu ini untuk menggunakan pengaturan resmi.',
+    'Pengguna dapat mengubah dan mengatur pilihan keamanan.',
+    'Pengguna dapat membatasi informasi akun yang terlihat.',
+    'Pengguna dapat menyimpan pengaturan setelah selesai.'
+  ]) assert.equal(looksLikeUserAction(text), true, text);
 });
 
 test('FACT_BANK manual mempertahankan fakta privasi yang substantif tetapi membuang privacy-policy boilerplate', () => {
