@@ -118,7 +118,9 @@ function stripLowValueRegions(html) {
     }
 
     const attrs = token.slice(name.length + 1);
-    const lowValue = alwaysDrop.has(name) || (classAware.has(name) && /(?:class|id)\s*=/.test(attrs) && LOW_VALUE_REGION.test(attrs));
+    const classOrIdValues = [...attrs.matchAll(/\b(?:class|id)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)]
+      .map(value => value[1] ?? value[2] ?? value[3] ?? '');
+    const lowValue = alwaysDrop.has(name) || (classAware.has(name) && classOrIdValues.some(value => LOW_VALUE_REGION.test(value)));
     const selfClosing = /\/\s*>$/.test(token) || voidTags.has(name);
     const suppressRoot = lowValue && suppressDepth === 0;
     if (!selfClosing) stack.push({ name, suppressRoot });
