@@ -5,7 +5,7 @@ const manualSourceDedupe = require('./manualSourceDedupe');
 
 const MAX_ROLE_AUDIT_ATTEMPTS = 2;
 const MAX_ROLE_REPAIR_ATTEMPTS = 4;
-const ACTION = /\b(?:cek|periksa|memeriksa|buka|membuka|pilih|memilih|aktifkan|mengaktifkan|nonaktifkan|hapus|keluarkan|putuskan|ubah|ganti|reset|atur|tinjau|verifikasi|konfirmasi|gunakan|hindari|pastikan|jangan|laporkan|blokir|amankan|perbarui|update|keluar|logout|hentikan|batasi|simpan|bandingkan|pindai|scan|ketuk|tap|lakukan|ikuti|konsumsi|mengonsumsi)\b/i;
+const ACTION = /\b(?:cek|periksa|memeriksa|buka|membuka|pilih|memilih|aktifkan|mengaktifkan|nonaktifkan|menonaktifkan|hapus|menghapus|keluarkan|mengeluarkan|putuskan|memutuskan|cabut|mencabut|ubah|mengubah|ganti|mengganti|reset|atur|mengatur|tinjau|meninjau|verifikasi|memverifikasi|konfirmasi|mengonfirmasi|gunakan|menggunakan|hindari|pastikan|jangan|laporkan|melaporkan|blokir|memblokir|amankan|mengamankan|perbarui|memperbarui|update|keluar|logout|hentikan|menghentikan|batasi|membatasi|simpan|menyimpan|bandingkan|membandingkan|pindai|scan|ketuk|tap|lakukan|ikuti|konsumsi|mengonsumsi)\b/i;
 const ATTACKER = /\b(?:pelaku|penyerang|hacker|peretas|malware|spyware|aplikasi pihak ketiga|orang lain)\b/i;
 const GENERIC_END = /\b(?:dengan langkah sederhana|dengan langkah mudah|tetap aman|bebas berinteraksi|pentingnya keamanan|lebih aman dan nyaman|jaga keamanan akun|semoga bermanfaat|yuk coba)\b/i;
 const BOILER = /(?:baca\s+juga|read\s+also|cookie(?:\s+policy)?|privacy\s+(?:policy|notice)|kebijakan\s+privasi|syarat\s+dan\s+ketentuan|terms\s+of\s+use|copyright|hak\s+cipta|newsletter|subscribe|ikuti\s+kami|follow\s+us|login|sign\s+in|contact\s+us|hubungi\s+kami)/i;
