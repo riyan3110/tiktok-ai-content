@@ -167,11 +167,17 @@ test('fallback format tetap sticky selama repair lanjutan dan tidak kembali ke T
     section: ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'][index],
     title: `Fakta ${index + 1}`, body: 'Isi terlalu singkat.', points: [], claims: []
   }));
+  const pointText = [
+    'Konteks pertama dari sumber',
+    'Konteks kedua tetap berbeda',
+    'Konteks ketiga menambah detail',
+    'Konteks keempat merangkum sumber'
+  ];
   const denseFallback = facts.map((evidence, index) => ({
     section: ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'][index],
     title: `Fakta ${index + 1}`, body: evidence,
-    points: ['Berasal dari artikel utama'],
-    claims: [claim(`slide:${index}:body`, evidence, evidence), claim(`slide:${index}:point:0`, 'Berasal dari artikel utama', evidence)]
+    points: [pointText[index]],
+    claims: [claim(`slide:${index}:body`, evidence, evidence), claim(`slide:${index}:point:0`, pointText[index], evidence)]
   }));
 
   let auditCalls = 0;
