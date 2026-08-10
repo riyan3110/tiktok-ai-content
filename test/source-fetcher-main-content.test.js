@@ -59,6 +59,24 @@ test('extractText membuang related/sidebar di dalam main ketika article tidak te
   assert.doesNotMatch(result.text, /lemak perut|asam urat/i);
 });
 
+test('extractText membuang related block yang nested di dalam wrapper article biasa', () => {
+  const html = `
+    <html><body><article>
+      <div class="content">
+        <p>Fakta utama tentang daya ingat tetap dipakai sebagai isi artikel.</p>
+        <div class="related">
+          <p>5 buah dapat membantu menurunkan asam urat secara alami.</p>
+          <div><p>8 buah pembakar lemak perut juga rekomendasi lain.</p></div>
+        </div>
+        <p>Fakta utama kedua tentang kesehatan otak tetap dipakai dalam artikel.</p>
+      </div>
+    </article></body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Fakta utama tentang daya ingat/);
+  assert.match(result.text, /Fakta utama kedua tentang kesehatan otak/);
+  assert.doesNotMatch(result.text, /asam urat|lemak perut/i);
+});
+
 test('extractText memprioritaskan JSON-LD articleBody dibanding markup halaman yang berisik', () => {
   const articleBody = 'Apel dan buah beri dibahas dalam artikel utama tentang daya ingat. '.repeat(8);
   const html = `<html><head><script type="application/ld+json">${JSON.stringify({ '@type': 'Article', articleBody })}</script></head><body><main>${'Noise artikel rekomendasi. '.repeat(50)}</main></body></html>`;
