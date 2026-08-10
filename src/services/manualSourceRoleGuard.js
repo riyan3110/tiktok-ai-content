@@ -26,14 +26,27 @@ function looksLikeUserAction(value) {
 function bankTokens(value) {
   return [...new Set(String(value || '').toLocaleLowerCase('id-ID').replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 2 && !STOP.has(t)))];
 }
+function boundedEvidenceChunks(value) {
+  const text = String(value || '').trim();
+  if (!text || HARD_WEB_METADATA.test(text)) return [];
+  const tokens = words(text);
+  if (tokens.length < 4) return [];
+  if (tokens.length <= 32) return [text];
+  const partCount = Math.ceil(tokens.length / 28);
+  const chunkSize = Math.ceil(tokens.length / partCount);
+  const chunks = [];
+  for (let start = 0; start < tokens.length; start += chunkSize) {
+    const chunk = tokens.slice(start, start + chunkSize).join(' ').trim();
+    if (words(chunk).length >= 4 && words(chunk).length <= 32 && !HARD_WEB_METADATA.test(chunk)) chunks.push(chunk);
+  }
+  return chunks;
+}
 function manualEvidenceCandidates(text) {
   return String(text || '').replace(/\r/g, '\n').split(/(?<=[.!?])\s+|\n+/).map(v => v.trim()).filter(Boolean).flatMap(sentence => {
     if (HARD_WEB_METADATA.test(sentence)) return [];
-    const n = words(sentence).length;
-    if (n >= 4 && n <= 32) return [sentence];
-    if (n < 4) return [];
-    return sentence.split(/(?<=[;:])\s+|\s+[—–]\s+|,\s+(?=(?:sedangkan|sementara|tetapi|namun|dan)\s+)/i)
-      .map(v => v.trim()).filter(v => words(v).length >= 4 && words(v).length <= 32 && !HARD_WEB_METADATA.test(v));
+    const clauses = sentence.split(/(?<=[;:])\s+|\s+[—–]\s+|,\s+(?=(?:sedangkan|sementara|tetapi|namun|dan)\s+)/i)
+      .map(v => v.trim()).filter(Boolean);
+    return clauses.flatMap(boundedEvidenceChunks);
   });
 }
 function extractManualFactBank(sources = [], topic = '') {
