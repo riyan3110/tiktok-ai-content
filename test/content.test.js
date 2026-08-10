@@ -653,4 +653,35 @@ test('source tanpa teks yang dapat dijadikan fakta tetap hard fail sebelum pangg
   assert.equal(called, false);
 });
 
+test('defer grounding hanya mengembalikan bootstrap untuk filter sementara source generation biasa tetap strict', async () => {
+  const evidence = 'Platform membantu tim menyusun kalender konten bersama.';
+  const draft = {
+    focus: { masalah: 'Koordinasi', penyebab: 'Rencana terpisah', solusi: 'Kalender bersama', hasil: 'Rencana terlihat' },
+    topic: 'Kalender konten', hook: 'Kalender Konten Tim', body: 'Platform membantu tim menyusun kalender konten bersama.',
+    caption: 'Kalender konten untuk tim.', hashtags: ['#Konten'], cta: 'Periksa konteksnya', trendKeywordsUsed: [],
+    content_angle: 'kolaborasi', primary_tool: 'platform', hook_pattern: 'langsung', verificationStatus: 'source_based', unsupportedClaims: [],
+    slides: [
+      { section: 'PEMBUKA', title: 'Kalender Konten Tim', body: 'Periksa konteks sumbernya.', points: [], claims: [] },
+      { section: 'KONTEKS', title: 'Kolaborasi Kalender', body: 'Platform membantu tim menyusun kalender konten bersama.', points: [], claims: [] },
+      { section: 'DETAIL', title: 'Rencana Bersama', body: 'Platform memiliki kalender untuk seluruh tim.', points: [], claims: [] },
+      { section: 'PENUTUP', title: 'Ringkasan', body: 'Simpan konteks yang relevan.', points: [], claims: [] }
+    ]
+  };
+  const makeClient = counter => ({ chat: { completions: { create: async () => {
+    counter.calls += 1;
+    return { choices: [{ message: { content: JSON.stringify(draft) } }] };
+  } } } });
+  const options = { useSources: true, sources: [{ text: evidence }], sourceContext: evidence, contentFormat: 'Listicle' };
+
+  const strictCounter = { calls: 0 };
+  const strict = await generateContent([], options, makeClient(strictCounter));
+  assert.ok(strictCounter.calls > 1, 'source generation biasa tetap menjalankan repair/fallback grounding lama');
+  assert.notDeepEqual(strict.slides, draft.slides, 'hasil unsupported tidak diterima langsung pada mode strict');
+  const deferredCounter = { calls: 0 };
+  const bootstrap = await generateContent([], { ...options, deferSourceGroundingValidation: true }, makeClient(deferredCounter));
+  assert.equal(deferredCounter.calls, 1, 'bootstrap tidak hard-fail atau menjalankan fallback karena missing evidence yang recoverable');
+  assert.equal(bootstrap.topic, 'Kalender konten');
+  assert.equal(bootstrap.slides[2].claims.length, 0, 'bootstrap belum dianggap final hanya karena dikembalikan ke sourceFilter');
+});
+
 function wordsForTest(value) { return String(value).trim().split(/\s+/).filter(Boolean).length; }

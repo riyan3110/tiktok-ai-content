@@ -139,6 +139,7 @@ test('AI dengan satu URL memakai pipeline source-backed dan menentukan topik tan
   assert.deepEqual(fetchedUrls, [sourceUrl]);
   assert.equal(baseOptions.requestedTopic, undefined);
   assert.equal(baseOptions.useSources, true);
+  assert.equal(baseOptions.deferSourceGroundingValidation, true, 'hanya bootstrap source-aware menunda hard-fail grounding awal');
   assert.deepEqual(baseOptions.sources.map(source => source.url), [sourceUrl]);
   assert.match(baseOptions.sourceContext, /risiko keamanan siber/);
   assert.ok(verifierCalls >= 2, 'base source-aware tetap harus melewati verifier dan semantic audit nyata');
