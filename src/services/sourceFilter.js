@@ -650,8 +650,33 @@ function parseJsonResponse(response) {
   return JSON.parse(raw);
 }
 
+function manualTopLevelFocusErrors(finalContent, options) {
+  const manualSource = options.topicSource === 'manual'
+    && options.useSources === true
+    && Boolean(String(options.requestedTopic || '').trim());
+  if (!manualSource) return [];
+  const claims = normalizeClaims(finalContent?.slides || []);
+  return ['masalah', 'penyebab', 'solusi', 'hasil'].flatMap(field => {
+    const value = String(finalContent?.focus?.[field] || '').trim();
+    if (!requiresEvidence(value)) return [];
+    const supported = claims.some(claim => hasSafeEvidenceSupport(value, claim.text)
+      || hasSafeEvidenceSupport(value, claim.evidence));
+    return supported ? [] : [`MANUAL_FOCUS_${field.toUpperCase()}: Pernyataan faktual tidak didukung verified claims/evidence: ${value}.`];
+  });
+}
+
 function finalSourceGroundingErrors(autoSourceTopic, contentService, finalContent, options, sources) {
-  if (!autoSourceTopic || typeof contentService?.validateSourceGrounding !== 'function') return [];
+  if (!autoSourceTopic) {
+    const focusErrors = manualTopLevelFocusErrors(finalContent, options);
+    if (focusErrors.length) {
+      throw Object.assign(new Error(`Konten tidak lolos validasi focus manual: ${focusErrors[0]}`), {
+        status: 422,
+        validationErrors: focusErrors
+      });
+    }
+    return [];
+  }
+  if (typeof contentService?.validateSourceGrounding !== 'function') return [];
   return contentService.validateSourceGrounding(finalContent, options.sourceContext, sources) || [];
 }
 

@@ -134,7 +134,7 @@ test('final grounding menerima topic dan focus source-aware yang didukung source
   assert.deepEqual(realContent.validateSourceGrounding(result, source.text, [source]), []);
 });
 
-test('manual valid tidak menjalankan final whole-content grounding tambahan', async () => {
+test('manual supported focus lolos tanpa final whole-content grounding tambahan', async () => {
   const slides = verifiedSlides();
   const base = bootstrap();
   const counters = { verify: 0, audit: 0 };
@@ -160,7 +160,101 @@ test('manual valid tidak menjalankan final whole-content grounding tambahan', as
   });
 
   assert.equal(result.topic, 'Model Orion');
+  assert.deepEqual(result.focus, base.focus);
+  assert.deepEqual(result.slides, slides);
   assert.equal(finalGroundingCalls, 0);
   assert.equal(counters.verify, 1);
   assert.equal(counters.audit, 1);
+});
+
+test('manual valid dengan focus structural tetap identik tanpa recovery AI-only', async () => {
+  const slides = verifiedSlides();
+  const focus = {
+    masalah: 'Konteks evaluasi',
+    penyebab: 'Informasi tersebar',
+    solusi: 'Periksa sumber',
+    hasil: 'Ringkasan evaluasi'
+  };
+  const base = bootstrap({ focus });
+  const counters = { verify: 0, audit: 0 };
+  let fullGroundingCalls = 0;
+  let safeRecoveryCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) safeRecoveryCalls += 1;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      counters.audit += 1;
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    counters.verify += 1;
+    return { choices: [{ message: { content: JSON.stringify({ slides }) } }] };
+  } } } };
+  const content = {
+    async generateContent() { return base; },
+    validateContent: realContent.validateContent,
+    validateSourceGrounding() { fullGroundingCalls += 1; return []; }
+  };
+
+  const result = await generateFilteredContent({
+    content,
+    options: { topicSource: 'manual', useSources: true, requestedTopic: 'Model Orion', contentFormat: 'Listicle', sourceContext: source.text },
+    sources: [source],
+    client
+  });
+
+  assert.deepEqual(result.focus, focus);
+  assert.deepEqual(result.slides, slides);
+  assert.equal(counters.verify, 1);
+  assert.equal(counters.audit, 1);
+  assert.equal(safeRecoveryCalls, 0);
+  assert.equal(fullGroundingCalls, 0);
+});
+
+test('manual menolak inherited focus faktual unsupported tanpa mengubah slides atau menjalankan recovery AI-only', async () => {
+  const slides = verifiedSlides();
+  const base = bootstrap({
+    focus: {
+      masalah: 'Konteks evaluasi',
+      penyebab: 'Informasi tersebar',
+      solusi: 'Periksa sumber',
+      hasil: 'Hasil pasti meningkat'
+    }
+  });
+  let verifierCalls = 0;
+  let auditCalls = 0;
+  let safeRecoveryCalls = 0;
+  let fullGroundingCalls = 0;
+  let validatedSlides;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) safeRecoveryCalls += 1;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      auditCalls += 1;
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    verifierCalls += 1;
+    return { choices: [{ message: { content: JSON.stringify({ slides }) } }] };
+  } } } };
+  const content = {
+    async generateContent() { return base; },
+    validateContent(value) { validatedSlides = value.slides; return []; },
+    validateSourceGrounding() { fullGroundingCalls += 1; return []; }
+  };
+
+  await assert.rejects(generateFilteredContent({
+    content,
+    options: { topicSource: 'manual', useSources: true, requestedTopic: 'Model Orion', contentFormat: 'Listicle', sourceContext: source.text },
+    sources: [source],
+    client
+  }), error => {
+    assert.equal(error.status, 422);
+    assert.match(error.validationErrors.join(' '), /MANUAL_FOCUS_HASIL.*Hasil pasti meningkat/);
+    return true;
+  });
+
+  assert.deepEqual(validatedSlides, slides);
+  assert.equal(verifierCalls, 1);
+  assert.equal(auditCalls, 1);
+  assert.equal(safeRecoveryCalls, 0);
+  assert.equal(fullGroundingCalls, 0);
 });
