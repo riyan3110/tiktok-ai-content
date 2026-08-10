@@ -43,6 +43,7 @@ const INDONESIAN_DISPLAY_WORDS = new Set([
   'tidak', 'bukan', 'belum', 'bisa', 'dapat', 'akan', 'ini', 'itu', 'agar', 'karena',
   'sebagai', 'tentang', 'sebelum', 'setelah', 'lebih', 'oleh', 'dalam', 'juga', 'saat'
 ]);
+const COPY_FILLER_WORDS = new Set([...TOPIC_STOPWORDS, 'langkah', 'tutorial', 'fakta', 'singkat']);
 
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '')
@@ -52,6 +53,45 @@ const normalize = value => String(value || '')
   .replace(/\s+/g, ' ')
   .trim();
 const tokens = value => new Set(normalize(value).split(' ').filter(Boolean));
+
+function meaningfulCopyTokens(value) {
+  return normalize(value).split(' ').filter(token => (token.length > 2 || token === 'ai') && !COPY_FILLER_WORDS.has(token));
+}
+
+function duplicateCopyPair(left, right) {
+  const leftRaw = normalize(left);
+  const rightRaw = normalize(right);
+  const leftTokens = [...new Set(meaningfulCopyTokens(left))];
+  const rightTokens = [...new Set(meaningfulCopyTokens(right))];
+  if (!leftTokens.length || !rightTokens.length) return false;
+  const shared = leftTokens.filter(token => rightTokens.includes(token));
+  return leftRaw === rightRaw || (shared.length >= 2 && shared.length / Math.min(leftTokens.length, rightTokens.length) >= 0.75);
+}
+
+// Use content.duplicateSlideCopy's threshold, while identifying only the later,
+// less structural field so safe recovery can lock every non-target field.
+function sourceBackedDuplicateErrors(slides = []) {
+  const errors = [];
+  slides.forEach((slide, slideIndex) => {
+    const title = String(slide?.title || '').trim();
+    const body = String(slide?.body || '').trim();
+    const points = Array.isArray(slide?.points) ? slide.points : [];
+    if (duplicateCopyPair(title, body)) errors.push(`slide:${slideIndex}:body: copy mengulang title.`);
+    points.forEach((point, pointIndex) => {
+      if (duplicateCopyPair(title, point)) errors.push(`slide:${slideIndex}:point:${pointIndex}: copy mengulang title.`);
+      else if (duplicateCopyPair(body, point)) errors.push(`slide:${slideIndex}:point:${pointIndex}: copy mengulang body.`);
+      else {
+        for (let earlier = 0; earlier < pointIndex; earlier += 1) {
+          if (duplicateCopyPair(points[earlier], point)) {
+            errors.push(`slide:${slideIndex}:point:${pointIndex}: copy mengulang point lain.`);
+            break;
+          }
+        }
+      }
+    });
+  });
+  return errors;
+}
 
 function topicTokens(value) {
   return [...tokens(value)].filter(token => (token.length > 2 || token === 'ai') && !TOPIC_STOPWORDS.has(token));
@@ -441,6 +481,7 @@ function validateVerifiedContent(base, candidate, { contentService, format, manu
     });
   }
   errors.push(...validateSlideTopicRelevance(manualTopic, candidate.slides, verifiedClaimFields));
+  errors.push(...sourceBackedDuplicateErrors(candidate.slides));
 
   const verified = { ...base, slides: candidate.slides, verificationStatus: 'source_based', unsupportedClaims: [] };
   const first = verified.slides[0];
@@ -599,7 +640,7 @@ function verifierPrompt({ base, draft = base, bank, topic, format, errors = [] }
 }
 
 function safeRecoveryPrompt({ base, draft, bank, topic, format, errors }) {
-  return `${verifierPrompt({ base, draft, bank, topic, format, errors })}\n\nFINAL SAFE RECOVERY:\n- Perbaiki HANYA field yang disebut dalam error; pertahankan field lain yang sudah valid.\n- Untuk body/title yang gagal, pilih SATU fakta paling relevan dari FACT_BANK lalu tulis paraphrase Bahasa Indonesia yang singkat dan setia, beserta satu claim/evidence yang tepat.\n- Jika error format Fakta singkat menyebut fakta terverifikasi, field target WAJIB menjadi pernyataan yang menjawab topik dengan satu evidence relevan dari FACT_BANK, bukan pertanyaan lain, CTA, filler, atau copy netral kosong. Sertakan claim dengan field, text, sourceId, dan evidence. Jika evidence tidak cocok dengan ide lama, gunakan fakta relevan lain yang masih menjawab TOPIK UTAMA; jangan mengarang demi mempertahankan sudut lama.\n- Jangan menambah sebab-akibat, manfaat, kesimpulan, atau modalitas yang lebih kuat daripada evidence. Jika evidence menyebut can/could/may/help/potential, gunakan dapat/bisa/mungkin/membantu/berpotensi, bukan kepastian.\n- Untuk drift entity/scope/modalitas/pengecualian/waktu, nested uncertainty, atau unsupported condition, ubah HANYA field target menjadi paraphrase sesempit yang evidence dukung. Pertahankan uncertainty wrapper, capability, subject/actor, kondisi yang benar-benar ada, negasi, dan modalitas; jangan mengubah field lain atau menambah fakta maupun kondisi baru.\n- Untuk point yang gagal, pertama coba perbaiki claim/evidence lama. Jika tidak bisa dan FACT_BANK masih memiliki fakta relevan lain yang belum dipakai pada carousel, ganti HANYA point target dengan paraphrase fakta tersebut beserta claim/evidence yang tepat. Jika tidak ada fakta relevan yang belum dipakai, hapus point serta claim-nya; 1–2 point yang valid lebih baik daripada bullet rekaan.\n- Title boleh dijadikan label struktural/netral yang natural dan selaras dengan body valid tanpa claim faktual baru.\n- PEMBUKA format Fakta singkat boleh berupa pertanyaan atau copy struktural/netral. KESIMPULAN harus merangkum fakta yang sudah didukung atau menjadi penutup netral yang bermakna, bukan pertanyaan kosong; fakta/manfaat di dalamnya tetap wajib evidence.\n- Jumlah slide, urutan, section, dan format HARUS persis sama. Jangan mengosongkan slide.`;
+  return `${verifierPrompt({ base, draft, bank, topic, format, errors })}\n\nFINAL SAFE RECOVERY:\n- Perbaiki HANYA field yang disebut dalam error; pertahankan field lain yang sudah valid.\n- Jika error menyebut "copy mengulang title/body/point", perbaiki HANYA field target. Pertahankan title dan semua field non-target persis. Utamakan detail/fakta relevan lain dari FACT_BANK yang belum dipakai; jika ide lama masih diperlukan, jadikan field target detail pelengkap, bukan parafrase field lain. Jika target point tidak punya informasi tambahan yang aman, hapus point beserta claim-nya. Jangan mengarang replacement; evidence harus tetap exact dari sumber.\n- Untuk body/title yang gagal, pilih SATU fakta paling relevan dari FACT_BANK lalu tulis paraphrase Bahasa Indonesia yang singkat dan setia, beserta satu claim/evidence yang tepat.\n- Jika error format Fakta singkat menyebut fakta terverifikasi, field target WAJIB menjadi pernyataan yang menjawab topik dengan satu evidence relevan dari FACT_BANK, bukan pertanyaan lain, CTA, filler, atau copy netral kosong. Sertakan claim dengan field, text, sourceId, dan evidence. Jika evidence tidak cocok dengan ide lama, gunakan fakta relevan lain yang masih menjawab TOPIK UTAMA; jangan mengarang demi mempertahankan sudut lama.\n- Jangan menambah sebab-akibat, manfaat, kesimpulan, atau modalitas yang lebih kuat daripada evidence. Jika evidence menyebut can/could/may/help/potential, gunakan dapat/bisa/mungkin/membantu/berpotensi, bukan kepastian.\n- Untuk drift entity/scope/modalitas/pengecualian/waktu, nested uncertainty, atau unsupported condition, ubah HANYA field target menjadi paraphrase sesempit yang evidence dukung. Pertahankan uncertainty wrapper, capability, subject/actor, kondisi yang benar-benar ada, negasi, dan modalitas; jangan mengubah field lain atau menambah fakta maupun kondisi baru.\n- Untuk point yang gagal, pertama coba perbaiki claim/evidence lama. Jika tidak bisa dan FACT_BANK masih memiliki fakta relevan lain yang belum dipakai pada carousel, ganti HANYA point target dengan paraphrase fakta tersebut beserta claim/evidence yang tepat. Jika tidak ada fakta relevan yang belum dipakai, hapus point serta claim-nya; 1–2 point yang valid lebih baik daripada bullet rekaan.\n- Title boleh dijadikan label struktural/netral yang natural dan selaras dengan body valid tanpa claim faktual baru.\n- PEMBUKA format Fakta singkat boleh berupa pertanyaan atau copy struktural/netral. KESIMPULAN harus merangkum fakta yang sudah didukung atau menjadi penutup netral yang bermakna, bukan pertanyaan kosong; fakta/manfaat di dalamnya tetap wajib evidence.\n- Jumlah slide, urutan, section, dan format HARUS persis sama. Jangan mengosongkan slide.`;
 }
 
 function parseJsonResponse(response) {
@@ -772,6 +813,7 @@ module.exports = {
   recoveryFieldKeys,
   mergeRecoveryFields,
   pruneUnneededClaims,
+  sourceBackedDuplicateErrors,
   MAX_VERIFY_ATTEMPTS,
   MAX_SAFE_RECOVERY_ATTEMPTS
 };

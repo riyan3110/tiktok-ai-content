@@ -1,7 +1,96 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { generateFilteredContent } = require('../src/services/sourceFilter');
+const {
+  generateFilteredContent,
+  sourceBackedDuplicateErrors,
+  recoveryFieldKeys,
+  MAX_VERIFY_ATTEMPTS
+} = require('../src/services/sourceFilter');
+
+test('duplicate source-backed ditargetkan ke field yang lebih akhir', () => {
+  const errors = sourceBackedDuplicateErrors([
+    {
+      title: 'China Dominasi Papan Atas',
+      body: 'Pengembang China mendominasi papan atas.',
+      points: ['Pengembang China mendominasi papan atas', 'Pengembang China mendominasi papan atas']
+    },
+    {
+      title: 'Metode Penilaian Model',
+      body: 'Peringkat disusun melalui voting blind.',
+      points: ['Sampel berasal dari penilaian pengguna', 'Penilaian pengguna menjadi sampel']
+    },
+    {
+      title: 'Google Tetap Memimpin',
+      body: 'Gemini mencatat skor Elo 1.243.',
+      points: ['Hampir 12.000 sampel penilaian']
+    }
+  ]);
+
+  assert.deepEqual(errors, [
+    'slide:0:body: copy mengulang title.',
+    'slide:0:point:0: copy mengulang title.',
+    'slide:0:point:1: copy mengulang title.',
+    'slide:1:point:1: copy mengulang point lain.'
+  ]);
+  assert.deepEqual([...recoveryFieldKeys(errors)], [
+    'slide:0:body', 'slide:0:point:0', 'slide:0:point:1', 'slide:1:point:1'
+  ]);
+});
+
+test('duplicate body menjalani targeted recovery, field lain terkunci, lalu semantic audit', async () => {
+  const factA = 'Pengembang China mendominasi papan atas model video AI.';
+  const factB = 'Delapan dari sepuluh model teratas berasal dari pengembang China.';
+  const title = 'China Dominasi Papan Atas';
+  const duplicateBody = 'Pengembang China mendominasi papan atas.';
+  const repairedBody = 'Delapan dari sepuluh model teratas berasal dari pengembang China.';
+  const base = {
+    focus: {}, topic: 'Model video AI', hook: title, body: duplicateBody, caption: duplicateBody,
+    hashtags: [], cta: title, trendKeywordsUsed: [], content_angle: 'peringkat', primary_tool: 'tanpa tool',
+    hook_pattern: 'langsung', slides: [{ section: 'ITEM 1', title, body: duplicateBody, points: [] }]
+  };
+  const duplicate = { slides: [{
+    ...base.slides[0], claims: [
+      { field: 'slide:0:title', text: title, sourceId: 'source-1', evidence: factA },
+      { field: 'slide:0:body', text: duplicateBody, sourceId: 'source-1', evidence: factA }
+    ]
+  }] };
+  let verifierCalls = 0;
+  let recoveryCalls = 0;
+  let auditCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      auditCalls += 1;
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) {
+      recoveryCalls += 1;
+      assert.match(prompt, /copy mengulang title\/body\/point/);
+      assert.match(prompt, /fakta relevan lain dari FACT_BANK yang belum dipakai/);
+      return { choices: [{ message: { content: JSON.stringify({ slides: [{
+        section: 'ITEM 1', title: 'Title ini harus diabaikan', body: repairedBody, points: [],
+        claims: [{ field: 'slide:0:body', text: repairedBody, sourceId: 'source-1', evidence: factB }]
+      }] }) } }] };
+    }
+    verifierCalls += 1;
+    return { choices: [{ message: { content: JSON.stringify(duplicate) } }] };
+  } } } };
+
+  const result = await generateFilteredContent({
+    content: { async generateContent() { return base; }, validateContent() { return []; } },
+    options: { contentFormat: 'Listicle', requestedTopic: 'Model video AI' },
+    sources: [{ url: 'https://example.test/ranking', text: `${factA} ${factB}` }],
+    client
+  });
+
+  assert.equal(verifierCalls, MAX_VERIFY_ATTEMPTS);
+  assert.equal(recoveryCalls, 1);
+  assert.equal(result.slides[0].title, title, 'title non-target tetap terkunci');
+  assert.equal(result.slides[0].body, repairedBody);
+  assert.equal(result.slides[0].claims.find(claim => claim.field === 'slide:0:body').evidence, factB);
+  assert.equal(auditCalls, 1, 'copy hasil recovery wajib melewati semantic audit');
+});
 
 test('source filter tidak menghidupkan lagi duplicate-copy hard gate sebelum verifikasi fakta', async () => {
   let baseOptions;
