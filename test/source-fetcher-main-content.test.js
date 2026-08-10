@@ -80,7 +80,7 @@ test('extractText membuang related block yang nested di dalam wrapper article bi
 test('extractText tidak membuang wrapper artikel hanya karena atribut data mengandung kata widget', () => {
   const html = `
     <html><body><article>
-      <div class="content" data-widget-version="1" data-related-mode="off">
+      <div class="content" data-widget-version="1" data-related-mode="off" data-class="related" data-id="sidebar">
         <p>Fakta utama artikel tetap harus dipertahankan meskipun wrapper memiliki atribut data teknis.</p>
         <p>Fakta kedua artikel juga tetap tersedia untuk membangun carousel yang benar.</p>
       </div>
