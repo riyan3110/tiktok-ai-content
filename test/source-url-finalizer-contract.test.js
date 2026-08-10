@@ -5,7 +5,7 @@ process.env.AI_API_KEY ||= 'test-key';
 process.env.AI_BASE_URL ||= 'https://example.com/v1';
 process.env.AI_MODEL ||= 'test-model';
 
-const { finalizerPrompt } = require('../src/services/sourceUrlFinalizer');
+const { finalizerPrompt, targetSections } = require('../src/services/sourceUrlFinalizer');
 const { presentationErrors, sourceFacts } = require('../src/services/manualSourceFallback');
 const { safeRecoveryFormat } = require('../src/services/generation');
 
@@ -38,13 +38,29 @@ test('prompt final AI memaksa semua URL/sourceId dipakai dan mengikuti layout re
   assert.match(prompt, /Jangan mengulang ide/i);
 });
 
-test('final source presentation gate sama dengan layout: body 24 dan point 7 diterima, point 8 ditolak', () => {
+test('Listicle recovery mengikuti jumlah 5 item eksplisit dari judul sumber', () => {
+  const input = [{
+    url: 'https://example.test/listicle',
+    title: '5 Daftar Robot Humanoid yang Perlu Diketahui',
+    text: 'Robot pertama memiliki kemampuan berbeda yang dijelaskan oleh sumber. Robot kedua mempunyai fitur lain yang dibahas terpisah. Robot ketiga memiliki konteks penggunaan berbeda. Robot keempat dijelaskan dengan kemampuan khusus. Robot kelima menjadi item terakhir dalam daftar sumber.'
+  }];
+  const sections = targetSections(
+    { slides: Array.from({ length: 4 }, (_, index) => ({ section: `ITEM ${index + 1}` })) },
+    'Listicle',
+    sourceFacts(input),
+    input,
+    'Robot humanoid'
+  );
+  assert.deepEqual(sections, ['ITEM 1', 'ITEM 2', 'ITEM 3', 'ITEM 4', 'ITEM 5']);
+});
+
+test('final source presentation gate sama dengan layout: point 7 diterima, point 8 ditolak', () => {
   const facts = sourceFacts(sources());
   const valid = {
     slides: Array.from({ length: 4 }, (_, index) => ({
       title: `Judul sumber ${index + 1}`,
       body: 'Satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas dua belas tiga belas empat belas lima belas enam belas tujuh belas delapan belas.',
-      points: ['Detail tambahan tetap dari sumber']
+      points: ['Detail tambahan tetap berasal dari sumber utama']
     }))
   };
   assert.equal(presentationErrors(valid, facts).some(error => /maksimal 24|3–7 kata/.test(error)), false);
