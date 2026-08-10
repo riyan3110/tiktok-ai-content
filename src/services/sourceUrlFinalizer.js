@@ -58,7 +58,7 @@ function groupedFacts(sources, facts) {
       sourceId,
       title: String(source?.title || '').trim(),
       url: String(source?.finalUrl || source?.url || '').trim(),
-      facts: facts.filter(fact => fact.sourceId === sourceId).slice(0, 16).map(fact => fact.evidence)
+      facts: facts.filter(fact => fact.sourceId === sourceId).slice(0, 24).map(fact => fact.evidence)
     };
   });
 }
@@ -78,8 +78,6 @@ function contentShapeGoalErrors(content, facts) {
   });
 }
 
-// Alias dipertahankan agar regression lama tidak rusak, tetapi sekarang goal
-// berbasis bentuk isi slide, bukan angka density kaku semata.
 const densityGoalErrors = contentShapeGoalErrors;
 
 function qualityScore(content) {
@@ -225,9 +223,6 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     }
   }
 
-  // Setelah tiga usaha enrichment, kandidat yang sudah lolos grounding, coverage,
-  // duplicate, layout, richness hard gate, dan semantic audit tetap lebih aman
-  // daripada memaksa filler demi mencapai bentuk ideal secara absolut.
   if (bestValid) return syncTop(bestValid);
 
   throw Object.assign(new Error(`Final AI rewrite semua URL belum lolos: ${lastErrors[0] || 'validasi sumber gagal'}`), {
