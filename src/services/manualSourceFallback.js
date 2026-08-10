@@ -121,7 +121,7 @@ function duplicateErrors(content) {
       if (field.endsWith(':title')) continue;
       const key = factKey(claim);
       if (!key || key.endsWith('::')) continue;
-      if (slideFacts.has(key)) errors.push(`slide:${slideIndex}:duplicate: evidence yang sama dipakai lebih dari sekali dalam body/bullet slide.`);
+      if (slideFacts.has(key)) errors.push(`slide:${slideIndex}:duplicate: evidence yang sama dipakai lebih dari sekali dalam satu slide (body/bullet).`);
       slideFacts.add(key);
       if (factOwner.has(key) && factOwner.get(key) !== slideIndex) errors.push(`slide:${slideIndex}:duplicate: fakta canonical mengulang slide sebelumnya.`);
       else factOwner.set(key, slideIndex);
@@ -245,7 +245,7 @@ function expandEvidenceForBody(sourceText, preferredEvidence, minWords = 10, max
 }
 
 function completeBody(value, minWords = 10) {
-  let tokens = words(value).slice(0, 24);
+  const tokens = words(value).slice(0, 24);
   while (tokens.length > minWords && BAD_FRAGMENT_END.has(normalize(tokens.at(-1)))) tokens.pop();
   return tokens.join(' ').trim();
 }
@@ -287,10 +287,12 @@ function buildDeterministicSourceFallback({ generated = {}, sources = [], topic 
     };
   });
 
+  const coveredSourceIds = new Set(slides.map((slide, index) => slide.claims.find(claim => claim.field === `slide:${index}:body`)?.sourceId).filter(Boolean));
   for (const [slideIndex, slide] of slides.entries()) {
     const bodySourceId = slide.claims.find(claim => claim.field === `slide:${slideIndex}:body`)?.sourceId;
     while (slide.points.length < profile.targetPoints && remaining.length) {
-      let idx = remaining.findIndex(detail => detail.sourceId === bodySourceId);
+      let idx = remaining.findIndex(detail => !coveredSourceIds.has(detail.sourceId));
+      if (idx < 0) idx = remaining.findIndex(detail => detail.sourceId === bodySourceId);
       if (idx < 0) idx = 0;
       const [detail] = remaining.splice(idx, 1);
       const point = compactPoint(detail.evidence);
@@ -298,6 +300,7 @@ function buildDeterministicSourceFallback({ generated = {}, sources = [], topic 
       const pointIndex = slide.points.length;
       slide.points.push(point);
       slide.claims.push({ field: `slide:${slideIndex}:point:${pointIndex}`, text: point, sourceId: detail.sourceId, evidence: detail.evidence });
+      coveredSourceIds.add(detail.sourceId);
     }
   }
 
