@@ -6,6 +6,7 @@ const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
+const { buildDeterministicSourceFallback, validateSourceContent } = require('./manualSourceFallback');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -77,6 +78,12 @@ function manualSourceSeed(topic, format) {
   };
 }
 
+function deterministicFallback({ generated, sources, topic, requestedFormat }) {
+  const fallback = buildDeterministicSourceFallback({ generated, sources, topic, requestedFormat });
+  if (String(requestedFormat || '').toLocaleLowerCase('id-ID') === 'listicle') delete fallback.effectiveContentFormat;
+  return fallback;
+}
+
 async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
@@ -129,24 +136,46 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
         // constructing the production OpenAI client inside tests/custom callers.
         const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
         if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
-          generated = manualSourceSeed(basis, contentFormat);
-          generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
-            contentService: content,
-            generated,
-            options: generationOptions,
-            sources
-          });
+          const seed = manualSourceSeed(basis, contentFormat);
+          try {
+            generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
+              contentService: content,
+              generated: seed,
+              options: generationOptions,
+              sources
+            });
+          } catch (error) {
+            if (content !== defaultContent) throw error;
+            generated = deterministicFallback({ generated: seed, sources, topic: basis, requestedFormat: contentFormat });
+          }
         } else {
           generated = await content.generateContent(used, generationOptions);
         }
       } else {
         const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
-        generated = activeSourceFilter
-          ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
-          : await content.generateContent(used, generationOptions);
+        try {
+          generated = activeSourceFilter
+            ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
+            : await content.generateContent(used, generationOptions);
+        } catch (error) {
+          if (content !== defaultContent) throw error;
+          const sourceTopic = String(sources[0]?.title || 'Ringkasan sumber').trim();
+          generated = deterministicFallback({ generated: manualSourceSeed(sourceTopic, contentFormat), sources, topic: sourceTopic, requestedFormat: contentFormat });
+        }
       }
     } else {
       generated = await content.generateContent(used, generationOptions);
+    }
+    if (shouldUseSources && content === defaultContent) {
+      let sourceErrors = validateSourceContent(generated, sources);
+      if (sourceErrors.length) {
+        const sourceTopic = mode === 'manual'
+          ? manualTopic
+          : String(generated?.topic || sources[0]?.title || 'Ringkasan sumber').trim();
+        generated = deterministicFallback({ generated, sources, topic: sourceTopic, requestedFormat: contentFormat });
+        sourceErrors = validateSourceContent(generated, sources);
+        if (sourceErrors.length) throw Object.assign(new Error(`Konten URL belum memenuhi final source gate: ${sourceErrors[0]}`), { status: 422, validationErrors: sourceErrors });
+      }
     }
     generated.content_angle ||= angle || generated.topic;
     generated.primary_tool ||= 'tanpa tool';
@@ -196,4 +225,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, MAX_GENERATION_ATTEMPTS };
