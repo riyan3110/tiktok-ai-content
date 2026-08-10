@@ -67,6 +67,17 @@ function jsonLdObjects(value, output = []) {
   return output;
 }
 
+function normalizeStructuredBody(value) {
+  const decoded = decodeBasicEntities(String(value || '').trim());
+  if (!decoded) return '';
+  const stripped = /<[^>]+>/.test(decoded) ? cleanHtmlText(decoded) : decoded;
+  return decodeBasicEntities(stripped)
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n')
+    .trim();
+}
+
 function extractStructuredArticle(html) {
   const candidates = [];
   for (const match of String(html || '').matchAll(/<script\b[^>]*type\s*=\s*(?:"application\/ld\+json"|'application\/ld\+json')[^>]*>([\s\S]*?)<\/script>/gi)) {
@@ -79,14 +90,14 @@ function extractStructuredArticle(html) {
       catch { continue; }
     }
     for (const item of jsonLdObjects(parsed)) {
-      const body = typeof item?.articleBody === 'string' ? item.articleBody.trim() : '';
+      const body = typeof item?.articleBody === 'string' ? normalizeStructuredBody(item.articleBody) : '';
       if (!body) continue;
       const type = Array.isArray(item['@type']) ? item['@type'].join(' ') : String(item['@type'] || '');
       const articleLike = /Article|NewsArticle|BlogPosting|ReportageNewsArticle/i.test(type) || body.length >= MIN_TEXT_LENGTH;
       if (!articleLike) continue;
       candidates.push({
         title: String(item?.headline || item?.name || '').trim(),
-        body: decodeBasicEntities(body).replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim()
+        body
       });
     }
   }
