@@ -90,6 +90,13 @@ test('extractText tidak membuang wrapper artikel hanya karena atribut data menga
   assert.match(result.text, /Fakta kedua artikel juga tetap tersedia/);
 });
 
+test('self-closing low-value tag tidak menelan isi artikel setelahnya', () => {
+  const html = `<html><body><article><div class="related"/><p>Isi utama setelah marker terkait tetap harus terbaca dan tidak ikut tersapu.</p>${'<p>Fakta tambahan artikel utama tetap tersedia.</p>'.repeat(5)}</article></body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Isi utama setelah marker terkait tetap harus terbaca/);
+  assert.match(result.text, /Fakta tambahan artikel utama tetap tersedia/);
+});
+
 test('extractText memprioritaskan JSON-LD articleBody dibanding markup halaman yang berisik', () => {
   const articleBody = 'Apel dan buah beri dibahas dalam artikel utama tentang daya ingat. '.repeat(8);
   const html = `<html><head><script type="application/ld+json">${JSON.stringify({ '@type': 'Article', articleBody })}</script></head><body><main>${'Noise artikel rekomendasi. '.repeat(50)}</main></body></html>`;
