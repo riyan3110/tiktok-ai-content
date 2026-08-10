@@ -80,3 +80,66 @@ test('source mode memakai persis URL user dan melewati sourceFilter, bukan sourc
   assert.equal(db.prepare('SELECT topic FROM contents WHERE id=?').get(id).topic, 'Topik manual baru');
   db.close();
 });
+
+test('AI dengan satu URL memakai pipeline source-backed dan menentukan topik tanpa requestedTopic', async () => {
+  const db = createDatabase(':memory:');
+  const sourceUrl = 'https://example.com/astra';
+  let fetchedUrls;
+  let filterInput;
+  const sourceFetcher = {
+    validateSourceUrls: urls => urls,
+    fetchSources: async urls => {
+      fetchedUrls = urls;
+      return [{ url: sourceUrl, finalUrl: sourceUrl, title: 'Laporan Astra', text: 'Pengembangan Model Astra ditunda karena risiko keamanan.', fetchedAt: '2026-08-08T00:00:00.000Z' }];
+    },
+    buildSourceContext: sources => `SOURCE 1\nCONTENT:\n${sources[0].text}`
+  };
+  const sourceFilter = {
+    generateFilteredContent: async input => {
+      filterInput = input;
+      return verifiedContent('Penundaan Pengembangan Model Astra');
+    }
+  };
+
+  const id = await generateAndSave({
+    db,
+    mode: 'ai',
+    requestedTopic: '',
+    useSources: true,
+    sourceUrls: [sourceUrl],
+    sourceFetcher,
+    sourceFilter,
+    content: { generateContent: async () => { throw new Error('harus melewati sourceFilter'); } },
+    images: fakeImages,
+    useTrendReference: false
+  });
+
+  assert.deepEqual(fetchedUrls, [sourceUrl]);
+  assert.equal(filterInput.options.requestedTopic, undefined);
+  assert.equal(filterInput.options.useSources, true);
+  assert.match(filterInput.options.sourceContext, /risiko keamanan/);
+  assert.equal(db.prepare('SELECT topic FROM contents WHERE id=?').get(id).topic, 'Penundaan Pengembangan Model Astra');
+  db.close();
+});
+
+test('AI tanpa URL dan trending tetap tidak mengambil sumber', async () => {
+  for (const mode of ['ai', 'trending']) {
+    const db = createDatabase(':memory:');
+    let fetchCalls = 0;
+    const sourceFetcher = { fetchSources: async () => { fetchCalls += 1; throw new Error('tidak boleh dipanggil'); } };
+    const content = { generateContent: async (topics, options) => verifiedContent(options.requestedTopic || 'Topik AI tanpa sumber') };
+    await generateAndSave({
+      db,
+      mode,
+      useSources: mode === 'trending',
+      sourceUrls: ['https://example.com/tersimpan'],
+      sourceFetcher,
+      content,
+      trending: { getLatest: async () => ['Topik trending tetap'] },
+      images: fakeImages,
+      useTrendReference: false
+    });
+    assert.equal(fetchCalls, 0);
+    db.close();
+  }
+});

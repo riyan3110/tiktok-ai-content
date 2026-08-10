@@ -50,7 +50,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   const manualTopic = String(requestedTopic || '').trim().replace(/\s+/g, ' ');
   if (mode === 'manual' && !manualTopic) throw Object.assign(new Error('Topik manual wajib diisi'), { status: 400 });
   if (mode === 'manual' && isDuplicate(db, manualTopic)) throw Object.assign(new Error('Topik tersebut sudah pernah dibuat'), { status: 409 });
-  const shouldUseSources = mode === 'manual' && useSources === true;
+  const shouldUseSources = useSources === true && (mode === 'manual' || mode === 'ai');
   let sources = [];
   let sourceContext = '';
   if (shouldUseSources) {

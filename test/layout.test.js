@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const css = fs.readFileSync(path.join(__dirname, '../public/style.css'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
 
 test('responsive layout covers the required viewport classes', () => {
   // 360x800 uses the base/mobile rules, 768x1024 the tablet rules, and both
@@ -15,6 +16,14 @@ test('responsive layout covers the required viewport classes', () => {
   assert.match(css, /1360px/);
   assert.match(css, /grid-template-areas:"trends trends" "actions editor" "schedule schedule" "history history"/);
   assert.match(css, /grid-template-columns:minmax\(380px,2fr\) minmax\(0,3fr\)/);
+});
+
+test('manual dan AI berbagi kontrol URL tanpa mengaktifkannya untuk trending', () => {
+  assert.match(html, /name="source-mode" value="without" checked><span>Tanpa URL<\/span>/);
+  assert.match(html, /name="source-mode" value="with"><span>Pakai URL<\/span>/);
+  assert.match(app, /topicSource === 'manual' \|\| topicSource === 'ai'/);
+  assert.match(app, /const requestedTopic = topicSource === 'manual' \? \$\('#manual-topic'\)\.value : ''/);
+  assert.doesNotMatch(app, /if \(!manual\).*source-mode/);
 });
 
 test('wide-screen content remains bounded and slide previews are accessible', () => {
