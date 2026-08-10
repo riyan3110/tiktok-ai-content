@@ -2,7 +2,7 @@ const OpenAI = require('openai');
 const config = require('../config');
 const sourceFilter = require('./sourceFilter');
 const manualSourceDedupe = require('./manualSourceDedupe');
-const { sourceFacts, validateSourceContent, requestedListicleCount, densityGoal, densityTarget } = require('./manualSourceFallback');
+const { sourceFacts, validateSourceContent, requestedListicleCount, sourceRichness } = require('./manualSourceFallback');
 
 const MAX_FINALIZE_ATTEMPTS = 3;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
@@ -58,30 +58,44 @@ function groupedFacts(sources, facts) {
       sourceId,
       title: String(source?.title || '').trim(),
       url: String(source?.finalUrl || source?.url || '').trim(),
-      facts: facts.filter(fact => fact.sourceId === sourceId).slice(0, 12).map(fact => fact.evidence)
+      facts: facts.filter(fact => fact.sourceId === sourceId).slice(0, 16).map(fact => fact.evidence)
     };
   });
 }
 
-function densityGoalErrors(content, facts) {
+function contentShapeGoalErrors(content, facts) {
   const slides = Array.isArray(content?.slides) ? content.slides : [];
-  const goal = densityGoal(facts, slides.length || 4);
+  const profile = sourceRichness(facts, slides.length || 4);
   return slides.flatMap((slide, index) => {
+    const errors = [];
+    const bodyCount = words(slide?.body).length;
+    const points = Array.isArray(slide?.points) ? slide.points : [];
     const count = visibleCount(slide);
-    return count < goal ? [`slide:${index}:density-goal: ${count} kata; perkaya menuju ${goal} kata dengan fakta source-backed berbeda.`] : [];
+    if (bodyCount < 10) errors.push(`slide:${index}:shape-goal: body baru ${bodyCount} kata; perkaya menjadi sekitar 10–18 kata dari evidence yang sama.`);
+    if (points.length < profile.targetPoints) errors.push(`slide:${index}:shape-goal: baru ${points.length} bullet; target ${profile.targetPoints} bullet fakta berbeda jika fact bank mendukung.`);
+    if (count < profile.visibleGoal) errors.push(`slide:${index}:shape-goal: baru ${count} kata visible; perkaya menuju sekitar ${profile.visibleGoal} tanpa filler.`);
+    return errors;
   });
 }
 
-function densityScore(content) {
-  return (content?.slides || []).reduce((sum, slide) => sum + visibleCount(slide), 0);
+// Alias dipertahankan agar regression lama tidak rusak, tetapi sekarang goal
+// berbasis bentuk isi slide, bukan angka density kaku semata.
+const densityGoalErrors = contentShapeGoalErrors;
+
+function qualityScore(content) {
+  return (content?.slides || []).reduce((sum, slide) => {
+    const points = Array.isArray(slide?.points) ? slide.points.length : 0;
+    return sum + visibleCount(slide) + (points * 8);
+  }, 0);
 }
+
+const densityScore = qualityScore;
 
 function finalizerPrompt({ generated, sources, facts, format, topic, errors }) {
   const sections = targetSections(generated, format, facts, sources, topic);
   const sourceGroups = groupedFacts(sources, facts);
-  const goal = densityGoal(facts, sections.length);
-  const hardFloor = densityTarget(facts, sections.length);
-  return `FINAL AI REWRITE — SEMUA URL WAJIB DIPAKAI.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nSASARAN KEPADATAN: ${goal} kata visible per slide\nHARD FLOOR AMAN: ${hardFloor} kata visible per slide\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK PER URL:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- Tulis ulang seluruh carousel dalam Bahasa Indonesia yang natural, enak dibaca, tidak terasa seperti potongan mesin, dan tetap sesuai konteks sumber.\n- SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta yang terlihat pada body atau point. Jangan ada URL yang diabaikan.\n- HANYA gunakan fakta dari fact bank di atas. Jangan memakai pengetahuan luar, asumsi, filler, atau klaim yang tidak dinyatakan sumber.\n- Setiap body dan setiap point WAJIB mempunyai claim dengan field yang tepat, text PERSIS sama dengan copy yang terlihat, sourceId yang benar, dan evidence PERSIS salah satu fakta pada sourceId tersebut.\n- Jika title membuat klaim faktual spesifik, beri claim title juga. Jika tidak perlu, gunakan title ringkas yang natural dan struktural.\n- Evidence boleh berbahasa Inggris, tetapi copy yang terlihat harus diparafrase/diterjemahkan natural ke Bahasa Indonesia tanpa mengubah makna, angka, modalitas, atau tingkat kepastian.\n- Satu evidence canonical tidak boleh dipakai sebagai fakta utama di dua slide berbeda. Jangan mengulang ide dengan wording berbeda.\n- Satu slide = satu ide utama yang jelas. Body dan point harus saling melengkapi, bukan mengulang kalimat yang sama.\n- PAKSA kepadatan menuju ${goal} kata visible per slide bila FACT BANK masih memiliki fakta berbeda yang relevan. Jangan berhenti di 27–28 kata hanya karena sudah terasa cukup jika masih ada evidence aman yang belum dipakai.\n- Jika ERROR SEBELUMNYA berisi density/density-goal, prioritaskan memperkaya slide tersebut dengan fakta tambahan BERBEDA dari source, bukan filler dan bukan pengulangan. Jangan memendekkan slide lain yang sudah valid.\n- Isi harus PADAT tetapi rapi: body 18–24 kata bila sumber cukup; gunakan 1–2 point tambahan masing-masing 4–7 kata bila ada fakta pendukung berbeda.\n- Title maksimal 12 kata. Body maksimal 24 kata. Maksimal 2 points. Setiap point maksimal 7 kata.\n- Pertahankan section PERSIS sesuai SECTION WAJIB. Jika Listicle sumber secara eksplisit menyebut 4 atau 5 item, jumlah slide harus mengikuti jumlah itu.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu. Jangan mengubah fitur, risiko, atau tindakan pihak lain menjadi instruksi palsu.\n- Untuk BEFORE/AFTER/HASIL, hubungan perubahan atau outcome hanya boleh ditulis jika evidence mendukung hubungan tersebut.\n- Jangan masukkan Baca Juga, rekomendasi artikel, cookie/privacy policy, newsletter, copyright, sidebar, teaser, atau metadata situs.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  const profile = sourceRichness(facts, sections.length);
+  return `FINAL AI REWRITE — SEMUA URL WAJIB DIPAKAI.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nTARGET BENTUK SLIDE: title ringkas + body 10–18 kata + target ${profile.targetPoints} bullet fakta (hard minimum ${profile.minPoints} bila fact bank cukup)\nTARGET KEPADATAN NATURAL: sekitar ${profile.visibleGoal} kata visible; hard floor ${profile.hardFloor}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK PER URL:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- Tulis ulang seluruh carousel dalam Bahasa Indonesia yang natural, enak dibaca, informatif, dan tetap sesuai konteks sumber.\n- SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta yang terlihat pada body atau bullet. Jangan ada URL yang diabaikan.\n- HANYA gunakan fakta dari FACT BANK. Jangan memakai pengetahuan luar, asumsi, filler, atau klaim yang tidak dinyatakan sumber.\n- Setiap body dan setiap bullet WAJIB mempunyai claim dengan field yang tepat, text PERSIS sama dengan copy yang terlihat, sourceId yang benar, dan evidence PERSIS salah satu fakta pada sourceId tersebut.\n- Jika title membuat klaim faktual spesifik, beri claim title juga. Jika tidak perlu, gunakan title natural yang merangkum ide slide tanpa menambah fakta baru.\n- Evidence boleh berbahasa Inggris, tetapi copy terlihat harus diparafrase/diterjemahkan natural ke Bahasa Indonesia tanpa mengubah makna, angka, modalitas, subjek, sebab-akibat, atau tingkat kepastian.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun lintas slide. Jangan mengulang ide dengan wording berbeda.\n- POLA ISI yang dituju untuk setiap slide: title singkat; satu kalimat body yang menjelaskan konteks utama; lalu 2–3 bullet fakta pendek. Untuk source kaya, PAKSA 3 bullet jika tersedia tiga evidence berbeda dan relevan.\n- Body ideal 10–18 kata, boleh sampai 24 hanya jika perlu menjaga fakta. Bullet masing-masing 3–7 kata. Maksimal 3 bullet.\n- Bullet harus menambah informasi baru terhadap body dan bullet lain, bukan mengulang kalimat body.\n- Jika ERROR SEBELUMNYA berisi shape-goal/richness, prioritaskan menambah fakta BERBEDA dari FACT BANK pada slide itu. Jangan menambah kata kosong hanya untuk mengejar jumlah kata.\n- Satu slide = satu ide utama yang koheren. Jangan mencampur fakta dari item/topik berbeda hanya demi memenuhi bullet.\n- Pertahankan section PERSIS sesuai SECTION WAJIB. Jika Listicle sumber secara eksplisit menyebut 4 atau 5 item, jumlah slide harus mengikuti jumlah itu.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu. Jangan mengubah fitur, risiko, atau tindakan pihak lain menjadi instruksi palsu.\n- Untuk BEFORE/AFTER/HASIL, hubungan perubahan atau outcome hanya boleh ditulis jika evidence mendukung hubungan tersebut.\n- Jangan masukkan Baca Juga, rekomendasi artikel, cookie/privacy policy, newsletter, copyright, sidebar, teaser, atau metadata situs.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["...","...","..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function parseSlides(response, sections) {
@@ -128,9 +142,10 @@ function localLayoutErrors(content) {
   (content?.slides || []).forEach((slide, slideIndex) => {
     if (words(slide?.title).length > 12) errors.push(`slide:${slideIndex}: title lebih dari 12 kata.`);
     if (!words(slide?.body).length || words(slide?.body).length > 24) errors.push(`slide:${slideIndex}: body harus 1–24 kata.`);
-    if ((slide?.points || []).length > 2) errors.push(`slide:${slideIndex}: maksimal 2 point.`);
+    if ((slide?.points || []).length > 3) errors.push(`slide:${slideIndex}: maksimal 3 point.`);
     (slide?.points || []).forEach((point, pointIndex) => {
-      if (words(point).length > 7) errors.push(`slide:${slideIndex}:point:${pointIndex}: maksimal 7 kata.`);
+      const count = words(point).length;
+      if (count < 3 || count > 7) errors.push(`slide:${slideIndex}:point:${pointIndex}: harus 3–7 kata.`);
     });
   });
   return errors;
@@ -157,7 +172,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       response = await openai.chat.completions.create({
         model: config.aiModel,
         messages: [
-          { role: 'system', content: 'Anda finalizer carousel source-grounded. Semua URL wajib dipakai, setiap slide harus padat, dan tidak boleh ada fakta di luar evidence.' },
+          { role: 'system', content: 'Anda finalizer carousel source-grounded. Semua URL wajib dipakai. Setiap slide harus berupa title + penjelasan padat + bullet fakta, tanpa fakta di luar evidence.' },
           { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors }) }
         ],
         response_format: { type: 'json_object' }
@@ -195,13 +210,13 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     }
 
     const candidate = syncTop(checked.content);
-    const score = densityScore(candidate);
+    const score = qualityScore(candidate);
     if (score > bestValidScore) {
       bestValid = candidate;
       bestValidScore = score;
     }
 
-    const goalErrors = densityGoalErrors(candidate, facts);
+    const goalErrors = contentShapeGoalErrors(candidate, facts);
     if (!goalErrors.length) return candidate;
     if (attempt < MAX_FINALIZE_ATTEMPTS - 1) {
       lastErrors = goalErrors;
@@ -210,10 +225,9 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     }
   }
 
-  // Jika AI sudah menghasilkan kandidat yang lolos fakta, source coverage,
-  // duplicate, layout, dan semantic audit, jangan buang hasil natural hanya
-  // karena quality goal artikel kaya kurang 1–4 kata. Quality goal tetap sudah
-  // dikejar sampai tiga kali di atas.
+  // Setelah tiga usaha enrichment, kandidat yang sudah lolos grounding, coverage,
+  // duplicate, layout, richness hard gate, dan semantic audit tetap lebih aman
+  // daripada memaksa filler demi mencapai bentuk ideal secara absolut.
   if (bestValid) return syncTop(bestValid);
 
   throw Object.assign(new Error(`Final AI rewrite semua URL belum lolos: ${lastErrors[0] || 'validasi sumber gagal'}`), {
@@ -227,7 +241,9 @@ module.exports = {
   finalizerPrompt,
   parseSlides,
   targetSections,
+  contentShapeGoalErrors,
   densityGoalErrors,
+  qualityScore,
   densityScore,
   MAX_FINALIZE_ATTEMPTS
 };
