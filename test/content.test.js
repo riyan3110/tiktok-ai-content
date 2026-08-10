@@ -299,6 +299,57 @@ test('initial source generation Inggris valid langsung memakai display Indonesia
   assert.ok(!visual.includes(evidence));
 });
 
+test('Listicle source-backed kaya fakta mempertahankan format dan meminta kepadatan fakta', async () => {
+  const evidence = [
+    'Delapan model populer berasal dari pengembang Asia.',
+    'Model Aurora berada di peringkat pertama.',
+    'Aurora memiliki skor evaluasi 1243.',
+    'Peringkat ditentukan melalui voting blind.',
+    'Dua video dibandingkan dari prompt yang sama.'
+  ];
+  const sources = [{ text: evidence.join(' ') }];
+  const bodies = [
+    'Delapan model populer berasal dari pengembang Asia.',
+    'Model Aurora menempati peringkat pertama.',
+    'Skor evaluasi Aurora tercatat 1243.',
+    'Voting blind menentukan susunan peringkat.',
+    'Penilai membandingkan dua video dari prompt sama.'
+  ];
+  const result = {
+    focus: { masalah: 'Memahami peringkat', penyebab: 'Faktanya tersebar', solusi: 'Susun fakta berbeda', hasil: 'Peringkat mudah dipahami' },
+    topic: 'Peringkat model video', hook: 'Lima Fakta Peringkat Model', body: bodies[0], caption: bodies[0], hashtags: [],
+    cta: 'Pahami metode pemeringkatannya', trendKeywordsUsed: [], content_angle: 'fakta peringkat', primary_tool: 'tanpa tool',
+    hook_pattern: 'listicle fakta', verificationStatus: 'source_based', unsupportedClaims: [],
+    slides: bodies.map((body, index) => ({
+      section: index === 0 ? 'PEMBUKA' : index === 4 ? 'PENUTUP' : `ITEM ${index + 1}`,
+      title: ['Peta Persaingan', 'Pemimpin Peringkat', 'Skor Evaluasi', 'Metode Penilaian', 'Perbandingan Setara'][index],
+      body,
+      points: [],
+      claims: [{ text: body, sourceId: 'source-1', evidence: evidence[index] }]
+    }))
+  };
+  let request;
+  const client = { chat: { completions: { create: async value => {
+    request = value;
+    return { choices: [{ message: { content: JSON.stringify(result) } }] };
+  } } } };
+
+  const output = await generateContent([], {
+    topicSource: 'ai', useSources: true, sources, sourceContext: sources[0].text, contentFormat: 'Listicle'
+  }, client);
+  const prompt = request.messages[1].content;
+
+  assert.equal(output.slides.length, 5);
+  assert.ok(output.slides.every(slide => slide.body || slide.points.length));
+  assert.equal(new Set(output.slides.map(slide => slide.body)).size, 5);
+  assert.doesNotMatch(JSON.stringify(output.slides), /Data berasal dari sumber|Baca sumber lengkap/i);
+  assert.match(prompt, /Gunakan 4–5 slide Listicle/);
+  assert.match(prompt, /SOURCE menentukan fakta dan FORMAT menentukan cara penyajian/);
+  assert.match(prompt, /angka\/statistik penting, nama entitas\/pemain, metode\/proses, perbandingan/);
+  assert.match(prompt, /Jika hanya ada 1–2 fakta, sederhanakan penyajian.*jangan mengarang/);
+  assert.match(prompt, /Jangan memakai slide title-only, CTA generik, credit sumber/);
+});
+
 test('grounding menolak claim Inggris identik dan paraphrase tetapi menerima display Indonesia serta istilah teknis', () => {
   const { validateSourceGrounding } = require('../src/services/content');
   const evidence = 'The company introduced a remote work policy for its employees.';
