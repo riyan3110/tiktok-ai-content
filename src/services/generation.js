@@ -101,11 +101,26 @@ async function aiAllSourceRecovery({ generated, sources, topic, requestedFormat,
   });
 }
 
+// Paksa AI dua fase: pertama rewrite langsung dari source; jika gagal, bangun
+// skeleton source-only yang sudah kaya lalu minta AI menaturalkan/merapikannya lagi.
+// Skeleton mentah baru dipakai bila provider/rewrite kedua juga benar-benar gagal.
 async function aiThenDeterministicFallback({ generated, sources, topic, requestedFormat, mode, content }) {
   try {
     return await aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content });
   } catch {
-    return deterministicFallback({ generated, sources, topic, requestedFormat });
+    const skeleton = deterministicFallback({ generated, sources, topic, requestedFormat });
+    try {
+      return await aiAllSourceRecovery({
+        generated: skeleton,
+        sources,
+        topic,
+        requestedFormat: skeleton?.effectiveContentFormat || requestedFormat,
+        mode,
+        content
+      });
+    } catch {
+      return skeleton;
+    }
   }
 }
 
@@ -214,23 +229,14 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
         const sourceTopic = mode === 'manual'
           ? manualTopic
           : String(generated?.topic || sources[0]?.title || 'Ringkasan sumber').trim();
-        try {
-          generated = await aiAllSourceRecovery({
-            generated,
-            sources,
-            topic: sourceTopic,
-            requestedFormat: generated?.effectiveContentFormat || contentFormat,
-            mode,
-            content
-          });
-        } catch {
-          generated = deterministicFallback({
-            generated,
-            sources,
-            topic: sourceTopic,
-            requestedFormat: generated?.effectiveContentFormat || contentFormat
-          });
-        }
+        generated = await aiThenDeterministicFallback({
+          generated,
+          sources,
+          topic: sourceTopic,
+          requestedFormat: generated?.effectiveContentFormat || contentFormat,
+          mode,
+          content
+        });
         sourceErrors = validateSourceContent(generated, sources);
         if (sourceErrors.length) throw Object.assign(new Error(`Konten URL belum memenuhi final source gate: ${sourceErrors[0]}`), { status: 422, validationErrors: sourceErrors });
       }
@@ -283,4 +289,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, aiAllSourceRecovery, safeRecoveryFormat, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, aiAllSourceRecovery, aiThenDeterministicFallback, safeRecoveryFormat, MAX_GENERATION_ATTEMPTS };

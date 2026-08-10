@@ -92,14 +92,16 @@ function sourceCoverageErrors(content, sources = []) {
   return [...new Set(errors)];
 }
 
+// Kualitas source URL dinilai dari bentuk informasinya, bukan angka kata total yang kaku.
+// Untuk source kaya, minimum produksi mengikuti contoh: body >=10 kata + 3 bullet fakta berbeda.
 function sourceRichness(facts = [], slideCount = 4) {
   const count = facts.length;
   const perSlide = count / Math.max(1, slideCount);
   const targetPoints = perSlide >= 4 ? 3 : perSlide >= 3 ? 2 : perSlide >= 2 ? 1 : 0;
-  const minPoints = perSlide >= 3 ? 2 : perSlide >= 2 ? 1 : 0;
-  const bodyMin = perSlide >= 2 ? 8 : 6;
-  const visibleGoal = targetPoints >= 3 ? 27 : targetPoints === 2 ? 24 : targetPoints === 1 ? 20 : 16;
-  const hardFloor = perSlide >= 2 ? 18 : 14;
+  const minPoints = targetPoints;
+  const bodyMin = perSlide >= 3 ? 10 : perSlide >= 2 ? 8 : 6;
+  const visibleGoal = targetPoints >= 3 ? 30 : targetPoints === 2 ? 24 : targetPoints === 1 ? 20 : 16;
+  const hardFloor = bodyMin + (minPoints * 3);
   return { targetPoints, minPoints, bodyMin, visibleGoal, hardFloor };
 }
 
@@ -147,7 +149,6 @@ function presentationErrors(content, facts = []) {
     const titleWords = words(slide?.title).length;
     const bodyCount = words(slide?.body).length;
     const points = Array.isArray(slide?.points) ? slide.points : [];
-    const visibleCount = allVisibleParts(slide).reduce((sum, value) => sum + words(value).length, 0);
     if (!titleWords || titleWords > 12) errors.push(`slide:${slideIndex}:layout: title harus ringkas dan rapi (1–12 kata).`);
     if (bodyCount < profile.bodyMin || bodyCount > 24) errors.push(`slide:${slideIndex}:layout: body harus ${profile.bodyMin}–24 kata agar cukup menjelaskan konteks.`);
     if (points.length > 3) errors.push(`slide:${slideIndex}:layout: maksimal 3 point agar slide tetap rapi.`);
@@ -156,7 +157,6 @@ function presentationErrors(content, facts = []) {
       const count = words(point).length;
       if (count < 3 || count > 7) errors.push(`slide:${slideIndex}:point:${pointIndex}: point harus 3–7 kata.`);
     });
-    if (visibleCount < profile.hardFloor) errors.push(`slide:${slideIndex}:richness: isi masih terlalu tipis (${visibleCount} kata visible); minimum aman ${profile.hardFloor}.`);
     if (HARD_METADATA.test(visibleParts(slide).join(' '))) errors.push(`slide:${slideIndex}:metadata: boilerplate website masuk ke konten.`);
   });
   return [...new Set(errors)];
@@ -179,6 +179,59 @@ function requestedListicleCount(sources = [], topic = '') {
 
 function excerpt(value, maxWords = 7) {
   return words(value).slice(0, maxWords).join(' ').trim();
+}
+
+function tokenKey(value) {
+  return normalize(value).split(' ').filter(Boolean);
+}
+
+// Ambil window kata yang benar-benar kontigu dari source asli di sekitar evidence.
+// Ini membuat fallback punya body cukup panjang tanpa mengarang fakta baru.
+function expandEvidenceForBody(sourceText, preferredEvidence, minWords = 10, maxWords = 18) {
+  const text = String(sourceText || '').replace(/\s+/g, ' ').trim();
+  const preferred = String(preferredEvidence || '').replace(/\s+/g, ' ').trim();
+  if (!text) return excerpt(preferred, maxWords);
+
+  const sourceTokens = words(text);
+  const preferredTokens = words(preferred);
+  const sourceKeys = sourceTokens.map(token => tokenKey(token).join(' '));
+  const preferredKeys = preferredTokens.map(token => tokenKey(token).join(' '));
+  let matchStart = -1;
+
+  if (preferredKeys.length) {
+    outer: for (let i = 0; i <= sourceKeys.length - preferredKeys.length; i += 1) {
+      for (let j = 0; j < preferredKeys.length; j += 1) {
+        if (sourceKeys[i + j] !== preferredKeys[j]) continue outer;
+      }
+      matchStart = i;
+      break;
+    }
+  }
+
+  if (matchStart < 0) {
+    const fallback = preferredTokens.length >= minWords ? preferred : sourceTokens.slice(0, maxWords).join(' ');
+    return excerpt(fallback, maxWords);
+  }
+
+  let left = matchStart;
+  let right = matchStart + preferredTokens.length;
+  while ((right - left) < minWords && (left > 0 || right < sourceTokens.length)) {
+    if (right < sourceTokens.length) right += 1;
+    if ((right - left) >= minWords) break;
+    if (left > 0) left -= 1;
+  }
+
+  if ((right - left) > maxWords) {
+    right = Math.min(sourceTokens.length, left + maxWords);
+  }
+
+  let candidate = sourceTokens.slice(left, right).join(' ').trim();
+  if (HARD_METADATA.test(candidate)) {
+    candidate = preferredTokens.length >= minWords
+      ? excerpt(preferred, maxWords)
+      : sourceTokens.slice(matchStart, Math.min(sourceTokens.length, matchStart + maxWords)).join(' ').trim();
+  }
+  return candidate;
 }
 
 function buildDeterministicSourceFallback({ generated = {}, sources = [], topic = '', requestedFormat = 'Fakta singkat' } = {}) {
@@ -211,13 +264,16 @@ function buildDeterministicSourceFallback({ generated = {}, sources = [], topic 
     : selected.map((_, index) => index === 0 ? 'PEMBUKA' : index === selected.length - 1 ? 'KESIMPULAN' : index === 1 ? 'FAKTA UTAMA' : index === 2 ? 'PENJELASAN' : 'KONTEKS');
   const profile = sourceRichness(facts, selected.length);
   const slides = selected.map((fact, index) => {
-    const body = excerpt(fact.evidence, Math.min(18, Math.max(profile.bodyMin, 14)));
+    const sourceIndex = Number(String(fact.sourceId).match(/^source-(\d+)$/)?.[1]) - 1;
+    const source = sources[sourceIndex] || {};
+    const bodyEvidence = expandEvidenceForBody(source.text, fact.evidence, Math.max(10, profile.bodyMin), 18);
+    const body = excerpt(bodyEvidence, 18);
     return {
       section: sections[index],
       title: isListicle ? `Poin ${index + 1} dari sumber` : index === 0 ? 'Ringkasan dari sumber' : index === selected.length - 1 ? 'Kesimpulan dari sumber' : `Fakta sumber ${index + 1}`,
       body,
       points: [],
-      claims: [{ field: `slide:${index}:body`, text: body, sourceId: fact.sourceId, evidence: fact.evidence }]
+      claims: [{ field: `slide:${index}:body`, text: body, sourceId: fact.sourceId, evidence: bodyEvidence }]
     };
   });
 
@@ -269,5 +325,6 @@ module.exports = {
   sourceRichness,
   densityGoal,
   densityTarget,
-  requestedListicleCount
+  requestedListicleCount,
+  expandEvidenceForBody
 };
