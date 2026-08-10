@@ -169,7 +169,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     }
     let renderedSlides = [];
     try {
-      const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID'));
+      const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
       // Rendering happens only after source verification and the final Manual + URL quality gate.
