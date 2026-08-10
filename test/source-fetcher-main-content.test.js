@@ -94,6 +94,23 @@ test('extractText membuang noisy block dengan class HTML tanpa tanda kutip', () 
   assert.doesNotMatch(result.text, /lemak perut/i);
 });
 
+test('extractText mempertahankan paragraf main article setelah nested article card', () => {
+  const html = `
+    <html><body>
+      <article class="main-story">
+        <p>Paragraf utama pertama menjelaskan konteks artikel tentang fungsi memori dan pilihan buah.</p>
+        <article class="related-article"><p>Kartu nested membahas asam urat dan tidak boleh menjadi sumber utama.</p></article>
+        <p>Paragraf utama setelah nested article tetap wajib dipertahankan karena masih bagian dari artikel utama.</p>
+        <p>Paragraf penutup artikel utama juga harus tetap tersedia untuk membangun fact bank lengkap.</p>
+      </article>
+    </body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Paragraf utama pertama/);
+  assert.match(result.text, /Paragraf utama setelah nested article/);
+  assert.match(result.text, /Paragraf penutup artikel utama/);
+  assert.doesNotMatch(result.text, /asam urat/i);
+});
+
 test('extractText memakai main jika article tidak tersedia', () => {
   const html = `
     <html><body>
