@@ -5,6 +5,7 @@ const { resolveCategory, resolveFormat } = require('./contentOptions');
 const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
+const defaultManualSourceDedupe = require('./manualSourceDedupe');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -42,7 +43,7 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceDedupe = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -91,6 +92,15 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       generated = activeSourceFilter
         ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
         : await content.generateContent(used, generationOptions);
+      const activeManualSourceDedupe = manualSourceDedupe || (content === defaultContent ? defaultManualSourceDedupe : null);
+      if (mode === 'manual' && activeManualSourceDedupe?.repairManualSourceDuplicates) {
+        generated = await activeManualSourceDedupe.repairManualSourceDuplicates({
+          contentService: content,
+          generated,
+          options: generationOptions,
+          sources
+        });
+      }
     } else {
       generated = await content.generateContent(used, generationOptions);
     }
