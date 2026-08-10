@@ -6,7 +6,10 @@ const MAX_FORMAT_CLASSIFY_ATTEMPTS = 2;
 const MAX_RELATION_AUDIT_ATTEMPTS = 2;
 const ACTION_FORMATS = new Set(['tutorial langkah', 'masalah dan solusi', 'tips cepat', 'before-after']);
 const ACTION_VERB_PATTERN = /\b(?:cek|periksa|memeriksa|buka|membuka|pilih|memilih|aktifkan|mengaktifkan|nonaktifkan|menonaktifkan|hapus|menghapus|keluarkan|mengeluarkan|putuskan|memutuskan|cabut|mencabut|ubah|mengubah|ganti|mengganti|reset|atur|mengatur|tinjau|meninjau|verifikasi|memverifikasi|konfirmasi|mengonfirmasi|gunakan|menggunakan|hindari|pastikan|jangan|laporkan|melaporkan|blokir|memblokir|amankan|mengamankan|perbarui|memperbarui|update|logout|hentikan|menghentikan|batasi|membatasi|simpan|menyimpan|bandingkan|membandingkan|pindai|scan|ketuk|tap|lakukan|ikuti|konsumsi|mengonsumsi|makan|tambahkan|menambahkan|kurangi|mengurangi)\b/i;
-const NON_USER_ACTOR_PATTERN = /\b(?:pelaku|penyerang|hacker|peretas|malware|spyware|orang lain)\b/i;
+const USER_ACTOR_PATTERN = /\b(?:pengguna|anda|kamu|kita|pemilik akun|pemilik perangkat)\b/i;
+const IMPERATIVE_ACTION_PATTERN = /^(?:(?:di|pada|melalui)\b[^,]{0,60},\s*|(?:setelah itu|kemudian|lalu|selanjutnya)\s*,?\s*)?(?:cek|periksa|buka|pilih|aktifkan|nonaktifkan|hapus|keluarkan|putuskan|cabut|ubah|ganti|reset|atur|tinjau|verifikasi|konfirmasi|gunakan|hindari|pastikan|jangan|laporkan|blokir|amankan|perbarui|update|logout|hentikan|batasi|simpan|bandingkan|pindai|scan|ketuk|tap|lakukan|ikuti|konsumsi|makan|tambahkan|kurangi)\b/i;
+const SHORT_TOPIC_STOPWORDS = new Set(['di', 'ke', 'yg', 'ya', 'ku', 'mu', 'si', 'vs']);
+const SHORT_TOPIC_ALIASES = new Map([['wa', 'whatsapp']]);
 
 function normalizedFormat(value) {
   return String(value || '').trim().toLocaleLowerCase('id-ID');
@@ -37,9 +40,45 @@ function normalizeListSourcesForBase(sources = [], declaredCount = null) {
     if (!title || /^\s*\d{1,2}\b/.test(title)) return source;
     const sourceDeclared = declaredListCount([source]);
     if (sourceDeclared !== declaredCount) return source;
-    // The legacy base composer only recognizes a count at the first token.
-    // Prefix it internally so base composition and the final gate use the same count.
     return { ...source, title: `${declaredCount} ${title}` };
+  });
+}
+
+function shortTopicTokens(value) {
+  return [...new Set(String(value || '')
+    .toLocaleLowerCase('id-ID')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(token => token.length === 2 && !SHORT_TOPIC_STOPWORDS.has(token))
+    .map(token => SHORT_TOPIC_ALIASES.get(token) || token))];
+}
+
+function needsShortTopicGuard(value) {
+  const tokens = String(value || '')
+    .toLocaleLowerCase('id-ID')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(token => !SHORT_TOPIC_STOPWORDS.has(token));
+  return tokens.length > 0 && tokens.every(token => token.length <= 2) && shortTopicTokens(value).length > 0;
+}
+
+function shortTopicSourceCompatible(sources = [], topic = '') {
+  const wanted = shortTopicTokens(topic);
+  if (!wanted.length) return true;
+  return sources.some(source => {
+    const haystack = String(`${source?.title || ''} ${source?.text || ''}`)
+      .toLocaleLowerCase('id-ID')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(token => SHORT_TOPIC_ALIASES.get(token) || token);
+    const seen = new Set(haystack);
+    return wanted.some(token => seen.has(token));
   });
 }
 
@@ -47,7 +86,9 @@ function looksLikeUserAction(value) {
   const text = String(value || '').trim();
   const match = text.match(ACTION_VERB_PATTERN);
   if (!match) return false;
-  return !NON_USER_ACTOR_PATTERN.test(text.slice(0, match.index || 0));
+  const prefix = text.slice(0, match.index || 0);
+  if (USER_ACTOR_PATTERN.test(prefix)) return true;
+  return IMPERATIVE_ACTION_PATTERN.test(text);
 }
 
 function factSections(count) {
@@ -182,8 +223,6 @@ function guardedClient(openai, effectiveFormat, expectedCount) {
       completions: {
         async create(args = {}) {
           const prompt = String(args?.messages?.at(-1)?.content || '');
-          // The final wrapper already classified the format strictly. Prevent the legacy
-          // internal classifier from making a second, inconsistent decision.
           if (/Nilai apakah FACT_BANK benar-benar cukup untuk format tersebut/i.test(prompt)) {
             return { choices: [{ message: { content: JSON.stringify({ fit: true }) } }] };
           }
@@ -204,6 +243,9 @@ async function composeManualSourceContent(params = {}) {
   const requestedFormat = params?.options?.contentFormat || 'Fakta singkat';
   const requestedTopic = String(params?.options?.requestedTopic || '').trim();
   const originalSources = params.sources || [];
+  if (needsShortTopicGuard(requestedTopic) && !shortTopicSourceCompatible(originalSources, requestedTopic)) {
+    throw Object.assign(new Error('URL sumber tidak relevan dengan entitas topik manual; konten tidak akan dibuat dari artikel yang berbeda topik.'), { status: 422 });
+  }
   const bank = baseComposer.extractManualFactBank(originalSources, requestedTopic);
   const openai = params.client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   const effectiveFormat = await classifyEffectiveFormat(openai, requestedFormat, bank);
@@ -255,6 +297,9 @@ module.exports = {
   beforeAfterRelationshipErrors,
   declaredListCount,
   listSlideCount,
+  shortTopicTokens,
+  needsShortTopicGuard,
+  shortTopicSourceCompatible,
   formatStructureErrors,
   looksLikeUserAction,
   MAX_FORMAT_CLASSIFY_ATTEMPTS,
