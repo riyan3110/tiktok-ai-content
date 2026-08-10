@@ -32,7 +32,7 @@ function generated(topic) {
   };
 }
 
-test('generation menjalankan satu final quality gate hanya untuk Manual + URL', async () => {
+test('generation menjalankan satu final quality gate untuk Manual + URL', async () => {
   const db = createDatabase(':memory:');
   let filterCalls = 0;
   let qualityCalls = 0;
@@ -67,11 +67,30 @@ test('generation menjalankan satu final quality gate hanya untuk Manual + URL', 
   db.close();
 });
 
-test('generation tidak menjalankan final Manual quality gate pada AI + URL', async () => {
+test('generation juga menjalankan final quality gate pada AI + URL', async () => {
   const db = createDatabase(':memory:');
+  let filterCalls = 0;
   let qualityCalls = 0;
-  const sourceFilter = { async generateFilteredContent() { return generated('Topik AI sumber unik'); } };
-  const manualSourceRoleGuard = { async repairManualSourceRoles({ generated: value }) { qualityCalls += 1; return value; } };
+  const sourceFilter = {
+    async generateFilteredContent({ options }) {
+      filterCalls += 1;
+      assert.equal(options.topicSource, 'ai');
+      assert.equal(options.useSources, true);
+      assert.equal(options.requestedTopic, undefined);
+      return generated('Topik AI sumber unik');
+    }
+  };
+  const manualSourceRoleGuard = {
+    async repairManualSourceRoles({ generated: value, options, sources }) {
+      qualityCalls += 1;
+      assert.equal(options.topicSource, 'ai');
+      assert.equal(options.useSources, true);
+      assert.equal(options.requestedTopic, undefined);
+      assert.equal(value.topic, 'Topik AI sumber unik');
+      assert.equal(sources.length, 1);
+      return value;
+    }
+  };
 
   const id = await generateAndSave({
     db, mode: 'ai', useSources: true, sourceUrls: ['https://example.test/ai'],
@@ -79,7 +98,8 @@ test('generation tidak menjalankan final Manual quality gate pada AI + URL', asy
     sourceFetcher, sourceFilter, manualSourceRoleGuard, images, useTrendReference: false
   });
 
-  assert.equal(qualityCalls, 0);
+  assert.equal(filterCalls, 1);
+  assert.equal(qualityCalls, 1);
   assert.equal(db.prepare('SELECT topic FROM contents WHERE id=?').get(id).topic, 'Topik AI sumber unik');
   db.close();
 });
