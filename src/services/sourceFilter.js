@@ -656,11 +656,26 @@ function manualTopLevelFocusErrors(finalContent, options) {
     && Boolean(String(options.requestedTopic || '').trim());
   if (!manualSource) return [];
   const claims = normalizeClaims(finalContent?.slides || []);
+  const strongModalityGroups = [
+    ['pasti'],
+    ['selalu'],
+    ['menjamin', 'terjamin', 'dijamin'],
+    ['memastikan'],
+    ['mencegah'],
+    ['menghilangkan']
+  ];
   return ['masalah', 'penyebab', 'solusi', 'hasil'].flatMap(field => {
     const value = String(finalContent?.focus?.[field] || '').trim();
-    if (!requiresEvidence(value)) return [];
-    const supported = claims.some(claim => hasSafeEvidenceSupport(value, claim.text)
-      || hasSafeEvidenceSupport(value, claim.evidence));
+    const valueTokens = tokens(value);
+    const requiredModalities = strongModalityGroups.filter(group => group.some(term => valueTokens.has(term)));
+    if (!requiresEvidence(value) && !requiredModalities.length) return [];
+    const supported = claims.some(claim => {
+      const supportText = `${claim.text} ${claim.evidence}`;
+      const supportTokens = tokens(supportText);
+      const preservesModality = requiredModalities.every(group => group.some(term => supportTokens.has(term)));
+      return preservesModality && (hasSafeEvidenceSupport(value, claim.text)
+        || hasSafeEvidenceSupport(value, claim.evidence));
+    });
     return supported ? [] : [`MANUAL_FOCUS_${field.toUpperCase()}: Pernyataan faktual tidak didukung verified claims/evidence: ${value}.`];
   });
 }

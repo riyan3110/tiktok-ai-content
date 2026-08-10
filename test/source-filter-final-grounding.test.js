@@ -258,3 +258,81 @@ test('manual menolak inherited focus faktual unsupported tanpa mengubah slides a
   assert.equal(safeRecoveryCalls, 0);
   assert.equal(fullGroundingCalls, 0);
 });
+
+async function runManualFocusCase({ focusHasil, evidence }) {
+  const slide = {
+    section: 'ITEM 1',
+    title: 'Evaluasi Model Orion',
+    body: evidence,
+    points: [],
+    claims: [{ field: 'slide:0:body', text: evidence, sourceId: 'source-1', evidence }]
+  };
+  const focus = {
+    masalah: 'Konteks evaluasi',
+    penyebab: 'Informasi tersebar',
+    solusi: 'Periksa sumber',
+    hasil: focusHasil
+  };
+  const base = {
+    focus, topic: 'Model Orion', hook: slide.title, body: slide.body, caption: slide.body, hashtags: [],
+    cta: slide.title, trendKeywordsUsed: [], content_angle: 'evaluasi', primary_tool: 'Orion',
+    hook_pattern: 'langsung', slides: [{ section: slide.section, title: slide.title, body: slide.body, points: [] }]
+  };
+  let fullGroundingCalls = 0;
+  const content = {
+    async generateContent() { return base; },
+    validateContent() { return []; },
+    validateSourceGrounding() { fullGroundingCalls += 1; return []; }
+  };
+  const client = { chat: { completions: { async create({ messages }) {
+    if (/auditor entailment fakta bilingual/i.test(messages[1].content)) {
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    return { choices: [{ message: { content: JSON.stringify({ slides: [slide] }) } }] };
+  } } } };
+  const invocation = generateFilteredContent({
+    content,
+    options: { topicSource: 'manual', useSources: true, requestedTopic: 'Model Orion', contentFormat: 'Listicle', sourceContext: evidence },
+    sources: [{ url: 'https://example.test/orion-focus', text: evidence }],
+    client
+  });
+  return { invocation, base, slide, getFullGroundingCalls: () => fullGroundingCalls };
+}
+
+test('manual focus menolak certainty yang tidak dinyatakan verified claim atau evidence', async () => {
+  const scenario = await runManualFocusCase({
+    focusHasil: 'Model Orion pasti meningkatkan kualitas video',
+    evidence: 'Model Orion meningkatkan kualitas video.'
+  });
+
+  await assert.rejects(scenario.invocation, error => {
+    assert.equal(error.status, 422);
+    assert.match(error.validationErrors.join(' '), /MANUAL_FOCUS_HASIL.*pasti meningkatkan kualitas video/);
+    return true;
+  });
+  assert.equal(scenario.getFullGroundingCalls(), 0);
+});
+
+test('manual focus menerima certainty yang dinyatakan eksplisit oleh verified evidence', async () => {
+  const scenario = await runManualFocusCase({
+    focusHasil: 'Model Orion pasti meningkatkan kualitas video',
+    evidence: 'Model Orion pasti meningkatkan kualitas video.'
+  });
+
+  const result = await scenario.invocation;
+  assert.deepEqual(result.focus, scenario.base.focus);
+  assert.deepEqual(result.slides, [scenario.slide]);
+  assert.equal(scenario.getFullGroundingCalls(), 0);
+});
+
+test('manual focus tetap menerima paraphrase faktual natural tanpa penguatan modality', async () => {
+  const scenario = await runManualFocusCase({
+    focusHasil: 'Model Orion meningkatkan mutu video',
+    evidence: 'Model Orion meningkatkan kualitas video.'
+  });
+
+  const result = await scenario.invocation;
+  assert.deepEqual(result.focus, scenario.base.focus);
+  assert.deepEqual(result.slides, [scenario.slide]);
+  assert.equal(scenario.getFullGroundingCalls(), 0);
+});
