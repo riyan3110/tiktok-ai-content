@@ -685,3 +685,70 @@ test('defer grounding hanya mengembalikan bootstrap untuk filter sementara sourc
 });
 
 function wordsForTest(value) { return String(value).trim().split(/\s+/).filter(Boolean).length; }
+
+test('structure prompt memisahkan baseline manual dari format-specific AI source', async t => {
+  const genericStructure = 'Gunakan 4–5 slide dengan pembuka, 2–3 bagian isi yang berbeda, lalu penutup. Gabungkan poin yang saling berkaitan tanpa mengulang ide.';
+  const capturePrompt = async options => {
+    let prompt = '';
+    const client = { chat: { completions: { async create(request) {
+      prompt = request.messages[1].content;
+      throw new Error('prompt captured');
+    } } } };
+    await assert.rejects(generateContent([], options, client), /prompt captured/);
+    return prompt;
+  };
+
+  await t.test('manual non-source memakai generic baseline untuk format tambahan PR #132', async () => {
+    for (const format of ['Listicle', 'Tips cepat', 'Before-after']) {
+      const prompt = await capturePrompt({
+        topicSource: 'manual',
+        requestedTopic: 'Topik manual tetap',
+        useSources: false,
+        contentFormat: format
+      });
+      assert.match(prompt, new RegExp(genericStructure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${format} harus memakai struktur generik #130`);
+      assert.doesNotMatch(prompt, /Gunakan 4–5 slide Listicle/);
+      assert.doesNotMatch(prompt, /Gunakan 4–5 slide Tips cepat/);
+      assert.doesNotMatch(prompt, /alur BEFORE/);
+    }
+  });
+
+  await t.test('manual non-source mempertahankan tiga struktur khusus baseline', async () => {
+    const cases = [
+      ['Masalah dan solusi', /Mulai dengan satu slide ber-section MASALAH/],
+      ['Tutorial langkah', /Gunakan 4 slide secara default: PEMBUKA, dua slide LANGKAH/],
+      ['Fakta singkat', /Dilarang memakai section atau copy TUTORIAL, LANGKAH/]
+    ];
+    for (const [format, expected] of cases) {
+      const prompt = await capturePrompt({
+        topicSource: 'manual',
+        requestedTopic: 'Topik manual tetap',
+        useSources: false,
+        contentFormat: format
+      });
+      assert.match(prompt, expected, `${format} harus mempertahankan struktur khusus #130`);
+    }
+  });
+
+  await t.test('AI source mempertahankan format-specific structure dan fact density PR #132', async () => {
+    const cases = [
+      ['Listicle', /Gunakan 4–5 slide Listicle/],
+      ['Tips cepat', /Gunakan 4–5 slide Tips cepat/],
+      ['Before-after', /alur BEFORE, perubahan yang terjadi, AFTER/]
+    ];
+    const sources = [{ text: 'Sumber menjelaskan fakta utama dan konteks penting untuk carousel.' }];
+    for (const [format, expected] of cases) {
+      const prompt = await capturePrompt({
+        topicSource: 'ai',
+        requestedTopic: '',
+        useSources: true,
+        sources,
+        sourceContext: sources[0].text,
+        contentFormat: format
+      });
+      assert.match(prompt, expected, `${format} harus mempertahankan struktur source-specific #132`);
+      assert.match(prompt, /SOURCE menentukan fakta dan FORMAT menentukan cara penyajian/);
+      assert.match(prompt, /Jika FACT_BANK memiliki beberapa fakta relevan yang berbeda, gunakan sebanyak mungkin tanpa mengulang/);
+    }
+  });
+});

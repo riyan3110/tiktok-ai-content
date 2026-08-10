@@ -605,8 +605,11 @@ async function generateContent(previousTopics, options = {}, client) {
     'Tips cepat': 'Gunakan 4–5 slide Tips cepat: pembuka singkat, 2–3 tips atau tindakan berbeda, lalu rangkuman yang berguna. Setiap tips harus konkret dan tidak berulang.',
     'Before-after': 'Gunakan 4–5 slide dengan alur BEFORE, perubahan yang terjadi, AFTER, lalu hasil atau penutup. Hubungan kondisi sebelum dan sesudah harus jelas.'
   };
-  const formatStructure = formatStructures[format]
-    || 'Gunakan 4–5 slide dengan pembuka, 2–3 bagian isi yang berbeda, lalu penutup. Gabungkan poin yang saling berkaitan tanpa mengulang ide.';
+  const baselineSpecificFormats = new Set(['Masalah dan solusi', 'Tutorial langkah', 'Fakta singkat']);
+  const genericStructure = 'Gunakan 4–5 slide dengan pembuka, 2–3 bagian isi yang berbeda, lalu penutup. Gabungkan poin yang saling berkaitan tanpa mengulang ide.';
+  const formatStructure = options.useSources || baselineSpecificFormats.has(format)
+    ? formatStructures[format] || genericStructure
+    : genericStructure;
   const sourceStructure = options.useSources
     ? 'SOURCE menentukan fakta dan FORMAT menentukan cara penyajian. Pertahankan struktur format di atas. Jika FACT_BANK memiliki beberapa fakta relevan yang berbeda, gunakan sebanyak mungkin tanpa mengulang: prioritaskan fakta utama, angka/statistik penting, nama entitas/pemain, metode/proses, perbandingan, lalu konteks penting. Jangan memakai slide title-only, CTA generik, credit sumber, atau ajakan membaca sumber selama masih ada fakta relevan yang belum dipakai; setiap slide wajib memiliki body atau points yang bermakna. Title, body, dan points harus saling melengkapi dengan informasi berbeda. Jika hanya ada 1–2 fakta, sederhanakan penyajian tanpa membuat filler seolah fakta dan jangan mengarang. Untuk Tutorial langkah dan Tips cepat, hanya tulis tindakan yang benar-benar didukung sumber. Untuk Before-after, hubungan sebelum/sesudah wajib didukung sumber. Untuk Masalah dan solusi, masalah, solusi, dan hasil wajib didukung sumber. Jika sumber tidak cocok dengan karakter format, pakai struktur terdekat yang tetap didukung atau nyatakan needs_review; jangan menciptakan isi demi memenuhi format.'
     : '';

@@ -12,7 +12,7 @@ const {
   MAX_SAFE_RECOVERY_ATTEMPTS
 } = require('../src/services/sourceFilter');
 
-test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsupported tanpa mengubah struktur', async () => {
+test('manual safe recovery memperbaiki evidence lama lalu menghapus point unsupported tanpa mengubah struktur', async () => {
   const evidence = 'Home robots can fold laundry while staying in one work area.';
   const source = { url: 'https://example.test/robots', text: evidence };
   const baseSlides = [
@@ -68,10 +68,9 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
       assert.match(prompt, /nested uncertainty, atau unsupported condition/);
       assert.match(prompt, /Pertahankan uncertainty wrapper, capability, subject\/actor/);
       assert.match(prompt, /jangan mengubah field lain atau menambah fakta maupun kondisi baru/);
-      assert.match(prompt, /fakta relevan lain yang belum dipakai pada carousel/);
-      assert.match(prompt, /Jika tidak ada fakta relevan yang belum dipakai, hapus point/);
-      assert.match(prompt, /Jika FACT_BANK memiliki fakta relevan lain yang belum dipakai, point BOLEH diganti/);
-      assert.doesNotMatch(prompt, /FACT_BANK tidak punya evidence[^\n]*HAPUS point tersebut/);
+      assert.match(prompt, /Untuk point yang gagal dan tidak punya dukungan tepat, hapus point/);
+      assert.match(prompt, /FACT_BANK tidak punya evidence[^\n]*HAPUS point tersebut/);
+      assert.doesNotMatch(prompt, /fakta relevan lain yang belum dipakai pada carousel/);
       const slides = safeCalls === 1 ? tooStrongDraft : repairedDraft;
       if (safeCalls === 1) slides[1].claims.push({
         field: 'slide:1:point:0', text: 'Resmi menghemat waktu', sourceId: 'source-1', evidence
@@ -91,7 +90,7 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
   };
   const result = await generateFilteredContent({
     content,
-    options: { contentFormat: 'Fakta singkat', requestedTopic: 'Robot melipat baju' },
+    options: { topicSource: 'manual', useSources: true, requestedTopic: 'Robot melipat baju', contentFormat: 'Fakta singkat' },
     sources: [source],
     client
   });
@@ -125,7 +124,7 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
   });
 });
 
-test('safe recovery mengganti hanya point target dengan fakta FACT_BANK yang belum dipakai', async () => {
+test('AI safe recovery mengganti hanya point target dengan fakta FACT_BANK yang belum dipakai', async () => {
   const factA = 'Aurora berada di posisi pertama dalam peringkat model video.';
   const factB = 'Peringkat model video ditentukan melalui voting blind.';
   const source = { url: 'https://example.test/ranking', text: `${factA} ${factB}` };
@@ -179,7 +178,7 @@ test('safe recovery mengganti hanya point target dengan fakta FACT_BANK yang bel
 
   const result = await generateFilteredContent({
     content,
-    options: { contentFormat: 'Listicle', requestedTopic: 'Peringkat model video' },
+    options: { topicSource: 'ai', useSources: true, requestedTopic: '', mainTopic: 'Peringkat model video', contentFormat: 'Listicle' },
     sources: [source],
     client
   });
@@ -345,7 +344,7 @@ test('safe recovery berhenti pada hard limit ketika provider selalu memberi draf
   assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
 });
 
-test('emergency fallback menetralkan hanya factual title setelah seluruh safe recovery gagal', async () => {
+test('AI emergency fallback menetralkan hanya factual title setelah seluruh safe recovery gagal', async () => {
   const bodyEvidence = 'Model Orion menggunakan evaluasi blind untuk membandingkan hasil video.';
   const pointEvidence = 'Penilai memilih hasil terbaik tanpa mengetahui nama model pembuatnya.';
   const source = { url: 'https://example.test/orion', text: `${bodyEvidence} ${pointEvidence}` };
@@ -410,7 +409,7 @@ test('emergency fallback menetralkan hanya factual title setelah seluruh safe re
 
   const result = await generateFilteredContent({
     content,
-    options: { contentFormat: 'Listicle', requestedTopic: 'Evaluasi Model Orion' },
+    options: { topicSource: 'ai', useSources: true, requestedTopic: '', mainTopic: 'Evaluasi Model Orion', contentFormat: 'Listicle' },
     sources: [source],
     client
   });
@@ -468,7 +467,7 @@ test('emergency title fallback tidak menerima slide dengan body dan points yang 
 
   await assert.rejects(generateFilteredContent({
     content,
-    options: { contentFormat: 'Listicle', requestedTopic: 'Evaluasi Model Orion' },
+    options: { topicSource: 'ai', useSources: true, requestedTopic: '', mainTopic: 'Evaluasi Model Orion', contentFormat: 'Listicle' },
     sources: [{ url: 'https://example.test/orion', text: evidence }],
     client
   }), error => error.status === 422 && /safe recovery|filter fakta sumber/i.test(error.message));
@@ -509,11 +508,58 @@ test('emergency grounding fallback tidak menyembunyikan error title non-groundin
 
   await assert.rejects(generateFilteredContent({
     content,
-    options: { contentFormat: 'Listicle', requestedTopic: 'Evaluasi Orion' },
+    options: { topicSource: 'ai', useSources: true, requestedTopic: '', mainTopic: 'Evaluasi Orion', contentFormat: 'Listicle' },
     sources: [{ url: 'https://example.test/orion', text: evidence }],
     client
   }), error => error.status === 422 && /metadata\/boilerplate/i.test(error.validationErrors.join(' ')));
 
   assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
   assert.equal(neutralFallbackValidation, 0, 'fallback factual-title tidak boleh dipakai untuk menyembunyikan boilerplate title');
+});
+
+test('manual title exhaustion gagal tanpa emergency neutral-title fallback', async () => {
+  const evidence = 'Model Orion menggunakan evaluasi blind untuk membandingkan hasil video.';
+  const invalidEvidence = 'Model Orion resmi merilis versi terbaru untuk semua pengguna.';
+  const originalTitle = 'Orion Merilis Model Terbaru';
+  const baseSlide = { section: 'ITEM 1', title: originalTitle, body: evidence, points: [] };
+  const base = {
+    focus: {}, topic: 'Evaluasi Model Orion', hook: originalTitle, body: evidence, caption: evidence,
+    hashtags: [], cta: originalTitle, trendKeywordsUsed: [], content_angle: 'evaluasi', primary_tool: 'Orion',
+    hook_pattern: 'langsung', slides: [baseSlide]
+  };
+  let generatedTitle = 0;
+  let neutralFallbackValidation = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    generatedTitle += 1;
+    const title = `Orion Merilis Model Versi ${generatedTitle}`;
+    return { choices: [{ message: { content: JSON.stringify({ slides: [{
+      ...baseSlide,
+      title,
+      claims: [
+        { field: 'slide:0:title', text: title, sourceId: 'source-1', evidence: invalidEvidence },
+        { field: 'slide:0:body', text: evidence, sourceId: 'source-1', evidence }
+      ]
+    }] }) } }] };
+  } } } };
+  const neutralLabels = new Set(['Gambaran Utama', 'Konteks Penting', 'Poin Berikutnya', 'Inti Pembahasan', 'Ringkasan']);
+  const content = {
+    async generateContent() { return base; },
+    validateContent(value) {
+      if (neutralLabels.has(value.slides[0]?.title)) neutralFallbackValidation += 1;
+      return [];
+    }
+  };
+
+  await assert.rejects(generateFilteredContent({
+    content,
+    options: { topicSource: 'manual', useSources: true, requestedTopic: 'Evaluasi Model Orion', contentFormat: 'Listicle' },
+    sources: [{ url: 'https://example.test/orion', text: evidence }],
+    client
+  }), error => error.status === 422 && /safe recovery|filter fakta sumber/i.test(error.message));
+
+  assert.equal(neutralFallbackValidation, 0);
 });
