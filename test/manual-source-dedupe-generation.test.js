@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createDatabase } = require('../src/db');
-const { generateAndSave } = require('../src/services/generation');
+const { generateAndSave, resolveManualSourceRoleGuard } = require('../src/services/generation');
 
 const sourceFetcher = {
   validateSourceUrls: urls => urls,
@@ -31,6 +31,12 @@ function generated(topic) {
     ]
   };
 }
+
+test('default final Manual source guard selalu tersedia meski content service di-inject', () => {
+  const guard = resolveManualSourceRoleGuard();
+  assert.ok(guard);
+  assert.equal(typeof guard.repairManualSourceRoles, 'function');
+});
 
 test('Manual + URL melewati pre-verifier dan selalu masuk satu final all-format quality gate', async () => {
   const db = createDatabase(':memory:');
