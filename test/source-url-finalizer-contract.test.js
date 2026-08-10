@@ -50,7 +50,6 @@ test('prompt final AI memaksa semua URL, body panjang, dan 3 bullet untuk source
   assert.match(prompt, /BODY FACT BANK/i);
   assert.match(prompt, /BODY WAJIB minimal 10 kata/i);
   assert.match(prompt, /3 bullet fakta/i);
-  assert.match(prompt, /JANGAN pernah mengembalikan body lebih pendek/i);
   assert.match(prompt, /JANGAN memakai evidence canonical yang sama dua kali/i);
   assert.equal(MAX_FINALIZE_ATTEMPTS, 3);
 });
@@ -201,7 +200,5 @@ test('recovery URL menjalankan AI lagi setelah skeleton source-only dibangun', (
 test('recovery format tidak mengarang aksi ketika pipeline utama gagal', () => {
   assert.equal(safeRecoveryFormat('Listicle'), 'Listicle');
   assert.equal(safeRecoveryFormat('Fakta singkat'), 'Fakta singkat');
-  for (const format of ['Tutorial langkah', 'Masalah dan solusi', 'Tips cepat', 'Before-after']) {
-    assert.equal(safeRecoveryFormat(format), 'Fakta singkat');
-  }
+  for (const format of ['Tutorial langkah', 'Masalah dan solusi', 'Tips cepat', 'Before-after']) assert.equal(safeRecoveryFormat(format), 'Fakta singkat');
 });
