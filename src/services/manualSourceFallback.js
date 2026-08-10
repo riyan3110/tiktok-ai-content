@@ -6,13 +6,14 @@ const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID')
 const factKey = fact => `${String(fact?.sourceId || '').trim()}::${normalize(fact?.evidence)}`;
 const visibleParts = slide => [slide?.body, ...(Array.isArray(slide?.points) ? slide.points : [])].map(value => String(value || '').trim()).filter(Boolean);
 const allVisibleParts = slide => [slide?.title, ...visibleParts(slide)].map(value => String(value || '').trim()).filter(Boolean);
+const meaningfulTokens = value => [...new Set(normalize(value).split(' ').filter(token => token.length > 2 && !STOP.has(token)))];
 
 function boundedChunks(value, target = 24) {
   const text = String(value || '').trim();
   if (!text || HARD_METADATA.test(text)) return [];
   const tokens = words(text);
   if (tokens.length < 6) return [];
-  if (tokens.length <= 32) return [text];
+  if (tokens.length <= 26) return [text];
   const parts = Math.ceil(tokens.length / target);
   const size = Math.ceil(tokens.length / parts);
   const out = [];
@@ -94,7 +95,7 @@ function sourceCoverageErrors(content, sources = []) {
 }
 
 function densityTarget(facts = [], slideCount = 4) {
-  const totalWords = facts.reduce((sum, fact) => sum + Math.min(32, words(fact?.evidence).length), 0);
+  const totalWords = facts.reduce((sum, fact) => sum + Math.min(26, words(fact?.evidence).length), 0);
   if (!totalWords) return 10;
   return Math.max(12, Math.min(22, Math.floor((totalWords / Math.max(1, slideCount)) * 0.72)));
 }
@@ -134,11 +135,11 @@ function presentationErrors(content, facts = []) {
     const points = Array.isArray(slide?.points) ? slide.points : [];
     const visibleCount = allVisibleParts(slide).reduce((sum, value) => sum + words(value).length, 0);
     if (!titleWords || titleWords > 12) errors.push(`slide:${slideIndex}:layout: title harus ringkas dan rapi (1–12 kata).`);
-    if (!bodyCount || bodyCount > 32) errors.push(`slide:${slideIndex}:layout: body harus ada dan maksimal 32 kata.`);
+    if (!bodyCount || bodyCount > 26) errors.push(`slide:${slideIndex}:layout: body harus ada dan maksimal 26 kata.`);
     if (points.length > 2) errors.push(`slide:${slideIndex}:layout: maksimal 2 point agar slide tetap rapi.`);
     points.forEach((point, pointIndex) => {
       const count = words(point).length;
-      if (count < 3 || count > 12) errors.push(`slide:${slideIndex}:point:${pointIndex}: point harus 3–12 kata.`);
+      if (count < 3 || count > 10) errors.push(`slide:${slideIndex}:point:${pointIndex}: point harus 3–10 kata.`);
     });
     if (visibleCount < minWords) errors.push(`slide:${slideIndex}:density: hanya ${visibleCount} kata; target aman minimal ${minWords} kata source-backed.`);
     if (HARD_METADATA.test(visibleParts(slide).join(' '))) errors.push(`slide:${slideIndex}:metadata: boilerplate website masuk ke konten.`);
@@ -202,7 +203,7 @@ function buildDeterministicSourceFallback({ generated = {}, sources = [], topic 
     let total = words(body).length;
     while (total < minWords && remaining.length && points.length < 2) {
       const detail = remaining.shift();
-      const point = excerpt(detail.evidence, Math.min(12, Math.max(6, minWords - total)));
+      const point = excerpt(detail.evidence, Math.min(10, Math.max(6, minWords - total)));
       if (!point) continue;
       points.push(point);
       claims.push({ field: `slide:${index}:point:${points.length - 1}`, text: point, sourceId: detail.sourceId, evidence: detail.evidence });
