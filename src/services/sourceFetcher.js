@@ -147,13 +147,48 @@ function stripNoisyHtmlBlocks(html) {
   return output;
 }
 
+function extractTagRegions(html, targetTag) {
+  const source = String(html || '');
+  const target = String(targetTag || '').toLowerCase();
+  const tagPattern = /<\/?([a-z0-9:-]+)\b([^>]*)>/gi;
+  const stack = [];
+  const regions = [];
+  let match;
+  while ((match = tagPattern.exec(source))) {
+    const raw = match[0];
+    const tag = String(match[1] || '').toLowerCase();
+    const closing = /^<\//.test(raw);
+    const selfClosing = /\/\s*>$/.test(raw) || VOID_HTML_TAGS.has(tag);
+    if (!closing) {
+      if (!selfClosing) stack.push({ tag, attrs: match[2] || '', contentStart: tagPattern.lastIndex });
+      continue;
+    }
+    let found = -1;
+    for (let index = stack.length - 1; index >= 0; index -= 1) {
+      if (stack[index].tag === tag) { found = index; break; }
+    }
+    if (found < 0) continue;
+    const entry = stack[found];
+    stack.splice(found);
+    if (tag === target && entry.tag === target) {
+      regions.push({ attrs: entry.attrs, html: source.slice(entry.contentStart, match.index) });
+    }
+  }
+  return regions;
+}
+
 function preferredHtmlRegion(html) {
-  const articles = [...String(html || '').matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)]
-    .map(match => match[1]).filter(Boolean)
+  const articles = extractTagRegions(html, 'article')
+    .filter(region => !noisyTagAttributes(region.attrs))
+    .map(region => region.html)
+    .filter(Boolean)
     .sort((a, b) => cleanHtmlText(b).length - cleanHtmlText(a).length);
   if (articles.length) return articles[0];
-  const main = String(html || '').match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1];
-  return main || html;
+  const mains = extractTagRegions(html, 'main')
+    .map(region => region.html)
+    .filter(Boolean)
+    .sort((a, b) => cleanHtmlText(b).length - cleanHtmlText(a).length);
+  return mains[0] || html;
 }
 
 function cleanHtmlText(html) {
