@@ -43,7 +43,10 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-function resolveManualSourceRoleGuard(override) { return override || defaultManualSourceRoleGuard; }
+function resolveManualSourceRoleGuard(override, content = defaultContent) {
+  if (override) return override;
+  return content === defaultContent ? defaultManualSourceRoleGuard : null;
+}
 
 function manualSourceSeed(topic, format) {
   const structures = {
@@ -119,32 +122,28 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     };
     let generated;
     if (shouldUseSources) {
-      // Manual + URL starts from a deterministic structural seed and is written
-      // exactly once by the final all-format source quality gate below. This avoids
-      // pre-verifier section locking (the old "section berubah" 422) and ensures
-      // Listicle/Tips/Before-after receive the same final source-only checks.
       if (mode === 'manual') {
-        generated = manualSourceSeed(basis, contentFormat);
+        // Production/default content always uses the final Manual + URL guard.
+        // Explicitly injected content services retain their dependency-injected
+        // behavior unless a guard is also injected; this avoids unexpectedly
+        // constructing the production OpenAI client inside tests/custom callers.
+        const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
+        if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
+          generated = manualSourceSeed(basis, contentFormat);
+          generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
+            contentService: content,
+            generated,
+            options: generationOptions,
+            sources
+          });
+        } else {
+          generated = await content.generateContent(used, generationOptions);
+        }
       } else {
         const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
         generated = activeSourceFilter
           ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
           : await content.generateContent(used, generationOptions);
-      }
-      // Manual + URL must never render the blank structural seed without the
-      // source-grounding gate. The default guard is independent from an injected
-      // content service; explicit guard injection remains available for tests.
-      const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard);
-      if (mode === 'manual') {
-        if (!activeManualSourceRoleGuard?.repairManualSourceRoles) {
-          throw Object.assign(new Error('Final Manual + URL source guard tidak tersedia'), { status: 500 });
-        }
-        generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
-          contentService: content,
-          generated,
-          options: generationOptions,
-          sources
-        });
       }
     } else {
       generated = await content.generateContent(used, generationOptions);
@@ -170,7 +169,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     }
     let renderedSlides = [];
     try {
-      const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
+      const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID'));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
       // Rendering happens only after source verification and the final Manual + URL quality gate.
