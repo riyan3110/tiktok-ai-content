@@ -78,13 +78,55 @@ function jsonLdArticleBody(html) {
 }
 
 function stripLowValueRegions(html) {
-  let output = String(html || '');
-  output = output.replace(/<(?:aside|nav|footer|header)\b[\s\S]*?<\/(?:aside|nav|footer|header)>/gi, ' ');
-  for (let pass = 0; pass < 4; pass += 1) {
-    const previous = output;
-    output = output.replace(/<(section|div|ul|ol)\b([^>]*(?:class|id)=["'][^"']*["'][^>]*)>[\s\S]*?<\/\1>/gi, (full, tag, attrs) => LOW_VALUE_REGION.test(attrs) ? ' ' : full);
-    if (output === previous) break;
+  const input = String(html || '')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ');
+  const alwaysDrop = new Set(['aside', 'nav', 'footer', 'header']);
+  const classAware = new Set(['section', 'div', 'ul', 'ol']);
+  const voidTags = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+  const tagPattern = /<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*>/g;
+  const stack = [];
+  let suppressDepth = 0;
+  let cursor = 0;
+  let output = '';
+  let match;
+
+  while ((match = tagPattern.exec(input))) {
+    if (suppressDepth === 0) output += input.slice(cursor, match.index);
+    const token = match[0];
+    cursor = tagPattern.lastIndex;
+    if (token.startsWith('<!--')) continue;
+
+    const closing = /^<\//.test(token);
+    const name = token.match(/^<\/?\s*([a-zA-Z][\w:-]*)/)?.[1]?.toLocaleLowerCase('en-US');
+    if (!name) continue;
+
+    if (closing) {
+      let index = stack.length - 1;
+      while (index >= 0 && stack[index].name !== name) index -= 1;
+      if (index < 0) {
+        if (suppressDepth === 0) output += token;
+        continue;
+      }
+      const removed = stack.splice(index);
+      const roots = removed.filter(entry => entry.suppressRoot).length;
+      const wasSuppressed = suppressDepth > 0;
+      suppressDepth = Math.max(0, suppressDepth - roots);
+      if (!wasSuppressed && suppressDepth === 0) output += token;
+      continue;
+    }
+
+    const attrs = token.slice(name.length + 1);
+    const lowValue = alwaysDrop.has(name) || (classAware.has(name) && /(?:class|id)\s*=/.test(attrs) && LOW_VALUE_REGION.test(attrs));
+    const selfClosing = /\/\s*>$/.test(token) || voidTags.has(name);
+    const suppressRoot = lowValue && suppressDepth === 0;
+    if (!selfClosing) stack.push({ name, suppressRoot });
+    if (suppressRoot) suppressDepth += 1;
+    if (suppressDepth === 0) output += token;
   }
+
+  if (suppressDepth === 0) output += input.slice(cursor);
   return output;
 }
 
