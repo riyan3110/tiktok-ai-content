@@ -11,6 +11,9 @@ const MIN_TEXT_LENGTH = 200;
 const MAX_CONTEXT_LENGTH = 12_000;
 const USER_AGENT = 'AIAdsLabSourceFetcher/1.0 (+https://aiadslab.local)';
 const LOW_VALUE_REGION = /(?:related|recommend|recommendation|recommended|terkait|baca[-_ ]?juga|read[-_ ]?also|also[-_ ]?read|more[-_ ]?article|latest|popular|trending|sidebar|widget|other[-_ ]?article|artikel[-_ ]?lain|artikel[-_ ]?terkait)/i;
+const RELATED_LINE = /^(?:baca\s+juga|read\s+also|artikel\s+terkait|berita\s+terkait|related\s+articles?|recommended|rekomendasi|artikel\s+lainnya|berita\s+lainnya|selengkapnya)\b/i;
+const WEEKDAY_MONTH = /\b(?:senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|agu|agst|sep|okt|nov|des)\b/i;
+const DANGLING_SITE_META = /\b(?:wib|wita|wit|gmt|utc)\b.*\b(?:url|link)\b|\b(?:url|link)\b.*\b(?:wib|wita|wit|gmt|utc)\b/i;
 
 class SourceFetchError extends Error {
   constructor(url, reason, status = 400) { super(`Gagal mengambil sumber ${url}: ${reason}`); this.url = url; this.reason = reason; this.status = status; }
@@ -169,11 +172,59 @@ function cleanHtmlText(html) {
     .replace(/<[^>]+>/g, ' ');
 }
 
-function cleanArticleLines(text) {
-  return String(text || '').split(/\n+/).map(line => line.replace(/\s+/g, ' ').trim()).filter(line => {
-    if (!line) return false;
-    return !/^(?:baca\s+juga\b|read\s+also\b|komentar\b|bagikan\b|share\b|tags?\b|image\b|foto\s*:|advertisement\b|iklan\b)/i.test(line);
-  }).join('\n');
+function lineKey(value) {
+  return String(value || '').toLocaleLowerCase('id-ID').replace(/[^a-z0-9%\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function looksLikeRelatedHeadline(line) {
+  const text = String(line || '').trim();
+  const count = text.split(/\s+/).filter(Boolean).length;
+  if (count < 3 || count > 18) return false;
+  if (/[.!?]$/.test(text)) return false;
+  const tokens = text.match(/[A-Za-zÀ-ÿ0-9]+/g) || [];
+  const titleish = tokens.filter(token => /^[A-Z0-9]/.test(token)).length;
+  return titleish / Math.max(1, tokens.length) >= 0.45 || /^(?:usai|setelah|ini|begini|simak|daftar|cara|tips|fakta|profil|mengenal)\b/i.test(text);
+}
+
+function stripDatelinePrefix(line) {
+  return String(line || '').replace(/^[A-ZÀ-Ý][\p{L} .'-]{1,30},\s*[A-ZÀ-Ý][\p{L}0-9 .'-]{1,40}\s*--\s*/u, '').trim();
+}
+
+function isMetadataLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return true;
+  if (/^(?:https?:\/\/|www\.)\S+$/i.test(text)) return true;
+  if (DANGLING_SITE_META.test(text)) return true;
+  if (WEEKDAY_MONTH.test(text) && /\b\d{1,2}[:.]\d{2}\b/.test(text) && /\b(?:wib|wita|wit|gmt|utc)\b/i.test(text)) return true;
+  if (/^(?:oleh|by)\s+[\p{L}.' -]{3,80}(?:\s*[,|·-]\s*|$)/iu.test(text) && text.split(/\s+/).length <= 14) return true;
+  if (/^(?:editor|penulis|reporter|kontributor|kontributor foto|fotografer)\s*:/i.test(text)) return true;
+  return false;
+}
+
+function cleanArticleLines(text, title = '') {
+  const titleKey = lineKey(title);
+  const output = [];
+  let skipRelatedHeadline = false;
+  for (const raw of String(text || '').split(/\n+/)) {
+    let line = raw.replace(/\s+/g, ' ').trim();
+    if (!line) continue;
+
+    if (RELATED_LINE.test(line)) {
+      skipRelatedHeadline = true;
+      continue;
+    }
+    if (skipRelatedHeadline) {
+      skipRelatedHeadline = false;
+      if (looksLikeRelatedHeadline(line)) continue;
+    }
+
+    line = stripDatelinePrefix(line);
+    if (!line || isMetadataLine(line)) continue;
+    if (titleKey && lineKey(line) === titleKey) continue;
+    if (/^(?:komentar|bagikan|share|tags?|image|foto\s*:|advertisement|iklan|dengarkan artikel|audio artikel)\b/i.test(line)) continue;
+    output.push(line);
+  }
+  return output.join('\n');
 }
 
 function extractText(raw, contentType = '') {
@@ -182,13 +233,13 @@ function extractText(raw, contentType = '') {
     || original.match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["'][^>]*>/i)?.[1];
   const title = decodeBasicEntities((ogTitle || original.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim());
   if (!/text\/html/i.test(contentType)) {
-    const text = decodeBasicEntities(original).replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+    const text = cleanArticleLines(decodeBasicEntities(original).replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim(), title);
     return { title, text };
   }
   const ldBody = jsonLdArticleBody(original);
   const selected = ldBody || preferredHtmlRegion(original);
   const stripped = cleanHtmlText(selected);
-  const text = cleanArticleLines(decodeBasicEntities(stripped))
+  const text = cleanArticleLines(decodeBasicEntities(stripped), title)
     .replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
   return { title, text };
 }
@@ -210,4 +261,4 @@ async function fetchOne(rawUrl, { fetchImpl, lookup = dns.lookup } = {}, redirec
 }
 async function fetchSources(urls, options = {}) { return Promise.all(validateSourceUrls(urls).map(url => fetchOne(url, options))); }
 function buildSourceContext(sources) { return sources.map((s, i) => `<SOURCE id="source-${i + 1}">\nTITLE: ${s.title || '-'}\nURL: ${s.finalUrl || s.url}\nCONTENT:\n${s.text}\n</SOURCE>`).join('\n\n').slice(0, MAX_CONTEXT_LENGTH); }
-module.exports = { fetchSources, buildSourceContext, validateSourceUrls, validateUrl, extractText, SourceFetchError, MAX_CONTEXT_LENGTH, preferredHtmlRegion, jsonLdArticleBody, stripLowValueRegions };
+module.exports = { fetchSources, buildSourceContext, validateSourceUrls, validateUrl, extractText, SourceFetchError, MAX_CONTEXT_LENGTH, preferredHtmlRegion, jsonLdArticleBody, stripLowValueRegions, cleanArticleLines, isMetadataLine };
