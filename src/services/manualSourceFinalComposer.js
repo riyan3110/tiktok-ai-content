@@ -3,6 +3,7 @@ const config = require('../config');
 const baseComposer = require('./manualSourceComposer');
 
 const MAX_FORMAT_CLASSIFY_ATTEMPTS = 2;
+const MAX_RELATION_AUDIT_ATTEMPTS = 2;
 const ACTION_FORMATS = new Set(['tutorial langkah', 'masalah dan solusi', 'tips cepat', 'before-after']);
 const ACTION_VERB_PATTERN = /\b(?:cek|periksa|memeriksa|buka|membuka|pilih|memilih|aktifkan|mengaktifkan|nonaktifkan|menonaktifkan|hapus|menghapus|keluarkan|mengeluarkan|putuskan|memutuskan|cabut|mencabut|ubah|mengubah|ganti|mengganti|reset|atur|mengatur|tinjau|meninjau|verifikasi|memverifikasi|konfirmasi|mengonfirmasi|gunakan|menggunakan|hindari|pastikan|jangan|laporkan|melaporkan|blokir|memblokir|amankan|mengamankan|perbarui|memperbarui|update|logout|hentikan|menghentikan|batasi|membatasi|simpan|menyimpan|bandingkan|membandingkan|pindai|scan|ketuk|tap|lakukan|ikuti|konsumsi|mengonsumsi|makan|tambahkan|menambahkan|kurangi|mengurangi)\b/i;
 const NON_USER_ACTOR_PATTERN = /\b(?:pelaku|penyerang|hacker|peretas|malware|spyware|orang lain)\b/i;
@@ -121,6 +122,29 @@ async function classifyEffectiveFormat(openai, requestedFormat, bank) {
   throw Object.assign(new Error(`Audit kecocokan format gagal; format tidak boleh diubah tanpa keputusan valid: ${lastError?.message || 'provider gagal'}`), { status: 422 });
 }
 
+async function beforeAfterRelationshipErrors(openai, content, bank) {
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_RELATION_AUDIT_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await openai.chat.completions.create({
+        model: config.aiModel,
+        messages: [
+          { role: 'system', content: 'Anda auditor hubungan Before-after source-backed. Jangan memperbaiki atau mengisi fakta.' },
+          { role: 'user', content: `FACT_BANK: ${JSON.stringify(bank)}\nSLIDES: ${JSON.stringify(content?.slides || [])}\nPeriksa secara ketat apakah BEFORE, seluruh PERUBAHAN, dan AFTER adalah SATU hubungan transformasi/urutan sebab-perubahan-hasil yang secara eksplisit didukung FACT_BANK. Jangan menggabungkan fakta independen menjadi before-after baru. AFTER harus benar-benar keadaan sesudah perubahan yang sama, bukan fakta lain yang kebetulan benar. Kembalikan HANYA JSON {"supported":true,"reason":""}.` }
+        ],
+        response_format: { type: 'json_object' }
+      });
+      const parsed = JSON.parse(response?.choices?.[0]?.message?.content || '{}');
+      if (typeof parsed?.supported !== 'boolean') throw new Error('audit hubungan tidak memiliki supported boolean');
+      if (parsed.supported) return [];
+      return [`before-after: hubungan BEFORE → PERUBAHAN → AFTER tidak didukung sebagai satu transformasi oleh sumber${parsed.reason ? `: ${String(parsed.reason)}` : '.'}`];
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  return [`before-after: audit hubungan gagal; hasil tidak boleh dirender tanpa verifikasi hubungan: ${lastError?.message || 'provider gagal'}`];
+}
+
 function guardedClient(openai, effectiveFormat, expectedCount) {
   return {
     chat: {
@@ -169,6 +193,15 @@ async function composeManualSourceContent(params = {}) {
       validationErrors: structureErrors
     });
   }
+  if (normalizedFormat(effectiveFormat) === 'before-after') {
+    const relationErrors = await beforeAfterRelationshipErrors(openai, result, bank);
+    if (relationErrors.length) {
+      throw Object.assign(new Error(`Konten tidak sesuai format final: ${relationErrors[0]}`), {
+        status: 422,
+        validationErrors: relationErrors
+      });
+    }
+  }
 
   const final = { ...result };
   delete final.effectiveContentFormat;
@@ -179,7 +212,9 @@ async function composeManualSourceContent(params = {}) {
 module.exports = {
   composeManualSourceContent,
   classifyEffectiveFormat,
+  beforeAfterRelationshipErrors,
   formatStructureErrors,
   looksLikeUserAction,
-  MAX_FORMAT_CLASSIFY_ATTEMPTS
+  MAX_FORMAT_CLASSIFY_ATTEMPTS,
+  MAX_RELATION_AUDIT_ATTEMPTS
 };
