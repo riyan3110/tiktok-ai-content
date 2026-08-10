@@ -5,8 +5,8 @@ process.env.AI_API_KEY ||= 'test-key';
 process.env.AI_BASE_URL ||= 'https://example.com/v1';
 process.env.AI_MODEL ||= 'test-model';
 
-const { finalizerPrompt, targetSections } = require('../src/services/sourceUrlFinalizer');
-const { presentationErrors, sourceFacts } = require('../src/services/manualSourceFallback');
+const { finalizerPrompt, targetSections, MAX_FINALIZE_ATTEMPTS } = require('../src/services/sourceUrlFinalizer');
+const { presentationErrors, sourceFacts, densityGoal, densityTarget } = require('../src/services/manualSourceFallback');
 const { safeRecoveryFormat } = require('../src/services/generation');
 
 function sources() {
@@ -35,7 +35,9 @@ test('prompt final AI memaksa semua URL/sourceId dipakai dan mengikuti layout re
   assert.match(prompt, /body 18–24 kata/i);
   assert.match(prompt, /maksimal 2 points/i);
   assert.match(prompt, /point maksimal 7 kata/i);
+  assert.match(prompt, /PAKSA kepadatan/i);
   assert.match(prompt, /Jangan mengulang ide/i);
+  assert.equal(MAX_FINALIZE_ATTEMPTS, 3);
 });
 
 test('Listicle recovery mengikuti jumlah 5 item eksplisit dari judul sumber', () => {
@@ -67,6 +69,23 @@ test('final source presentation gate sama dengan layout: point 7 diterima, point
 
   valid.slides[0].points = ['Satu dua tiga empat lima enam tujuh delapan'];
   assert.ok(presentationErrors(valid, facts).some(error => /point harus 3–7 kata/.test(error)));
+});
+
+test('artikel kaya tetap menargetkan 30 kata tetapi 27 kata source-backed tidak dibuang', () => {
+  const evidence = Array.from({ length: 24 }, (_, index) => `kata${index + 1}`).join(' ');
+  const richFacts = Array.from({ length: 8 }, (_, index) => ({ sourceId: 'source-1', evidence: `${evidence} fakta${index + 1}` }));
+  assert.equal(densityGoal(richFacts, 4), 30);
+  assert.equal(densityTarget(richFacts, 4), 26);
+
+  const content = {
+    slides: Array.from({ length: 4 }, () => ({
+      title: 'Judul padat sumber',
+      body: Array.from({ length: 18 }, (_, index) => `isi${index + 1}`).join(' '),
+      points: [Array.from({ length: 6 }, (_, index) => `detail${index + 1}`).join(' ')]
+    }))
+  };
+  const errors = presentationErrors(content, richFacts);
+  assert.equal(errors.some(error => /density/.test(error)), false);
 });
 
 test('recovery format tidak mengarang aksi ketika pipeline utama gagal', () => {
