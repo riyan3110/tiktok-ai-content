@@ -99,7 +99,8 @@ const ALWAYS_NOISY_TAGS = new Set(['aside', 'nav', 'footer', 'header']);
 
 function noisyTagAttributes(attrs = '') {
   const values = [];
-  for (const match of String(attrs).matchAll(/(?:id|class)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) values.push(match[1] || match[2] || '');
+  const pattern = /(?:id|class)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+  for (const match of String(attrs).matchAll(pattern)) values.push(match[1] || match[2] || match[3] || '');
   return values.some(value => NOISY_BLOCK_ATTR.test(value));
 }
 
