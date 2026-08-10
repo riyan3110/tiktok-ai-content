@@ -92,10 +92,6 @@ function sourceCoverageErrors(content, sources = []) {
   return [...new Set(errors)];
 }
 
-// Kontrak kekayaan slide mengikuti bentuk yang diinginkan pengguna:
-// judul ringkas + satu paragraf penjelas + 2–3 bullet fakta pendek.
-// Tiga bullet adalah target untuk source kaya, tetapi hard gate tidak boleh
-// memaksa filler bila fact bank memang tidak cukup.
 function sourceRichness(facts = [], slideCount = 4) {
   const count = facts.length;
   const perSlide = count / Math.max(1, slideCount);
@@ -107,7 +103,6 @@ function sourceRichness(facts = [], slideCount = 4) {
   return { targetPoints, minPoints, bodyMin, visibleGoal, hardFloor };
 }
 
-// Backward-compatible aliases: goal dipakai untuk enrichment, target hanya hard floor.
 function densityGoal(facts = [], slideCount = 4) {
   return sourceRichness(facts, slideCount).visibleGoal;
 }
@@ -226,11 +221,13 @@ function buildDeterministicSourceFallback({ generated = {}, sources = [], topic 
     };
   });
 
-  // Prioritaskan pemerataan dan coverage semua URL. Source kaya menargetkan tiga
-  // bullet seperti contoh pengguna, tetapi tidak membuat filler jika fakta habis.
+  const missingCoverageCount = Math.max(0, sources.length - selectedSourceIds.size);
+  const coveragePointTarget = Math.min(3, Math.ceil(missingCoverageCount / Math.max(1, slides.length)));
+  const pointTarget = Math.min(3, Math.max(profile.targetPoints, coveragePointTarget));
+
   for (let pass = 0; pass < 3 && remaining.length; pass += 1) {
     slides.forEach((slide, index) => {
-      if (!remaining.length || slide.points.length >= profile.targetPoints) return;
+      if (!remaining.length || slide.points.length >= pointTarget) return;
       const detail = remaining.shift();
       const point = excerpt(detail.evidence, 7);
       if (words(point).length < 3) return;
