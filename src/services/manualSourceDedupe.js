@@ -19,16 +19,31 @@ function meaningfulTokens(value) {
   return [...new Set(normalize(value).split(' ').filter(token => (token.length > 2 || token === 'ai') && !COPY_STOPWORDS.has(token)))];
 }
 
+function copyOverlap(left, right) {
+  const a = meaningfulTokens(left);
+  const b = meaningfulTokens(right);
+  if (!a.length || !b.length) return { shared: 0, ratio: 0, a, b };
+  const shared = a.filter(token => b.includes(token)).length;
+  return { shared, ratio: shared / Math.min(a.length, b.length), a, b };
+}
+
 function nearDuplicateCopy(left, right) {
   const leftNorm = normalize(left);
   const rightNorm = normalize(right);
   if (!leftNorm || !rightNorm) return false;
   if (leftNorm === rightNorm) return true;
-  const a = meaningfulTokens(left);
-  const b = meaningfulTokens(right);
-  if (a.length < 4 || b.length < 4) return false;
-  const shared = a.filter(token => b.includes(token));
-  return shared.length >= 3 && shared.length / Math.min(a.length, b.length) >= 0.85;
+  const overlap = copyOverlap(left, right);
+  if (overlap.a.length < 4 || overlap.b.length < 4) return false;
+  return overlap.shared >= 3 && overlap.ratio >= 0.85;
+}
+
+function sameCanonicalFact(left, right) {
+  const leftKey = canonicalFactKey(left);
+  const rightKey = canonicalFactKey(right);
+  if (!leftKey || leftKey !== rightKey) return false;
+  if (normalize(left.value) === normalize(right.value)) return true;
+  const overlap = copyOverlap(left.value, right.value);
+  return overlap.shared >= 2 && overlap.ratio >= 0.5;
 }
 
 function isSummaryEdgeSlide(slide, slideIndex, totalSlides) {
@@ -67,17 +82,11 @@ function canonicalFactKey(record) {
 
 function manualCrossSlideDuplicateErrors(content) {
   const errors = [];
-  const seenFacts = new Map();
   const previous = [];
   for (const record of substantiveFields(content)) {
-    let duplicate = false;
-    const factKey = canonicalFactKey(record);
-    if (factKey && seenFacts.has(factKey) && seenFacts.get(factKey).slideIndex !== record.slideIndex) duplicate = true;
-    if (!duplicate) {
-      duplicate = previous.some(item => item.slideIndex !== record.slideIndex && nearDuplicateCopy(item.value, record.value));
-    }
+    const duplicate = previous.some(item => item.slideIndex !== record.slideIndex
+      && (sameCanonicalFact(item, record) || nearDuplicateCopy(item.value, record.value)));
     if (duplicate) errors.push(`${record.key}: pembahasan mengulang fakta slide sebelumnya.`);
-    if (factKey && !seenFacts.has(factKey)) seenFacts.set(factKey, record);
     previous.push(record);
   }
   return [...new Set(errors)];
@@ -98,7 +107,7 @@ function usedCanonicalFacts(content, targetFields = new Set()) {
 
 function recoveryPrompt({ draft, bank, errors, fieldKeys }) {
   const usedFacts = usedCanonicalFacts(draft, fieldKeys);
-  return `Anda memperbaiki carousel Topik Manual + URL secara SOURCE-LOCKED. Jangan memakai pengetahuan luar.\n\nTARGET FIELD YANG BOLEH BERUBAH:\n${JSON.stringify([...fieldKeys])}\n\nERROR:\n${errors.join('\n')}\n\nATURAN WAJIB:\n- Ubah HANYA target field. Semua field non-target, jumlah slide, urutan, section, dan title non-target harus tetap persis.\n- Error pengulangan berarti target field membahas fakta yang sudah dipakai slide sebelumnya. Ganti target dengan SATU fakta relevan lain dari FACT_BANK yang belum dipakai.\n- Fakta dianggap sama berdasarkan pasangan sourceId + evidence canonical, walaupun wording Indonesia berbeda. Jangan memparafrasekan evidence lama menjadi kalimat baru.\n- sourceId dan evidence harus disalin PERSIS dari pasangan FACT_BANK yang sama. Evidence tidak boleh diterjemahkan atau diedit.\n- Copy target wajib Bahasa Indonesia natural, singkat, dan setia pada evidence. Jangan menambah sebab-akibat, manfaat, angka, nama, tanggal, modalitas, atau kesimpulan yang tidak ada.\n- Jika target berupa point dan tidak ada fakta berbeda yang aman, point boleh dihapus beserta claim-nya.\n- Jika target berupa body, jangan ganti dengan filler/CTA seperti “baca selengkapnya”, “perhatikan konteks”, atau kalimat kosong; gunakan fakta substantif yang berbeda.\n- Jangan gunakan pasangan canonical berikut karena sudah dipakai field non-target: ${JSON.stringify(usedFacts)}.\n\nFACT_BANK:\n${JSON.stringify(bank)}\n\nCURRENT_DRAFT:\n${JSON.stringify(draft.slides)}\n\nKembalikan HANYA JSON {"slides":[{"section":"...","title":"...","body":"...","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}.`;
+  return `Anda memperbaiki carousel Topik Manual + URL secara SOURCE-LOCKED. Jangan memakai pengetahuan luar.\n\nTARGET FIELD YANG BOLEH BERUBAH:\n${JSON.stringify([...fieldKeys])}\n\nERROR:\n${errors.join('\n')}\n\nATURAN WAJIB:\n- Ubah HANYA target field. Semua field non-target, jumlah slide, urutan, section, dan title non-target harus tetap persis.\n- Error pengulangan berarti target field membahas fakta yang sudah dipakai slide sebelumnya. Ganti target dengan SATU fakta relevan lain dari FACT_BANK yang belum dipakai.\n- Fakta dianggap sama berdasarkan pasangan sourceId + evidence canonical DAN isi substantif yang sama, walaupun wording Indonesia berbeda. Jangan memparafrasekan fakta lama menjadi kalimat baru.\n- sourceId dan evidence harus disalin PERSIS dari pasangan FACT_BANK yang sama. Evidence tidak boleh diterjemahkan atau diedit.\n- Copy target wajib Bahasa Indonesia natural, singkat, dan setia pada evidence. Jangan menambah sebab-akibat, manfaat, angka, nama, tanggal, modalitas, atau kesimpulan yang tidak ada.\n- Jika target berupa point dan tidak ada fakta berbeda yang aman, point boleh dihapus beserta claim-nya.\n- Jika target berupa body, jangan ganti dengan filler/CTA seperti “baca selengkapnya”, “perhatikan konteks”, atau kalimat kosong; gunakan fakta substantif yang berbeda.\n- Jangan gunakan pasangan canonical berikut untuk mengulang fakta yang sudah dipakai field non-target: ${JSON.stringify(usedFacts)}. Satu evidence yang memuat dua klausa berbeda masih boleh dipakai bila target benar-benar membahas fakta berbeda, bukan parafrase fakta lama.\n\nFACT_BANK:\n${JSON.stringify(bank)}\n\nCURRENT_DRAFT:\n${JSON.stringify(draft.slides)}\n\nKembalikan HANYA JSON {"slides":[{"section":"...","title":"...","body":"...","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}.`;
 }
 
 function parseResponse(response) {
