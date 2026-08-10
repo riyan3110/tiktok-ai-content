@@ -121,6 +121,24 @@ test('extractText mempertahankan paragraf main article setelah nested article ca
   assert.doesNotMatch(result.text, /asam urat/i);
 });
 
+test('extractText mengabaikan tag article palsu di script dan komentar', () => {
+  const html = `
+    <html><body>
+      <!-- <article class="related-article"><p>Artikel palsu di komentar.</p></article> -->
+      <article class="main-story">
+        <p>Paragraf utama sebelum script tetap menjadi bagian dari artikel yang benar.</p>
+        <script>const fake = '<article class="related-article"><p>Artikel palsu dari JavaScript.</p></article>';</script>
+        <p>Paragraf utama setelah script juga harus tetap dipertahankan oleh extractor.</p>
+        <p>Paragraf ketiga membuat artikel utama cukup lengkap untuk dipilih sebagai sumber.</p>
+      </article>
+    </body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Paragraf utama sebelum script/);
+  assert.match(result.text, /Paragraf utama setelah script/);
+  assert.match(result.text, /Paragraf ketiga/);
+  assert.doesNotMatch(result.text, /Artikel palsu/i);
+});
+
 test('extractText memakai main jika article tidak tersedia', () => {
   const html = `
     <html><body>
