@@ -476,3 +476,44 @@ test('emergency title fallback tidak menerima slide dengan body dan points yang 
   assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
   assert.equal(auditCalls, 0, 'output dengan body/points invalid tidak boleh mencapai semantic audit atau diterima');
 });
+
+test('emergency grounding fallback tidak menyembunyikan error title non-grounding', async () => {
+  const evidence = 'Model Orion menggunakan evaluasi blind untuk membandingkan hasil video.';
+  const slides = [
+    { section: 'PEMBUKA', title: 'Metode Evaluasi', body: 'Periksa metode dari sumber.', points: [], claims: [] },
+    { section: 'ITEM 1', title: 'Proses Penilaian', body: 'Bandingkan hasil sesuai konteks.', points: [], claims: [] },
+    { section: 'ITEM 2', title: 'Newsletter subscribe sekarang', body: 'Simpan bagian yang relevan.', points: [], claims: [] },
+    { section: 'PENUTUP', title: 'Catatan Akhir', body: 'Baca konteks secara lengkap.', points: [], claims: [] }
+  ];
+  const base = {
+    focus: {}, topic: 'Evaluasi Orion', hook: slides[0].title, body: slides[0].body, caption: slides[0].body,
+    hashtags: [], cta: slides.at(-1).title, trendKeywordsUsed: [], content_angle: 'evaluasi', primary_tool: 'Orion',
+    hook_pattern: 'langsung', slides
+  };
+  let safeCalls = 0;
+  let neutralFallbackValidation = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    if (/FINAL SAFE RECOVERY/i.test(messages[1].content)) safeCalls += 1;
+    const candidate = slides.map((slide, index) => index === 2
+      ? { ...slide, title: `Newsletter subscribe edisi ${safeCalls}` }
+      : slide);
+    return { choices: [{ message: { content: JSON.stringify({ slides: candidate }) } }] };
+  } } } };
+  const content = {
+    async generateContent() { return base; },
+    validateContent(value) {
+      if (value.slides[2]?.title === 'Poin Berikutnya') neutralFallbackValidation += 1;
+      return [];
+    }
+  };
+
+  await assert.rejects(generateFilteredContent({
+    content,
+    options: { contentFormat: 'Listicle', requestedTopic: 'Evaluasi Orion' },
+    sources: [{ url: 'https://example.test/orion', text: evidence }],
+    client
+  }), error => error.status === 422 && /metadata\/boilerplate/i.test(error.validationErrors.join(' ')));
+
+  assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
+  assert.equal(neutralFallbackValidation, 0, 'fallback factual-title tidak boleh dipakai untuk menyembunyikan boilerplate title');
+});

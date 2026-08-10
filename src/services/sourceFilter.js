@@ -650,6 +650,11 @@ function parseJsonResponse(response) {
   return JSON.parse(raw);
 }
 
+function finalSourceGroundingErrors(contentService, finalContent, options, sources) {
+  if (typeof contentService?.validateSourceGrounding !== 'function') return [];
+  return contentService.validateSourceGrounding(finalContent, options.sourceContext, sources) || [];
+}
+
 async function generateFilteredContent({ content, previousTopics = [], options = {}, sources = [], client }) {
   const autoSourceTopic = options.topicSource === 'ai'
     && options.useSources === true
@@ -696,7 +701,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     if (!checked.errors.length) {
       const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
       const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, options.contentFormat);
-      if (!semanticErrors.length) return checked.content;
+      if (!semanticErrors.length) {
+        const groundingErrors = finalSourceGroundingErrors(content, checked.content, options, sources);
+        if (!groundingErrors.length) return checked.content;
+        errors = groundingErrors;
+        draft = { ...base, slides: checked.content.slides };
+        continue;
+      }
       const reduced = dropUnsupportedPointClaims(checked.content, semanticErrors);
       if (reduced) {
         const reducedChecked = validateVerifiedContent(base, { slides: reduced.slides }, {
@@ -707,7 +718,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
         });
         if (!reducedChecked.errors.length) {
           const remainingSemanticErrors = await auditClaimSemantics(openai, reducedChecked.content, topic, options.contentFormat);
-          if (!remainingSemanticErrors.length) return reducedChecked.content;
+          if (!remainingSemanticErrors.length) {
+            const groundingErrors = finalSourceGroundingErrors(content, reducedChecked.content, options, sources);
+            if (!groundingErrors.length) return reducedChecked.content;
+            errors = groundingErrors;
+            draft = { ...base, slides: reducedChecked.content.slides };
+            continue;
+          }
           errors = remainingSemanticErrors;
           draft = { ...base, slides: reducedChecked.content.slides };
           continue;
@@ -760,7 +777,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
 
     const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
     const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, options.contentFormat);
-    if (!semanticErrors.length) return checked.content;
+    if (!semanticErrors.length) {
+      const groundingErrors = finalSourceGroundingErrors(content, checked.content, options, sources);
+      if (!groundingErrors.length) return checked.content;
+      errors = groundingErrors;
+      draft = { ...base, slides: checked.content.slides };
+      continue;
+    }
 
     const reduced = dropUnsupportedPointClaims(checked.content, semanticErrors);
     if (reduced) {
@@ -772,7 +795,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
       });
       if (!reducedChecked.errors.length) {
         const remainingSemanticErrors = await auditClaimSemantics(openai, pruneUnneededClaims(reducedChecked.content, options.contentFormat), topic, options.contentFormat);
-        if (!remainingSemanticErrors.length) return reducedChecked.content;
+        if (!remainingSemanticErrors.length) {
+          const groundingErrors = finalSourceGroundingErrors(content, reducedChecked.content, options, sources);
+          if (!groundingErrors.length) return reducedChecked.content;
+          errors = groundingErrors;
+          draft = { ...base, slides: reducedChecked.content.slides };
+          continue;
+        }
         errors = remainingSemanticErrors;
         draft = { ...base, slides: reducedChecked.content.slides };
         continue;
@@ -812,8 +841,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     if (!checked.errors.length) {
       const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
       const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, options.contentFormat);
-      if (!semanticErrors.length) return checked.content;
-      errors = semanticErrors;
+      if (!semanticErrors.length) {
+        const groundingErrors = finalSourceGroundingErrors(content, checked.content, options, sources);
+        if (!groundingErrors.length) return checked.content;
+        errors = groundingErrors;
+      } else {
+        errors = semanticErrors;
+      }
     } else {
       errors = checked.errors;
     }
