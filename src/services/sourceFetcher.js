@@ -78,8 +78,36 @@ function normalizeStructuredBody(value) {
     .trim();
 }
 
+function headingText(value) {
+  return decodeBasicEntities(String(value || '').replace(/<[^>]+>/g, ' '))
+    .toLocaleLowerCase('id-ID')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function headingSimilarity(left, right) {
+  const aText = headingText(left);
+  const bText = headingText(right);
+  if (!aText || !bText) return 0;
+  if (aText === bText) return 1;
+  const a = [...new Set(aText.split(' '))];
+  const b = [...new Set(bText.split(' '))];
+  const shared = a.filter(token => b.includes(token)).length;
+  return shared / Math.max(1, Math.min(a.length, b.length));
+}
+
+function structuredPageSignals(html) {
+  const source = String(html || '');
+  return {
+    h1: source.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || '',
+    title: source.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || ''
+  };
+}
+
 function extractStructuredArticle(html) {
   const candidates = [];
+  let order = 0;
   for (const match of String(html || '').matchAll(/<script\b[^>]*type\s*=\s*(?:"application\/ld\+json"|'application\/ld\+json')[^>]*>([\s\S]*?)<\/script>/gi)) {
     const raw = match[1].trim();
     if (!raw) continue;
@@ -97,14 +125,27 @@ function extractStructuredArticle(html) {
       if (!articleLike) continue;
       candidates.push({
         title: String(item?.headline || item?.name || '').trim(),
-        body
+        body,
+        mainEntity: Boolean(item?.mainEntityOfPage),
+        order: order++
       });
     }
   }
-  return candidates.sort((a, b) => b.body.length - a.body.length)[0] || null;
+  const signals = structuredPageSignals(html);
+  return candidates.sort((a, b) => {
+    const aHeading = headingSimilarity(a.title, signals.h1);
+    const bHeading = headingSimilarity(b.title, signals.h1);
+    if (aHeading !== bHeading) return bHeading - aHeading;
+    const aTitle = headingSimilarity(a.title, signals.title);
+    const bTitle = headingSimilarity(b.title, signals.title);
+    if (aTitle !== bTitle) return bTitle - aTitle;
+    if (a.mainEntity !== b.mainEntity) return Number(b.mainEntity) - Number(a.mainEntity);
+    if (a.body.length !== b.body.length) return b.body.length - a.body.length;
+    return a.order - b.order;
+  })[0] || null;
 }
 
-const NOISY_BLOCK_ATTR = /(?:^|[\s_-])(?:related|recommended|recommendation|baca[-_ ]?juga|read[-_ ]?more|most[-_ ]?popular|be[-_ ]?stories|latest|trending|sidebar|widget|promo|advert|ads?|next[-_ ]?article|more[-_ ]?article|article[-_ ]?list|other[-_ ]?article)(?:$|[\s_-])/i;
+const NOISY_BLOCK_ATTR = /(?:^|[\s_-])(?:related|recommended|recommendation|baca[-_ ]?juga|read[-_ ]?more|most[-_ ]?popular|be[-_ ]?stories|sidebar|widget|promo|advert|ads?|next[-_ ]?article|more[-_ ]?article|article[-_ ]?list|other[-_ ]?article)(?:$|[\s_-])/i;
 const VOID_HTML_TAGS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
 const ALWAYS_NOISY_TAGS = new Set(['aside', 'nav', 'footer', 'header']);
 
