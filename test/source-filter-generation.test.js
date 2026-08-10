@@ -164,7 +164,7 @@ test('Listicle AI + URL kaya fakta melewati generation, verifier, dan semantic a
   ];
   const initialSlides = bodies.map((body, index) => ({
     section: index === 0 ? 'PEMBUKA' : index === 4 ? 'PENUTUP' : `ITEM ${index + 1}`,
-    title: ['Peta Persaingan', 'Pemimpin Peringkat', 'Skor Evaluasi', 'Metode Penilaian', 'Perbandingan Setara'][index],
+    title: ['Peta Persaingan', 'Pemimpin Peringkat', 'Angka di Balik Aurora', 'Metode Penilaian', 'Perbandingan Setara'][index],
     body,
     points: [],
     claims: [{ text: body, sourceId: 'source-1', evidence: facts[index] }]
