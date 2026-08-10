@@ -43,6 +43,8 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
+function resolveManualSourceRoleGuard(override) { return override || defaultManualSourceRoleGuard; }
+
 function manualSourceSeed(topic, format) {
   const structures = {
     'Tutorial langkah': ['PEMBUKA', 'LANGKAH 1', 'LANGKAH 2', 'HASIL/PENUTUP'],
@@ -129,8 +131,14 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
           ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
           : await content.generateContent(used, generationOptions);
       }
-      const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
-      if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
+      // Manual + URL must never render the blank structural seed without the
+      // source-grounding gate. The default guard is independent from an injected
+      // content service; explicit guard injection remains available for tests.
+      const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard);
+      if (mode === 'manual') {
+        if (!activeManualSourceRoleGuard?.repairManualSourceRoles) {
+          throw Object.assign(new Error('Final Manual + URL source guard tidak tersedia'), { status: 500 });
+        }
         generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
           contentService: content,
           generated,
@@ -189,4 +197,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, MAX_GENERATION_ATTEMPTS };
