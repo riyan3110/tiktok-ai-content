@@ -79,7 +79,7 @@ test('duplicate body menjalani targeted recovery, field lain terkunci, lalu sema
 
   const result = await generateFilteredContent({
     content: { async generateContent() { return base; }, validateContent() { return []; } },
-    options: { contentFormat: 'Listicle', requestedTopic: 'Model video AI' },
+    options: { topicSource: 'ai', useSources: true, requestedTopic: '', contentFormat: 'Listicle' },
     sources: [{ url: 'https://example.test/ranking', text: `${factA} ${factB}` }],
     client
   });
@@ -165,4 +165,46 @@ test('source filter tidak menghidupkan lagi duplicate-copy hard gate sebelum ver
   assert.equal(baseOptions.skipCopyValidation, true);
   assert.equal(validationOptions.validateCopy, false);
   assert.equal(result.verificationStatus, 'source_based');
+});
+
+test('manual mempertahankan intentional title-body overlap tanpa duplicate recovery', async () => {
+  const evidence = 'Pengembang China mendominasi papan atas model video AI.';
+  const title = 'China Dominasi Papan Atas';
+  const body = 'Pengembang China mendominasi papan atas.';
+  const slide = {
+    section: 'ITEM 1', title, body, points: [],
+    claims: [
+      { field: 'slide:0:title', text: title, sourceId: 'source-1', evidence },
+      { field: 'slide:0:body', text: body, sourceId: 'source-1', evidence }
+    ]
+  };
+  const base = {
+    focus: {}, topic: 'Model video AI China', hook: title, body, caption: body, hashtags: [], cta: title,
+    trendKeywordsUsed: [], content_angle: 'peringkat', primary_tool: 'tanpa tool', hook_pattern: 'langsung',
+    slides: [{ section: slide.section, title, body, points: [] }]
+  };
+  let verifierCalls = 0;
+  let recoveryCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) recoveryCalls += 1;
+    else verifierCalls += 1;
+    return { choices: [{ message: { content: JSON.stringify({ slides: [slide] }) } }] };
+  } } } };
+
+  const result = await generateFilteredContent({
+    content: { async generateContent() { return base; }, validateContent() { return []; } },
+    options: { topicSource: 'manual', useSources: true, requestedTopic: 'Model video AI China', contentFormat: 'Listicle' },
+    sources: [{ url: 'https://example.test/ranking', text: evidence }],
+    client
+  });
+
+  assert.equal(verifierCalls, 1);
+  assert.equal(recoveryCalls, 0);
+  assert.equal(result.slides[0].title, title);
+  assert.equal(result.slides[0].body, body);
+  assert.deepEqual(result.slides[0].points, []);
 });

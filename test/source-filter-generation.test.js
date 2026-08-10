@@ -241,3 +241,45 @@ test('AI tanpa URL dan trending tetap tidak mengambil sumber', async () => {
     db.close();
   }
 });
+
+test('matrix mengaktifkan seluruh policy tambahan hanya untuk AI + URL tanpa requestedTopic', async () => {
+  const cases = [
+    { name: 'AI source otomatis', options: { topicSource: 'ai', useSources: true, requestedTopic: '' }, active: true },
+    { name: 'AI dengan requested topic', options: { topicSource: 'ai', useSources: true, requestedTopic: 'Topik tetap' }, active: false },
+    { name: 'AI tanpa sources', options: { topicSource: 'ai', useSources: false, requestedTopic: '' }, active: false },
+    { name: 'manual source', options: { topicSource: 'manual', useSources: true, requestedTopic: 'Topik manual' }, active: false },
+    { name: 'trending', options: { topicSource: 'trending', useSources: true, requestedTopic: 'Topik tren' }, active: false }
+  ];
+  const source = { url: 'https://example.test/matrix', text: 'Sumber menjelaskan konteks utama yang relevan untuk carousel.' };
+
+  for (const entry of cases) {
+    let bootstrapOptions;
+    let verifierText = '';
+    const topic = entry.options.requestedTopic || 'Topik sumber';
+    const slide = { section: 'PEMBUKA', title: 'Konteks Utama', body: 'Periksa konteks sumber.', points: [], claims: [] };
+    const base = {
+      focus: {}, topic, hook: slide.title, body: slide.body, caption: slide.body, hashtags: [], cta: slide.title,
+      trendKeywordsUsed: [], content_angle: 'konteks', primary_tool: 'tanpa tool', hook_pattern: 'langsung', slides: [slide]
+    };
+    const content = {
+      async generateContent(_previous, options) { bootstrapOptions = options; return base; },
+      validateContent() { return []; }
+    };
+    const client = { chat: { completions: { async create({ messages }) {
+      verifierText = messages[1].content;
+      return { choices: [{ message: { content: JSON.stringify({ slides: [slide] }) } }] };
+    } } } };
+
+    await realSourceFilter.generateFilteredContent({
+      content,
+      options: { ...entry.options, contentFormat: 'Listicle', sourceContext: source.text },
+      sources: [source],
+      client
+    });
+
+    assert.equal(bootstrapOptions.useSources, entry.active, `${entry.name}: source-aware bootstrap`);
+    assert.equal(bootstrapOptions.deferSourceGroundingValidation, entry.active, `${entry.name}: defer grounding`);
+    assert.equal(bootstrapOptions.sourceContext, entry.active ? source.text : '', `${entry.name}: source context bootstrap`);
+    assert.equal(/point BOLEH diganti dengan paraphrase fakta tersebut/.test(verifierText), entry.active, `${entry.name}: unused FACT_BANK replacement policy`);
+  }
+});

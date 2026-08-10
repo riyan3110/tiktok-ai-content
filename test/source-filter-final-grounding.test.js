@@ -133,3 +133,34 @@ test('final grounding menerima topic dan focus source-aware yang didukung source
   assert.equal(finalGroundingCalls.length, 1, 'hasil verified wajib melewati final source grounding tepat sebelum return');
   assert.deepEqual(realContent.validateSourceGrounding(result, source.text, [source]), []);
 });
+
+test('manual valid tidak menjalankan final whole-content grounding tambahan', async () => {
+  const slides = verifiedSlides();
+  const base = bootstrap();
+  const counters = { verify: 0, audit: 0 };
+  let finalGroundingCalls = 0;
+  const content = {
+    async generateContent(_previous, options) {
+      assert.equal(options.useSources, false);
+      assert.equal(options.deferSourceGroundingValidation, false);
+      return base;
+    },
+    validateContent: realContent.validateContent,
+    validateSourceGrounding() {
+      finalGroundingCalls += 1;
+      return ['final gate tidak boleh berjalan untuk manual'];
+    }
+  };
+
+  const result = await generateFilteredContent({
+    content,
+    options: { topicSource: 'manual', useSources: true, requestedTopic: 'Model Orion', contentFormat: 'Listicle', sourceContext: source.text },
+    sources: [source],
+    client: clientFor(slides, counters)
+  });
+
+  assert.equal(result.topic, 'Model Orion');
+  assert.equal(finalGroundingCalls, 0);
+  assert.equal(counters.verify, 1);
+  assert.equal(counters.audit, 1);
+});
