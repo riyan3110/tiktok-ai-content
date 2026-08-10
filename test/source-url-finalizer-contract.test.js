@@ -6,7 +6,7 @@ process.env.AI_BASE_URL ||= 'https://example.com/v1';
 process.env.AI_MODEL ||= 'test-model';
 
 const { finalizerPrompt, targetSections, contentShapeGoalErrors, MAX_FINALIZE_ATTEMPTS } = require('../src/services/sourceUrlFinalizer');
-const { presentationErrors, duplicateErrors, sourceFacts, sourceRichness } = require('../src/services/manualSourceFallback');
+const { buildDeterministicSourceFallback, sourceCoverageErrors, presentationErrors, duplicateErrors, sourceFacts, sourceRichness } = require('../src/services/manualSourceFallback');
 const { safeRecoveryFormat } = require('../src/services/generation');
 
 function sources() {
@@ -121,6 +121,21 @@ test('evidence canonical yang sama tidak boleh dipakai dua kali dalam satu slide
     }]
   };
   assert.ok(duplicateErrors(content).some(error => /dalam satu slide/i.test(error)));
+});
+
+test('fallback terakhir tetap mencakup semua URL meski jumlah URL melebihi jumlah slide', () => {
+  const manySources = Array.from({ length: 6 }, (_, index) => ({
+    url: `https://source-${index + 1}.test/article`,
+    title: `Sumber ${index + 1}`,
+    text: `Sumber ${index + 1} memuat fakta utama yang berbeda untuk konteks carousel dan dapat diverifikasi. Sumber ${index + 1} juga memuat detail tambahan yang berbeda untuk melengkapi fakta utama.`
+  }));
+  const fallback = buildDeterministicSourceFallback({
+    generated: { topic: 'Topik multi sumber' },
+    sources: manySources,
+    topic: 'Topik multi sumber',
+    requestedFormat: 'Fakta singkat'
+  });
+  assert.equal(sourceCoverageErrors(fallback, manySources).length, 0);
 });
 
 test('recovery format tidak mengarang aksi ketika pipeline utama gagal', () => {
