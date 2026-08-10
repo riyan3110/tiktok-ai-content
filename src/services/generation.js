@@ -6,6 +6,7 @@ const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceDedupe = require('./manualSourceDedupe');
+const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -43,7 +44,7 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceDedupe = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceDedupe = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -101,6 +102,15 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
           sources
         });
       }
+      const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
+      if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
+        generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
+          contentService: content,
+          generated,
+          options: generationOptions,
+          sources
+        });
+      }
     } else {
       generated = await content.generateContent(used, generationOptions);
     }
@@ -112,6 +122,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       generated.sources = sources.map(({ url, finalUrl, title, fetchedAt }) => ({ url, finalUrl, title, fetchedAt }));
       generated.sourceCount = generated.sources.length;
     }
+    const finalContentFormat = generated.effectiveContentFormat || contentFormat;
     const similarityScore = similarityToHistory(generated, history);
     const sameToolCount = recentContents(db, 10).filter(item => normalizeTopic(item.primary_tool) === normalizeTopic(generated.primary_tool) && normalizeTopic(generated.primary_tool) !== 'tanpa tool').length;
     const failsHistoryDiversity = mode !== 'manual' && (similarityScore > 0.55 || sameToolCount >= 2);
@@ -130,9 +141,9 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       // Rendering happens only after AI parsing, normalization, and validation;
       // the database remains untouched if any slide cannot be rendered.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat, watermark, background });
+      renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, contentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(renderedSlides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}), JSON.stringify({ ...generated, contentCategory, contentFormat, watermark }));
+        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, finalContentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(renderedSlides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}), JSON.stringify({ ...generated, contentCategory, contentFormat: finalContentFormat, watermark }));
       try {
         let stableSlides = renderedSlides;
         if (images.promoteSlides) stableSlides = await images.promoteSlides(renderedSlides, result.lastInsertRowid, [], stable => db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(stable), result.lastInsertRowid));
