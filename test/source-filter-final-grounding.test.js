@@ -259,13 +259,13 @@ test('manual menolak inherited focus faktual unsupported tanpa mengubah slides a
   assert.equal(fullGroundingCalls, 0);
 });
 
-async function runManualFocusCase({ focusHasil, evidence }) {
+async function runManualFocusCase({ focusHasil, evidence, claimText = evidence }) {
   const slide = {
     section: 'ITEM 1',
     title: 'Evaluasi Model Orion',
-    body: evidence,
+    body: claimText,
     points: [],
-    claims: [{ field: 'slide:0:body', text: evidence, sourceId: 'source-1', evidence }]
+    claims: [{ field: 'slide:0:body', text: claimText, sourceId: 'source-1', evidence }]
   };
   const focus = {
     masalah: 'Konteks evaluasi',
@@ -334,5 +334,20 @@ test('manual focus tetap menerima paraphrase faktual natural tanpa penguatan mod
   const result = await scenario.invocation;
   assert.deepEqual(result.focus, scenario.base.focus);
   assert.deepEqual(result.slides, [scenario.slide]);
+  assert.equal(scenario.getFullGroundingCalls(), 0);
+});
+
+test('manual focus certainty tidak dapat divalidasi sendiri oleh claim.text', async () => {
+  const scenario = await runManualFocusCase({
+    focusHasil: 'Model Orion pasti meningkatkan kualitas video',
+    claimText: 'Model Orion pasti meningkatkan kualitas video',
+    evidence: 'Model Orion meningkatkan kualitas video.'
+  });
+
+  await assert.rejects(scenario.invocation, error => {
+    assert.equal(error.status, 422);
+    assert.match(error.validationErrors.join(' '), /MANUAL_FOCUS_HASIL.*pasti meningkatkan kualitas video/);
+    return true;
+  });
   assert.equal(scenario.getFullGroundingCalls(), 0);
 });

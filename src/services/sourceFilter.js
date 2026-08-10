@@ -670,9 +670,8 @@ function manualTopLevelFocusErrors(finalContent, options) {
     const requiredModalities = strongModalityGroups.filter(group => group.some(term => valueTokens.has(term)));
     if (!requiresEvidence(value) && !requiredModalities.length) return [];
     const supported = claims.some(claim => {
-      const supportText = `${claim.text} ${claim.evidence}`;
-      const supportTokens = tokens(supportText);
-      const preservesModality = requiredModalities.every(group => group.some(term => supportTokens.has(term)));
+      const evidenceTokens = tokens(claim.evidence);
+      const preservesModality = requiredModalities.every(group => group.some(term => evidenceTokens.has(term)));
       return preservesModality && (hasSafeEvidenceSupport(value, claim.text)
         || hasSafeEvidenceSupport(value, claim.evidence));
     });
