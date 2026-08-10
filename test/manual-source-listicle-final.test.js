@@ -163,9 +163,10 @@ test('fallback format tetap sticky selama repair lanjutan dan tidak kembali ke T
       { section: 'HASIL/PENUTUP', title: 'Hasil', body: '', points: [], claims: [] }
     ]
   };
+  const neutralTitles = ['Pembuka sumber', 'Temuan utama', 'Konteks tambahan', 'Ringkasan sumber'];
   const thinFallback = facts.map((evidence, index) => ({
     section: ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'][index],
-    title: `Fakta ${index + 1}`, body: 'Isi terlalu singkat.', points: [], claims: []
+    title: neutralTitles[index], body: 'Isi terlalu singkat.', points: [], claims: []
   }));
   const pointText = [
     'Konteks pertama dari sumber',
@@ -175,7 +176,7 @@ test('fallback format tetap sticky selama repair lanjutan dan tidak kembali ke T
   ];
   const denseFallback = facts.map((evidence, index) => ({
     section: ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'][index],
-    title: `Fakta ${index + 1}`, body: evidence,
+    title: neutralTitles[index], body: evidence,
     points: [pointText[index]],
     claims: [claim(`slide:${index}:body`, evidence, evidence), claim(`slide:${index}:point:0`, pointText[index], evidence)]
   }));
