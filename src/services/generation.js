@@ -6,6 +6,7 @@ const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
+const { buildDeterministicSourceFallback, validateSourceContent } = require('./manualSourceFallback');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -41,6 +42,46 @@ function similarityToHistory(generated, history) {
 function isDuplicate(db, topic) {
   const normalized = normalizeTopic(topic);
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
+}
+
+function resolveManualSourceRoleGuard(override, content = defaultContent) {
+  if (override) return override;
+  return content === defaultContent ? defaultManualSourceRoleGuard : null;
+}
+
+function manualSourceSeed(topic, format) {
+  const structures = {
+    'Tutorial langkah': ['PEMBUKA', 'LANGKAH 1', 'LANGKAH 2', 'HASIL/PENUTUP'],
+    'Masalah dan solusi': ['MASALAH', 'SOLUSI', 'SOLUSI', 'PENUTUP'],
+    'Fakta singkat': ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'],
+    Listicle: ['ITEM 1', 'ITEM 2', 'ITEM 3', 'ITEM 4'],
+    'Tips cepat': ['PEMBUKA', 'TIPS 1', 'TIPS 2', 'PENUTUP'],
+    'Before-after': ['BEFORE', 'PERUBAHAN', 'AFTER', 'PENUTUP']
+  };
+  const sections = structures[format] || ['PEMBUKA', 'ISI 1', 'ISI 2', 'PENUTUP'];
+  const slides = sections.map(section => ({ section, title: 'Draf sumber', body: '', points: [], claims: [] }));
+  return {
+    focus: { masalah: 'Konteks dari sumber', penyebab: 'Fakta dari sumber', solusi: 'Poin utama dari sumber', hasil: 'Ringkasan dari sumber' },
+    topic,
+    hook: `Ringkasan sumber tentang ${topic}`,
+    body: 'Konten dibangun dari fakta sumber.',
+    caption: 'Konten dibangun dari fakta sumber.',
+    hashtags: [],
+    cta: 'Ringkasan akhir',
+    trendKeywordsUsed: [],
+    content_angle: `fakta sumber tentang ${topic}`,
+    primary_tool: 'tanpa tool',
+    hook_pattern: 'source-locked',
+    verificationStatus: 'needs_review',
+    unsupportedClaims: [],
+    slides
+  };
+}
+
+function deterministicFallback({ generated, sources, topic, requestedFormat }) {
+  const fallback = buildDeterministicSourceFallback({ generated, sources, topic, requestedFormat });
+  if (String(requestedFormat || '').toLocaleLowerCase('id-ID') === 'listicle') delete fallback.effectiveContentFormat;
+  return fallback;
 }
 
 async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
@@ -88,27 +129,55 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     };
     let generated;
     if (shouldUseSources) {
-      const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
-      generated = activeSourceFilter
-        ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
-        : await content.generateContent(used, generationOptions);
-      const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
-      if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
-        generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
-          contentService: content,
-          generated,
-          options: generationOptions,
-          sources
-        });
+      if (mode === 'manual') {
+        const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
+        if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
+          const seed = manualSourceSeed(basis, contentFormat);
+          try {
+            generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
+              contentService: content,
+              generated: seed,
+              options: generationOptions,
+              sources
+            });
+          } catch (error) {
+            if (content !== defaultContent) throw error;
+            generated = deterministicFallback({ generated: seed, sources, topic: basis, requestedFormat: contentFormat });
+          }
+        } else {
+          generated = await content.generateContent(used, generationOptions);
+        }
+      } else {
+        const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
+        try {
+          generated = activeSourceFilter
+            ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
+            : await content.generateContent(used, generationOptions);
+        } catch (error) {
+          if (content !== defaultContent) throw error;
+          const sourceTopic = String(sources[0]?.title || 'Ringkasan sumber').trim();
+          generated = deterministicFallback({ generated: manualSourceSeed(sourceTopic, contentFormat), sources, topic: sourceTopic, requestedFormat: contentFormat });
+        }
       }
     } else {
       generated = await content.generateContent(used, generationOptions);
+    }
+    if (shouldUseSources && content === defaultContent) {
+      let sourceErrors = validateSourceContent(generated, sources);
+      if (sourceErrors.length) {
+        const sourceTopic = mode === 'manual'
+          ? manualTopic
+          : String(generated?.topic || sources[0]?.title || 'Ringkasan sumber').trim();
+        generated = deterministicFallback({ generated, sources, topic: sourceTopic, requestedFormat: contentFormat });
+        sourceErrors = validateSourceContent(generated, sources);
+        if (sourceErrors.length) throw Object.assign(new Error(`Konten URL belum memenuhi final source gate: ${sourceErrors[0]}`), { status: 422, validationErrors: sourceErrors });
+      }
     }
     generated.content_angle ||= angle || generated.topic;
     generated.primary_tool ||= 'tanpa tool';
     generated.hook_pattern ||= generated.hook;
     if (shouldUseSources) {
-      generated.verificationStatus = generated.verificationStatus === 'needs_review' ? 'needs_review' : 'source_based';
+      generated.verificationStatus = content === defaultContent ? 'source_based' : (generated.verificationStatus === 'needs_review' ? 'needs_review' : 'source_based');
       generated.sources = sources.map(({ url, finalUrl, title, fetchedAt }) => ({ url, finalUrl, title, fetchedAt }));
       generated.sourceCount = generated.sources.length;
     }
@@ -128,7 +197,6 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
-      // Rendering happens only after source verification and the final Manual + URL quality gate.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -152,4 +220,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, MAX_GENERATION_ATTEMPTS };

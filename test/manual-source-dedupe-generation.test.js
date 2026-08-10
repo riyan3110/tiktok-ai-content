@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createDatabase } = require('../src/db');
-const { generateAndSave } = require('../src/services/generation');
+const { generateAndSave, resolveManualSourceRoleGuard } = require('../src/services/generation');
 
 const sourceFetcher = {
   validateSourceUrls: urls => urls,
@@ -24,53 +24,58 @@ function generated(topic) {
     trendKeywordsUsed: [], content_angle: 'fakta sumber', primary_tool: 'tanpa tool', hook_pattern: 'langsung',
     verificationStatus: 'source_based',
     slides: [
-      { section: 'PEMBUKA', title: 'Judul', body: 'Isi sumber yang cukup untuk pembuka.', points: [], claims: [] },
-      { section: 'FAKTA UTAMA', title: 'Fakta', body: 'Isi sumber yang cukup untuk fakta utama.', points: [], claims: [] },
-      { section: 'PENJELASAN', title: 'Penjelasan', body: 'Isi sumber yang cukup untuk penjelasan.', points: [], claims: [] },
-      { section: 'KESIMPULAN', title: 'Ringkasan', body: 'Isi sumber yang cukup untuk penutup.', points: [], claims: [] }
+      { section: 'ITEM 1', title: 'Fakta 1', body: 'Isi sumber yang cukup untuk fakta pertama.', points: [], claims: [] },
+      { section: 'ITEM 2', title: 'Fakta 2', body: 'Isi sumber yang cukup untuk fakta kedua.', points: [], claims: [] },
+      { section: 'ITEM 3', title: 'Fakta 3', body: 'Isi sumber yang cukup untuk fakta ketiga.', points: [], claims: [] },
+      { section: 'ITEM 4', title: 'Fakta 4', body: 'Isi sumber yang cukup untuk fakta keempat.', points: [], claims: [] }
     ]
   };
 }
 
-test('generation menjalankan satu final quality gate hanya untuk Manual + URL', async () => {
+test('default final Manual source guard selalu tersedia meski content service di-inject', () => {
+  const guard = resolveManualSourceRoleGuard();
+  assert.ok(guard);
+  assert.equal(typeof guard.repairManualSourceRoles, 'function');
+});
+
+test('Manual + URL melewati pre-verifier dan selalu masuk satu final all-format quality gate', async () => {
   const db = createDatabase(':memory:');
   let filterCalls = 0;
+  let contentCalls = 0;
   let qualityCalls = 0;
-  const sourceFilter = {
-    async generateFilteredContent({ options }) {
-      filterCalls += 1;
-      assert.equal(options.topicSource, 'manual');
-      assert.equal(options.useSources, true);
-      return generated('Topik manual final gate');
-    }
-  };
+  const sourceFilter = { async generateFilteredContent() { filterCalls += 1; return generated('Tidak boleh dipakai'); } };
+  const content = { async generateContent() { contentCalls += 1; return generated('Tidak boleh dipakai'); } };
   const manualSourceRoleGuard = {
-    async repairManualSourceRoles({ generated: value, options, sources }) {
+    async repairManualSourceRoles({ generated: seed, options, sources }) {
       qualityCalls += 1;
       assert.equal(options.topicSource, 'manual');
       assert.equal(options.useSources, true);
+      assert.equal(options.contentFormat, 'Listicle');
       assert.equal(sources.length, 1);
-      return value;
+      assert.equal(seed.topic, 'Topik manual final gate');
+      assert.deepEqual(seed.slides.map(slide => slide.section), ['ITEM 1', 'ITEM 2', 'ITEM 3', 'ITEM 4']);
+      return generated('Topik manual final gate');
     }
   };
 
   const id = await generateAndSave({
-    db, mode: 'manual', requestedTopic: 'Topik manual final gate', useSources: true,
+    db, mode: 'manual', requestedTopic: 'Topik manual final gate', format: 'Listicle', useSources: true,
     sourceUrls: ['https://example.test/manual'],
-    content: { generateContent: async () => generated('Topik manual final gate') },
-    sourceFetcher, sourceFilter, manualSourceRoleGuard, images, useTrendReference: false
+    content, sourceFetcher, sourceFilter, manualSourceRoleGuard, images, useTrendReference: false
   });
 
-  assert.equal(filterCalls, 1);
+  assert.equal(filterCalls, 0, 'Manual + URL tidak boleh masuk sourceFilter pre-verifier yang mengunci section lama');
+  assert.equal(contentCalls, 0, 'Manual + URL ditulis oleh final source gate, bukan generator awal kedua');
   assert.equal(qualityCalls, 1);
   assert.equal(db.prepare('SELECT topic FROM contents WHERE id=?').get(id).topic, 'Topik manual final gate');
   db.close();
 });
 
-test('generation tidak menjalankan final Manual quality gate pada AI + URL', async () => {
+test('AI + URL tetap memakai sourceFilter dan tidak menjalankan final Manual quality gate', async () => {
   const db = createDatabase(':memory:');
+  let filterCalls = 0;
   let qualityCalls = 0;
-  const sourceFilter = { async generateFilteredContent() { return generated('Topik AI sumber unik'); } };
+  const sourceFilter = { async generateFilteredContent() { filterCalls += 1; return generated('Topik AI sumber unik'); } };
   const manualSourceRoleGuard = { async repairManualSourceRoles({ generated: value }) { qualityCalls += 1; return value; } };
 
   const id = await generateAndSave({
@@ -79,6 +84,7 @@ test('generation tidak menjalankan final Manual quality gate pada AI + URL', asy
     sourceFetcher, sourceFilter, manualSourceRoleGuard, images, useTrendReference: false
   });
 
+  assert.equal(filterCalls, 1);
   assert.equal(qualityCalls, 0);
   assert.equal(db.prepare('SELECT topic FROM contents WHERE id=?').get(id).topic, 'Topik AI sumber unik');
   db.close();
