@@ -108,6 +108,17 @@ const NOISY_BLOCK_ATTR = /(?:^|[\s_-])(?:related|recommended|recommendation|baca
 const VOID_HTML_TAGS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
 const ALWAYS_NOISY_TAGS = new Set(['aside', 'nav', 'footer', 'header']);
 
+function stripOpaqueHtmlBlocks(html) {
+  return String(html || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, ' ')
+    .replace(/<form\b[\s\S]*?<\/form>/gi, ' ');
+}
+
 function noisyTagAttributes(attrs = '') {
   const values = [];
   const pattern = /(?:id|class)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
@@ -189,27 +200,23 @@ function extractTagRegions(html, targetTag) {
 }
 
 function preferredHtmlRegion(html) {
-  const articles = extractTagRegions(html, 'article')
+  const structuralHtml = stripOpaqueHtmlBlocks(html);
+  const articles = extractTagRegions(structuralHtml, 'article')
     .filter(region => !noisyTagAttributes(region.attrs))
     .map(region => region.html)
     .filter(Boolean)
     .sort((a, b) => cleanHtmlText(b).length - cleanHtmlText(a).length);
   if (articles.length) return articles[0];
-  const mains = extractTagRegions(html, 'main')
+  const mains = extractTagRegions(structuralHtml, 'main')
     .map(region => region.html)
     .filter(Boolean)
     .sort((a, b) => cleanHtmlText(b).length - cleanHtmlText(a).length);
-  return mains[0] || html;
+  return mains[0] || structuralHtml;
 }
 
 function cleanHtmlText(html) {
-  return stripNoisyHtmlBlocks(html)
-    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
-    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, ' ')
-    .replace(/<form\b[\s\S]*?<\/form>/gi, ' ')
+  const withoutOpaqueBlocks = stripOpaqueHtmlBlocks(html);
+  return stripNoisyHtmlBlocks(withoutOpaqueBlocks)
     .replace(/<\/?(?:p|h[1-6]|li|blockquote|figcaption|br)\b[^>]*>/gi, '\n')
     .replace(/<[^>]+>/g, ' ');
 }
