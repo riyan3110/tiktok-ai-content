@@ -118,8 +118,14 @@ function stripLowValueRegions(html) {
     }
 
     const attrs = token.slice(name.length + 1);
-    const classOrIdValues = [...attrs.matchAll(/\b(?:class|id)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)]
-      .map(value => value[1] ?? value[2] ?? value[3] ?? '');
+    const classOrIdValues = [];
+    const attributePattern = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+    let attribute;
+    while ((attribute = attributePattern.exec(attrs))) {
+      const attributeName = String(attribute[1] || '').toLocaleLowerCase('en-US');
+      if (attributeName !== 'class' && attributeName !== 'id') continue;
+      classOrIdValues.push(attribute[2] ?? attribute[3] ?? attribute[4] ?? '');
+    }
     const lowValue = alwaysDrop.has(name) || (classAware.has(name) && classOrIdValues.some(value => LOW_VALUE_REGION.test(value)));
     const selfClosing = /\/\s*>$/.test(token) || voidTags.has(name);
     const suppressRoot = lowValue && suppressDepth === 0;
