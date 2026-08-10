@@ -56,37 +56,94 @@ async function secureFetch(url, { lookup = dns.lookup, signal } = {}) {
 }
 function uniqueUrls(urls = []) { return [...new Map(urls.map(v => [String(v || '').trim(), String(v || '').trim()]).filter(([k]) => k)).values()]; }
 function validateSourceUrls(urls) { const values = uniqueUrls(Array.isArray(urls) ? urls : []); if (!values.length) throw Object.assign(new Error('Minimal 1 URL sumber wajib diisi'), { status: 400 }); if (values.length > MAX_URLS) throw Object.assign(new Error('Maksimal 3 URL sumber'), { status: 400 }); return values; }
-function decodeBasicEntities(text) { return text.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))); }
+function decodeBasicEntities(text) { return String(text || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))); }
+
+function jsonLdObjects(value, output = []) {
+  if (Array.isArray(value)) value.forEach(item => jsonLdObjects(item, output));
+  else if (value && typeof value === 'object') {
+    output.push(value);
+    Object.values(value).forEach(item => jsonLdObjects(item, output));
+  }
+  return output;
+}
+
+function extractStructuredArticle(html) {
+  const candidates = [];
+  for (const match of String(html || '').matchAll(/<script\b[^>]*type\s*=\s*(?:"application\/ld\+json"|'application\/ld\+json')[^>]*>([\s\S]*?)<\/script>/gi)) {
+    const raw = match[1].trim();
+    if (!raw) continue;
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch {
+      try { parsed = JSON.parse(decodeBasicEntities(raw)); }
+      catch { continue; }
+    }
+    for (const item of jsonLdObjects(parsed)) {
+      const body = typeof item?.articleBody === 'string' ? item.articleBody.trim() : '';
+      if (!body) continue;
+      const type = Array.isArray(item['@type']) ? item['@type'].join(' ') : String(item['@type'] || '');
+      const articleLike = /Article|NewsArticle|BlogPosting|ReportageNewsArticle/i.test(type) || body.length >= MIN_TEXT_LENGTH;
+      if (!articleLike) continue;
+      candidates.push({
+        title: String(item?.headline || item?.name || '').trim(),
+        body: decodeBasicEntities(body).replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim()
+      });
+    }
+  }
+  return candidates.sort((a, b) => b.body.length - a.body.length)[0] || null;
+}
+
+const NOISY_BLOCK_ATTR = /(?:^|[\s_-])(?:related|recommended|recommendation|baca[-_ ]?juga|read[-_ ]?more|most[-_ ]?popular|be[-_ ]?stories|latest|trending|sidebar|widget|promo|advert|ads?|next[-_ ]?article|more[-_ ]?article|article[-_ ]?list|other[-_ ]?article)(?:$|[\s_-])/i;
+
+function stripNoisyHtmlBlocks(html) {
+  let output = String(html || '');
+  const tags = ['aside', 'nav', 'footer', 'header'];
+  for (const tag of tags) output = output.replace(new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}>`, 'gi'), ' ');
+  for (const tag of ['section', 'div', 'ul']) {
+    const pattern = new RegExp(`<${tag}\\b([^>]*)>[\\s\\S]*?<\\/${tag}>`, 'gi');
+    output = output.replace(pattern, (block, attrs) => {
+      const marker = String(attrs || '').match(/(?:class|id)\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+      const value = marker ? (marker[1] || marker[2] || '') : '';
+      return NOISY_BLOCK_ATTR.test(value) ? ' ' : block;
+    });
+  }
+  return output;
+}
 
 function preferredHtmlRegion(html) {
-  const articles = [...String(html || '').matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)].map(match => match[1]).filter(Boolean);
-  if (articles.length) return articles.join('\n');
+  const articles = [...String(html || '').matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)]
+    .map(match => match[1]).filter(Boolean)
+    .sort((a, b) => cleanHtmlText(b).length - cleanHtmlText(a).length);
+  if (articles.length) return articles[0];
   const main = String(html || '').match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1];
   return main || html;
 }
 
 function cleanHtmlText(html) {
-  return String(html || '')
+  return stripNoisyHtmlBlocks(html)
     .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
     .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
     .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
     .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, ' ')
     .replace(/<form\b[\s\S]*?<\/form>/gi, ' ')
-    .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
-    .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ')
-    .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
-    .replace(/<aside\b[\s\S]*?<\/aside>/gi, ' ')
+    .replace(/<\/?(?:p|h[1-6]|li|blockquote|figcaption|br)\b[^>]*>/gi, '\n')
     .replace(/<[^>]+>/g, ' ');
 }
 
 function extractText(raw, contentType = '') {
   const original = String(raw || '');
-  const title = decodeBasicEntities((original.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim());
+  const htmlTitle = decodeBasicEntities((original.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim());
+  if (/text\/html/i.test(contentType)) {
+    const structured = extractStructuredArticle(original);
+    if (structured?.body && structured.body.length >= MIN_TEXT_LENGTH) {
+      return { title: structured.title || htmlTitle, text: structured.body };
+    }
+  }
   const selected = /text\/html/i.test(contentType) ? preferredHtmlRegion(original) : original;
   const stripped = /text\/html/i.test(contentType) ? cleanHtmlText(selected) : selected;
   const text = decodeBasicEntities(stripped).replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
-  return { title, text };
+  return { title: htmlTitle, text };
 }
 async function readLimited(response) { const reader = response.body?.getReader?.(); if (!reader) { const text = await response.text(); if (Buffer.byteLength(text) > MAX_BYTES) throw new Error('Response sumber terlalu besar'); return text; } let size = 0, chunks = []; while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX_BYTES) throw new Error('Response sumber terlalu besar'); chunks.push(value); } return new TextDecoder().decode(Buffer.concat(chunks.map(v => Buffer.from(v)))); }
 async function fetchOne(rawUrl, { fetchImpl, lookup = dns.lookup } = {}, redirects = 0) {
@@ -106,4 +163,7 @@ async function fetchOne(rawUrl, { fetchImpl, lookup = dns.lookup } = {}, redirec
 }
 async function fetchSources(urls, options = {}) { return Promise.all(validateSourceUrls(urls).map(url => fetchOne(url, options))); }
 function buildSourceContext(sources) { return sources.map((s, i) => `<SOURCE id="source-${i + 1}">\nTITLE: ${s.title || '-'}\nURL: ${s.finalUrl || s.url}\nCONTENT:\n${s.text}\n</SOURCE>`).join('\n\n').slice(0, MAX_CONTEXT_LENGTH); }
-module.exports = { fetchSources, buildSourceContext, validateSourceUrls, validateUrl, extractText, SourceFetchError, MAX_CONTEXT_LENGTH };
+module.exports = {
+  fetchSources, buildSourceContext, validateSourceUrls, validateUrl, extractText, extractStructuredArticle,
+  SourceFetchError, MAX_CONTEXT_LENGTH
+};
