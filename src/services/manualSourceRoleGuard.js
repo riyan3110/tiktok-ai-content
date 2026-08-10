@@ -59,7 +59,7 @@ function isFactFallback(content) {
 }
 function effectiveManualFormat(content, requestedFormat) { return content?.__manualGuardFallback===true && isFactFallback(content) ? 'Fakta singkat' : requestedFormat; }
 
-function deterministicRoleErrors(content, format, { fallbackMode=false }={}) {
+function deterministicRoleErrors(content, format, { fallbackMode=false, bank=[] }={}) {
   const f=fmt(format), s=content?.slides||[], e=[]; if (!s.length) return ['slide:0:role: carousel tidak memiliki slide.'];
   if (fallbackMode || f==='fakta singkat') { if (!isFactFallback(content)) e.push('slide:0:role: fallback Fakta singkat harus memakai PEMBUKA → FAKTA/PENJELASAN/KONTEKS → KESIMPULAN.'); return e; }
   if (f==='tutorial langkah' || f==='masalah dan solusi') {
@@ -70,8 +70,18 @@ function deterministicRoleErrors(content, format, { fallbackMode=false }={}) {
     const last=s.length-1;if(/^HASIL(?:\/PENUTUP)?$/i.test(s[last]?.section||'')&&(idx.length<2||bad))e.push(`slide:${last}:role: HASIL tidak boleh dipakai bila langkah/solusi sebelumnya belum valid.`);
   } else if(f==='listicle') {
     if(isFactFallback(content))e.push('slide:0:role: Listicle tidak boleh diam-diam berubah menjadi Fakta singkat.');
-    const idx=s.map((x,i)=>/^ITEM\s+\d+$/i.test(x?.section||'')?i:-1).filter(i=>i>=0); if(idx.length<Math.min(3,s.length))e.push('slide:1:role: Listicle harus memiliki minimal tiga ITEM berbeda jika sumber menyediakan fakta yang cukup.');
-    idx.forEach((i,n)=>{if(Number(String(s[i].section).match(/\d+/)?.[0]||0)!==n+1)e.push(`slide:${i}:role: nomor ITEM Listicle harus berurutan mulai 1.`);});
+    const idx=s.map((x,i)=>/^ITEM\s+\d+$/i.test(x?.section||'')?i:-1).filter(i=>i>=0);
+    const richItemCount=Math.min(5,distinctBank(bank).length);
+    if(richItemCount>=4){
+      if(s.length!==richItemCount)e.push(`slide:0:role: Listicle dengan sumber kaya harus memakai tepat ${richItemCount} slide agar 4–5 fakta utama tidak dibuang untuk intro/penutup generik.`);
+      s.forEach((x,i)=>{
+        if(!/^ITEM\s+\d+$/i.test(x?.section||''))e.push(`slide:${i}:role: semua slide Listicle sumber kaya wajib berupa ITEM berurutan; PEMBUKA/KESIMPULAN tidak boleh mengambil slot fakta.`);
+        else if(Number(String(x.section).match(/\d+/)?.[0]||0)!==i+1)e.push(`slide:${i}:role: nomor ITEM Listicle harus berurutan mulai 1.`);
+      });
+    } else {
+      if(idx.length<Math.min(3,s.length))e.push('slide:1:role: Listicle harus memiliki minimal tiga ITEM berbeda jika sumber menyediakan fakta yang cukup.');
+      idx.forEach((i,n)=>{if(Number(String(s[i].section).match(/\d+/)?.[0]||0)!==n+1)e.push(`slide:${i}:role: nomor ITEM Listicle harus berurutan mulai 1.`);});
+    }
   } else if(f==='tips cepat') {
     const tips=s.filter(x=>/^TIPS?\s*\d*$/i.test(x?.section||'')); if(tips.length<2)e.push('slide:1:role: Tips cepat membutuhkan minimal dua tips/tindakan berbeda.'); tips.forEach(x=>{if(!bodyParts(x).some(looksLikeUserAction))e.push(`slide:${s.indexOf(x)}:role: tips harus berupa tindakan konkret pengguna.`);});
   } else if(f==='before-after') {
@@ -142,7 +152,7 @@ async function repairManualSourceRoles({contentService,generated,options={},sour
   if(!bank.length)throw Object.assign(new Error('URL berhasil dibaca tetapi tidak menghasilkan fakta artikel utama yang dapat diverifikasi.'),{status:422});
   const openai=client||new OpenAI({apiKey:config.aiApiKey,baseURL:config.aiBaseUrl});let draft={...generated,slides:(generated?.slides||[]).map(x=>({...x}))};delete draft.effectiveContentFormat;delete draft.__manualGuardFallback;let fallback=false,last=[];
   for(let attempt=0;attempt<=MAX_ROLE_REPAIR_ATTEMPTS;attempt++){
-    const format=fallback?'Fakta singkat':requested,role=deterministicRoleErrors(draft,format,{fallbackMode:fallback}),density=contentDensityErrors(draft,bank),dup=manualSourceDedupe.manualCrossSlideDuplicateErrors(draft),audit=await auditRoles(openai,draft,bank,format,topic,sources,fallback),auditErr=audit.invalid.map(x=>`slide:${x.slideIndex}:audit: ${x.reason||'isi tidak sesuai artikel utama/format.'}`);
+    const format=fallback?'Fakta singkat':requested,role=deterministicRoleErrors(draft,format,{fallbackMode:fallback,bank}),density=contentDensityErrors(draft,bank),dup=manualSourceDedupe.manualCrossSlideDuplicateErrors(draft),audit=await auditRoles(openai,draft,bank,format,topic,sources,fallback),auditErr=audit.invalid.map(x=>`slide:${x.slideIndex}:audit: ${x.reason||'isi tidak sesuai artikel utama/format.'}`);
     if(!fallback&&!audit.formatFit&&fmt(requested)!=='fakta singkat'){fallback=true;last=[`format: sumber tidak cukup untuk ${requested}; gunakan Fakta singkat tanpa mengarang.`,...auditErr];}
     else {let validation=[];if(!role.length&&!density.length&&!dup.length&&!auditErr.length&&audit.formatFit){const final=await validateFinal(contentService,draft,options,sources,openai,format);validation=final.errors;if(!validation.length){const clean=syncTop(final.content);delete clean.effectiveContentFormat;delete clean.__manualGuardFallback;return fallback?{...clean,effectiveContentFormat:'Fakta singkat'}:clean;}}last=[...role,...density,...dup,...auditErr,...validation];}
     if(attempt===MAX_ROLE_REPAIR_ATTEMPTS)break;
