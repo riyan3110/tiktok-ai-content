@@ -116,9 +116,9 @@ test('final all-format gate membangun ulang kasus Beautynesia menjadi 5 ITEM pad
     if (/PERBAIKAN FINAL QUALITY/i.test(prompt)) {
       rebuildCalls += 1;
       assert.match(prompt, /FORMAT WAJIB: "Listicle"/);
-      assert.match(prompt, /18–32 kata substantif/i);
+      assert.match(prompt, /20–34 kata substantif/i);
       assert.match(prompt, /artikel terkait, Baca Juga, rekomendasi, sidebar, teaser/i);
-      assert.match(prompt, /ITEM 1\.\.N/i);
+      assert.match(prompt, /tepat 5 slide ITEM 1\.\.5/i);
       return { choices: [{ message: { content: JSON.stringify({ slides: repairedSlides }) } }] };
     }
     if (/auditor entailment fakta bilingual/i.test(prompt)) {
