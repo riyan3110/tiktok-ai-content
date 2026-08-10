@@ -9,7 +9,7 @@ const TOPIC_STOPWORDS = new Set([
   'yang', 'dan', 'atau', 'dari', 'untuk', 'dengan', 'tentang', 'cara', 'adalah', 'pada', 'itu', 'ini',
   'sebagai', 'daftar', 'tips', 'trik', 'yuk', 'mulai', 'rutin', 'cek', 'mengenal'
 ]);
-const SOURCE_NOISE = /(?:baca\s+juga|read\s+more|artikel\s+terkait|recommended|rekomendasi\s+artikel|most\s+popular|be\s+stories|bagikan|komentar|tags?|newsletter|subscribe|ikuti\s+kami|copyright|hak\s+cipta|login|masuk|daftar\s+akun)/i;
+const SOURCE_NOISE = /(?:\bbaca\s+juga\b|\bread\s+more\b|\bartikel\s+terkait\b|\brecommended\b|\brekomendasi\s+artikel\b|\bmost\s+popular\b|\bbe\s+stories\b|\bbagikan\b|\bkomentar\b|\btags?\b|\bnewsletter\b|\bsubscribe\b|\bikuti\s+kami\b|\bcopyright\b|\bhak\s+cipta\b|\blogin\b|\bmasuk\b|\bdaftar\s+akun\b)/i;
 const GENERIC_COPY = /^(?:pembuka|kesimpulan|ringkasan|poin penting|fakta utama|mengenal|ketahui|simak|cek selengkapnya|lanjut baca)$/i;
 
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
@@ -106,8 +106,8 @@ function extractManualFactBank(sources = [], requestedTopic = '') {
       if (!key || seen.has(key)) continue;
       const evidenceSet = new Set(topicTokens(evidence));
       const overlap = wanted.filter(token => evidenceSet.has(token)).length;
-      // When the article title matches the manual topic, item paragraphs belong to that cleaned article
-      // even if every individual item does not repeat the title keywords.
+      // If the article title itself matches the manual topic, trust the cleaned main article body as a whole.
+      // This is important for list articles whose individual item paragraphs may not repeat the title keywords.
       if (!titleMatch && wanted.length && overlap === 0) continue;
       seen.add(key);
       bank.push({ sourceId: item.sourceId, evidence, order, overlap });
@@ -192,7 +192,7 @@ function promptForComposition({ requestedTopic, requestedFormat, effectiveFormat
   const rich = bank.length >= Math.max(8, slideCount * 2 - 1);
   const density = rich
     ? 'Setiap slide wajib terasa penuh tetapi tetap enak dibaca: body 14–24 kata DAN 1–2 points, masing-masing 3–7 kata. Total body+points minimal 20 kata substantif per slide. Gunakan fakta tambahan, bukan filler.'
-    : 'Setiap slide wajib informatif: body 12–24 kata dan tambahkan point hanya bila ada fakta pendukung berbeda. Jangan mengarang demi panjang.';
+    : 'Setiap slide wajib tetap cukup penuh: targetkan minimal 18 kata substantif total dari body+points. Gunakan body 12–24 kata dan tambahkan 1 point 3–7 kata bila evidence mendukung. Jangan mengarang demi panjang.';
   return `KOMPOSISI FINAL MANUAL + URL — SOURCE ONLY.\n\nTOPIK MANUAL: ${JSON.stringify(requestedTopic)}\nFORMAT DIMINTA: ${JSON.stringify(requestedFormat)}\nFORMAT EFEKTIF YANG DITETAPKAN SISTEM: ${JSON.stringify(effectiveFormat)}\n${formatRule(effectiveFormat, slideCount)}\n${density}\n\nATURAN ABSOLUT:\n- Gunakan HANYA FACT_BANK di bawah. Dilarang memakai pengetahuan internal, artikel lain, link terkait, rekomendasi halaman, atau tebakan.\n- Semua fakta yang tampil harus langsung relevan dengan TOPIK MANUAL. Jangan mengambil side-note yang tidak menjawab topik.\n- Jangan menulis fakta tentang asam urat, lemak perut, waktu makan, atau topik kesehatan lain kecuali itu memang fokus TOPIK MANUAL dan tersedia di FACT_BANK.\n- Setiap body dan setiap point WAJIB mempunyai claim dengan field persis slide:X:body atau slide:X:point:Y. Title yang menyebut item/fakta spesifik juga WAJIB punya claim slide:X:title.\n- claim.text harus PERSIS sama dengan copy field. sourceId dan evidence harus disalin PERSIS dari SATU entri FACT_BANK yang mendukung claim tersebut.\n- Evidence jangan diterjemahkan atau diparafrasekan. Copy tampil harus Bahasa Indonesia natural.\n- Satu slide = satu ide/item. Title, body, points, dan evidence harus saling nyambung.\n- Jangan memakai fakta canonical yang sama untuk mengisi dua slide berbeda.\n- Jangan membuat pembuka/penutup kosong atau generik selama fakta sumber masih tersedia.\n- Jangan memperkuat dapat/bisa/mungkin menjadi pasti/selalu/menjamin.\n- Title maksimal 12 kata; body maksimal 24 kata; maksimal 3 points, masing-masing 3–7 kata.\n- Topik output harus persis TOPIK MANUAL.\n- effectiveContentFormat TIDAK BOLEH dibuat atau diubah oleh model; sistem yang menetapkannya.\n\nFACT_BANK:\n${JSON.stringify(bank)}\n${repair}\n\nKembalikan HANYA JSON lengkap:\n{"focus":{"masalah":"...","penyebab":"...","solusi":"...","hasil":"..."},"topic":"${String(requestedTopic).replace(/"/g, '\\"')}","hook":"...","body":"...","caption":"...","hashtags":[],"cta":"...","trendKeywordsUsed":[],"content_angle":"...","primary_tool":"tanpa tool","hook_pattern":"...","verificationStatus":"source_based","unsupportedClaims":[],"slides":[{"section":"ITEM 1","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}.`;
 }
 
@@ -209,7 +209,7 @@ function fieldRecords(content) {
 
 function normalizeCandidate(raw, requestedTopic, effectiveFormat, slideCount) {
   if (!raw || !Array.isArray(raw.slides)) return null;
-  const slides = raw.slides.slice(0, slideCount).map((slide, slideIndex) => ({
+  const slides = raw.slides.slice(0, slideCount).map((slide) => ({
     section: String(slide?.section || '').trim(),
     title: String(slide?.title || '').replace(/\s+/g, ' ').trim(),
     body: String(slide?.body || '').replace(/\s+/g, ' ').trim(),
@@ -254,6 +254,7 @@ function claimErrors(content, sources, format, bank) {
   const errors = [];
   const sourceMap = new Map(sources.map((source, index) => [`source-${index + 1}`, normalize(source?.text || '')]));
   const bankKeys = new Set(bank.map(fact => canonicalEvidenceKey(fact.sourceId, fact.evidence)));
+  const visibleFields = new Map(fieldRecords(content).map(record => [record.key, normalize(record.value)]));
   const claims = new Map();
   for (const slide of content?.slides || []) {
     for (const claim of slide?.claims || []) {
@@ -261,8 +262,13 @@ function claimErrors(content, sources, format, bank) {
         errors.push('claim tidak lengkap.');
         continue;
       }
+      if (!visibleFields.has(claim.field)) {
+        errors.push(`${claim.field}: claim tidak terikat ke field yang tampil.`);
+        continue;
+      }
       if (claims.has(claim.field)) errors.push(`${claim.field}: claim ganda.`);
       claims.set(claim.field, claim);
+      if (normalize(claim.text) !== visibleFields.get(claim.field)) errors.push(`${claim.field}: claim.text tidak sama dengan copy field.`);
       const sourceText = sourceMap.get(claim.sourceId);
       if (!sourceText) errors.push(`${claim.field}: sourceId tidak tersedia.`);
       if (!sourceText?.includes(normalize(claim.evidence))) errors.push(`${claim.field}: evidence tidak ditemukan di sumber utama.`);
@@ -275,11 +281,7 @@ function claimErrors(content, sources, format, bank) {
     const requireTitle = normalizedFormat(format) === 'listicle' || /\d|%/.test(record.value);
     const required = record.kind !== 'title' || requireTitle;
     if (!required) continue;
-    if (!claim) {
-      errors.push(`${record.key}: field substantif wajib punya claim/evidence.`);
-      continue;
-    }
-    if (normalize(claim.text) !== normalize(record.value)) errors.push(`${record.key}: claim.text tidak sama dengan copy field.`);
+    if (!claim) errors.push(`${record.key}: field substantif wajib punya claim/evidence.`);
   }
   return [...new Set(errors)];
 }
@@ -290,7 +292,7 @@ function densityErrors(content, bank) {
   const rich = bank.length >= Math.max(8, slides.length * 2 - 1);
   slides.forEach((slide, index) => {
     const total = words(slide?.body).length + (slide?.points || []).reduce((sum, point) => sum + words(point).length, 0);
-    const minimum = rich ? 20 : 14;
+    const minimum = rich ? 20 : 18;
     if (total < minimum) errors.push(`slide:${index}:density: hanya ${total} kata substantif; minimal ${minimum} kata berdasarkan fakta sumber.`);
     if (words(slide?.body).length > 24) errors.push(`slide:${index}:body: maksimal 24 kata.`);
     if ((slide?.points || []).length > 3) errors.push(`slide:${index}:points: maksimal 3 item.`);
@@ -314,9 +316,12 @@ function listicleErrors(content, expectedCount) {
 }
 
 function coverageErrors(content, bank) {
+  const visibleFields = new Map(fieldRecords(content).map(record => [record.key, normalize(record.value)]));
   const used = new Set();
   for (const slide of content?.slides || []) {
     for (const claim of slide?.claims || []) {
+      if (!visibleFields.has(String(claim?.field || ''))) continue;
+      if (normalize(claim?.text) !== visibleFields.get(String(claim?.field || ''))) continue;
       const key = canonicalEvidenceKey(claim?.sourceId, claim?.evidence);
       if (key) used.add(key);
     }
@@ -324,7 +329,7 @@ function coverageErrors(content, bank) {
   const slides = content?.slides?.length || 0;
   const rich = bank.length >= Math.max(8, slides * 2 - 1);
   const required = rich ? Math.min(bank.length, slides + Math.floor(slides / 2)) : Math.min(bank.length, slides);
-  return used.size < required ? [`coverage: hanya ${used.size} fakta canonical dipakai; minimal ${required} fakta berbeda harus digunakan.`] : [];
+  return used.size < required ? [`coverage: hanya ${used.size} fakta canonical yang benar-benar terikat copy tampil; minimal ${required} fakta berbeda harus digunakan.`] : [];
 }
 
 async function coherenceErrors(openai, content, bank, requestedTopic, format) {
@@ -351,7 +356,9 @@ async function validateCandidate({ contentService, candidate, sources, bank, req
   errors.push(...manualSourceDedupe.manualCrossSlideDuplicateErrors(candidate));
   if (normalizedFormat(effectiveFormat) === 'listicle') errors.push(...listicleErrors(candidate, expectedSlides));
   if (typeof contentService?.validateContent === 'function') {
-    errors.push(...contentService.validateContent(candidate, { format: effectiveFormat, manualTopic: requestedTopic, validateCopy: true }));
+    // Topic relevance is enforced by sourceMatchesTopic + exact FACT_BANK claims + final coherence audit.
+    // Do not re-run the older keyword-overlap heuristic because list item paragraphs often omit the article-title words.
+    errors.push(...contentService.validateContent(candidate, { format: effectiveFormat, manualTopic: '', validateCopy: true }));
   }
   if (errors.length) return { content: candidate, errors: [...new Set(errors)] };
 
@@ -384,6 +391,9 @@ async function composeManualSourceContent({ contentService, previousTopics = [],
   const requestedFormat = options.contentFormat || 'Fakta singkat';
   const effectiveFormat = await resolveEffectiveFormat(openai, requestedFormat, bank);
   const slideCount = desiredSlideCount(effectiveFormat, sources, bank);
+  if (normalizedFormat(effectiveFormat) === 'listicle' && bank.length < slideCount) {
+    throw Object.assign(new Error(`Sumber hanya menyediakan ${bank.length} fakta bersih; Listicle membutuhkan minimal ${slideCount} fakta berbeda agar tiap slide tidak mengulang.`), { status: 422 });
+  }
   let current = null;
   let errors = [];
 
