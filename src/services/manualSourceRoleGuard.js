@@ -300,6 +300,10 @@ function mergeTargetSlides(draft, candidate, targets, audit) {
         && /^PENUTUP$/i.test(String(incoming?.section || '').trim())) section = 'PENUTUP';
       else if (/^(?:PENYEBAB|KONTEKS|PENJELASAN)$/i.test(section)
         && /^SOLUSI$/i.test(String(incoming?.section || '').trim())) section = 'SOLUSI';
+      else if (/^(?:INTRO|PEMBUKA|PENYEBAB|KONTEKS|PENJELASAN)$/i.test(section)
+        && /^MASALAH$/i.test(String(incoming?.section || '').trim())) section = 'MASALAH';
+      else if (/^(?:PENYEBAB|KONTEKS|PENJELASAN)$/i.test(section)
+        && /^LANGKAH\b/i.test(String(incoming?.section || '').trim())) section = String(incoming.section).trim();
       else if (!section && incoming?.section) section = String(incoming.section).trim();
       return {
         ...original,
