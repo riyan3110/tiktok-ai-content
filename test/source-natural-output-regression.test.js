@@ -129,5 +129,5 @@ test('prompt final AI eksplisit melarang generic title, metadata, related headli
   assert.match(prompt, /publisher\/byline/i);
   assert.match(prompt, /headline artikel terkait/i);
   assert.match(prompt, /kata gantung/i);
-  assert.match(prompt, /draft.*BOLEH DIBUANG TOTAL/i);
+  assert.match(prompt, /draf.*BOLEH DIBUANG TOTAL/i);
 });
