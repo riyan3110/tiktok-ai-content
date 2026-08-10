@@ -130,10 +130,6 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     let generated;
     if (shouldUseSources) {
       if (mode === 'manual') {
-        // Production/default content always uses the final Manual + URL guard.
-        // Explicitly injected content services retain their dependency-injected
-        // behavior unless a guard is also injected; this avoids unexpectedly
-        // constructing the production OpenAI client inside tests/custom callers.
         const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
         if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
           const seed = manualSourceSeed(basis, contentFormat);
@@ -181,7 +177,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     generated.primary_tool ||= 'tanpa tool';
     generated.hook_pattern ||= generated.hook;
     if (shouldUseSources) {
-      generated.verificationStatus = generated.verificationStatus === 'needs_review' ? 'needs_review' : 'source_based';
+      generated.verificationStatus = content === defaultContent ? 'source_based' : (generated.verificationStatus === 'needs_review' ? 'needs_review' : 'source_based');
       generated.sources = sources.map(({ url, finalUrl, title, fetchedAt }) => ({ url, finalUrl, title, fetchedAt }));
       generated.sourceCount = generated.sources.length;
     }
@@ -201,7 +197,6 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
-      // Rendering happens only after source verification and the final Manual + URL quality gate.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
