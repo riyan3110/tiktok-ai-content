@@ -9,6 +9,7 @@ const ACTION = /\b(?:cek|periksa|memeriksa|buka|membuka|pilih|memilih|aktifkan|m
 const ATTACKER = /\b(?:pelaku|penyerang|hacker|peretas|malware|spyware|aplikasi pihak ketiga|orang lain)\b/i;
 const GENERIC_END = /\b(?:dengan langkah sederhana|dengan langkah mudah|tetap aman|bebas berinteraksi|pentingnya keamanan|lebih aman dan nyaman|jaga keamanan akun|semoga bermanfaat|yuk coba)\b/i;
 const BOILER = /(?:baca\s+juga|read\s+also|cookie(?:\s+policy)?|privacy\s+(?:policy|notice)|kebijakan\s+privasi|syarat\s+dan\s+ketentuan|terms\s+of\s+use|copyright|hak\s+cipta|newsletter|subscribe|ikuti\s+kami|follow\s+us|login|sign\s+in|contact\s+us|hubungi\s+kami)/i;
+const PRIVACY_METADATA = /(?:privacy\s+(?:policy|notice|statement)|kebijakan\s+privasi|pemberitahuan\s+privasi|cookie(?:\s+policy)?|syarat\s+dan\s+ketentuan|terms\s+of\s+use)/i;
 const STOP = new Set(['yang','dan','atau','dari','untuk','dengan','tentang','cara','adalah','pada','itu','ini','sebagai','dapat','bisa','lebih','juga']);
 const fmt = v => String(v || '').trim().toLocaleLowerCase('id-ID');
 const words = v => String(v || '').trim().split(/\s+/).filter(Boolean);
@@ -83,6 +84,30 @@ function contentDensityErrors(content, bank=[]) {
   const used=new Set(s.flatMap(x=>(x?.claims||[]).map(factKey).filter(k=>!k.endsWith('::')))); const req=b.length>=4?Math.min(b.length,Math.max(4,s.length)):Math.min(b.length,Math.max(1,s.length-1)); if(used.size<req)e.push(`coverage:density: hanya ${used.size} fakta canonical dipakai; gunakan minimal ${req} fakta berbeda yang relevan.`); return [...new Set(e)];
 }
 
+function fieldValueForKey(content, key) {
+  const match = String(key || '').match(/^slide:(\d+):(title|body|point:(\d+))$/i);
+  if (!match) return '';
+  const slide = content?.slides?.[Number(match[1])];
+  if (!slide) return '';
+  if (match[2].toLocaleLowerCase('en-US') === 'title') return String(slide.title || '').trim();
+  if (match[2].toLocaleLowerCase('en-US') === 'body') return String(slide.body || '').trim();
+  return String(slide.points?.[Number(match[3])] || '').trim();
+}
+
+function filterManualPrivacyBoilerplateErrors(errors = [], content) {
+  return errors.filter(error => {
+    const text = String(error || '');
+    const match = text.match(/^(slide:\d+:(?:title|body|point:\d+)): metadata\/boilerplate website masuk ke konten\.$/i);
+    if (!match) return true;
+    const value = fieldValueForKey(content, match[1]);
+    if (!/\b(?:privacy|privasi)\b/i.test(value)) return true;
+    // Only the historical bare-word privacy matcher is ignored here. Real site
+    // metadata remains blocked, and the field still must pass exact evidence +
+    // semantic auditing below.
+    return PRIVACY_METADATA.test(value);
+  });
+}
+
 function formatRule(format, fallbackMode) {
   const f=fmt(format); if(fallbackMode||f==='fakta singkat')return 'Fakta singkat wajib PEMBUKA → fakta/konteks → KESIMPULAN; jangan membuat langkah palsu.';
   if(f==='listicle')return 'LISTICLE: setiap ITEM adalah item/fakta berbeda dari artikel utama. Jika artikel berisi 4–5 item, prioritaskan semua item itu; related-content/teaser harus ditolak.';
@@ -109,7 +134,7 @@ function rebuildPrompt(draft,bank,format,errors,topic,sources){
 }
 function parseSlides(r){const raw=r?.choices?.[0]?.message?.content;if(!raw)throw new Error('Rebuild final kosong.');const p=JSON.parse(raw);if(!Array.isArray(p?.slides)||p.slides.length<4||p.slides.length>5)throw new Error('Rebuild final harus menghasilkan 4–5 slide.');return p.slides.map(s=>({section:String(s?.section||'').trim(),title:String(s?.title||'').trim(),body:String(s?.body||'').trim(),points:Array.isArray(s?.points)?s.points.map(v=>String(v||'').trim()).filter(Boolean):[],claims:Array.isArray(s?.claims)?s.claims.map(c=>({field:String(c?.field||'').trim(),text:String(c?.text||'').trim(),sourceId:String(c?.sourceId||'').trim(),evidence:String(c?.evidence||'').trim()})).filter(c=>c.field||c.text||c.sourceId||c.evidence):[]}));}
 function syncTop(content){const s=content?.slides||[];if(!s.length)return content;const first=s[0],mid=s.find((x,i)=>i>0&&(x.body||x.points?.length))||first,last=s.at(-1),main=x=>String(x?.body||'').trim()||(x?.points||[]).join(' ').trim()||String(x?.title||'').trim();return{...content,hook:String(first?.title||content.hook||'').trim(),body:main(mid),caption:main(mid),cta:String(last?.title||content.cta||'').trim()};}
-async function validateFinal(contentService,draft,options,sources,openai,format){const base={...draft,slides:draft.slides.map(x=>({...x,section:String(x?.section||'').trim()}))};const checked=sourceFilter.validateVerifiedContent(base,{slides:draft.slides},{contentService,format,manualTopic:options.requestedTopic||'',sources,autoSourceTopic:false});if(checked.errors.length)return{content:checked.content||draft,errors:checked.errors};const errors=await sourceFilter.auditClaimSemantics(openai,checked.content,options.requestedTopic||draft?.topic||'',format);return{content:syncTop(checked.content),errors};}
+async function validateFinal(contentService,draft,options,sources,openai,format){const base={...draft,slides:draft.slides.map(x=>({...x,section:String(x?.section||'').trim()}))};const checked=sourceFilter.validateVerifiedContent(base,{slides:draft.slides},{contentService,format,manualTopic:options.requestedTopic||'',sources,autoSourceTopic:false});const validationErrors=filterManualPrivacyBoilerplateErrors(checked.errors,checked.content||draft);if(validationErrors.length)return{content:checked.content||draft,errors:validationErrors};const errors=await sourceFilter.auditClaimSemantics(openai,checked.content,options.requestedTopic||draft?.topic||'',format);return{content:syncTop(checked.content),errors};}
 
 async function repairManualSourceRoles({contentService,generated,options={},sources=[],client}){
   const requested=options.contentFormat||'Fakta singkat',topic=options.requestedTopic||generated?.topic||'',bank=distinctBank(extractManualFactBank(sources,topic));
@@ -125,4 +150,4 @@ async function repairManualSourceRoles({contentService,generated,options={},sour
   throw Object.assign(new Error(`Topik manual + URL belum dapat dibuat tanpa mengarang setelah final rebuild: ${last[0]||'kualitas konten tidak valid'}`),{status:422,validationErrors:last});
 }
 
-module.exports={repairManualSourceRoles,deterministicRoleErrors,contentDensityErrors,looksLikeUserAction,effectiveManualFormat,auditRoles,MAX_ROLE_AUDIT_ATTEMPTS,MAX_ROLE_REPAIR_ATTEMPTS,extractManualFactBank,manualEvidenceCandidates};
+module.exports={repairManualSourceRoles,deterministicRoleErrors,contentDensityErrors,looksLikeUserAction,effectiveManualFormat,auditRoles,MAX_ROLE_AUDIT_ATTEMPTS,MAX_ROLE_REPAIR_ATTEMPTS,extractManualFactBank,manualEvidenceCandidates,filterManualPrivacyBoilerplateErrors};
