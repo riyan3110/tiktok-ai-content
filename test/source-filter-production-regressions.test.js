@@ -201,6 +201,9 @@ test('source filter mempertahankan mode manual dan hanya melewati validator lite
   });
   assert.equal(baseOptions.requestedTopic, 'OpenAI temukan resiko');
   assert.equal(baseOptions.topicSource, 'manual');
+  assert.equal(baseOptions.useSources, false);
+  assert.deepEqual(baseOptions.sources, []);
+  assert.equal(baseOptions.sourceContext, '');
   assert.equal(baseOptions.skipManualTopicValidation, true);
   assert.equal(result.verificationStatus, 'source_based');
 });
