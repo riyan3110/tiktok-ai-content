@@ -2,11 +2,13 @@ const OpenAI = require('openai');
 const config = require('../config');
 const sourceFilter = require('./sourceFilter');
 const manualSourceDedupe = require('./manualSourceDedupe');
-const { sourceFacts, validateSourceContent, requestedListicleCount } = require('./manualSourceFallback');
+const { sourceFacts, validateSourceContent, requestedListicleCount, densityGoal, densityTarget } = require('./manualSourceFallback');
 
-const MAX_FINALIZE_ATTEMPTS = 2;
+const MAX_FINALIZE_ATTEMPTS = 3;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/\s+/g, ' ');
+const visibleCount = slide => [slide?.title, slide?.body, ...(Array.isArray(slide?.points) ? slide.points : [])]
+  .reduce((sum, value) => sum + words(value).length, 0);
 
 function defaultSections(format, count) {
   const normalized = String(format || '').trim().toLocaleLowerCase('id-ID');
@@ -61,10 +63,25 @@ function groupedFacts(sources, facts) {
   });
 }
 
+function densityGoalErrors(content, facts) {
+  const slides = Array.isArray(content?.slides) ? content.slides : [];
+  const goal = densityGoal(facts, slides.length || 4);
+  return slides.flatMap((slide, index) => {
+    const count = visibleCount(slide);
+    return count < goal ? [`slide:${index}:density-goal: ${count} kata; perkaya menuju ${goal} kata dengan fakta source-backed berbeda.`] : [];
+  });
+}
+
+function densityScore(content) {
+  return (content?.slides || []).reduce((sum, slide) => sum + visibleCount(slide), 0);
+}
+
 function finalizerPrompt({ generated, sources, facts, format, topic, errors }) {
   const sections = targetSections(generated, format, facts, sources, topic);
   const sourceGroups = groupedFacts(sources, facts);
-  return `FINAL AI REWRITE — SEMUA URL WAJIB DIPAKAI.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK PER URL:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- Tulis ulang seluruh carousel dalam Bahasa Indonesia yang natural, enak dibaca, tidak terasa seperti potongan mesin, dan tetap sesuai konteks sumber.\n- SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta yang terlihat pada body atau point. Jangan ada URL yang diabaikan.\n- HANYA gunakan fakta dari fact bank di atas. Jangan memakai pengetahuan luar, asumsi, filler, atau klaim yang tidak dinyatakan sumber.\n- Setiap body dan setiap point WAJIB mempunyai claim dengan field yang tepat, text PERSIS sama dengan copy yang terlihat, sourceId yang benar, dan evidence PERSIS salah satu fakta pada sourceId tersebut.\n- Jika title membuat klaim faktual spesifik, beri claim title juga. Jika tidak perlu, gunakan title ringkas yang natural dan struktural.\n- Evidence boleh berbahasa Inggris, tetapi copy yang terlihat harus diparafrase/diterjemahkan natural ke Bahasa Indonesia tanpa mengubah makna, angka, modalitas, atau tingkat kepastian.\n- Satu evidence canonical tidak boleh dipakai sebagai fakta utama di dua slide berbeda. Jangan mengulang ide dengan wording berbeda.\n- Satu slide = satu ide utama yang jelas. Body dan point harus saling melengkapi, bukan mengulang kalimat yang sama.\n- Isi harus PADAT tetapi rapi: body 18–24 kata bila sumber cukup; gunakan 1–2 point tambahan masing-masing 4–7 kata bila ada fakta pendukung berbeda. Target body+points sekitar 28–38 kata untuk sumber kaya, tanpa filler.\n- Title maksimal 12 kata. Body maksimal 24 kata. Maksimal 2 points. Setiap point maksimal 7 kata.\n- Pertahankan section PERSIS sesuai SECTION WAJIB. Jika Listicle sumber secara eksplisit menyebut 4 atau 5 item, jumlah slide harus mengikuti jumlah itu.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu. Jangan mengubah fitur, risiko, atau tindakan pihak lain menjadi instruksi palsu.\n- Untuk BEFORE/AFTER/HASIL, hubungan perubahan atau outcome hanya boleh ditulis jika evidence mendukung hubungan tersebut.\n- Jangan masukkan Baca Juga, rekomendasi artikel, cookie/privacy policy, newsletter, copyright, sidebar, teaser, atau metadata situs.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  const goal = densityGoal(facts, sections.length);
+  const hardFloor = densityTarget(facts, sections.length);
+  return `FINAL AI REWRITE — SEMUA URL WAJIB DIPAKAI.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nSASARAN KEPADATAN: ${goal} kata visible per slide\nHARD FLOOR AMAN: ${hardFloor} kata visible per slide\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK PER URL:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- Tulis ulang seluruh carousel dalam Bahasa Indonesia yang natural, enak dibaca, tidak terasa seperti potongan mesin, dan tetap sesuai konteks sumber.\n- SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta yang terlihat pada body atau point. Jangan ada URL yang diabaikan.\n- HANYA gunakan fakta dari fact bank di atas. Jangan memakai pengetahuan luar, asumsi, filler, atau klaim yang tidak dinyatakan sumber.\n- Setiap body dan setiap point WAJIB mempunyai claim dengan field yang tepat, text PERSIS sama dengan copy yang terlihat, sourceId yang benar, dan evidence PERSIS salah satu fakta pada sourceId tersebut.\n- Jika title membuat klaim faktual spesifik, beri claim title juga. Jika tidak perlu, gunakan title ringkas yang natural dan struktural.\n- Evidence boleh berbahasa Inggris, tetapi copy yang terlihat harus diparafrase/diterjemahkan natural ke Bahasa Indonesia tanpa mengubah makna, angka, modalitas, atau tingkat kepastian.\n- Satu evidence canonical tidak boleh dipakai sebagai fakta utama di dua slide berbeda. Jangan mengulang ide dengan wording berbeda.\n- Satu slide = satu ide utama yang jelas. Body dan point harus saling melengkapi, bukan mengulang kalimat yang sama.\n- PAKSA kepadatan menuju ${goal} kata visible per slide bila FACT BANK masih memiliki fakta berbeda yang relevan. Jangan berhenti di 27–28 kata hanya karena sudah terasa cukup jika masih ada evidence aman yang belum dipakai.\n- Jika ERROR SEBELUMNYA berisi density/density-goal, prioritaskan memperkaya slide tersebut dengan fakta tambahan BERBEDA dari source, bukan filler dan bukan pengulangan. Jangan memendekkan slide lain yang sudah valid.\n- Isi harus PADAT tetapi rapi: body 18–24 kata bila sumber cukup; gunakan 1–2 point tambahan masing-masing 4–7 kata bila ada fakta pendukung berbeda.\n- Title maksimal 12 kata. Body maksimal 24 kata. Maksimal 2 points. Setiap point maksimal 7 kata.\n- Pertahankan section PERSIS sesuai SECTION WAJIB. Jika Listicle sumber secara eksplisit menyebut 4 atau 5 item, jumlah slide harus mengikuti jumlah itu.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu. Jangan mengubah fitur, risiko, atau tindakan pihak lain menjadi instruksi palsu.\n- Untuk BEFORE/AFTER/HASIL, hubungan perubahan atau outcome hanya boleh ditulis jika evidence mendukung hubungan tersebut.\n- Jangan masukkan Baca Juga, rekomendasi artikel, cookie/privacy policy, newsletter, copyright, sidebar, teaser, atau metadata situs.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function parseSlides(response, sections) {
@@ -131,6 +148,8 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   let draft = { ...generated, topic: resolvedTopic };
   let lastErrors = [];
+  let bestValid = null;
+  let bestValidScore = -1;
 
   for (let attempt = 0; attempt < MAX_FINALIZE_ATTEMPTS; attempt += 1) {
     let response;
@@ -138,7 +157,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       response = await openai.chat.completions.create({
         model: config.aiModel,
         messages: [
-          { role: 'system', content: 'Anda finalizer carousel source-grounded. Semua URL wajib dipakai dan tidak boleh ada fakta di luar evidence.' },
+          { role: 'system', content: 'Anda finalizer carousel source-grounded. Semua URL wajib dipakai, setiap slide harus padat, dan tidak boleh ada fakta di luar evidence.' },
           { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors }) }
         ],
         response_format: { type: 'json_object' }
@@ -174,8 +193,28 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       draft = checked.content;
       continue;
     }
-    return syncTop(checked.content);
+
+    const candidate = syncTop(checked.content);
+    const score = densityScore(candidate);
+    if (score > bestValidScore) {
+      bestValid = candidate;
+      bestValidScore = score;
+    }
+
+    const goalErrors = densityGoalErrors(candidate, facts);
+    if (!goalErrors.length) return candidate;
+    if (attempt < MAX_FINALIZE_ATTEMPTS - 1) {
+      lastErrors = goalErrors;
+      draft = candidate;
+      continue;
+    }
   }
+
+  // Jika AI sudah menghasilkan kandidat yang lolos fakta, source coverage,
+  // duplicate, layout, dan semantic audit, jangan buang hasil natural hanya
+  // karena quality goal artikel kaya kurang 1–4 kata. Quality goal tetap sudah
+  // dikejar sampai tiga kali di atas.
+  if (bestValid) return syncTop(bestValid);
 
   throw Object.assign(new Error(`Final AI rewrite semua URL belum lolos: ${lastErrors[0] || 'validasi sumber gagal'}`), {
     status: 422,
@@ -183,4 +222,12 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
   });
 }
 
-module.exports = { rewriteAllSourcesWithAi, finalizerPrompt, parseSlides, targetSections, MAX_FINALIZE_ATTEMPTS };
+module.exports = {
+  rewriteAllSourcesWithAi,
+  finalizerPrompt,
+  parseSlides,
+  targetSections,
+  densityGoalErrors,
+  densityScore,
+  MAX_FINALIZE_ATTEMPTS
+};
