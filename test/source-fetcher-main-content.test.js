@@ -62,6 +62,16 @@ test('extractText memprioritaskan JSON-LD articleBody dibanding kartu rekomendas
   assert.doesNotMatch(result.text, /asam urat|lemak perut/i);
 });
 
+test('extractText membersihkan tag HTML di JSON-LD articleBody dan mempertahankan batas paragraf', () => {
+  const articleBody = '<p>Apel dijelaskan sebagai buah pertama untuk pembahasan daya ingat dengan fakta yang cukup rinci.</p><p>Alpukat dijelaskan sebagai buah kedua dengan penjelasan berbeda yang tetap relevan dengan memori.</p><p>Buah beri menjadi item ketiga dan memiliki uraian lain yang tidak boleh menyatu menjadi satu kalimat panjang.</p>';
+  const html = `<html><head><script type="application/ld+json">${JSON.stringify({ '@type': 'Article', headline: 'Daftar Buah untuk Daya Ingat', articleBody })}</script></head><body></body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.doesNotMatch(result.text, /<\/?p>/i);
+  assert.match(result.text, /Apel dijelaskan sebagai buah pertama/);
+  assert.match(result.text, /Alpukat dijelaskan sebagai buah kedua/);
+  assert.ok(result.text.split('\n').filter(Boolean).length >= 3);
+});
+
 test('extractText membuang related card yang bersarang di dalam container artikel normal', () => {
   const html = `
     <html><body><article>
