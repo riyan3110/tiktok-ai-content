@@ -128,8 +128,12 @@ function stripLowValueRegions(html) {
     }
     const lowValue = alwaysDrop.has(name) || (classAware.has(name) && classOrIdValues.some(value => LOW_VALUE_REGION.test(value)));
     const selfClosing = /\/\s*>$/.test(token) || voidTags.has(name);
+    if (selfClosing) {
+      if (!lowValue && suppressDepth === 0) output += token;
+      continue;
+    }
     const suppressRoot = lowValue && suppressDepth === 0;
-    if (!selfClosing) stack.push({ name, suppressRoot });
+    stack.push({ name, suppressRoot });
     if (suppressRoot) suppressDepth += 1;
     if (suppressDepth === 0) output += token;
   }
