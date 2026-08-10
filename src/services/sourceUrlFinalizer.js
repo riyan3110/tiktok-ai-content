@@ -2,7 +2,7 @@ const OpenAI = require('openai');
 const config = require('../config');
 const sourceFilter = require('./sourceFilter');
 const manualSourceDedupe = require('./manualSourceDedupe');
-const { sourceFacts, validateSourceContent } = require('./manualSourceFallback');
+const { sourceFacts, validateSourceContent, requestedListicleCount } = require('./manualSourceFallback');
 
 const MAX_FINALIZE_ATTEMPTS = 2;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
@@ -35,7 +35,12 @@ function defaultSections(format, count) {
   });
 }
 
-function targetSections(generated, format, facts) {
+function targetSections(generated, format, facts, sources = [], topic = '') {
+  const normalizedFormat = String(format || '').trim().toLocaleLowerCase('id-ID');
+  if (normalizedFormat === 'listicle') {
+    const explicitCount = requestedListicleCount(sources, topic);
+    if (explicitCount) return defaultSections(format, explicitCount);
+  }
   const current = Array.isArray(generated?.slides) ? generated.slides : [];
   if (current.length >= 4 && current.length <= 5 && current.every(slide => String(slide?.section || '').trim())) {
     return current.map(slide => String(slide.section).trim());
@@ -57,9 +62,9 @@ function groupedFacts(sources, facts) {
 }
 
 function finalizerPrompt({ generated, sources, facts, format, topic, errors }) {
-  const sections = targetSections(generated, format, facts);
+  const sections = targetSections(generated, format, facts, sources, topic);
   const sourceGroups = groupedFacts(sources, facts);
-  return `FINAL AI REWRITE — SEMUA URL WAJIB DIPAKAI.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK PER URL:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- Tulis ulang seluruh carousel dalam Bahasa Indonesia yang natural, enak dibaca, tidak terasa seperti potongan mesin, dan tetap sesuai konteks sumber.\n- SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta yang terlihat pada body atau point. Jangan ada URL yang diabaikan.\n- HANYA gunakan fakta dari fact bank di atas. Jangan memakai pengetahuan luar, asumsi, filler, atau klaim yang tidak dinyatakan sumber.\n- Setiap body dan setiap point WAJIB mempunyai claim dengan field yang tepat, text PERSIS sama dengan copy yang terlihat, sourceId yang benar, dan evidence PERSIS salah satu fakta pada sourceId tersebut.\n- Jika title membuat klaim faktual spesifik, beri claim title juga. Jika tidak perlu, gunakan title ringkas yang natural dan struktural.\n- Evidence boleh berbahasa Inggris, tetapi copy yang terlihat harus diparafrase/diterjemahkan natural ke Bahasa Indonesia tanpa mengubah makna, angka, modalitas, atau tingkat kepastian.\n- Satu evidence canonical tidak boleh dipakai sebagai fakta utama di dua slide berbeda. Jangan mengulang ide dengan wording berbeda.\n- Satu slide = satu ide utama yang jelas. Body dan point harus saling melengkapi, bukan mengulang kalimat yang sama.\n- Isi harus PADAT tetapi rapi: body 18–24 kata bila sumber cukup; gunakan 1–2 point tambahan masing-masing 4–7 kata bila ada fakta pendukung berbeda. Target body+points sekitar 28–38 kata untuk sumber kaya, tanpa filler.\n- Title maksimal 12 kata. Body maksimal 24 kata. Maksimal 2 points. Setiap point maksimal 7 kata.\n- Pertahankan section PERSIS sesuai SECTION WAJIB dan jumlah slide tidak boleh berubah.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu. Jangan mengubah fitur, risiko, atau tindakan pihak lain menjadi instruksi palsu.\n- Untuk BEFORE/AFTER/HASIL, hubungan perubahan atau outcome hanya boleh ditulis jika evidence mendukung hubungan tersebut.\n- Jangan masukkan Baca Juga, rekomendasi artikel, cookie/privacy policy, newsletter, copyright, sidebar, teaser, atau metadata situs.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `FINAL AI REWRITE — SEMUA URL WAJIB DIPAKAI.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK PER URL:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- Tulis ulang seluruh carousel dalam Bahasa Indonesia yang natural, enak dibaca, tidak terasa seperti potongan mesin, dan tetap sesuai konteks sumber.\n- SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta yang terlihat pada body atau point. Jangan ada URL yang diabaikan.\n- HANYA gunakan fakta dari fact bank di atas. Jangan memakai pengetahuan luar, asumsi, filler, atau klaim yang tidak dinyatakan sumber.\n- Setiap body dan setiap point WAJIB mempunyai claim dengan field yang tepat, text PERSIS sama dengan copy yang terlihat, sourceId yang benar, dan evidence PERSIS salah satu fakta pada sourceId tersebut.\n- Jika title membuat klaim faktual spesifik, beri claim title juga. Jika tidak perlu, gunakan title ringkas yang natural dan struktural.\n- Evidence boleh berbahasa Inggris, tetapi copy yang terlihat harus diparafrase/diterjemahkan natural ke Bahasa Indonesia tanpa mengubah makna, angka, modalitas, atau tingkat kepastian.\n- Satu evidence canonical tidak boleh dipakai sebagai fakta utama di dua slide berbeda. Jangan mengulang ide dengan wording berbeda.\n- Satu slide = satu ide utama yang jelas. Body dan point harus saling melengkapi, bukan mengulang kalimat yang sama.\n- Isi harus PADAT tetapi rapi: body 18–24 kata bila sumber cukup; gunakan 1–2 point tambahan masing-masing 4–7 kata bila ada fakta pendukung berbeda. Target body+points sekitar 28–38 kata untuk sumber kaya, tanpa filler.\n- Title maksimal 12 kata. Body maksimal 24 kata. Maksimal 2 points. Setiap point maksimal 7 kata.\n- Pertahankan section PERSIS sesuai SECTION WAJIB. Jika Listicle sumber secara eksplisit menyebut 4 atau 5 item, jumlah slide harus mengikuti jumlah itu.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu. Jangan mengubah fitur, risiko, atau tindakan pihak lain menjadi instruksi palsu.\n- Untuk BEFORE/AFTER/HASIL, hubungan perubahan atau outcome hanya boleh ditulis jika evidence mendukung hubungan tersebut.\n- Jangan masukkan Baca Juga, rekomendasi artikel, cookie/privacy policy, newsletter, copyright, sidebar, teaser, atau metadata situs.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function parseSlides(response, sections) {
@@ -122,7 +127,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
 
   const effectiveFormat = generated?.effectiveContentFormat || format || 'Fakta singkat';
   const resolvedTopic = String(topic || generated?.topic || sources?.[0]?.title || 'Ringkasan sumber').trim();
-  const sections = targetSections(generated, effectiveFormat, facts);
+  const sections = targetSections(generated, effectiveFormat, facts, sources, resolvedTopic);
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   let draft = { ...generated, topic: resolvedTopic };
   let lastErrors = [];
@@ -178,4 +183,4 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
   });
 }
 
-module.exports = { rewriteAllSourcesWithAi, finalizerPrompt, parseSlides, MAX_FINALIZE_ATTEMPTS };
+module.exports = { rewriteAllSourcesWithAi, finalizerPrompt, parseSlides, targetSections, MAX_FINALIZE_ATTEMPTS };
