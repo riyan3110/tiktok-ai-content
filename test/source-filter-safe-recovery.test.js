@@ -98,7 +98,7 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
   assert.equal(safeCalls, 2);
   assert.equal(result.verificationStatus, 'source_based');
   assert.equal(result.slides[1].body, 'Robot rumah dapat melipat baju di satu area kerja.');
-  assert.deepEqual(result.slides[1].points, []);
+  assert.deepEqual(result.slides[1].points, [], 'tanpa fakta pengganti yang aman, point invalid tetap dihapus');
   assert.equal(result.slides[0].title, 'Sekilas tentang robot rumah');
   assert.equal(result.slides[0].body, 'Lihat fakta utama dari sumber.');
   assert.equal(result.slides[2].title, 'Konteks sumber');
@@ -121,6 +121,75 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
       }
     });
   });
+});
+
+test('safe recovery mengganti hanya point target dengan fakta FACT_BANK yang belum dipakai', async () => {
+  const factA = 'Aurora berada di posisi pertama dalam peringkat model video.';
+  const factB = 'Peringkat model video ditentukan melalui voting blind.';
+  const source = { url: 'https://example.test/ranking', text: `${factA} ${factB}` };
+  const unsupportedPoint = 'Aurora memiliki kualitas warna terbaik.';
+  const replacementPoint = 'Peringkat memakai voting blind';
+  const slides = [
+    { section: 'PEMBUKA', title: 'Peringkat Model Video', body: 'Lihat fakta utama dalam pemeringkatan.', points: [], claims: [] },
+    {
+      section: 'ITEM 1', title: 'Aurora Memimpin', body: 'Aurora berada di posisi pertama dalam peringkat model video.', points: [],
+      claims: [{ field: 'slide:1:body', text: 'Aurora berada di posisi pertama dalam peringkat model video.', sourceId: 'source-1', evidence: factA }]
+    },
+    {
+      section: 'ITEM 2', title: 'Cara Penilaian', body: '', points: [unsupportedPoint],
+      claims: [{ field: 'slide:2:point:0', text: unsupportedPoint, sourceId: 'source-1', evidence: factA }]
+    },
+    { section: 'PENUTUP', title: 'Konteks Peringkat', body: 'Bandingkan hasil sesuai metode penilaiannya.', points: [], claims: [] }
+  ];
+  const base = {
+    focus: {}, topic: 'Peringkat model video', hook: slides[0].title, body: slides[0].body, caption: slides[0].body,
+    hashtags: [], cta: slides.at(-1).title, trendKeywordsUsed: [], content_angle: 'peringkat', primary_tool: 'tanpa tool',
+    hook_pattern: 'listicle', slides
+  };
+  const recoveredSlides = slides.map(slide => ({ ...slide, points: [...slide.points], claims: slide.claims.map(claim => ({ ...claim })) }));
+  recoveredSlides[2] = {
+    ...recoveredSlides[2],
+    title: 'Field non-target tidak boleh berubah',
+    points: [replacementPoint],
+    claims: [{ field: 'slide:2:point:0', text: replacementPoint, sourceId: 'source-1', evidence: factB }]
+  };
+  let verifierCalls = 0;
+  let recoveryCalls = 0;
+  let auditCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      auditCalls += 1;
+      const claims = JSON.parse(prompt.match(/CLAIMS: (\[[^\n]*\])/)[1]);
+      const unsupported = claims.some(claim => claim.field === 'slide:2:point:0' && claim.text === unsupportedPoint)
+        ? [{ field: 'slide:2:point:0', reason: 'Evidence tidak menyebut kualitas warna.' }]
+        : [];
+      return { choices: [{ message: { content: JSON.stringify({ unsupported }) } }] };
+    }
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) {
+      recoveryCalls += 1;
+      return { choices: [{ message: { content: JSON.stringify({ slides: recoveredSlides }) } }] };
+    }
+    verifierCalls += 1;
+    return { choices: [{ message: { content: JSON.stringify({ slides }) } }] };
+  } } } };
+  const content = { async generateContent() { return base; }, validateContent() { return []; } };
+
+  const result = await generateFilteredContent({
+    content,
+    options: { contentFormat: 'Listicle', requestedTopic: 'Peringkat model video' },
+    sources: [source],
+    client
+  });
+
+  assert.equal(verifierCalls, MAX_VERIFY_ATTEMPTS);
+  assert.equal(recoveryCalls, 1);
+  assert.ok(auditCalls >= MAX_VERIFY_ATTEMPTS + 1, 'semantic audit harus dijalankan lagi sesudah recovery');
+  assert.equal(result.slides[2].title, slides[2].title, 'field non-target harus tetap terkunci');
+  assert.equal(result.slides[2].points[0], replacementPoint);
+  assert.equal(result.slides[2].claims[0].evidence, factB);
+  const displayFields = slide => ({ section: slide.section, title: slide.title, body: slide.body, points: slide.points });
+  assert.deepEqual(result.slides.filter((_, index) => index !== 2).map(displayFields), slides.filter((_, index) => index !== 2).map(displayFields));
 });
 
 test('Fakta singkat me-retry body question-only hingga menjadi fakta tanpa mengubah field non-target', async () => {
