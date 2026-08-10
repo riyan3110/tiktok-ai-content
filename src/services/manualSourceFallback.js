@@ -1,5 +1,4 @@
 const HARD_METADATA = /(?:baca\s+juga|read\s+also|cookie\s+policy|privacy\s+(?:policy|notice|statement)|kebijakan\s+privasi|syarat\s+dan\s+ketentuan|terms\s+of\s+use|copyright|hak\s+cipta|newsletter|subscribe\b|ikuti\s+kami|follow\s+(?:me|us)|contact\s+us|hubungi\s+kami)/i;
-const STOP = new Set(['yang','dan','atau','dari','untuk','dengan','tentang','cara','adalah','pada','itu','ini','sebagai','dapat','bisa','lebih','juga','sumber','fakta','artikel','bagian']);
 
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/[^a-z0-9%\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -45,13 +44,13 @@ function sourceFacts(sources = []) {
   });
   const out = [];
   const seen = new Set();
-  while (out.length < 48 && queues.some(queue => queue.length)) {
+  while (out.length < 64 && queues.some(queue => queue.length)) {
     for (const queue of queues) {
       const fact = queue.shift();
       if (!fact) continue;
       const key = factKey(fact);
       if (!seen.has(key)) { seen.add(key); out.push(fact); }
-      if (out.length >= 48) break;
+      if (out.length >= 64) break;
     }
   }
   return out;
@@ -93,20 +92,23 @@ function sourceCoverageErrors(content, sources = []) {
   return [...new Set(errors)];
 }
 
-// densityGoal adalah sasaran enrichment AI, bukan alasan otomatis untuk membuang
-// copy natural yang sudah padat dan sepenuhnya source-backed.
-function densityGoal(facts = [], slideCount = 4) {
-  const totalWords = facts.reduce((sum, fact) => sum + Math.min(24, words(fact?.evidence).length), 0);
-  if (!totalWords) return 22;
-  const averageAvailable = totalWords / Math.max(1, slideCount);
-  return Math.max(22, Math.min(30, Math.floor(averageAvailable * 0.9)));
+function sourceRichness(facts = [], slideCount = 4) {
+  const count = facts.length;
+  const perSlide = count / Math.max(1, slideCount);
+  const targetPoints = perSlide >= 4 ? 3 : perSlide >= 3 ? 2 : perSlide >= 2 ? 1 : 0;
+  const minPoints = perSlide >= 3 ? 2 : perSlide >= 2 ? 1 : 0;
+  const bodyMin = perSlide >= 2 ? 8 : 6;
+  const visibleGoal = targetPoints >= 3 ? 27 : targetPoints === 2 ? 24 : targetPoints === 1 ? 20 : 16;
+  const hardFloor = perSlide >= 2 ? 18 : 14;
+  return { targetPoints, minPoints, bodyMin, visibleGoal, hardFloor };
 }
 
-// Hard floor sengaja di bawah quality goal. Ini mencegah kasus 27–28 kata yang
-// faktual/natural ditolak hanya karena quality goal artikel kaya adalah 30.
+function densityGoal(facts = [], slideCount = 4) {
+  return sourceRichness(facts, slideCount).visibleGoal;
+}
+
 function densityTarget(facts = [], slideCount = 4) {
-  const goal = densityGoal(facts, slideCount);
-  return Math.max(18, Math.min(26, goal - 4));
+  return sourceRichness(facts, slideCount).hardFloor;
 }
 
 function duplicateErrors(content) {
@@ -115,9 +117,12 @@ function duplicateErrors(content) {
   const factOwner = new Map();
   const copies = [];
   slides.forEach((slide, slideIndex) => {
+    const slideFacts = new Set();
     for (const claim of Array.isArray(slide?.claims) ? slide.claims : []) {
       const key = factKey(claim);
       if (!key || key.endsWith('::')) continue;
+      if (slideFacts.has(key)) errors.push(`slide:${slideIndex}:duplicate: evidence yang sama dipakai lebih dari sekali dalam satu slide.`);
+      slideFacts.add(key);
       if (factOwner.has(key) && factOwner.get(key) !== slideIndex) errors.push(`slide:${slideIndex}:duplicate: fakta canonical mengulang slide sebelumnya.`);
       else factOwner.set(key, slideIndex);
     }
@@ -136,7 +141,7 @@ function duplicateErrors(content) {
 function presentationErrors(content, facts = []) {
   const slides = Array.isArray(content?.slides) ? content.slides : [];
   const errors = [];
-  const minWords = densityTarget(facts, slides.length || 4);
+  const profile = sourceRichness(facts, slides.length || 4);
   if (slides.length < 4 || slides.length > 5) errors.push('layout: carousel sumber harus 4–5 slide.');
   slides.forEach((slide, slideIndex) => {
     const titleWords = words(slide?.title).length;
@@ -144,13 +149,14 @@ function presentationErrors(content, facts = []) {
     const points = Array.isArray(slide?.points) ? slide.points : [];
     const visibleCount = allVisibleParts(slide).reduce((sum, value) => sum + words(value).length, 0);
     if (!titleWords || titleWords > 12) errors.push(`slide:${slideIndex}:layout: title harus ringkas dan rapi (1–12 kata).`);
-    if (!bodyCount || bodyCount > 24) errors.push(`slide:${slideIndex}:layout: body harus ada dan maksimal 24 kata.`);
-    if (points.length > 2) errors.push(`slide:${slideIndex}:layout: maksimal 2 point agar slide tetap rapi.`);
+    if (bodyCount < profile.bodyMin || bodyCount > 24) errors.push(`slide:${slideIndex}:layout: body harus ${profile.bodyMin}–24 kata agar cukup menjelaskan konteks.`);
+    if (points.length > 3) errors.push(`slide:${slideIndex}:layout: maksimal 3 point agar slide tetap rapi.`);
+    if (points.length < profile.minPoints) errors.push(`slide:${slideIndex}:richness: hanya ${points.length} point; source cukup kaya untuk minimal ${profile.minPoints} point fakta berbeda.`);
     points.forEach((point, pointIndex) => {
       const count = words(point).length;
       if (count < 3 || count > 7) errors.push(`slide:${slideIndex}:point:${pointIndex}: point harus 3–7 kata.`);
     });
-    if (visibleCount < minWords) errors.push(`slide:${slideIndex}:density: hanya ${visibleCount} kata; minimum aman ${minWords} kata source-backed.`);
+    if (visibleCount < profile.hardFloor) errors.push(`slide:${slideIndex}:richness: isi masih terlalu tipis (${visibleCount} kata visible); minimum aman ${profile.hardFloor}.`);
     if (HARD_METADATA.test(visibleParts(slide).join(' '))) errors.push(`slide:${slideIndex}:metadata: boilerplate website masuk ke konten.`);
   });
   return [...new Set(errors)];
@@ -195,14 +201,17 @@ function buildDeterministicSourceFallback({ generated = {}, sources = [], topic 
   }
   if (selected.length < 4) throw Object.assign(new Error('Sumber dapat dibaca tetapi belum menyediakan empat potongan fakta unik untuk carousel.'), { status: 422 });
 
-  const remaining = facts.filter(fact => !used.has(factKey(fact)));
+  const selectedSourceIds = new Set(selected.map(fact => fact.sourceId));
+  const missingSourceFacts = facts.filter(fact => !used.has(factKey(fact)) && !selectedSourceIds.has(fact.sourceId));
+  const otherFacts = facts.filter(fact => !used.has(factKey(fact)) && selectedSourceIds.has(fact.sourceId));
+  const remaining = [...missingSourceFacts, ...otherFacts];
   const isListicle = String(requestedFormat || '').toLocaleLowerCase('id-ID') === 'listicle';
   const sections = isListicle
     ? selected.map((_, index) => `ITEM ${index + 1}`)
     : selected.map((_, index) => index === 0 ? 'PEMBUKA' : index === selected.length - 1 ? 'KESIMPULAN' : index === 1 ? 'FAKTA UTAMA' : index === 2 ? 'PENJELASAN' : 'KONTEKS');
-  const goalWords = densityGoal(facts, selected.length);
+  const profile = sourceRichness(facts, selected.length);
   const slides = selected.map((fact, index) => {
-    const body = excerpt(fact.evidence, 24);
+    const body = excerpt(fact.evidence, Math.min(18, Math.max(profile.bodyMin, 14)));
     return {
       section: sections[index],
       title: isListicle ? `Poin ${index + 1} dari sumber` : index === 0 ? 'Ringkasan dari sumber' : index === selected.length - 1 ? 'Kesimpulan dari sumber' : `Fakta sumber ${index + 1}`,
@@ -212,16 +221,15 @@ function buildDeterministicSourceFallback({ generated = {}, sources = [], topic 
     };
   });
 
-  // Sebarkan fakta tambahan secara round-robin agar slide awal tidak menghabiskan
-  // seluruh fact bank dan setiap slide mendapat kesempatan menjadi padat.
-  for (let pass = 0; pass < 2 && remaining.length; pass += 1) {
+  const missingCoverageCount = Math.max(0, sources.length - selectedSourceIds.size);
+  const coveragePointTarget = Math.min(3, Math.ceil(missingCoverageCount / Math.max(1, slides.length)));
+  const pointTarget = Math.min(3, Math.max(profile.targetPoints, coveragePointTarget));
+
+  for (let pass = 0; pass < 3 && remaining.length; pass += 1) {
     slides.forEach((slide, index) => {
-      if (!remaining.length || slide.points.length >= 2) return;
-      const total = allVisibleParts(slide).reduce((sum, value) => sum + words(value).length, 0);
-      if (total >= goalWords) return;
+      if (!remaining.length || slide.points.length >= pointTarget) return;
       const detail = remaining.shift();
-      const need = Math.max(4, goalWords - total);
-      const point = excerpt(detail.evidence, Math.min(7, need));
+      const point = excerpt(detail.evidence, 7);
       if (words(point).length < 3) return;
       const pointIndex = slide.points.length;
       slide.points.push(point);
@@ -258,6 +266,7 @@ module.exports = {
   presentationErrors,
   duplicateErrors,
   sourceFacts,
+  sourceRichness,
   densityGoal,
   densityTarget,
   requestedListicleCount
