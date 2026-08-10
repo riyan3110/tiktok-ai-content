@@ -70,6 +70,8 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
       assert.match(prompt, /jangan mengubah field lain atau menambah fakta maupun kondisi baru/);
       assert.match(prompt, /fakta relevan lain yang belum dipakai pada carousel/);
       assert.match(prompt, /Jika tidak ada fakta relevan yang belum dipakai, hapus point/);
+      assert.match(prompt, /Jika FACT_BANK memiliki fakta relevan lain yang belum dipakai, point BOLEH diganti/);
+      assert.doesNotMatch(prompt, /FACT_BANK tidak punya evidence[^\n]*HAPUS point tersebut/);
       const slides = safeCalls === 1 ? tooStrongDraft : repairedDraft;
       if (safeCalls === 1) slides[1].claims.push({
         field: 'slide:1:point:0', text: 'Resmi menghemat waktu', sourceId: 'source-1', evidence
