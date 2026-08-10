@@ -81,6 +81,19 @@ test('extractText membuang related card yang bersarang di dalam container artike
   assert.doesNotMatch(result.text, /asam urat/i);
 });
 
+test('extractText membuang noisy block dengan class HTML tanpa tanda kutip', () => {
+  const html = `
+    <html><body><article>
+      <p>Konten utama tentang daya ingat tetap harus dipertahankan oleh extractor artikel.</p>
+      <div class=related-article><p>8 buah dapat membantu membakar lemak perut dalam sebulan.</p></div>
+      <p>Fakta utama berikutnya tentang memori juga tetap berada di badan artikel.</p>
+    </article></body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Konten utama tentang daya ingat/);
+  assert.match(result.text, /Fakta utama berikutnya tentang memori/);
+  assert.doesNotMatch(result.text, /lemak perut/i);
+});
+
 test('extractText memakai main jika article tidak tersedia', () => {
   const html = `
     <html><body>
