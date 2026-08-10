@@ -6,6 +6,7 @@ const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
+const defaultManualSourceComposer = require('./manualSourceComposer');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -43,7 +44,13 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
+async function generateAndSave({
+  db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah',
+  content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher,
+  sourceFilter = null, manualSourceRoleGuard = null, manualSourceComposer = null,
+  mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false,
+  watermark, background, useSources = false, sourceUrls = []
+}) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -81,25 +88,43 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       contentFormat,
       recentContents: history,
       rejectedAngle: attempt > 1 || forceNewAngle ? 'Angle sebelumnya gagal atau terlalu mirip; pilih kandidat lain dengan tool, hook, langkah, dan CTA berbeda.' : null,
-      trendReference: trendReference ? { keywords: trendReference.keywords, keyword_categories: trendReference.keyword_categories, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null,
+      trendReference: trendReference ? {
+        keywords: trendReference.keywords, keyword_categories: trendReference.keyword_categories,
+        trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns,
+        source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity,
+        notes: trendReference.notes
+      } : null,
       useSources: shouldUseSources,
       sourceContext: shouldUseSources ? sourceContext : '',
       sources: shouldUseSources ? sources : []
     };
     let generated;
     if (shouldUseSources) {
-      const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
-      generated = activeSourceFilter
-        ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
-        : await content.generateContent(used, generationOptions);
-      const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
-      if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
-        generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
+      const activeManualSourceComposer = manualSourceComposer || (content === defaultContent ? defaultManualSourceComposer : null);
+      if (mode === 'manual' && activeManualSourceComposer?.composeManualSourceContent) {
+        // Manual + URL is composed directly from the cleaned main article FACT_BANK.
+        // Do not create a generic source-free draft and then try to repair it.
+        generated = await activeManualSourceComposer.composeManualSourceContent({
           contentService: content,
-          generated,
+          previousTopics: used,
           options: generationOptions,
           sources
         });
+      } else {
+        // Preserve the established AI + URL pipeline and custom/injected services.
+        const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
+        generated = activeSourceFilter
+          ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
+          : await content.generateContent(used, generationOptions);
+        const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
+        if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
+          generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
+            contentService: content,
+            generated,
+            options: generationOptions,
+            sources
+          });
+        }
       }
     } else {
       generated = await content.generateContent(used, generationOptions);
@@ -128,7 +153,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
-      // Rendering happens only after source verification and the final Manual + URL quality gate.
+      // Rendering happens only after source verification and the final Manual + URL composer/gate.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
