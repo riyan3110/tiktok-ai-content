@@ -93,7 +93,10 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
         ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
         : await content.generateContent(used, generationOptions);
       const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
-      if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
+      // Every URL-backed result must pass the same final density, coverage, duplicate,
+      // grounding, and semantic gate. The guard uses generated.topic automatically
+      // when AI + URL does not have a requested manual topic.
+      if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
         generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
           contentService: content,
           generated,
@@ -128,7 +131,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
-      // Rendering happens only after source verification and the final Manual + URL quality gate.
+      // Rendering happens only after source verification and the final URL-backed quality gate.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
