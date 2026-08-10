@@ -344,3 +344,176 @@ test('safe recovery berhenti pada hard limit ketika provider selalu memberi draf
   assert.equal(verifierCalls, MAX_VERIFY_ATTEMPTS);
   assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
 });
+
+test('emergency fallback menetralkan hanya factual title setelah seluruh safe recovery gagal', async () => {
+  const bodyEvidence = 'Model Orion menggunakan evaluasi blind untuk membandingkan hasil video.';
+  const pointEvidence = 'Penilai memilih hasil terbaik tanpa mengetahui nama model pembuatnya.';
+  const source = { url: 'https://example.test/orion', text: `${bodyEvidence} ${pointEvidence}` };
+  const targetBody = 'Model Orion menggunakan evaluasi blind untuk membandingkan hasil video.';
+  const targetPoint = 'Penilai tidak mengetahui nama model';
+  const invalidEvidence = 'Model Orion resmi merilis versi terbaru untuk semua pengguna.';
+  const baseSlides = [
+    { section: 'PEMBUKA', title: 'Evaluasi Model Video', body: 'Periksa metode evaluasi dari sumber.', points: [], claims: [] },
+    { section: 'ITEM 1', title: 'Metode Penilaian', body: 'Bandingkan hasil sesuai metode sumber.', points: [], claims: [] },
+    {
+      section: 'ITEM 2', title: 'Orion Merilis Model Terbaru', body: targetBody, points: [targetPoint],
+      claims: [
+        { field: 'slide:2:title', text: 'Orion Merilis Model Terbaru', sourceId: 'source-1', evidence: invalidEvidence },
+        { field: 'slide:2:body', text: targetBody, sourceId: 'source-1', evidence: bodyEvidence },
+        { field: 'slide:2:point:0', text: targetPoint, sourceId: 'source-1', evidence: pointEvidence }
+      ]
+    },
+    { section: 'PENUTUP', title: 'Ringkasan Metode', body: 'Simpan konteks penilaiannya.', points: [], claims: [] }
+  ];
+  const base = {
+    focus: {}, topic: 'Evaluasi Model Orion', hook: baseSlides[0].title, body: baseSlides[0].body, caption: baseSlides[0].body,
+    hashtags: [], cta: baseSlides.at(-1).title, trendKeywordsUsed: [], content_angle: 'evaluasi', primary_tool: 'Orion',
+    hook_pattern: 'langsung', slides: baseSlides
+  };
+  const draftWithTitle = title => baseSlides.map((slide, slideIndex) => ({
+    ...slide,
+    points: [...slide.points],
+    claims: slide.claims.map(claim => ({
+      ...claim,
+      ...(slideIndex === 2 && claim.field === 'slide:2:title' ? { text: title } : {})
+    })),
+    ...(slideIndex === 2 ? { title } : {})
+  }));
+
+  let verifierCalls = 0;
+  let safeCalls = 0;
+  let auditCalls = 0;
+  let fallbackValidationCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    const prompt = messages[1].content;
+    if (/auditor entailment fakta bilingual/i.test(prompt)) {
+      auditCalls += 1;
+      const claims = JSON.parse(prompt.match(/CLAIMS: (\[[^\n]*\])/)[1]);
+      assert.ok(!claims.some(claim => claim.field === 'slide:2:title'), 'claim title invalid harus dibuang sebelum semantic audit final');
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    if (/FINAL SAFE RECOVERY/i.test(prompt)) {
+      safeCalls += 1;
+      const title = `Orion Merilis Model Versi ${safeCalls}`;
+      return { choices: [{ message: { content: JSON.stringify({ slides: draftWithTitle(title) }) } }] };
+    }
+    verifierCalls += 1;
+    return { choices: [{ message: { content: JSON.stringify({ slides: draftWithTitle('Orion Merilis Model Terbaru') }) } }] };
+  } } } };
+  const content = {
+    async generateContent() { return base; },
+    validateContent(value) {
+      if (value.slides[2]?.title === 'Poin Berikutnya') fallbackValidationCalls += 1;
+      return [];
+    }
+  };
+
+  const result = await generateFilteredContent({
+    content,
+    options: { contentFormat: 'Listicle', requestedTopic: 'Evaluasi Model Orion' },
+    sources: [source],
+    client
+  });
+
+  assert.equal(verifierCalls, MAX_VERIFY_ATTEMPTS);
+  assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS, 'fallback hanya boleh berjalan setelah safe recovery benar-benar habis');
+  assert.equal(fallbackValidationCalls, 1, 'hasil title netral harus melewati validateVerifiedContent ulang');
+  assert.equal(auditCalls, 1, 'semantic audit harus dijalankan setelah fallback');
+  assert.equal(result.slides[2].title, 'Poin Berikutnya');
+  assert.equal(requiresSourceEvidence(result.slides[2].title, result.slides[2].section, 'title', 2, 4, 'Listicle'), false);
+  assert.doesNotMatch(result.slides[2].title, /Orion|model|rilis|versi|terbaru/i, 'title netral tidak boleh memperkenalkan fakta baru');
+  assert.equal(result.slides[2].body, targetBody);
+  assert.deepEqual(result.slides[2].points, [targetPoint]);
+  assert.deepEqual(result.slides[2].claims, [
+    { field: 'slide:2:body', text: targetBody, sourceId: 'source-1', evidence: bodyEvidence },
+    { field: 'slide:2:point:0', text: targetPoint, sourceId: 'source-1', evidence: pointEvidence }
+  ]);
+  assert.deepEqual(result.slides.filter((_, index) => index !== 2), baseSlides.filter((_, index) => index !== 2));
+});
+
+test('emergency title fallback tidak menerima slide dengan body dan points yang tetap tidak grounded', async () => {
+  const evidence = 'Model Orion menggunakan evaluasi blind untuk membandingkan hasil video.';
+  const invalidEvidence = 'Model Orion resmi merilis versi terbaru untuk semua pengguna.';
+  const slides = [
+    { section: 'PEMBUKA', title: 'Evaluasi Model Video', body: 'Periksa metode evaluasi dari sumber.', points: [], claims: [] },
+    { section: 'ITEM 1', title: 'Metode Penilaian', body: 'Bandingkan hasil sesuai metode sumber.', points: [], claims: [] },
+    {
+      section: 'ITEM 2', title: 'Orion Merilis Model Terbaru', body: 'Orion meningkatkan kualitas video hingga 99 persen.', points: ['Hasil pasti lebih akurat'],
+      claims: [{ field: 'slide:2:title', text: 'Orion Merilis Model Terbaru', sourceId: 'source-1', evidence: invalidEvidence }]
+    },
+    { section: 'PENUTUP', title: 'Ringkasan Metode', body: 'Simpan konteks penilaiannya.', points: [], claims: [] }
+  ];
+  const base = {
+    focus: {}, topic: 'Evaluasi Model Orion', hook: slides[0].title, body: slides[0].body, caption: slides[0].body,
+    hashtags: [], cta: slides.at(-1).title, trendKeywordsUsed: [], content_angle: 'evaluasi', primary_tool: 'Orion',
+    hook_pattern: 'langsung', slides
+  };
+  let safeCalls = 0;
+  let auditCalls = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    if (/auditor entailment fakta bilingual/i.test(messages[1].content)) {
+      auditCalls += 1;
+      return { choices: [{ message: { content: JSON.stringify({ unsupported: [] }) } }] };
+    }
+    if (/FINAL SAFE RECOVERY/i.test(messages[1].content)) safeCalls += 1;
+    const title = `Orion Merilis Model Versi ${safeCalls}`;
+    const candidate = slides.map((slide, index) => index === 2 ? {
+      ...slide,
+      title,
+      claims: [{ field: 'slide:2:title', text: title, sourceId: 'source-1', evidence: invalidEvidence }]
+    } : slide);
+    return { choices: [{ message: { content: JSON.stringify({ slides: candidate }) } }] };
+  } } } };
+  const content = { async generateContent() { return base; }, validateContent() { return []; } };
+
+  await assert.rejects(generateFilteredContent({
+    content,
+    options: { contentFormat: 'Listicle', requestedTopic: 'Evaluasi Model Orion' },
+    sources: [{ url: 'https://example.test/orion', text: evidence }],
+    client
+  }), error => error.status === 422 && /safe recovery|filter fakta sumber/i.test(error.message));
+
+  assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
+  assert.equal(auditCalls, 0, 'output dengan body/points invalid tidak boleh mencapai semantic audit atau diterima');
+});
+
+test('emergency grounding fallback tidak menyembunyikan error title non-grounding', async () => {
+  const evidence = 'Model Orion menggunakan evaluasi blind untuk membandingkan hasil video.';
+  const slides = [
+    { section: 'PEMBUKA', title: 'Metode Evaluasi', body: 'Periksa metode dari sumber.', points: [], claims: [] },
+    { section: 'ITEM 1', title: 'Proses Penilaian', body: 'Bandingkan hasil sesuai konteks.', points: [], claims: [] },
+    { section: 'ITEM 2', title: 'Newsletter subscribe sekarang', body: 'Simpan bagian yang relevan.', points: [], claims: [] },
+    { section: 'PENUTUP', title: 'Catatan Akhir', body: 'Baca konteks secara lengkap.', points: [], claims: [] }
+  ];
+  const base = {
+    focus: {}, topic: 'Evaluasi Orion', hook: slides[0].title, body: slides[0].body, caption: slides[0].body,
+    hashtags: [], cta: slides.at(-1).title, trendKeywordsUsed: [], content_angle: 'evaluasi', primary_tool: 'Orion',
+    hook_pattern: 'langsung', slides
+  };
+  let safeCalls = 0;
+  let neutralFallbackValidation = 0;
+  const client = { chat: { completions: { async create({ messages }) {
+    if (/FINAL SAFE RECOVERY/i.test(messages[1].content)) safeCalls += 1;
+    const candidate = slides.map((slide, index) => index === 2
+      ? { ...slide, title: `Newsletter subscribe edisi ${safeCalls}` }
+      : slide);
+    return { choices: [{ message: { content: JSON.stringify({ slides: candidate }) } }] };
+  } } } };
+  const content = {
+    async generateContent() { return base; },
+    validateContent(value) {
+      if (value.slides[2]?.title === 'Poin Berikutnya') neutralFallbackValidation += 1;
+      return [];
+    }
+  };
+
+  await assert.rejects(generateFilteredContent({
+    content,
+    options: { contentFormat: 'Listicle', requestedTopic: 'Evaluasi Orion' },
+    sources: [{ url: 'https://example.test/orion', text: evidence }],
+    client
+  }), error => error.status === 422 && /metadata\/boilerplate/i.test(error.validationErrors.join(' ')));
+
+  assert.equal(safeCalls, MAX_SAFE_RECOVERY_ATTEMPTS);
+  assert.equal(neutralFallbackValidation, 0, 'fallback factual-title tidak boleh dipakai untuk menyembunyikan boilerplate title');
+});

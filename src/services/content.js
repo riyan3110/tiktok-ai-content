@@ -636,7 +636,8 @@ async function generateContent(previousTopics, options = {}, client) {
     return [...new Set(result)];
   };
   let errors = validateGeneratedContent(content);
-  if (options.useSources) errors.push(...validateSourceGrounding(validationContent(content), options.sourceContext, options.sources));
+  const validateGroundingNow = options.useSources && options.deferSourceGroundingValidation !== true;
+  if (validateGroundingNow) errors.push(...validateSourceGrounding(validationContent(content), options.sourceContext, options.sources));
   for (let repair = 1; errors.length && repair <= MAX_REPAIR_ATTEMPTS; repair++) {
     console.error('[AI raw response][validasi awal gagal]', content._rawAiResponse);
     const groundingErrors = errors.filter(error => error.startsWith('SOURCE_GROUNDING:'));
@@ -649,7 +650,7 @@ async function generateContent(previousTopics, options = {}, client) {
     if (format === 'Masalah dan solusi') content.body = normalizeLegacySolutionBody(content.body);
     if (content.slides !== undefined) content.slides = format === 'Masalah dan solusi' ? normalizeProblemSolutionSlides(content.slides) : normalizeSlides(content.slides);
     errors = validateGeneratedContent(content);
-    if (options.useSources) errors.push(...validateSourceGrounding(validationContent(content), options.sourceContext, options.sources));
+    if (validateGroundingNow) errors.push(...validateSourceGrounding(validationContent(content), options.sourceContext, options.sources));
   }
   if (errors.length) {
     console.error('[AI raw response][validasi perbaikan gagal]', content._rawAiResponse);

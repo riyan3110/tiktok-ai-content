@@ -202,10 +202,29 @@ test('source filter mempertahankan mode manual dan hanya melewati validator lite
   assert.equal(baseOptions.requestedTopic, 'OpenAI temukan resiko');
   assert.equal(baseOptions.topicSource, 'manual');
   assert.equal(baseOptions.useSources, false);
+  assert.equal(baseOptions.deferSourceGroundingValidation, false);
   assert.deepEqual(baseOptions.sources, []);
   assert.equal(baseOptions.sourceContext, '');
   assert.equal(baseOptions.skipManualTopicValidation, true);
   assert.equal(result.verificationStatus, 'source_based');
+});
+
+test('metadata dan filler dilaporkan per field tanpa menargetkan copy yang bersih', () => {
+  const slides = [
+    { section: 'PEMBUKA', title: 'Konteks Bersih', body: 'Baca Juga: berita pilihan editor', points: ['Poin bersih'], claims: [] },
+    { section: 'ISI', title: 'Judul Bersih', body: 'Body bersih untuk transisi.', points: ['Newsletter subscribe sekarang', 'Poin lain tetap bersih'], claims: [] },
+    { section: 'PENUTUP', title: 'Ringkasan', body: 'Lanjut baca tentang topik ini', points: [], claims: [] }
+  ];
+  const checked = validateVerifiedContent(baseContent(slides), { slides }, {
+    contentService: permissiveContentService,
+    format: 'Listicle',
+    manualTopic: '',
+    sources: [{ text: 'Sumber valid berisi informasi yang cukup panjang untuk pemeriksaan.' }]
+  });
+  assert.ok(checked.errors.includes('slide:0:body: metadata/boilerplate website masuk ke konten.'));
+  assert.ok(checked.errors.includes('slide:1:point:0: metadata/boilerplate website masuk ke konten.'));
+  assert.ok(checked.errors.includes('slide:2:body: memakai filler "Lanjut baca tentang".'));
+  assert.ok(!checked.errors.some(error => /slide:0:title: metadata|slide:1:body: metadata|slide:1:point:1: metadata/.test(error)));
 });
 
 
