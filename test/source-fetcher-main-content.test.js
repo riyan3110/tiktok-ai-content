@@ -62,6 +62,25 @@ test('extractText memprioritaskan JSON-LD articleBody dibanding kartu rekomendas
   assert.doesNotMatch(result.text, /asam urat|lemak perut/i);
 });
 
+test('extractText membuang related card yang bersarang di dalam container artikel normal', () => {
+  const html = `
+    <html><body><article>
+      <div class="article-body">
+        <p>Apel menjadi bagian pertama dari artikel utama tentang pilihan buah dan fungsi memori.</p>
+        <div class="content-row">
+          <p>Alpukat menjadi bagian kedua artikel dan tetap merupakan konten utama yang harus dipertahankan.</p>
+          <div class="recommended-article"><p>5 buah ini dapat menurunkan asam urat secara alami.</p></div>
+          <p>Buah beri menjadi bagian ketiga artikel utama dan tetap harus muncul setelah kartu rekomendasi dibuang.</p>
+        </div>
+      </div>
+    </article></body></html>`;
+  const result = extractText(html, 'text/html');
+  assert.match(result.text, /Apel menjadi bagian pertama/);
+  assert.match(result.text, /Alpukat menjadi bagian kedua/);
+  assert.match(result.text, /Buah beri menjadi bagian ketiga/);
+  assert.doesNotMatch(result.text, /asam urat/i);
+});
+
 test('extractText memakai main jika article tidak tersedia', () => {
   const html = `
     <html><body>
