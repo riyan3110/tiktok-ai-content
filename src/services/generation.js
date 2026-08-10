@@ -5,7 +5,6 @@ const { resolveCategory, resolveFormat } = require('./contentOptions');
 const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
-const defaultManualSourceDedupe = require('./manualSourceDedupe');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
 
 const MODES = new Set(['manual', 'ai', 'trending']);
@@ -44,7 +43,7 @@ function isDuplicate(db, topic) {
   return db.prepare('SELECT topic FROM contents').all().some((row) => normalizeTopic(row.topic) === normalized);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceDedupe = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -93,15 +92,6 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       generated = activeSourceFilter
         ? await activeSourceFilter.generateFilteredContent({ content, previousTopics: used, options: generationOptions, sources })
         : await content.generateContent(used, generationOptions);
-      const activeManualSourceDedupe = manualSourceDedupe || (content === defaultContent ? defaultManualSourceDedupe : null);
-      if (mode === 'manual' && activeManualSourceDedupe?.repairManualSourceDuplicates) {
-        generated = await activeManualSourceDedupe.repairManualSourceDuplicates({
-          contentService: content,
-          generated,
-          options: generationOptions,
-          sources
-        });
-      }
       const activeManualSourceRoleGuard = manualSourceRoleGuard || (content === defaultContent ? defaultManualSourceRoleGuard : null);
       if (mode === 'manual' && activeManualSourceRoleGuard?.repairManualSourceRoles) {
         generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
@@ -138,8 +128,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
-      // Rendering happens only after AI parsing, normalization, and validation;
-      // the database remains untouched if any slide cannot be rendered.
+      // Rendering happens only after source verification and the final Manual + URL quality gate.
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
