@@ -594,7 +594,9 @@ async function generateContent(previousTopics, options = {}, client) {
   };
   const source = options.topicSource === 'manual' ? `Gunakan topik pengguna: "${options.requestedTopic}" dan jangan mengubah inti topiknya. Carousel secara keseluruhan wajib membahas objek inti topik tersebut, tetapi slide pembuka, transisi, dan penutup tidak wajib mengulang nama atau keyword topik secara mentah. Jangan mengalihkannya menjadi tutorial umum, manajemen proyek, atau topik lain.`
     : options.topicSource === 'trending' && options.requestedTopic ? `Gunakan topik tren: "${options.requestedTopic}".`
-      : `Pilih topik baru dalam kategori "${category}".`;
+      : options.topicSource === 'ai' && options.useSources
+        ? 'Tentukan sendiri SATU topik utama yang paling spesifik dan representatif dari FACT_BANK yang diberikan. Topik harus mencerminkan fokus utama sumber, bukan sekadar nama perusahaan, kategori umum, atau side-note artikel. Tulis topik dalam Bahasa Indonesia yang natural dan cukup spesifik.'
+        : `Pilih topik baru dalam kategori "${category}".`;
   const specialStructure = options.useSources
     ? 'Gunakan 4–5 slide. Jika hanya ada satu fakta, susun pembuka, fakta utama, transisi netral tanpa klaim baru, lalu penutup. Jangan mengarang fakta untuk menambah slide.'
     : format === 'Masalah dan solusi'

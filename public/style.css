@@ -259,3 +259,5 @@ dialog{max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
   #legacy-studio .trend-actions{grid-template-columns:1fr}
   #legacy-studio .trend-actions .danger{grid-column:auto}
 }
+
+.source-mode-options{grid-template-columns:repeat(2,minmax(0,1fr));max-width:420px}

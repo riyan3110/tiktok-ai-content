@@ -609,13 +609,16 @@ function parseJsonResponse(response) {
 }
 
 async function generateFilteredContent({ content, previousTopics = [], options = {}, sources = [], client }) {
+  const autoSourceTopic = options.topicSource === 'ai'
+    && options.useSources === true
+    && !String(options.requestedTopic || '').trim();
   let base = await content.generateContent(previousTopics, {
     ...options,
-    useSources: false,
+    useSources: autoSourceTopic,
     skipCopyValidation: true,
     skipManualTopicValidation: true,
-    sourceContext: '',
-    sources: []
+    sourceContext: autoSourceTopic ? options.sourceContext : '',
+    sources: autoSourceTopic ? sources : []
   }, client);
 
   if (!Array.isArray(base?.slides) || !base.slides.length) throw Object.assign(new Error('Konten normal tidak memiliki slide terstruktur untuk diverifikasi sumber.'), { status: 422 });
