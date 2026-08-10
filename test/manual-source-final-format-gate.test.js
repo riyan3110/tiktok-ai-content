@@ -10,6 +10,9 @@ const {
   beforeAfterRelationshipErrors,
   declaredListCount,
   listSlideCount,
+  shortTopicTokens,
+  needsShortTopicGuard,
+  shortTopicSourceCompatible,
   formatStructureErrors,
   looksLikeUserAction,
   MAX_FORMAT_CLASSIFY_ATTEMPTS,
@@ -26,6 +29,16 @@ test('Listicle membaca jumlah item setelah prefix judul, bukan hanya jika angka 
   assert.equal(declaredListCount([{ title: '5 Daftar Buah yang Dapat Meningkatkan Daya Ingat' }]), 5);
   assert.equal(listSlideCount([{ title: 'Daftar 4 Buah yang Membantu Menjaga Daya Ingat' }], Array(10).fill({})), 4);
   assert.equal(listSlideCount([{ title: 'Daftar 6 Tools AI untuk Konten' }], Array(12).fill({})), 5);
+});
+
+test('topik pendek bermakna tetap menjadi hard relevance guard', () => {
+  assert.deepEqual(shortTopicTokens('AI'), ['ai']);
+  assert.deepEqual(shortTopicTokens('3D'), ['3d']);
+  assert.equal(needsShortTopicGuard('AI'), true);
+  assert.equal(needsShortTopicGuard('VR'), true);
+  assert.equal(shortTopicSourceCompatible([{ title: 'Resep Nasi Goreng', text: 'Masak nasi bersama bawang dan telur sampai matang.' }], 'AI'), false);
+  assert.equal(shortTopicSourceCompatible([{ title: 'Panduan AI untuk Kreator', text: 'AI membantu beberapa alur kerja konten.' }], 'AI'), true);
+  assert.equal(shortTopicSourceCompatible([{ title: 'Cara mengamankan WhatsApp', text: 'Periksa perangkat tertaut.' }], 'WA'), true);
 });
 
 test('final format gate menolak generic fact slides yang menyamar sebagai Tutorial, Tips, atau Before-after', () => {
@@ -53,10 +66,13 @@ test('final format gate menerima struktur Tutorial dan Masalah-solusi dengan aks
   assert.deepEqual(formatStructureErrors(problem, 'Masalah dan solusi', 4), []);
 });
 
-test('action detector menerima konteks aplikasi dan menolak tindakan pelaku', () => {
+test('action detector hanya menerima tindakan pengguna, bukan fitur aplikasi atau sistem', () => {
   assert.equal(looksLikeUserAction('Di aplikasi WhatsApp, buka menu perangkat tertaut.'), true);
   assert.equal(looksLikeUserAction('Pengguna dapat memeriksa perangkat tertaut.'), true);
+  assert.equal(looksLikeUserAction('Aktifkan verifikasi dua langkah pada akun.'), true);
   assert.equal(looksLikeUserAction('Pelaku dapat membuka akun dari perangkat lain.'), false);
+  assert.equal(looksLikeUserAction('Aplikasi menggunakan enkripsi end-to-end.'), false);
+  assert.equal(looksLikeUserAction('Sistem memeriksa pembaruan secara otomatis.'), false);
 });
 
 test('classifier retry setelah malformed response lalu mempertahankan requested format jika keputusan valid fit=true', async () => {
