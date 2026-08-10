@@ -65,6 +65,9 @@ test('final safe recovery memperbaiki body, modalitas, dan menghapus point unsup
     }
     if (/FINAL SAFE RECOVERY/i.test(prompt)) {
       safeCalls += 1;
+      assert.match(prompt, /nested uncertainty, atau unsupported condition/);
+      assert.match(prompt, /Pertahankan uncertainty wrapper, capability, subject\/actor/);
+      assert.match(prompt, /jangan mengubah field lain atau menambah fakta maupun kondisi baru/);
       const slides = safeCalls === 1 ? tooStrongDraft : repairedDraft;
       if (safeCalls === 1) slides[1].claims.push({
         field: 'slide:1:point:0', text: 'Resmi menghemat waktu', sourceId: 'source-1', evidence
