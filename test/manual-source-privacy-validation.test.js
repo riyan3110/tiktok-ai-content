@@ -51,3 +51,15 @@ test('Manual final gate tetap menolak privacy-policy metadata', () => {
   const errors = ['slide:0:body: metadata/boilerplate website masuk ke konten.'];
   assert.deepEqual(filterManualPrivacyBoilerplateErrors(errors, content), errors);
 });
+
+test('kata privasi tidak boleh menyamarkan boilerplate lain yang tetap terlarang', () => {
+  const errors = ['slide:0:body: metadata/boilerplate website masuk ke konten.'];
+  for (const body of [
+    'Baca juga panduan privasi WhatsApp untuk pengguna lain.',
+    'Copyright 2026 membahas privasi WhatsApp pada halaman situs.',
+    'Login untuk mengatur privasi WhatsApp melalui halaman situs.',
+    'Newsletter privasi WhatsApp tersedia untuk pelanggan situs.'
+  ]) {
+    assert.deepEqual(filterManualPrivacyBoilerplateErrors(errors, candidate(body)), errors, body);
+  }
+});
