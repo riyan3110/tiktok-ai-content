@@ -55,8 +55,8 @@ async function compose({ content = defaultContent, previousTopics = [], options 
   });
   const errors = validationErrors(content, generated, options, sources);
   if (errors.length) throw Object.assign(new Error(`Konten dari sumber otomatis belum lolos validasi: ${errors[0].replace(/^SOURCE_GROUNDING:\s*/, '')}`), { status: 422, validationErrors: errors });
-  generated.verificationStatus = 'source_based';
-  generated.unsupportedClaims = [];
+  generated.verificationStatus = generated.verificationStatus === 'needs_review' ? 'needs_review' : 'source_based';
+  if (!Array.isArray(generated.unsupportedClaims)) generated.unsupportedClaims = [];
   generated.sourceMode = 'auto';
   if (discovery) generated.sourceDiscovery = {
     searchedAt: discovery.searchedAt,
