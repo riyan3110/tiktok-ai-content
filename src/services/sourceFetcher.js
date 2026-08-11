@@ -10,6 +10,10 @@ const TIMEOUT_MS = 10_000;
 const MIN_TEXT_LENGTH = 200;
 const MAX_CONTEXT_LENGTH = 12_000;
 const USER_AGENT = 'AIAdsLabSourceFetcher/1.0 (+https://aiadslab.local)';
+const DIRECT_HEADERS = { 'User-Agent': USER_AGENT, Accept: 'text/html,text/plain;q=0.9' };
+const READER_HEADERS = { 'User-Agent': USER_AGENT, Accept: 'application/json' };
+const REUTERS_HOST = /(^|\.)reuters\.com$/i;
+const READER_BASE_URL = 'https://r.jina.ai/';
 const LOW_VALUE_REGION = /(?:related|recommend|recommendation|recommended|terkait|baca[-_ ]?juga|read[-_ ]?also|also[-_ ]?read|more[-_ ]?article|latest|popular|trending|sidebar|widget|other[-_ ]?article|artikel[-_ ]?lain|artikel[-_ ]?terkait)/i;
 const RELATED_LINE = /^(?:baca\s+juga|read\s+also|artikel\s+terkait|berita\s+terkait|related\s+articles?|recommended|rekomendasi|artikel\s+lainnya|berita\s+lainnya|selengkapnya)\b/i;
 const WEEKDAY_MONTH = /\b(?:senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|agu|agst|sep|okt|nov|des)\b/i;
@@ -42,14 +46,14 @@ async function resolvePublicUrl(raw, lookup = dns.lookup) {
   return { url, address: addresses[0].address };
 }
 async function validateUrl(raw, lookup = dns.lookup) { return (await resolvePublicUrl(raw, lookup)).url; }
-async function secureFetch(url, { lookup = dns.lookup, signal } = {}) {
+async function secureFetch(url, { lookup = dns.lookup, signal, headers = DIRECT_HEADERS } = {}) {
   const resolved = await resolvePublicUrl(url.href, lookup);
   return new Promise((resolve, reject) => {
     const client = resolved.url.protocol === 'https:' ? https : http;
     const request = client.request({
       protocol: resolved.url.protocol, hostname: resolved.address, port: resolved.url.port || (resolved.url.protocol === 'https:' ? 443 : 80),
       path: `${resolved.url.pathname}${resolved.url.search}`, method: 'GET', servername: resolved.url.hostname,
-      headers: { Host: resolved.url.host, 'User-Agent': USER_AGENT, Accept: 'text/html,text/plain;q=0.9' }, signal
+      headers: { Host: resolved.url.host, ...headers }, signal
     }, response => {
       const chunks = []; let size = 0;
       response.on('data', chunk => { size += chunk.length; if (size > MAX_BYTES) { request.destroy(new Error('Response sumber terlalu besar')); return; } chunks.push(chunk); });
@@ -57,6 +61,13 @@ async function secureFetch(url, { lookup = dns.lookup, signal } = {}) {
     });
     request.on('error', reject); request.end();
   });
+}
+async function requestUrl(url, { fetchImpl, lookup = dns.lookup, signal, headers = DIRECT_HEADERS } = {}) {
+  if (fetchImpl) {
+    await validateUrl(url.href, lookup);
+    return fetchImpl(url.href, { redirect: 'manual', signal, headers });
+  }
+  return secureFetch(url, { lookup, signal, headers });
 }
 function uniqueUrls(urls = []) { return [...new Map(urls.map(v => [String(v || '').trim(), String(v || '').trim()]).filter(([k]) => k)).values()]; }
 function validateSourceUrls(urls) { const values = uniqueUrls(Array.isArray(urls) ? urls : []); if (!values.length) throw Object.assign(new Error('Minimal 1 URL sumber wajib diisi'), { status: 400 }); if (values.length > MAX_URLS) throw Object.assign(new Error('Maksimal 3 URL sumber'), { status: 400 }); return values; }
@@ -243,13 +254,41 @@ function extractText(raw, contentType = '') {
     .replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
   return { title, text };
 }
+function cleanReaderMarkdown(value) {
+  return String(value || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/`{1,3}/g, '');
+}
 async function readLimited(response) { const reader = response.body?.getReader?.(); if (!reader) { const text = await response.text(); if (Buffer.byteLength(text) > MAX_BYTES) throw new Error('Response sumber terlalu besar'); return text; } let size = 0, chunks = []; while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX_BYTES) throw new Error('Response sumber terlalu besar'); chunks.push(value); } return new TextDecoder().decode(Buffer.concat(chunks.map(v => Buffer.from(v)))); }
+function canUseReaderFallback(url, status) { return [401, 403].includes(status) && REUTERS_HOST.test(url.hostname); }
+async function fetchReaderFallback(originalUrl, { fetchImpl, lookup = dns.lookup, signal } = {}) {
+  const readerUrl = normalizeUrl(`${READER_BASE_URL}${originalUrl.href}`);
+  const response = await requestUrl(readerUrl, { fetchImpl, lookup, signal, headers: READER_HEADERS });
+  if (!response.ok) throw new Error(`Reader HTTP ${response.status}`);
+  const type = response.headers.get('content-type') || '';
+  if (!/application\/json/i.test(type)) throw new Error('Reader tidak mengembalikan JSON');
+  let payload;
+  try { payload = JSON.parse(await readLimited(response)); } catch { throw new Error('Reader mengembalikan JSON tidak valid'); }
+  const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+  const title = decodeBasicEntities(String(data?.title || '').trim());
+  const text = cleanArticleLines(decodeBasicEntities(cleanReaderMarkdown(data?.content || data?.text || '')), title)
+    .replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+  if (text.length < MIN_TEXT_LENGTH) throw new Error('Isi reader terlalu pendek');
+  return { url: originalUrl.href, finalUrl: originalUrl.href, title, text, fetchedAt: new Date().toISOString() };
+}
 async function fetchOne(rawUrl, { fetchImpl, lookup = dns.lookup } = {}, redirects = 0) {
   let url; try { url = await validateUrl(rawUrl, lookup); } catch (e) { throw new SourceFetchError(rawUrl, e.message); }
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const response = fetchImpl ? await (await validateUrl(url.href, lookup), fetchImpl(url.href, { redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,text/plain;q=0.9' } })) : await secureFetch(url, { lookup, signal: controller.signal });
+    const response = await requestUrl(url, { fetchImpl, lookup, signal: controller.signal, headers: DIRECT_HEADERS });
     if ([301,302,303,307,308].includes(response.status)) { if (redirects >= MAX_REDIRECTS) throw new SourceFetchError(rawUrl, 'Redirect terlalu banyak'); const location = response.headers.get('location'); if (!location) throw new SourceFetchError(rawUrl, 'Redirect tanpa tujuan'); return fetchOne(new URL(location, url.href).href, { fetchImpl, lookup }, redirects + 1); }
+    if (!response.ok && canUseReaderFallback(url, response.status)) {
+      try { return await fetchReaderFallback(url, { fetchImpl, lookup, signal: controller.signal }); } catch { /* preserve original Reuters error below */ }
+    }
     if (!response.ok) throw new SourceFetchError(rawUrl, `HTTP ${response.status}`);
     const type = response.headers.get('content-type') || '';
     if (!/^\s*text\/(html|plain)\b/i.test(type)) throw new SourceFetchError(rawUrl, 'Content-Type sumber harus text/html atau text/plain');

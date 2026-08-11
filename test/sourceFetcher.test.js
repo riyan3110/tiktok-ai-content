@@ -42,3 +42,42 @@ test('sourceFetcher memvalidasi redirect ke IP atau hostname private', async () 
   const redirectToPrivateHost = async () => new Response('', { status: 302, headers: { location: 'http://private.test/secret' } });
   await assert.rejects(() => fetchSources(['https://example.com/redirect-host'], { lookup, fetchImpl: redirectToPrivateHost }), /internal/);
 });
+
+test('sourceFetcher memakai reader fallback hanya untuk Reuters yang menolak fetch langsung', async () => {
+  const calls = [];
+  const article = 'Meta memperkenalkan Muse Glimmer sebagai model open-weight untuk tugas agentic. '.repeat(8);
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, headers: options.headers });
+    if (url.startsWith('https://www.reuters.com/')) {
+      return new Response('blocked', { status: 401, headers: { 'content-type': 'text/html' } });
+    }
+    if (url.startsWith('https://r.jina.ai/')) {
+      return new Response(JSON.stringify({ data: { title: 'Meta launches new AI model', content: article } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    throw new Error(`URL tidak terduga: ${url}`);
+  };
+
+  const originalUrl = 'https://www.reuters.com/world/china/meta-launches-new-ai-model';
+  const [source] = await fetchSources([originalUrl], { fetchImpl, lookup: publicLookup });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, originalUrl);
+  assert.equal(calls[1].url, `https://r.jina.ai/${originalUrl}`);
+  assert.equal(calls[1].headers.Accept, 'application/json');
+  assert.equal(source.url, originalUrl);
+  assert.equal(source.finalUrl, originalUrl);
+  assert.equal(source.title, 'Meta launches new AI model');
+  assert.match(source.text, /Muse Glimmer/);
+});
+
+test('sourceFetcher tidak mengubah kegagalan 401 situs selain Reuters', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return new Response('blocked', { status: 401, headers: { 'content-type': 'text/html' } });
+  };
+  await assert.rejects(() => fetchSources(['https://example.com/private-article'], { fetchImpl, lookup: publicLookup }), /HTTP 401/);
+  assert.equal(calls, 1);
+});
