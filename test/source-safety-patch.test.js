@@ -28,7 +28,8 @@ test('manual topic sanitizer mempertahankan bagian Muse Glimmer dan membuang cap
   const cleaned = safety.sanitizeSourceTextForManualTopic(source, 'Meta Muse Glimmer terbaru');
   assert.match(cleaned, /Meta introduced Muse Glimmer/i);
   assert.match(cleaned, /Muse Glimmer can run locally/i);
-  assert.doesNotMatch(cleaned, /Connect developer conference|Crew of Zuckerberg yacht|Silicon Valley dispute/i);
+  assert.match(cleaned, /The release is part of Meta/i);
+  assert.doesNotMatch(cleaned, /Connect developer conference|broad vision for artificial intelligence|Crew of Zuckerberg yacht|Silicon Valley dispute/i);
 });
 
 test('sanitizer tidak mengubah topik umum yang hanya punya satu named anchor', () => {
