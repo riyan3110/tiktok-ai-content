@@ -1,5 +1,8 @@
 const ENGLISH_MARKERS = new Set([
-  'a','an','the','and','or','but','is','are','was','were','be','been','being','of','to','in','on','for','with','from','as','by','that','this','these','those','its','their','his','her','has','have','had','will','would','can','could','should','may','might','during','about','over','amid','how'
+  'a','an','the','and','or','but','is','are','was','were','be','been','being','of','to','in','on','for','with','from','as','by','that','this','these','those','its','their','his','her','has','have','had','will','would','can','could','should','may','might','during','about','over','amid','how','which','whether','than'
+]);
+const ENGLISH_CONTENT_MARKERS = new Set([
+  'launches','launched','launching','published','publishes','presented','presents','speaks','spoke','announced','announces','released','releases','seeks','rival','powerful','developers','developer','essay','lengthy','utopian','vision','course','topics','related','included','datacenters','government','regulation','stance','sets','apart','frontier','labs','proprietary','several','plans','involved','creation','ongoing','debate','competitors','grown','wary','dominance','went','online','same','day','argue','itself'
 ]);
 const INDONESIAN_MARKERS = new Set([
   'yang','dan','atau','adalah','merupakan','dari','untuk','dengan','pada','di','ke','ini','itu','sebagai','oleh','akan','bisa','dapat','telah','sudah','belum','lebih','juga','karena','agar','saat','ketika','dalam','menjadi','memiliki','menggunakan','dirilis','diluncurkan','tentang'
@@ -7,7 +10,7 @@ const INDONESIAN_MARKERS = new Set([
 const TOPIC_ANCHOR_IGNORE = new Set([
   'ai','api','cara','tips','fakta','tentang','terbaru','baru','update','2025','2026','model','fitur','teknologi','edukasi','tutorial','langkah','mengamankan','keamanan'
 ]);
-const REFERENTIAL_CONTINUATION = /\b(?:the model|this model|the release|this release|the system|this system|the technology|this technology|the product|this product|model ini|rilis ini|sistem ini|teknologi ini|produk ini|fitur ini)\b/i;
+const REFERENTIAL_CONTINUATION = /^(?:it|its|this|these|those|the\s+(?:model|release|system|technology|product|service|tool|app|application|browser|platform|feature)|model\s+ini|rilis\s+ini|sistem\s+ini|teknologi\s+ini|produk\s+ini|fitur\s+ini)\b/i;
 
 let installed = false;
 
@@ -26,10 +29,13 @@ function namedTopicAnchors(topic) {
 
 function likelyEnglishDisplay(value) {
   const list = tokens(value);
-  if (list.length < 5) return false;
+  if (list.length < 3) return false;
   const english = list.filter(token => ENGLISH_MARKERS.has(token)).length;
+  const englishContent = list.filter(token => ENGLISH_CONTENT_MARKERS.has(token)).length;
   const indonesian = list.filter(token => INDONESIAN_MARKERS.has(token)).length;
-  return english >= 2 && english > indonesian && english / list.length >= 0.2;
+  if (indonesian > 0) return english >= 3 && english > indonesian * 2;
+  if (english >= 2 && english / list.length >= 0.2) return true;
+  return list.length >= 4 && englishContent >= 2 && (english + englishContent) / list.length >= 0.35;
 }
 
 function visibleLanguageErrors(content) {
@@ -71,31 +77,29 @@ function sanitizeSourceTextForManualTopic(text, topic) {
     .filter(Boolean);
   if (segments.length < 3) return String(text || '');
 
-  const strong = segments
-    .map((segment, index) => ({ index, matches: sentenceAnchorCount(segment, anchors) }))
-    .filter(item => item.matches >= Math.min(2, anchors.length))
-    .map(item => item.index);
-  if (!strong.length) return String(text || '');
+  const requiredMatches = Math.min(2, anchors.length);
+  const firstStrong = segments.findIndex(segment => sentenceAnchorCount(segment, anchors) >= requiredMatches);
+  if (firstStrong < 0) return String(text || '');
 
-  const keep = new Set();
-  strong.forEach(index => {
-    keep.add(index);
-    if (index > 0) keep.add(index - 1);
-    if (index + 1 < segments.length) keep.add(index + 1);
-  });
+  const selected = [];
+  let skipNextUnrelated = false;
+  for (const segment of segments.slice(firstStrong)) {
+    const matches = sentenceAnchorCount(segment, anchors);
+    const referential = REFERENTIAL_CONTINUATION.test(segment);
+    if (likelyPhotoCaption(segment)) continue;
 
-  const selected = [...keep].sort((a, b) => a - b).map(index => ({
-    index,
-    text: segments[index],
-    strong: strong.includes(index)
-  })).filter(item => {
-    if (item.strong) return true;
-    if (likelyPhotoCaption(item.text)) return false;
-    const matches = sentenceAnchorCount(item.text, anchors);
-    if (matches === 0 && !REFERENTIAL_CONTINUATION.test(item.text)) return false;
-    if (!/[.!?]$/.test(item.text) && matches === 0) return false;
-    return true;
-  }).map(item => item.text);
+    const punctuated = /[.!?]$/.test(segment);
+    if (!punctuated && matches < requiredMatches && !referential) {
+      skipNextUnrelated = true;
+      continue;
+    }
+    if (skipNextUnrelated && matches === 0 && !referential) {
+      skipNextUnrelated = false;
+      continue;
+    }
+    skipNextUnrelated = false;
+    selected.push(segment);
+  }
 
   const cleaned = selected.join('\n').trim();
   return cleaned.length >= 120 ? cleaned : String(text || '');
