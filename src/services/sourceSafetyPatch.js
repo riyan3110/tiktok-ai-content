@@ -5,7 +5,7 @@ const ENGLISH_CONTENT_MARKERS = new Set([
   'launches','launched','launching','published','publishes','presented','presents','speaks','spoke','announced','announces','released','releases','seeks','rival','powerful','developers','developer','essay','lengthy','utopian','vision','course','topics','related','included','datacenters','government','regulation','stance','sets','apart','frontier','labs','proprietary','several','plans','involved','creation','ongoing','debate','competitors','grown','wary','dominance','went','online','same','day','argue','itself'
 ]);
 const INDONESIAN_MARKERS = new Set([
-  'yang','dan','atau','adalah','merupakan','dari','untuk','dengan','pada','di','ke','ini','itu','sebagai','oleh','akan','bisa','dapat','telah','sudah','belum','lebih','juga','karena','agar','saat','ketika','dalam','menjadi','memiliki','menggunakan','dirilis','diluncurkan','tentang'
+  'yang','dan','atau','adalah','merupakan','dari','untuk','dengan','pada','di','ke','ini','itu','sebagai','oleh','akan','bisa','dapat','telah','sudah','belum','lebih','juga','karena','agar','saat','ketika','dalam','menjadi','memiliki','menggunakan','dirilis','diluncurkan','tentang','baru','terbaru','pengguna'
 ]);
 const TOPIC_ANCHOR_IGNORE = new Set([
   'ai','api','cara','tips','fakta','tentang','terbaru','baru','update','2025','2026','model','fitur','teknologi','edukasi','tutorial','langkah','mengamankan','keamanan'
@@ -16,6 +16,10 @@ let installed = false;
 
 function tokens(value) {
   return String(value || '').toLocaleLowerCase('id-ID').match(/[a-z0-9]+/g) || [];
+}
+
+function normalizedDisplay(value) {
+  return tokens(value).join(' ');
 }
 
 function namedTopicAnchors(topic) {
@@ -38,23 +42,33 @@ function likelyEnglishDisplay(value) {
   return list.length >= 4 && englishContent >= 2 && (english + englishContent) / list.length >= 0.35;
 }
 
-function visibleLanguageErrors(content) {
-  const errors = [];
+function visibleFields(content) {
+  const fields = [];
   const slides = Array.isArray(content?.slides) ? content.slides : [];
   slides.forEach((slide, slideIndex) => {
-    const fields = [
-      ['title', slide?.title],
-      ['body', slide?.body],
-      ...(Array.isArray(slide?.points) ? slide.points.map((point, pointIndex) => [`point:${pointIndex}`, point]) : [])
-    ];
-    fields.forEach(([field, value]) => {
-      if (likelyEnglishDisplay(value)) errors.push(`slide:${slideIndex}:${field}: copy tampil masih berupa kalimat bahasa Inggris; wajib dilokalkan ke bahasa Indonesia.`);
-    });
+    fields.push([`slide:${slideIndex}:title`, slide?.title], [`slide:${slideIndex}:body`, slide?.body]);
+    if (Array.isArray(slide?.points)) slide.points.forEach((point, pointIndex) => fields.push([`slide:${slideIndex}:point:${pointIndex}`, point]));
   });
-  [['hook', content?.hook], ['caption', content?.caption], ['cta', content?.cta]].forEach(([field, value]) => {
-    if (likelyEnglishDisplay(value)) errors.push(`${field}: copy tampil masih berupa kalimat bahasa Inggris; wajib dilokalkan ke bahasa Indonesia.`);
-  });
-  return [...new Set(errors)];
+  fields.push(['hook', content?.hook], ['caption', content?.caption], ['cta', content?.cta]);
+  return fields;
+}
+
+function visibleLanguageErrors(content) {
+  return [...new Set(visibleFields(content).flatMap(([field, value]) =>
+    likelyEnglishDisplay(value) ? [`${field}: copy tampil masih berupa kalimat bahasa Inggris; wajib dilokalkan ke bahasa Indonesia.`] : []
+  ))];
+}
+
+function visibleSourceEchoErrors(content, sources = []) {
+  const sourceText = (sources || []).map(source => normalizedDisplay(source?.text)).filter(Boolean).join(' ');
+  if (!sourceText) return [];
+  return [...new Set(visibleFields(content).flatMap(([field, value]) => {
+    const list = tokens(value);
+    const normalized = list.join(' ');
+    const indonesian = list.filter(token => INDONESIAN_MARKERS.has(token)).length;
+    if (list.length < 5 || indonesian > 0 || normalized.length < 20 || !sourceText.includes(normalized)) return [];
+    return [`${field}: copy tampil menyalin frasa sumber non-Indonesia; wajib dilokalkan ke bahasa Indonesia.`];
+  }))];
 }
 
 function sentenceAnchorCount(sentence, anchors) {
@@ -124,7 +138,7 @@ function install() {
   const originalRepairManualSourceRoles = roleGuard.repairManualSourceRoles;
 
   fallback.validateSourceContent = (content, sources = []) => [
-    ...new Set([...originalValidateSourceContent(content, sources), ...visibleLanguageErrors(content)])
+    ...new Set([...originalValidateSourceContent(content, sources), ...visibleLanguageErrors(content), ...visibleSourceEchoErrors(content, sources)])
   ];
   fallback.naturalCopyErrors = content => [
     ...new Set([...originalNaturalCopyErrors(content), ...visibleLanguageErrors(content)])
@@ -142,6 +156,7 @@ module.exports = {
   install,
   likelyEnglishDisplay,
   visibleLanguageErrors,
+  visibleSourceEchoErrors,
   namedTopicAnchors,
   sanitizeSourceTextForManualTopic,
   sanitizeSourcesForManualTopic
