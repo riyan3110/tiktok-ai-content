@@ -9,6 +9,7 @@ let originalGenerateAndSave = null;
 
 function autoSourceRequested(args = {}) {
   return args.mode === 'manual'
+    && args.useSources !== true
     && (!Array.isArray(args.sourceUrls) || args.sourceUrls.filter(value => String(value || '').trim()).length === 0);
 }
 
