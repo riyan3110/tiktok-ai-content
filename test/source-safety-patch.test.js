@@ -17,6 +17,15 @@ test('language gate menolak kalimat Inggris mentah tetapi membolehkan istilah te
   assert.equal(safety.likelyEnglishDisplay('open-weight AI models'), false);
 });
 
+test('source echo gate menangkap frasa Inggris panjang yang disalin mentah meski tidak ada di kamus marker', () => {
+  const content = {
+    hook: 'Meta Muse Glimmer terbaru', caption: 'Ringkasan sumber', cta: 'Lihat kesimpulan',
+    slides: [{ title: 'Meta unveils novel agentic engine worldwide', body: 'Ringkasan dalam bahasa Indonesia tetap aman untuk ditampilkan.', points: [] }]
+  };
+  const sources = [{ text: 'The company made several announcements. Meta unveils novel agentic engine worldwide. More details followed.' }];
+  assert.ok(safety.visibleSourceEchoErrors(content, sources).some(error => /menyalin frasa sumber non-Indonesia/i.test(error)));
+});
+
 test('manual topic sanitizer mempertahankan bagian Muse Glimmer dan membuang caption/related content yang jauh dari topik', () => {
   const source = [
     "Mark Zuckerberg speaks during the company's Connect developer conference on 17 September 2025 in Menlo Park, California.",
