@@ -2,7 +2,8 @@ const OpenAI = require('openai');
 const config = require('../config');
 const sourceFilter = require('./sourceFilter');
 const manualSourceDedupe = require('./manualSourceDedupe');
-const { sourceFacts, validateSourceContent, requestedListicleCount, sourceRichness, expandEvidenceForBody } = require('./manualSourceFallback');
+const manualSourceFallback = require('./manualSourceFallback');
+const { sourceFacts, requestedListicleCount, sourceRichness, expandEvidenceForBody } = manualSourceFallback;
 
 const MAX_FINALIZE_ATTEMPTS = 3;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
@@ -201,7 +202,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     });
     const deterministicErrors = [
       ...checked.errors,
-      ...validateSourceContent(checked.content || draft, sources),
+      ...manualSourceFallback.validateSourceContent(checked.content || draft, sources),
       ...manualSourceDedupe.manualCrossSlideDuplicateErrors(checked.content || draft),
       ...localLayoutErrors(checked.content || draft)
     ];

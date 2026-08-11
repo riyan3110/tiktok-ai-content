@@ -191,10 +191,10 @@ test('fallback terakhir tetap mencakup semua URL meski jumlah URL melebihi jumla
   assert.equal(sourceCoverageErrors(fallback, manySources).length, 0);
 });
 
-test('recovery URL menjalankan AI lagi setelah skeleton source-only dibangun', () => {
+test('recovery URL hanya menjalankan satu finalizer bounded tanpa skeleton ping-pong', () => {
   const source = String(aiThenDeterministicFallback);
-  assert.ok((source.match(/aiAllSourceRecovery/g) || []).length >= 2);
-  assert.match(source, /const skeleton = deterministicFallback/);
+  assert.equal((source.match(/aiAllSourceRecovery/g) || []).length, 1);
+  assert.doesNotMatch(source, /deterministicFallback|skeleton/);
 });
 
 test('recovery format tidak mengarang aksi ketika pipeline utama gagal', () => {

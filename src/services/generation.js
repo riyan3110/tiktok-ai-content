@@ -108,27 +108,16 @@ async function aiAllSourceRecovery({ generated, sources, topic, requestedFormat,
   });
 }
 
-// Paksa AI dua fase: pertama rewrite langsung dari source; jika gagal, bangun
-// skeleton source-only yang sudah kaya lalu minta AI menaturalkan/merapikannya lagi.
-// Skeleton mentah baru dipakai bila provider/rewrite kedua juga benar-benar gagal.
 async function aiThenDeterministicFallback({ generated, sources, topic, requestedFormat, mode, content }) {
-  try {
-    return await aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content });
-  } catch {
-    const skeleton = deterministicFallback({ generated, sources, topic, requestedFormat });
-    try {
-      return await aiAllSourceRecovery({
-        generated: skeleton,
-        sources,
-        topic,
-        requestedFormat: skeleton?.effectiveContentFormat || requestedFormat,
-        mode,
-        content
-      });
-    } catch {
-      return skeleton;
-    }
-  }
+  return aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content });
+}
+
+async function finalizeSourceCandidate({ generated, sources, topic, requestedFormat, mode, content, repair = aiThenDeterministicFallback }) {
+  const initialErrors = manualSourceFallback.validateSourceContent(generated, sources);
+  if (!initialErrors.length) return generated;
+
+  const repaired = await repair({ generated, sources, topic, requestedFormat, mode, content, validationErrors: initialErrors });
+  return assertFinalSourceContent(repaired, sources);
 }
 
 async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
@@ -189,6 +178,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
             });
           } catch (error) {
             if (content !== defaultContent) throw error;
+            if (error.sourceFinalizerAttempted) throw error;
             const recoveryFormat = safeRecoveryFormat(contentFormat);
             const recoverySeed = manualSourceSeed(basis, recoveryFormat);
             if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
@@ -231,12 +221,12 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     }
 
     if (shouldUseSources && content === defaultContent) {
-      let sourceErrors = manualSourceFallback.validateSourceContent(generated, sources);
+      const sourceErrors = manualSourceFallback.validateSourceContent(generated, sources);
       if (sourceErrors.length) {
         const sourceTopic = mode === 'manual'
           ? manualTopic
           : String(generated?.topic || sources[0]?.title || 'Ringkasan sumber').trim();
-        generated = await aiThenDeterministicFallback({
+        generated = await finalizeSourceCandidate({
           generated,
           sources,
           topic: sourceTopic,
@@ -244,8 +234,6 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
           mode,
           content
         });
-        sourceErrors = manualSourceFallback.validateSourceContent(generated, sources);
-        if (sourceErrors.length) throw Object.assign(new Error(`Konten URL belum memenuhi final source gate: ${sourceErrors[0]}`), { status: 422, validationErrors: sourceErrors });
       }
     }
 
@@ -297,4 +285,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, aiAllSourceRecovery, aiThenDeterministicFallback, safeRecoveryFormat, assertFinalSourceContent, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, aiAllSourceRecovery, aiThenDeterministicFallback, finalizeSourceCandidate, safeRecoveryFormat, assertFinalSourceContent, MAX_GENERATION_ATTEMPTS };
