@@ -90,17 +90,14 @@ async function fetchWithTimeout(fetchImpl, url, options = {}) {
 
 async function searchJina(query, { fetchImpl = fetch, apiKey = process.env.JINA_API_KEY } = {}) {
   if (!apiKey) return [];
-  const response = await fetchWithTimeout(fetchImpl, 'https://s.jina.ai/', {
-    method: 'POST',
+  const url = `https://s.jina.ai/?q=${encodeURIComponent(query)}`;
+  const response = await fetchWithTimeout(fetchImpl, url, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
       Accept: 'application/json',
-      'X-Respond-With': 'no-content',
       'X-Retain-Images': 'none',
       'X-Timeout': '8'
-    },
-    body: JSON.stringify({ q: query, count: 5 })
+    }
   });
   if (!response.ok) throw new Error(`Jina Search HTTP ${response.status}`);
   const payload = await response.json();
@@ -212,12 +209,14 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
   const ranked = [...unique.values()].sort((a, b) => b.searchScore - a.searchScore).slice(0, MAX_CANDIDATES);
   if (!ranked.length) throw Object.assign(new Error('Tidak menemukan sumber publik yang relevan untuk topik ini.'), { status: 422, code: 'AUTO_SOURCE_SEARCH_EMPTY' });
 
+  const topicTokenCount = tokens(cleanTopic).length;
+  const minimumRelevance = topicTokenCount <= 1 ? 1 : 0.66;
   const fetched = [];
   for (const candidate of ranked.slice(0, MAX_FETCH_CANDIDATES)) {
     const source = await fetchCandidate(candidate, { sourceFetcher, fetchImpl });
     if (!source) continue;
     const score = fetchedScore(cleanTopic, source, candidate);
-    if (relevanceScore(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 3500)}`) < 0.34) continue;
+    if (relevanceScore(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 3500)}`) < minimumRelevance) continue;
     fetched.push({ ...source, discovery: { provider: candidate.provider, query: candidate.query, score } });
   }
   fetched.sort((a, b) => b.discovery.score - a.discovery.score);
