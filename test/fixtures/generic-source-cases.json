@@ -1,0 +1,32 @@
+{
+  "englishTechnology": {
+    "url": "https://example.test/northstar-browser",
+    "title": "Northstar Browser Efficiency Study",
+    "text": "Northstar Browser was derived from the Cedar rendering engine during development. The browser can reduce memory use when many tabs remain open. The team plans to release the mobile edition next quarter. Tests associated the cache setting with shorter startup time. The browser includes local profile controls for shared computers. Developers published migration notes for extension authors. The desktop edition supports four workspace groups. Administrators may disable background synchronization."
+  },
+  "indonesianTechnology": {
+    "url": "https://example.test/lentera-os",
+    "title": "Pembaruan Lentera OS",
+    "text": "Lentera OS menambahkan kontrol izin baru untuk aplikasi latar belakang. Pengguna dapat meninjau akses kamera dari panel privasi. Sistem menampilkan riwayat akses mikrofon selama tujuh hari. Pembaruan tersedia untuk perangkat yang masih menerima dukungan. Administrator dapat menonaktifkan sinkronisasi otomatis. Dokumentasi migrasi menjelaskan perubahan API notifikasi. Mode hemat daya membatasi proses yang tidak aktif. Pengaturan lama tetap dipertahankan setelah pembaruan."
+  },
+  "englishGeneralTechnology": {
+    "url": "https://example.test/harbor-battery",
+    "title": "Harbor Battery Field Trial",
+    "text": "Harbor Battery completed a twelve-month field trial in coastal buses. Engineers recorded lower capacity during the coldest weeks. The study associated slower charging with low ambient temperature. The operator may expand the trial to two additional routes. Maintenance teams inspected each pack every thirty days. The report did not identify a single cause for all capacity changes."
+  },
+  "richSource": {
+    "url": "https://example.test/meridian-network",
+    "title": "Meridian Network Operations Report",
+    "text": "Jaringan Meridian menguji pemantauan lokal pada dua belas kantor cabang. Dasbor mencatat latensi setiap lima menit selama pengujian. Tim menemukan tiga pola gangguan yang berbeda. Operator dapat mematikan notifikasi pada jam pemeliharaan. Sistem menyimpan log lokal selama empat belas hari. Panduan menjelaskan proses ekspor log untuk audit. Uji coba mencakup koneksi kabel dan nirkabel. Administrator meninjau hasil bersama setiap kantor. Laporan membedakan gangguan jaringan dari kegagalan perangkat. Tidak ada klaim bahwa fitur tersebut mencegah semua gangguan."
+  },
+  "thinSource": {
+    "url": "https://example.test/pijar-keyboard",
+    "title": "Pembaruan Pijar Keyboard",
+    "text": "Pijar Keyboard menambahkan pengaturan ukuran tombol untuk layar kecil. Pengguna dapat menyimpan dua profil tata letak berbeda. Pembaruan tersedia mulai pekan ini untuk perangkat yang didukung. Pengaturan lama tetap tersimpan setelah proses pemasangan selesai."
+  },
+  "explicitListicle": {
+    "url": "https://example.test/five-storage-checks",
+    "title": "5 Tips Penyimpanan untuk Perangkat Bersama",
+    "text": "Pemeriksaan pertama meninjau kapasitas ruang yang masih tersedia. Pemeriksaan kedua menghapus berkas sementara yang tidak diperlukan. Pemeriksaan ketiga memeriksa folder unduhan milik pengguna. Pemeriksaan keempat meninjau aplikasi yang jarang digunakan. Pemeriksaan kelima memastikan cadangan penting dapat dibuka kembali."
+  }
+}

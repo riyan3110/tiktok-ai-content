@@ -275,15 +275,20 @@ function install() {
 
     if (shouldUseFactFinalizer(args?.options?.contentFormat)) {
       const finalizer = require('./sourceUrlFinalizer');
-      return finalizer.rewriteAllSourcesWithAi({
-        generated: args?.generated,
-        sources: args?.sources || [],
-        topic,
-        format: 'Fakta singkat',
-        mode: 'manual',
-        contentService: args?.contentService,
-        client: args?.client
-      });
+      try {
+        return await finalizer.rewriteAllSourcesWithAi({
+          generated: args?.generated,
+          sources: args?.sources || [],
+          topic,
+          format: 'Fakta singkat',
+          mode: 'manual',
+          contentService: args?.contentService,
+          client: args?.client
+        });
+      } catch (error) {
+        error.sourceFinalizerAttempted = true;
+        throw error;
+      }
     }
     return originalRepairManualSourceRoles(args);
   };
