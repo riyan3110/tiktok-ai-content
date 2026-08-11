@@ -134,6 +134,46 @@ test('shared visible-copy gate menolak complement yang belum selesai secara makn
   assert.equal(fallback.naturalCopyErrors(valid).some(error => /belum selesai|fragmen/i.test(error)), false);
 });
 
+test('incomplete complement memakai struktur verba generik, bukan daftar topik', () => {
+  safety.install();
+  const fallback = require('../src/services/manualSourceFallback');
+  const invalidBodies = [
+    'Sistem dibuat untuk melindungi',
+    'Fitur dirancang agar mencegah',
+    'Proses berjalan untuk memastikan',
+    'Perangkat dipakai agar mendukung',
+    'Layanan digunakan untuk memproses.”'
+  ];
+  for (const body of invalidBodies) {
+    const errors = fallback.naturalCopyErrors({ slides: [{ title: 'Uji Struktur', body, points: [] }] });
+    assert.ok(errors.some(error => /belum selesai secara makna/i.test(error)), `${body}: ${errors.join(' | ')}`);
+  }
+
+  const completeBodies = [
+    'Sistem dibuat untuk melindungi data pengguna.',
+    'Fitur dirancang agar mencegah akses tanpa izin.',
+    'Pengguna memakai ruang ini untuk bekerja.',
+    'Peserta datang untuk belajar.'
+  ];
+  for (const body of completeBodies) {
+    const errors = fallback.naturalCopyErrors({ slides: [{ title: 'Uji Struktur', body, points: [] }] });
+    assert.equal(errors.some(error => /belum selesai secara makna/i.test(error)), false, `${body}: ${errors.join(' | ')}`);
+  }
+});
+
+test('based-on tidak menolak open version yang memang dinyatakan evidence', () => {
+  const text = 'Alpha adalah versi terbuka dari Beta.';
+  const content = { slides: [{ claims: [{ field: 'slide:0:body', text, sourceId: 'source-1', evidence: 'Alpha is an open-source version based on Beta.' }] }] };
+  assert.equal(safety.semanticRelationErrors(content).some(error => /lineage/i.test(error)), false);
+});
+
+test('semantic relation gate membedakan asosiasi dan sebab-akibat', () => {
+  const drift = { slides: [{ claims: [{ field: 'slide:0:body', text: 'Alpha menyebabkan perubahan Beta.', evidence: 'Alpha was associated with changes in Beta.' }] }] };
+  assert.ok(safety.semanticRelationErrors(drift).some(error => /non-kausal/i.test(error)));
+  const faithful = { slides: [{ claims: [{ field: 'slide:0:body', text: 'Alpha menyebabkan perubahan Beta.', evidence: 'Alpha caused changes in Beta.' }] }] };
+  assert.equal(safety.semanticRelationErrors(faithful).some(error => /non-kausal/i.test(error)), false);
+});
+
 test('final pre-save gate menolak recovery candidate yang masih mengalami semantic drift', () => {
   safety.install();
   const { assertFinalSourceContent } = require('../src/services/generation');
