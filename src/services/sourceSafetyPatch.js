@@ -125,7 +125,7 @@ function sanitizeSourceTextForManualTopic(text, topic) {
     const matches = sentenceAnchorCount(segment, anchors);
     const referential = REFERENTIAL_CONTINUATION.test(segment);
     if (likelyPhotoCaption(segment) || isSourceBoilerplate(segment)) continue;
-    if (matches > 0 || referential) selected.push(segment);
+    if (matches >= requiredMatches || referential) selected.push(segment);
   }
 
   const cleaned = selected.join('\n').trim();
