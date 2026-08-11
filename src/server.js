@@ -3,6 +3,8 @@ const config = require('./config');
 const { createDatabase } = require('./db');
 const { install: installSourceSafetyPatch } = require('./services/sourceSafetyPatch');
 installSourceSafetyPatch();
+const { install: installAutoSourcePatch } = require('./services/autoSourcePatch');
+installAutoSourcePatch();
 const { createApp } = require('./app');
 const content = require('./services/content');
 const images = require('./services/images');
