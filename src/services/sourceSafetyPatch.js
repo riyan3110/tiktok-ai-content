@@ -66,14 +66,24 @@ function visibleLanguageErrors(content) {
   ))];
 }
 
+function likelyNonIndonesianSource(value) {
+  const list = tokens(value);
+  const english = list.filter(token => ENGLISH_MARKERS.has(token) || ENGLISH_CONTENT_MARKERS.has(token)).length;
+  const indonesian = list.filter(token => INDONESIAN_MARKERS.has(token)).length;
+  return english >= 2 && english > indonesian;
+}
+
 function visibleSourceEchoErrors(content, sources = []) {
-  const sourceText = (sources || []).map(source => normalizedDisplay(source?.text)).filter(Boolean).join(' ');
-  if (!sourceText) return [];
+  const sourceTexts = (sources || []).map(source => ({
+    normalized: normalizedDisplay(source?.text),
+    nonIndonesian: likelyNonIndonesianSource(source?.text)
+  })).filter(source => source.normalized);
+  if (!sourceTexts.length) return [];
   return [...new Set(visibleFields(content).flatMap(([field, value]) => {
     const list = tokens(value);
     const normalized = list.join(' ');
-    const indonesian = list.filter(token => INDONESIAN_MARKERS.has(token)).length;
-    if (list.length < 5 || indonesian > 0 || normalized.length < 20 || !sourceText.includes(normalized)) return [];
+    const copiedFromNonIndonesianSource = sourceTexts.some(source => source.nonIndonesian && source.normalized.includes(normalized));
+    if (list.length < 5 || normalized.length < 20 || !copiedFromNonIndonesianSource) return [];
     return [`${field}: copy tampil menyalin frasa sumber non-Indonesia; wajib dilokalkan ke bahasa Indonesia.`];
   }))];
 }
