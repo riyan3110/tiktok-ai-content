@@ -13,7 +13,10 @@ const TOPIC_ANCHOR_IGNORE = new Set([
 const REFERENTIAL_CONTINUATION = /^(?:it|its|this|these|those|the\s+(?:model|release|system|technology|product|service|tool|app|application|browser|platform|feature)|model\s+ini|rilis\s+ini|sistem\s+ini|teknologi\s+ini|produk\s+ini|fitur\s+ini)\b/i;
 const HARD_SOURCE_BOILERPLATE = /(?:our\s+editorial\s+(?:standards|policy)|read\s+(?:more\s+about\s+)?our\s+editorial\s+(?:standards|policy)|maintains?\s+(?:its\s+)?editorial\s+independence|editorially\s+independent\s+from|work\s+has\s+appeared\s+in|works?\s+has\s+appeared\s+in|has\s+(?:also\s+)?written\s+for|previously\s+(?:worked|wrote|reported)\s+(?:at|for)|before\s+joining|more\s+by\s+[A-Z]|follow\s+(?:the\s+)?(?:author|reporter|writer)|contact\s+(?:the\s+)?(?:author|reporter|writer)|author\s+(?:bio|profile)|writer\s+(?:bio|profile)|contributor\s+(?:bio|profile)|about\s+the\s+author|tentang\s+penulis|menjaga\s+independensi\s+editorial|baca\s+(?:lebih\s+lanjut\s+)?(?:tentang\s+)?kebijakan\s+editorial|karya(?:nya)?\s+(?:pernah\s+)?(?:muncul|dimuat)\s+di|pernah\s+menulis\s+untuk)/iu;
 const BAD_VISIBLE_TRANSLATION = /(?:\bberat\s+model\s+(?:di|dengan)\s+lisensi\b|\bdi\s+lisensi\s+(?:apache|mit|bsd|gpl)\b|\bindependen\s+editorial\s+terjaga\b|\bkarya(?:nya)?\s+(?:muncul|dimuat)\s+di\s+(?:forbes|bloomberg|reuters|techcrunch)\b)/iu;
-const INCOMPLETE_PURPOSE_COMPLEMENT = /\b(?:untuk|agar)\s+(?:memper|meng|meny|men|mem|me)[\p{L}-]+\s*[.!?…”'\])}]*$/iu;
+const COMPLEMENT_REQUIRING_PURPOSE_VERBS = new Set([
+  'memperbaiki','mengatasi','meningkatkan','membantu','mengurangi','mengelola','mempercepat',
+  'melindungi','mencegah','memastikan','mendukung','memproses'
+]);
 const TERMINAL_DEMONSTRATIVES = new Set(['ini', 'itu']);
 
 let installed = false;
@@ -75,12 +78,19 @@ function visibleSourceEchoErrors(content, sources = []) {
   }))];
 }
 
+function endsWithIncompletePurposeComplement(value) {
+  const match = String(value || '').toLocaleLowerCase('id-ID')
+    .replace(/[.!?…”'\])}]+$/gu, '').trim()
+    .match(/\b(?:untuk|agar)\s+([\p{L}-]+)$/u);
+  return Boolean(match && COMPLEMENT_REQUIRING_PURPOSE_VERBS.has(match[1]));
+}
+
 function visibleNaturalErrors(content) {
   return [...new Set(visibleFields(content).flatMap(([field, value]) => {
     const text = String(value || '');
     const errors = [];
     if (BAD_VISIBLE_TRANSLATION.test(text)) errors.push(`${field}: copy tampil masih berupa terjemahan rusak atau metadata situs; tulis ulang secara natural dari evidence.`);
-    if (INCOMPLETE_PURPOSE_COMPLEMENT.test(text)) errors.push(`${field}: copy tampil belum selesai secara makna; verba tujuan masih membutuhkan objek atau pelengkap.`);
+    if (endsWithIncompletePurposeComplement(text)) errors.push(`${field}: copy tampil belum selesai secara makna; verba tujuan masih membutuhkan objek atau pelengkap.`);
     return errors;
   }))];
 }

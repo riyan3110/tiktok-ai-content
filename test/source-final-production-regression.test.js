@@ -153,8 +153,24 @@ test('incomplete complement memakai struktur verba generik, bukan daftar topik',
     'Sistem dibuat untuk melindungi data pengguna.',
     'Fitur dirancang agar mencegah akses tanpa izin.',
     'Pengguna memakai ruang ini untuk bekerja.',
-    'Peserta datang untuk belajar.'
+    'Peserta datang untuk belajar.',
+    'Sistem dirancang untuk bekerja.',
+    'Model terus belajar untuk berkembang.',
+    'Layanan dibuat agar berfungsi.',
+    'Sistem dapat bekerja untuk membantu pengguna.',
+    'Peserta datang untuk menari.',
+    'Anak itu pulang untuk menangis.'
   ];
+  const requiredInvalidBodies = [
+    'Sistem dirancang untuk memperbaiki',
+    'Fitur dibuat untuk mengatasi',
+    'Model digunakan untuk meningkatkan',
+    'Layanan dibuat agar membantu'
+  ];
+  for (const body of requiredInvalidBodies) {
+    const errors = fallback.naturalCopyErrors({ slides: [{ title: 'Uji Struktur', body, points: [] }] });
+    assert.ok(errors.some(error => /belum selesai secara makna/i.test(error)), `${body}: ${errors.join(' | ')}`);
+  }
   for (const body of completeBodies) {
     const errors = fallback.naturalCopyErrors({ slides: [{ title: 'Uji Struktur', body, points: [] }] });
     assert.equal(errors.some(error => /belum selesai secara makna/i.test(error)), false, `${body}: ${errors.join(' | ')}`);
