@@ -16,6 +16,10 @@ test('manual Pakai URL stays on the existing URL path', () => {
   assert.equal(autoSourceRequested({ mode: 'manual', useSources: true, sourceUrls: ['https://example.test/article'] }), false);
 });
 
+test('manual Pakai URL with an empty field is still handled by the existing URL validation path', () => {
+  assert.equal(autoSourceRequested({ mode: 'manual', useSources: true, sourceUrls: [] }), false);
+});
+
 test('automatic AI topic mode without URLs is not hijacked by manual auto source', () => {
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
 });
