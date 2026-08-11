@@ -93,6 +93,114 @@ test('semantic relation gate membedakan open-weight dan open-source', () => {
   assert.ok(safety.semanticRelationErrors(content).some(error => /open-weight/i.test(error)));
 });
 
+test('shared final source gate menolak drift semantic generik pada visible candidate', () => {
+  safety.install();
+  const fallback = require('../src/services/manualSourceFallback');
+  const cases = [
+    ['Model Alpha adalah penerus Model Beta.', 'Model Alpha was derived from Model Beta during training.', /lineage/i],
+    ['Model ini open-source.', 'The model is available as open-weight.', /open-weight/i],
+    ['Model tersebut sudah dirilis.', 'The company plans to release the model next month.', /rencana|proyeksi/i],
+    ['Fitur ini menjamin latensi berkurang.', 'The feature can help reduce latency.', /modalitas/i]
+  ];
+  for (const [body, evidence, expected] of cases) {
+    const content = {
+      slides: [{ title: 'Fakta Model', body, points: [], claims: [{ field: 'slide:0:body', text: body, sourceId: 'source-1', evidence }] }]
+    };
+    const errors = fallback.validateSourceContent(content, [{ text: evidence }]);
+    assert.ok(errors.some(error => expected.test(error)), `${body}: ${errors.join(' | ')}`);
+  }
+});
+
+test('shared visible-copy gate menolak complement yang belum selesai secara makna', () => {
+  safety.install();
+  const fallback = require('../src/services/manualSourceFallback');
+  const invalid = {
+    hook: 'Model bekerja 24/7 untuk memperbaiki',
+    caption: 'Dirancang untuk mengatasi',
+    cta: 'Sistem bertujuan untuk mempercepat',
+    slides: [{ title: 'Fakta Sistem', body: 'Model bekerja 24/7 untuk memperbaiki', points: ['Fitur dibuat agar membantu', 'Dipakai untuk mengurangi'], claims: [] }]
+  };
+  const errors = fallback.naturalCopyErrors(invalid);
+  for (const field of ['hook', 'caption', 'cta', 'slide:0:body', 'slide:0:point:0', 'slide:0:point:1']) {
+    assert.ok(errors.some(error => error.startsWith(field) && /belum selesai|fragmen/i.test(error)), `${field}: ${errors.join(' | ')}`);
+  }
+
+  const valid = {
+    hook: 'Pengguna perlu memahami batas teknologi ini.',
+    caption: 'Model bekerja 24/7 untuk memperbaiki kesalahan konfigurasi.',
+    cta: 'Pelajari sistem keamanan tersebut.',
+    slides: [{ title: 'Fakta Sistem', body: 'Dirancang untuk mengatasi masalah keamanan.', points: ['Mengurangi latensi inference'] }]
+  };
+  assert.equal(fallback.naturalCopyErrors(valid).some(error => /belum selesai|fragmen/i.test(error)), false);
+});
+
+test('incomplete complement memakai struktur verba generik, bukan daftar topik', () => {
+  safety.install();
+  const fallback = require('../src/services/manualSourceFallback');
+  const invalidBodies = [
+    'Sistem dibuat untuk melindungi',
+    'Fitur dirancang agar mencegah',
+    'Proses berjalan untuk memastikan',
+    'Perangkat dipakai agar mendukung',
+    'Layanan digunakan untuk memproses.”'
+  ];
+  for (const body of invalidBodies) {
+    const errors = fallback.naturalCopyErrors({ slides: [{ title: 'Uji Struktur', body, points: [] }] });
+    assert.ok(errors.some(error => /belum selesai secara makna/i.test(error)), `${body}: ${errors.join(' | ')}`);
+  }
+
+  const completeBodies = [
+    'Sistem dibuat untuk melindungi data pengguna.',
+    'Fitur dirancang agar mencegah akses tanpa izin.',
+    'Pengguna memakai ruang ini untuk bekerja.',
+    'Peserta datang untuk belajar.',
+    'Sistem dirancang untuk bekerja.',
+    'Model terus belajar untuk berkembang.',
+    'Layanan dibuat agar berfungsi.',
+    'Sistem dapat bekerja untuk membantu pengguna.',
+    'Peserta datang untuk menari.',
+    'Anak itu pulang untuk menangis.'
+  ];
+  const requiredInvalidBodies = [
+    'Sistem dirancang untuk memperbaiki',
+    'Fitur dibuat untuk mengatasi',
+    'Model digunakan untuk meningkatkan',
+    'Layanan dibuat agar membantu'
+  ];
+  for (const body of requiredInvalidBodies) {
+    const errors = fallback.naturalCopyErrors({ slides: [{ title: 'Uji Struktur', body, points: [] }] });
+    assert.ok(errors.some(error => /belum selesai secara makna/i.test(error)), `${body}: ${errors.join(' | ')}`);
+  }
+  for (const body of completeBodies) {
+    const errors = fallback.naturalCopyErrors({ slides: [{ title: 'Uji Struktur', body, points: [] }] });
+    assert.equal(errors.some(error => /belum selesai secara makna/i.test(error)), false, `${body}: ${errors.join(' | ')}`);
+  }
+});
+
+test('based-on tidak menolak open version yang memang dinyatakan evidence', () => {
+  const text = 'Alpha adalah versi terbuka dari Beta.';
+  const content = { slides: [{ claims: [{ field: 'slide:0:body', text, sourceId: 'source-1', evidence: 'Alpha is an open-source version based on Beta.' }] }] };
+  assert.equal(safety.semanticRelationErrors(content).some(error => /lineage/i.test(error)), false);
+});
+
+test('semantic relation gate membedakan asosiasi dan sebab-akibat', () => {
+  const drift = { slides: [{ claims: [{ field: 'slide:0:body', text: 'Alpha menyebabkan perubahan Beta.', evidence: 'Alpha was associated with changes in Beta.' }] }] };
+  assert.ok(safety.semanticRelationErrors(drift).some(error => /non-kausal/i.test(error)));
+  const faithful = { slides: [{ claims: [{ field: 'slide:0:body', text: 'Alpha menyebabkan perubahan Beta.', evidence: 'Alpha caused changes in Beta.' }] }] };
+  assert.equal(safety.semanticRelationErrors(faithful).some(error => /non-kausal/i.test(error)), false);
+});
+
+test('final pre-save gate menolak recovery candidate yang masih mengalami semantic drift', () => {
+  safety.install();
+  const { assertFinalSourceContent } = require('../src/services/generation');
+  const evidence = 'Muse Glimmer was distilled from Muse Spark during training.';
+  const body = 'Glimmer merupakan versi terbuka Muse Spark.';
+  const candidate = {
+    slides: [{ title: 'Muse Glimmer', body, points: [], claims: [{ field: 'slide:0:body', text: body, sourceId: 'source-1', evidence }] }]
+  };
+  assert.throws(() => assertFinalSourceContent(candidate, [{ text: evidence }]), error => error.status === 422 && error.validationErrors.some(item => /lineage/i.test(item)));
+});
+
 test('visible natural gate menangkap wording rusak dan metadata yang terlihat', () => {
   const content = {
     slides: [{

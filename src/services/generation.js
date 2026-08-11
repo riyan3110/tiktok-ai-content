@@ -7,7 +7,8 @@ const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
 const defaultSourceUrlFinalizer = require('./sourceUrlFinalizer');
-const { buildDeterministicSourceFallback, validateSourceContent } = require('./manualSourceFallback');
+const manualSourceFallback = require('./manualSourceFallback');
+const { buildDeterministicSourceFallback } = manualSourceFallback;
 
 const MODES = new Set(['manual', 'ai', 'trending']);
 const MAX_GENERATION_ATTEMPTS = 3;
@@ -87,6 +88,12 @@ function deterministicFallback({ generated, sources, topic, requestedFormat }) {
 
 function safeRecoveryFormat(format) {
   return ['Listicle', 'Fakta singkat'].includes(format) ? format : 'Fakta singkat';
+}
+
+function assertFinalSourceContent(generated, sources) {
+  const errors = manualSourceFallback.validateSourceContent(generated, sources);
+  if (errors.length) throw Object.assign(new Error(`Konten URL belum memenuhi final source gate: ${errors[0]}`), { status: 422, validationErrors: errors });
+  return generated;
 }
 
 async function aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content }) {
@@ -224,7 +231,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     }
 
     if (shouldUseSources && content === defaultContent) {
-      let sourceErrors = validateSourceContent(generated, sources);
+      let sourceErrors = manualSourceFallback.validateSourceContent(generated, sources);
       if (sourceErrors.length) {
         const sourceTopic = mode === 'manual'
           ? manualTopic
@@ -237,7 +244,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
           mode,
           content
         });
-        sourceErrors = validateSourceContent(generated, sources);
+        sourceErrors = manualSourceFallback.validateSourceContent(generated, sources);
         if (sourceErrors.length) throw Object.assign(new Error(`Konten URL belum memenuhi final source gate: ${sourceErrors[0]}`), { status: 422, validationErrors: sourceErrors });
       }
     }
@@ -263,6 +270,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     }
     let renderedSlides = [];
     try {
+      if (shouldUseSources && content === defaultContent) assertFinalSourceContent(generated, sources);
       const allowed = new Set((trendReference?.keywords || []).map(x => x.toLocaleLowerCase('id-ID')));
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
@@ -289,4 +297,4 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   }
 }
 
-module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, aiAllSourceRecovery, aiThenDeterministicFallback, safeRecoveryFormat, MAX_GENERATION_ATTEMPTS };
+module.exports = { generateAndSave, normalizeTopic, isDuplicate, recentContents, textSimilarity, similarityToHistory, manualSourceSeed, resolveManualSourceRoleGuard, deterministicFallback, aiAllSourceRecovery, aiThenDeterministicFallback, safeRecoveryFormat, assertFinalSourceContent, MAX_GENERATION_ATTEMPTS };
