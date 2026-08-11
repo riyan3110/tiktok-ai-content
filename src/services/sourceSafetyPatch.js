@@ -98,12 +98,15 @@ function isSourceBoilerplate(value) {
 }
 
 function sanitizeBoilerplateText(text) {
-  const segments = String(text || '').replace(/\r/g, '\n')
+  const original = String(text || '');
+  const segments = original.replace(/\r/g, '\n')
     .split(/(?<=[.!?])\s+|\n+/)
     .map(value => value.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
-  if (!segments.length) return String(text || '');
-  return segments.filter(segment => !isSourceBoilerplate(segment)).join('\n').trim();
+  if (!segments.length) return original;
+  const cleanSegments = segments.filter(segment => !isSourceBoilerplate(segment));
+  if (cleanSegments.length === segments.length) return original;
+  return cleanSegments.join('\n').trim();
 }
 
 function sanitizeSourceTextForManualTopic(text, topic) {
