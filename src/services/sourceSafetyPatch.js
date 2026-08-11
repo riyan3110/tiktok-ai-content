@@ -7,6 +7,7 @@ const INDONESIAN_MARKERS = new Set([
 const TOPIC_ANCHOR_IGNORE = new Set([
   'ai','api','cara','tips','fakta','tentang','terbaru','baru','update','2025','2026','model','fitur','teknologi','edukasi','tutorial','langkah','mengamankan','keamanan'
 ]);
+const REFERENTIAL_CONTINUATION = /\b(?:the model|this model|the release|this release|the system|this system|the technology|this technology|the product|this product|model ini|rilis ini|sistem ini|teknologi ini|produk ini|fitur ini)\b/i;
 
 let installed = false;
 
@@ -90,7 +91,9 @@ function sanitizeSourceTextForManualTopic(text, topic) {
   })).filter(item => {
     if (item.strong) return true;
     if (likelyPhotoCaption(item.text)) return false;
-    if (!/[.!?]$/.test(item.text) && sentenceAnchorCount(item.text, anchors) === 0) return false;
+    const matches = sentenceAnchorCount(item.text, anchors);
+    if (matches === 0 && !REFERENTIAL_CONTINUATION.test(item.text)) return false;
+    if (!/[.!?]$/.test(item.text) && matches === 0) return false;
     return true;
   }).map(item => item.text);
 
