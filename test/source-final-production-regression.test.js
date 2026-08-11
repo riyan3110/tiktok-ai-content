@@ -93,6 +93,58 @@ test('semantic relation gate membedakan open-weight dan open-source', () => {
   assert.ok(safety.semanticRelationErrors(content).some(error => /open-weight/i.test(error)));
 });
 
+test('shared final source gate menolak drift semantic generik pada visible candidate', () => {
+  safety.install();
+  const fallback = require('../src/services/manualSourceFallback');
+  const cases = [
+    ['Model Alpha adalah penerus Model Beta.', 'Model Alpha was derived from Model Beta during training.', /lineage/i],
+    ['Model ini open-source.', 'The model is available as open-weight.', /open-weight/i],
+    ['Model tersebut sudah dirilis.', 'The company plans to release the model next month.', /rencana|proyeksi/i],
+    ['Fitur ini menjamin latensi berkurang.', 'The feature can help reduce latency.', /modalitas/i]
+  ];
+  for (const [body, evidence, expected] of cases) {
+    const content = {
+      slides: [{ title: 'Fakta Model', body, points: [], claims: [{ field: 'slide:0:body', text: body, sourceId: 'source-1', evidence }] }]
+    };
+    const errors = fallback.validateSourceContent(content, [{ text: evidence }]);
+    assert.ok(errors.some(error => expected.test(error)), `${body}: ${errors.join(' | ')}`);
+  }
+});
+
+test('shared visible-copy gate menolak complement yang belum selesai secara makna', () => {
+  safety.install();
+  const fallback = require('../src/services/manualSourceFallback');
+  const invalid = {
+    hook: 'Model bekerja 24/7 untuk memperbaiki',
+    caption: 'Dirancang untuk mengatasi',
+    cta: 'Sistem bertujuan untuk mempercepat',
+    slides: [{ title: 'Fakta Sistem', body: 'Model bekerja 24/7 untuk memperbaiki', points: ['Fitur dibuat agar membantu', 'Dipakai untuk mengurangi'], claims: [] }]
+  };
+  const errors = fallback.naturalCopyErrors(invalid);
+  for (const field of ['hook', 'caption', 'cta', 'slide:0:body', 'slide:0:point:0', 'slide:0:point:1']) {
+    assert.ok(errors.some(error => error.startsWith(field) && /belum selesai|fragmen/i.test(error)), `${field}: ${errors.join(' | ')}`);
+  }
+
+  const valid = {
+    hook: 'Pengguna perlu memahami batas teknologi ini.',
+    caption: 'Model bekerja 24/7 untuk memperbaiki kesalahan konfigurasi.',
+    cta: 'Pelajari sistem keamanan tersebut.',
+    slides: [{ title: 'Fakta Sistem', body: 'Dirancang untuk mengatasi masalah keamanan.', points: ['Mengurangi latensi inference'] }]
+  };
+  assert.equal(fallback.naturalCopyErrors(valid).some(error => /belum selesai|fragmen/i.test(error)), false);
+});
+
+test('final pre-save gate menolak recovery candidate yang masih mengalami semantic drift', () => {
+  safety.install();
+  const { assertFinalSourceContent } = require('../src/services/generation');
+  const evidence = 'Muse Glimmer was distilled from Muse Spark during training.';
+  const body = 'Glimmer merupakan versi terbuka Muse Spark.';
+  const candidate = {
+    slides: [{ title: 'Muse Glimmer', body, points: [], claims: [{ field: 'slide:0:body', text: body, sourceId: 'source-1', evidence }] }]
+  };
+  assert.throws(() => assertFinalSourceContent(candidate, [{ text: evidence }]), error => error.status === 422 && error.validationErrors.some(item => /lineage/i.test(item)));
+});
+
 test('visible natural gate menangkap wording rusak dan metadata yang terlihat', () => {
   const content = {
     slides: [{
