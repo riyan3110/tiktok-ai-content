@@ -4,7 +4,7 @@ const multi = require('./autoSourceMultiEntityTopic');
 // TANPA URL / AUTO SOURCE ONLY.
 // Relevance is derived from the runtime topic plan. Event-shaped topics are
 // locked to both the requested action and its distinguishing context so a page
-// about the same company cannot become a different news story.
+// about the same subject cannot become a different news story.
 
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -140,11 +140,16 @@ function requiredSubjectMatches(plan = {}) {
 
 function sourceInScope(topic = '', source = {}, plan = {}) {
   const combined = `${source?.title || ''} ${String(source?.text || '').slice(0, 12000)}`;
-  if (identity.hasSpecificIdentity(topic)) return identity.identityMatches(topic, combined);
-  if (multi.hasMultiEntityTopic(topic)) {
+  const specific = identity.hasSpecificIdentity(topic);
+  const multiTopic = multi.hasMultiEntityTopic(topic);
+
+  if (specific && !identity.identityMatches(topic, combined)) return false;
+  if (multiTopic) {
     const entities = multi.entities(topic);
-    return entities.some(entity => multi.sourceStrongForEntity(source, entity));
+    if (!entities.some(entity => multi.sourceStrongForEntity(source, entity))) return false;
   }
+  if (eventLockRequired(plan) && !eventAlignedSource(plan, source)) return false;
+  if (specific || multiTopic) return true;
 
   const subjects = plan.subjects || [];
   const subjectMatches = subjectHits(plan, combined);
@@ -152,12 +157,10 @@ function sourceInScope(topic = '', source = {}, plan = {}) {
 
   if (subjects.length) {
     if (subjectMatches.length < requiredSubjectMatches(plan)) return false;
-    if (eventLockRequired(plan)) return eventAlignedSource(plan, source);
     if ((plan.eventTerms || []).length >= 2 && !eventMatches.length) return false;
     return true;
   }
 
-  if (eventLockRequired(plan)) return eventAlignedSource(plan, source);
   if ((plan.eventTerms || []).length) return eventMatches.length >= Math.min(2, plan.eventTerms.length);
   return true;
 }
@@ -165,10 +168,13 @@ function sourceInScope(topic = '', source = {}, plan = {}) {
 function evidenceInScope(topic = '', evidence = '', source = {}, plan = {}) {
   const text = clean(evidence);
   if (!text || identity.relativeTimeMetadata(text)) return false;
-  if (identity.hasSpecificIdentity(topic)) return identity.identityMatches(topic, text);
-  if (multi.hasMultiEntityTopic(topic)) {
-    return multi.matchedEntities(topic, text).length > 0 && !multi.isRoundupSideNote(topic, text);
-  }
+  const specific = identity.hasSpecificIdentity(topic);
+  const multiTopic = multi.hasMultiEntityTopic(topic);
+  const identityMatch = !specific || identity.identityMatches(topic, text);
+  const entityMatches = multiTopic ? multi.matchedEntities(topic, text) : [];
+
+  if (!identityMatch) return false;
+  if (multiTopic && (!entityMatches.length || multi.isRoundupSideNote(topic, text))) return false;
 
   const subjects = plan.subjects || [];
   const subjectMatches = subjectHits(plan, text);
@@ -178,12 +184,14 @@ function evidenceInScope(topic = '', evidence = '', source = {}, plan = {}) {
     if (!eventAlignedSource(plan, source)) return false;
     if (eventLockSatisfied(plan, text)) return true;
     if (eventLockSatisfied(plan, source?.title || '')) {
+      if (specific || entityMatches.length) return true;
       if (subjectMatches.length) return true;
       if (contextHits(plan, text).length) return true;
     }
     return false;
   }
 
+  if (specific || entityMatches.length) return true;
   if (subjects.length && subjectMatches.length) return true;
   if (!subjects.length && eventMatches.length) return true;
   if (sourceInScope(topic, source, plan) && eventMatches.length) return true;
@@ -244,9 +252,7 @@ function scopeEventSource(topic = '', source = {}, plan = {}) {
 }
 
 function scopeSource(topic = '', source = {}, plan = {}) {
-  if (eventLockRequired(plan) && !identity.hasSpecificIdentity(topic) && !multi.hasMultiEntityTopic(topic)) {
-    return scopeEventSource(topic, source, plan);
-  }
+  if (eventLockRequired(plan)) return scopeEventSource(topic, source, plan);
   if (!sourceInScope(topic, source, plan)) return { ...source, text: '' };
   const rows = sentences(source?.text || '');
   const keepIndexes = new Set();
