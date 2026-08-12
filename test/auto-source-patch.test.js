@@ -16,6 +16,7 @@ const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourceScopedDiscovery',
   '../src/services/autoSourceTopicIdentity',
   '../src/services/autoSourceMultiEntityTopic',
+  '../src/services/autoSourceTopicScope',
   '../src/services/autoSourceQualityLayer',
   '../src/services/autoSourceRuntimeGuard',
   '../src/services/autoSourcePlanFinalizer',
