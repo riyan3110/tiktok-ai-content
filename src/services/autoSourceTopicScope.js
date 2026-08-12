@@ -3,8 +3,8 @@ const multi = require('./autoSourceMultiEntityTopic');
 
 // TANPA URL / AUTO SOURCE ONLY.
 // Universal lexical/entity scope shared by discovery and fact selection.
-// It is intentionally conservative: when a topic names a product/company/model,
-// visible facts must keep that anchor instead of drifting to side notes in the article.
+// Every production composer receives only source sentences that remain inside
+// the requested topic scope, so long articles cannot leak unrelated side notes.
 
 const STOPWORDS = new Set([
   'yang','dan','atau','dari','untuk','dengan','tentang','pada','dalam','ini','itu','adalah','merupakan','sebagai','oleh','ke','di',
@@ -167,12 +167,37 @@ function evidenceScopeScore(topic = '', evidence = '', source = {}) {
   return matches * 1.2 + strongMatches * 1.5 + (sourceInScope(topic, source) ? 0.75 : 0);
 }
 
+function evidenceSentences(text = '') {
+  return clean(text).split(/(?<=[.!?])\s+/).map(clean).filter(Boolean);
+}
+
+function scopeSource(topic = '', source = {}) {
+  if (!sourceInScope(topic, source)) return { ...source, text: '' };
+  const sentences = evidenceSentences(source?.text || '');
+  const kept = sentences.filter(sentence => evidenceInScope(topic, sentence, source));
+  return {
+    ...source,
+    text: kept.join(' '),
+    topicScope: {
+      originalSentenceCount: sentences.length,
+      keptSentenceCount: kept.length
+    }
+  };
+}
+
+function scopeSources(topic = '', sources = []) {
+  return (sources || []).map(source => scopeSource(topic, source));
+}
+
 module.exports = {
   profile,
   matchedAnchors,
   sourceInScope,
   evidenceInScope,
   evidenceScopeScore,
+  evidenceSentences,
+  scopeSource,
+  scopeSources,
   requiredAnchorCount,
   normalize
 };
