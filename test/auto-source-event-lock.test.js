@@ -144,7 +144,7 @@ test('event lock is generic and works for a never-before-seen subject', () => {
   assert.equal(scope.sourceInScope(topic, unrelated, plan), false);
 });
 
-test('scoped discovery can reinterpret the same fetched result with AI aliases before doing another search', async () => {
+test('scoped discovery reinterprets fetched results then keeps only the requested event', async () => {
   const original = expanded.discover;
   let searchCalls = 0;
   expanded.discover = async ({ topic }) => {
@@ -153,14 +153,37 @@ test('scoped discovery can reinterpret the same fetched result with AI aliases b
       topic,
       queries: [topic],
       providers: ['test'],
-      publishers: ['english.test'],
-      sources: [{
-        title: 'OpenAI is quietly testing a pay-to-reset quota feature',
-        text: 'OpenAI is testing a new option for users who hit usage limits. The option can reset a weekly quota.',
-        url: 'https://english.test/story',
-        finalUrl: 'https://english.test/story',
-        discovery: { publisher: 'english.test' }
-      }]
+      publishers: ['english.test', 'evm.test', 'pentagon.test', 'safety.test'],
+      sources: [
+        {
+          title: 'OpenAI is quietly testing a pay-to-reset quota feature',
+          text: 'OpenAI is testing a new option for users who hit usage limits. The option can reset a weekly quota.',
+          url: 'https://english.test/story',
+          finalUrl: 'https://english.test/story',
+          discovery: { publisher: 'english.test' }
+        },
+        {
+          title: 'OpenAI launches EVMbench for smart-contract security',
+          text: 'OpenAI is testing AI agents on smart-contract security tasks.',
+          url: 'https://evm.test/story',
+          finalUrl: 'https://evm.test/story',
+          discovery: { publisher: 'evm.test' }
+        },
+        {
+          title: 'OpenAI Pentagon agreement sets boundaries on AI use',
+          text: 'OpenAI says its Pentagon agreement contains limits on AI use.',
+          url: 'https://pentagon.test/story',
+          finalUrl: 'https://pentagon.test/story',
+          discovery: { publisher: 'pentagon.test' }
+        },
+        {
+          title: 'OpenAI expands protections for users under 18',
+          text: 'OpenAI introduced additional safeguards for younger ChatGPT users.',
+          url: 'https://safety.test/story',
+          finalUrl: 'https://safety.test/story',
+          discovery: { publisher: 'safety.test' }
+        }
+      ]
     };
   };
 
@@ -180,8 +203,9 @@ test('scoped discovery can reinterpret the same fetched result with AI aliases b
       })
     });
 
-    assert.equal(searchCalls, 1, 'the already fetched article should be reused after dynamic reinterpretation');
+    assert.equal(searchCalls, 1, 'the already fetched result set should be reused after dynamic reinterpretation');
     assert.equal(result.sources.length, 1);
+    assert.match(result.sources[0].url, /english\.test/);
     assert.equal(result.topicPlan.planner, 'ai');
   } finally {
     expanded.discover = original;
