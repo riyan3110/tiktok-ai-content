@@ -13,6 +13,7 @@ const {
   compactPoint
 } = manualSourceFallback;
 const MAX_AUTO_FINALIZE_ATTEMPTS = 2;
+const MAX_AUTO_RECOVERY_ATTEMPTS = Math.min(3, sourceFilter.MAX_SAFE_RECOVERY_ATTEMPTS || 3);
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/\s+/g, ' ');
 const numberTokens = value => String(value || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || [];
@@ -127,7 +128,9 @@ function richnessErrors(content, facts) {
     } else if (bodyCount < desiredBodyMin && visibleCount < densityFloor) {
       errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} konteks masih terlalu tipis untuk kepadatan source.`);
     }
-    if (points.length < profile.targetPoints) errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} baru ${points.length} fakta ringkas; target ${profile.targetPoints}.`);
+    if (profile.targetPoints > 0 && points.length === 0) {
+      errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} belum punya fakta ringkas; minimal 1 point grounded diperlukan.`);
+    }
     if (visibleCount < densityFloor) errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} belum cukup padat fakta.`);
   });
   return [...new Set(errors)];
@@ -137,7 +140,107 @@ function autoPrompt({ generated, sources, facts, format, topic, errors }) {
   const sections = sourceUrlFinalizer.targetSections(generated, format, facts, sources, topic);
   const sourceGroups = sourceUrlFinalizer.groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
-  return `AUTO SOURCE FINAL REWRITE — BUAT CAROUSEL FAKTUAL, PADAT, NATURAL.\n\nTOPIK USER: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER TERPILIH + FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN WAJIB:\n- Tulis Bahasa Indonesia natural seperti editor manusia, bukan template/fallback.\n- HANYA gunakan fakta dari FACT BANK. Tidak boleh menambah pengetahuan luar, asumsi, angka, ranking, sebab-akibat, atau kepastian yang tidak ada pada evidence.\n- Setiap slide harus punya SATU ide utama yang spesifik, bukan judul generik.\n- Judul 3–10 kata, spesifik terhadap fakta slide.\n- Target body 10–20 kata; 8–24 masih boleh jika kalimat utuh dan slide tetap padat fakta.\n- Jika source cukup kaya, isi ${profile.targetPoints} bullet fakta berbeda pada SETIAP slide. Maksimal 3 bullet.\n- Setiap bullet WAJIB 3–7 kata, utuh, faktual, dan menambah informasi baru. Jangan memotong kalimat; parafrase singkat.\n- Judul dan body BOLEH sama-sama menyebut nama produk/topik. Yang dilarang adalah mengulang kalimat/ide tanpa informasi baru. Body wajib menambah fakta atau konteks baru.\n- Jangan ulang ide body di bullet. Jangan ulang fakta antar-slide.\n- Setiap body dan bullet wajib punya claim dengan field yang tepat, sourceId, dan evidence dari sumber yang sama.\n- SATU field/claim jangan menggabungkan dua fakta yang hanya didukung evidence berbeda. Evidence claim itu sendiri harus cukup membuktikan seluruh makna field.\n- Evidence boleh Inggris, copy visible wajib Indonesia natural tanpa mengubah makna.\n- Angka visible hanya boleh dipakai bila angka yang sama tertulis di evidence claim tersebut ATAU merupakan bagian nama/model/version yang benar-benar tertulis di konteks sumber yang sama. Jangan menciptakan angka baru dari makna implisit.\n- Jangan mengubah kata seperti everyday/daily menjadi angka. Khusus everyday/daily harus ditulis sebagai setiap hari, BUKAN 24/7.\n- Topik apa pun harus dinilai dengan aturan grounding, keunikan fakta, kelengkapan konteks, dan keterbacaan yang sama; jangan membuat aturan berdasarkan nama brand, produk, perusahaan, atau jenis topik tertentu.\n- Jika topik luas, pilih fakta paling informatif: definisi/konteks, kemampuan/fitur, penggunaan/dampak, lalu perkembangan/implikasi yang benar-benar ada di sumber.\n- Jika format Listicle, tiap item harus fakta berbeda, bukan variasi kalimat yang sama.\n- Jika format Tutorial/Tips/Masalah-Solusi tidak didukung evidence sebagai tindakan nyata, gunakan fakta aman dan jangan mengarang instruksi.\n- Dilarang copy placeholder seperti \"Fakta utama tentang...\", \"Fakta berikutnya...\", \"Sumber membahas...\", \"Lanjut baca...\".\n- Dilarang metadata publisher, tanggal publikasi, Baca Juga, cookie policy, privacy policy, newsletter, URL, atau headline artikel terkait. Kata normal seperti privasi/login yang memang bagian fakta produk BUKAN otomatis metadata.\n- Gunakan semua sourceId yang diberikan minimal sekali bila lebih dari satu sumber.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["...","...","..."],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `AUTO SOURCE FINAL REWRITE — BUAT CAROUSEL FAKTUAL, PADAT, NATURAL.\n\nTOPIK USER: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER TERPILIH + FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN WAJIB:\n- Tulis Bahasa Indonesia natural seperti editor manusia, bukan template/fallback.\n- HANYA gunakan fakta dari FACT BANK. Tidak boleh menambah pengetahuan luar, asumsi, angka, ranking, sebab-akibat, atau kepastian yang tidak ada pada evidence.\n- Setiap slide harus punya SATU ide utama yang spesifik, bukan judul generik.\n- Judul 3–10 kata, spesifik terhadap fakta slide.\n- Target body 10–20 kata; 8–24 masih boleh jika kalimat utuh dan slide tetap padat fakta.\n- Jika source cukup kaya, isi ${profile.targetPoints} bullet fakta berbeda pada SETIAP slide. Maksimal 3 bullet. Jika satu bullet gagal grounding/semantic dan tidak ada pengganti aman, pertahankan 1–2 bullet yang valid daripada mengarang.\n- Setiap bullet WAJIB 3–7 kata, utuh, faktual, dan menambah informasi baru. Jangan memotong kalimat; parafrase singkat.\n- Judul dan body BOLEH sama-sama menyebut nama produk/topik. Yang dilarang adalah mengulang kalimat/ide tanpa informasi baru. Body wajib menambah fakta atau konteks baru.\n- Jangan ulang ide body di bullet. Jangan ulang fakta antar-slide.\n- Setiap body dan bullet wajib punya claim dengan field yang tepat, sourceId, dan evidence dari sumber yang sama.\n- SATU field/claim jangan menggabungkan dua fakta yang hanya didukung evidence berbeda. Evidence claim itu sendiri harus cukup membuktikan seluruh makna field.\n- Evidence boleh Inggris, copy visible wajib Indonesia natural tanpa mengubah makna.\n- Angka visible hanya boleh dipakai bila angka yang sama tertulis di evidence claim tersebut ATAU merupakan bagian nama/model/version yang benar-benar tertulis di konteks sumber yang sama. Jangan menciptakan angka baru dari makna implisit.\n- Jangan mengubah kata seperti everyday/daily menjadi angka. Khusus everyday/daily harus ditulis sebagai setiap hari, BUKAN 24/7.\n- Topik apa pun harus dinilai dengan aturan grounding, keunikan fakta, kelengkapan konteks, dan keterbacaan yang sama; jangan membuat aturan berdasarkan nama brand, produk, perusahaan, atau jenis topik tertentu.\n- Jika topik luas, pilih fakta paling informatif: definisi/konteks, kemampuan/fitur, penggunaan/dampak, lalu perkembangan/implikasi yang benar-benar ada di sumber.\n- Jika format Listicle, tiap item harus fakta berbeda, bukan variasi kalimat yang sama.\n- Jika format Tutorial/Tips/Masalah-Solusi tidak didukung evidence sebagai tindakan nyata, gunakan fakta aman dan jangan mengarang instruksi.\n- Dilarang copy placeholder seperti \"Fakta utama tentang...\", \"Fakta berikutnya...\", \"Sumber membahas...\", \"Lanjut baca...\".\n- Dilarang metadata publisher, tanggal publikasi, Baca Juga, cookie policy, privacy policy, newsletter, URL, atau headline artikel terkait. Kata normal seperti privasi/login yang memang bagian fakta produk BUKAN otomatis metadata.\n- Gunakan semua sourceId yang diberikan minimal sekali bila lebih dari satu sumber.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["...","...","..."],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+}
+
+function autoRecoveryFieldKeys(errors = [], content = {}) {
+  const fields = sourceFilter.recoveryFieldKeys(errors);
+  for (const error of errors || []) {
+    const match = String(error || '').match(/^AUTO_SOURCE_NUMERIC:\s+slide:(\d+):claim:(\d+)\b/i);
+    if (!match) continue;
+    const claim = content?.slides?.[Number(match[1])]?.claims?.[Number(match[2])];
+    const field = String(claim?.field || '').trim();
+    if (/^slide:\d+:(?:title|body|point:\d+)$/.test(field)) fields.add(field);
+  }
+  return fields;
+}
+
+function autoRecoveryPrompt({ draft, bank, topic, format, errors, fieldKeys }) {
+  return `AUTO SOURCE TARGETED SAFE RECOVERY.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nTARGET_FIELDS: ${JSON.stringify([...fieldKeys])}\nERROR YANG HARUS DIPERBAIKI: ${JSON.stringify(errors || [])}\n\nFACT_BANK:\n${JSON.stringify(bank)}\n\nCURRENT_DRAFT:\n${JSON.stringify(draft?.slides || [])}\n\nATURAN WAJIB:\n- Perbaiki HANYA TARGET_FIELDS. Semua field non-target, jumlah slide, urutan, dan section harus tetap persis.\n- Jangan mengarang fakta, angka, persentase, ranking, sebab-akibat, manfaat, kondisi, atau kepastian baru.\n- Untuk AUTO_SOURCE_NUMERIC, hapus angka yang tidak didukung atau ganti seluruh field target dengan paraphrase fakta FACT_BANK yang benar-benar didukung. Jangan mengganti dengan angka lain.\n- Untuk SEMANTIC_SUPPORT, sempitkan makna field agar setia pada satu evidence. Hapus detail tambahan yang tidak tertulis di evidence, termasuk kanal seperti via teks, voice, aplikasi, platform, atau cara penggunaan bila tidak disebut.\n- Pertahankan entity type, scope/list, modalitas, negasi/pengecualian, uncertainty, tanggal, dan urutan rollout sesuai evidence.\n- Copy tampil wajib Bahasa Indonesia natural. Evidence tetap kutipan exact dari FACT_BANK.\n- Body target harus 8–24 kata. Point target harus 3–7 kata. Maksimal 3 point per slide.\n- Jika point target tidak dapat diperbaiki dari evidence lamanya, boleh ganti dengan fakta relevan lain dari FACT_BANK yang belum dipakai. Jika tetap tidak ada replacement aman, set elemen TARGET point itu menjadi null dan hapus claim target. JANGAN menggeser index point lain di JSON recovery; gunakan null sebagai penanda hapus. 1–2 point valid lebih baik daripada bullet rekaan.\n- Jika body target tidak dapat dipertahankan, ganti dengan SATU fakta relevan yang benar-benar didukung evidence dan masih menjawab topik.\n- claim.text harus sama persis dengan copy target; sourceId/evidence harus benar-benar mendukung seluruh makna target.\n- Jangan mengubah metadata di luar slides.\n\nKembalikan HANYA JSON lengkap dengan array slides untuk semua slide. Struktur tiap slide: {"section":"...","title":"...","body":"...","points":[],"claims":[]}.`;
+}
+
+function mergeAutoRecoveryFields(draft, incoming, fieldKeys) {
+  if (!draft || !Array.isArray(draft.slides) || !incoming || !Array.isArray(incoming.slides) || !fieldKeys?.size) return draft;
+  const slides = draft.slides.map((slide, slideIndex) => {
+    const sourceSlide = incoming.slides[slideIndex];
+    if (!sourceSlide) return slide;
+    const next = {
+      ...slide,
+      points: Array.isArray(slide?.points) ? [...slide.points] : [],
+      claims: Array.isArray(slide?.claims) ? slide.claims.map(claim => ({ ...claim })) : []
+    };
+
+    for (const kind of ['title', 'body']) {
+      const field = `slide:${slideIndex}:${kind}`;
+      if (!fieldKeys.has(field)) continue;
+      next[kind] = String(sourceSlide?.[kind] || '').trim();
+      next.claims = next.claims.filter(claim => String(claim?.field || '') !== field);
+      const replacementClaim = (sourceSlide?.claims || []).find(claim => String(claim?.field || '') === field);
+      if (replacementClaim) next.claims.push({ ...replacementClaim });
+    }
+
+    const pointTargets = [...fieldKeys].map(field => {
+      const match = field.match(new RegExp(`^slide:${slideIndex}:point:(\\d+)$`));
+      return match ? Number(match[1]) : null;
+    }).filter(index => index !== null).sort((a, b) => b - a);
+
+    for (const pointIndex of pointTargets) {
+      const field = `slide:${slideIndex}:point:${pointIndex}`;
+      const incomingPoints = Array.isArray(sourceSlide?.points) ? sourceSlide.points : [];
+      const shouldDelete = pointIndex >= incomingPoints.length || incomingPoints[pointIndex] === null;
+      if (shouldDelete) {
+        if (pointIndex < 0 || pointIndex >= next.points.length) continue;
+        next.points.splice(pointIndex, 1);
+        next.claims = next.claims.flatMap(claim => {
+          const match = String(claim?.field || '').match(new RegExp(`^slide:${slideIndex}:point:(\\d+)$`));
+          if (!match) return [claim];
+          const claimIndex = Number(match[1]);
+          if (claimIndex === pointIndex) return [];
+          if (claimIndex > pointIndex) return [{ ...claim, field: `slide:${slideIndex}:point:${claimIndex - 1}` }];
+          return [claim];
+        });
+        continue;
+      }
+
+      if (pointIndex >= next.points.length) continue;
+      next.points[pointIndex] = String(incomingPoints[pointIndex] || '').trim();
+      next.claims = next.claims.filter(claim => String(claim?.field || '') !== field);
+      const replacementClaim = (sourceSlide?.claims || []).find(claim => String(claim?.field || '') === field);
+      if (replacementClaim) next.claims.push({ ...replacementClaim });
+    }
+    return next;
+  });
+  return { ...draft, slides };
+}
+
+function parseRecoveryResponse(response) {
+  const raw = response?.choices?.[0]?.message?.content;
+  if (!raw) throw new Error('Provider tidak mengembalikan JSON recovery.');
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed?.slides)) throw new Error('JSON recovery tidak memiliki array slides.');
+  return parsed;
+}
+
+function validateAutoCandidate({ draft, sources, topic, format, contentService, facts }) {
+  const checked = sourceFilter.validateVerifiedContent(draft, { slides: draft.slides }, {
+    contentService,
+    format,
+    manualTopic: topic,
+    sources,
+    autoSourceTopic: false
+  });
+  const candidate = repairKnownNumericShorthand(compactOverlongPoints(checked.content || draft), sources);
+  let checkedErrors = filterFalsePositiveMetadataErrors(checked.errors, candidate);
+  checkedErrors = autoSourceValidation.filterFalsePositives(checkedErrors, candidate);
+  const errors = [
+    ...autoSourceValidation.numericGroundingErrors(candidate, sources),
+    ...checkedErrors,
+    ...sourceCoverageErrors(candidate, sources),
+    ...naturalCopyErrors(candidate),
+    ...autoSourceValidation.autoSourceStructureErrors(candidate),
+    ...richnessErrors(candidate, facts)
+  ];
+  return { candidate, errors: [...new Set(errors)] };
 }
 
 async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', format = 'Fakta singkat', contentService, client } = {}) {
@@ -169,37 +272,76 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       continue;
     }
 
-    const checked = sourceFilter.validateVerifiedContent(draft, { slides: draft.slides }, {
-      contentService,
-      format: effectiveFormat,
-      manualTopic: resolvedTopic,
+    const validation = validateAutoCandidate({
+      draft,
       sources,
-      autoSourceTopic: false
+      topic: resolvedTopic,
+      format: effectiveFormat,
+      contentService,
+      facts
     });
-    const candidate = repairKnownNumericShorthand(compactOverlongPoints(checked.content || draft), sources);
-    let checkedErrors = filterFalsePositiveMetadataErrors(checked.errors, candidate);
-    checkedErrors = autoSourceValidation.filterFalsePositives(checkedErrors, candidate);
-    const deterministicErrors = [
-      ...autoSourceValidation.numericGroundingErrors(candidate, sources),
-      ...checkedErrors,
-      ...sourceCoverageErrors(candidate, sources),
-      ...naturalCopyErrors(candidate),
-      ...autoSourceValidation.autoSourceStructureErrors(candidate),
-      ...richnessErrors(candidate, facts)
-    ];
-    if (deterministicErrors.length) {
-      lastErrors = [...new Set(deterministicErrors)];
-      draft = candidate;
+    if (validation.errors.length) {
+      lastErrors = validation.errors;
+      draft = validation.candidate;
       continue;
     }
 
-    const semanticErrors = await sourceFilter.auditClaimSemantics(openai, candidate, resolvedTopic, effectiveFormat);
+    const semanticErrors = await sourceFilter.auditClaimSemantics(openai, validation.candidate, resolvedTopic, effectiveFormat);
     if (semanticErrors.length) {
       lastErrors = semanticErrors;
-      draft = candidate;
+      draft = validation.candidate;
       continue;
     }
-    return syncTop(candidate);
+    return syncTop(validation.candidate);
+  }
+
+  const bank = sourceFilter.extractFactBank(sources, resolvedTopic);
+  const recoveryStates = new Set();
+  for (let attempt = 0; attempt < MAX_AUTO_RECOVERY_ATTEMPTS; attempt += 1) {
+    const fieldKeys = autoRecoveryFieldKeys(lastErrors, draft);
+    if (!fieldKeys.size || !bank.length) break;
+    const state = JSON.stringify({ fields: [...fieldKeys].sort(), slides: draft?.slides || [] });
+    if (recoveryStates.has(state)) break;
+    recoveryStates.add(state);
+
+    let recovered;
+    try {
+      const response = await openai.chat.completions.create({
+        model: config.aiModel,
+        messages: [
+          { role: 'system', content: 'Anda melakukan targeted safe recovery Auto Source. Ubah hanya field yang gagal dan jangan mengarang.' },
+          { role: 'user', content: autoRecoveryPrompt({ draft, bank, topic: resolvedTopic, format: effectiveFormat, errors: lastErrors, fieldKeys }) }
+        ],
+        response_format: { type: 'json_object' }
+      });
+      const parsed = parseRecoveryResponse(response);
+      recovered = mergeAutoRecoveryFields(draft, parsed, fieldKeys);
+    } catch (error) {
+      lastErrors = [`AUTO_SOURCE_RECOVERY_OUTPUT: ${error.message}`];
+      continue;
+    }
+
+    const validation = validateAutoCandidate({
+      draft: recovered,
+      sources,
+      topic: resolvedTopic,
+      format: effectiveFormat,
+      contentService,
+      facts
+    });
+    if (validation.errors.length) {
+      lastErrors = validation.errors;
+      draft = validation.candidate;
+      continue;
+    }
+
+    const semanticErrors = await sourceFilter.auditClaimSemantics(openai, validation.candidate, resolvedTopic, effectiveFormat);
+    if (semanticErrors.length) {
+      lastErrors = semanticErrors;
+      draft = validation.candidate;
+      continue;
+    }
+    return syncTop(validation.candidate);
   }
 
   throw Object.assign(new Error(`Auto Source final rewrite belum lolos: ${lastErrors[0] || 'validasi konten gagal'}`), {
@@ -213,9 +355,14 @@ module.exports = {
   compactOverlongPoints,
   richnessErrors,
   autoPrompt,
+  autoRecoveryFieldKeys,
+  autoRecoveryPrompt,
+  mergeAutoRecoveryFields,
+  validateAutoCandidate,
   filterFalsePositiveMetadataErrors,
   repairKnownNumericShorthand,
   numericGroundingErrors: autoSourceValidation.numericGroundingErrors,
   filterFalsePositiveDuplicateErrors: autoSourceValidation.filterFalsePositiveDuplicateErrors,
-  MAX_AUTO_FINALIZE_ATTEMPTS
+  MAX_AUTO_FINALIZE_ATTEMPTS,
+  MAX_AUTO_RECOVERY_ATTEMPTS
 };
