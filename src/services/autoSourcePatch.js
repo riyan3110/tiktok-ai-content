@@ -1,30 +1,56 @@
 const generation = require('./generation');
-const defaultContent = require('./content');
-const defaultSourceFetcher = require('./sourceFetcher');
-const autoSourceDiscovery = require('./autoSourceFastDiscovery');
-const autoSourceComposer = require('./autoSourceComposer');
 
 let installed = false;
 let originalGenerateAndSave = null;
 
-function autoSourceRequested(args = {}) {
-  return args.mode === 'manual'
-    && args.useSources !== true
-    && (!Array.isArray(args.sourceUrls) || args.sourceUrls.filter(value => String(value || '').trim()).length === 0);
+function suppliedSourceUrls(args = {}) {
+  return Array.isArray(args.sourceUrls)
+    ? args.sourceUrls.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
 }
 
-function contentWrapper(content = defaultContent) {
-  return { ...content };
+function pakaiUrlRequested(args = {}) {
+  return args.useSources === true || suppliedSourceUrls(args).length > 0;
+}
+
+function autoSourceRequested(args = {}) {
+  return args.mode === 'manual'
+    && !pakaiUrlRequested(args);
+}
+
+function loadAutoSourceDependencies() {
+  return {
+    defaultContent: require('./content'),
+    defaultSourceFetcher: require('./sourceFetcher'),
+    autoSourceDiscovery: require('./autoSourceFastDiscovery'),
+    autoSourceComposer: require('./autoSourceComposer')
+  };
+}
+
+function contentWrapper(content) {
+  const base = content || require('./content');
+  return { ...base };
 }
 
 function install() {
   if (installed) return generation.generateAndSave;
   originalGenerateAndSave = generation.generateAndSave;
   generation.generateAndSave = async function generateAndSaveWithAutoSource(args = {}) {
+    // HARD ISOLATION LOCK:
+    // Pakai URL stays on the exact pre-Auto-Source generation path from PR #155.
+    // Do not load Auto Source discovery/composer modules or rewrite any request args here.
+    if (pakaiUrlRequested(args)) return originalGenerateAndSave(args);
     if (!autoSourceRequested(args)) return originalGenerateAndSave(args);
 
     const topic = String(args.requestedTopic || '').trim().replace(/\s+/g, ' ');
     if (!topic) return originalGenerateAndSave(args);
+
+    const {
+      defaultContent,
+      defaultSourceFetcher,
+      autoSourceDiscovery,
+      autoSourceComposer
+    } = loadAutoSourceDependencies();
     const sourceFetcher = args.sourceFetcher || defaultSourceFetcher;
     const discovery = await autoSourceDiscovery.discover({
       topic,
@@ -83,4 +109,11 @@ function resetForTests() {
   installed = false;
 }
 
-module.exports = { install, resetForTests, autoSourceRequested, contentWrapper };
+module.exports = {
+  install,
+  resetForTests,
+  suppliedSourceUrls,
+  pakaiUrlRequested,
+  autoSourceRequested,
+  contentWrapper
+};
