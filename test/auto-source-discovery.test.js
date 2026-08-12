@@ -38,7 +38,7 @@ test('auto source discovery ranks relevant readable sources and removes duplicat
 
   assert.ok(searchCalls.length >= 1 && searchCalls.length <= 2);
   assert.equal(result.topic, 'Northstar Browser');
-  assert.ok(result.sources.length >= 1 && result.sources.length <= 3);
+  assert.ok(result.sources.length >= 1 && result.sources.length <= 2);
   assert.equal(new Set(result.sources.map(item => item.finalUrl)).size, result.sources.length);
   assert.ok(result.sources.every(item => /northstar/i.test(`${item.title} ${item.text}`)));
   assert.ok(!result.sources.some(item => item.finalUrl === 'https://food.example/story'));
@@ -53,5 +53,22 @@ test('manual search queries stay bounded and include the exact topic', () => {
 test('low-value search and social URLs are rejected before fetch', () => {
   assert.equal(discovery.candidateAllowed('https://example.com/search?q=northstar'), false);
   assert.equal(discovery.candidateAllowed('https://www.facebook.com/post/123'), false);
+  assert.equal(discovery.candidateAllowed('https://www.bing.com/news/search?q=northstar'), false);
   assert.equal(discovery.candidateAllowed('https://example.com/news/northstar-browser-update'), true);
+});
+
+test('Bing News redirect is unwrapped to the publisher article URL', () => {
+  const target = 'https://www.cnet.com/tech/services-and-software/anthropic-watermark-story/';
+  const redirect = `https://www.bing.com/news/apiclick.aspx?ref=example&url=${encodeURIComponent(target)}&c=1`;
+  assert.equal(discovery.unwrapKnownRedirect(redirect), target);
+  assert.equal(discovery.canonicalUrl(redirect), target.replace(/\/$/, ''));
+  assert.equal(discovery.candidateAllowed(redirect), true);
+});
+
+test('Indonesian helper verbs do not dilute topic relevance anchors', () => {
+  const score = discovery.relevanceScore(
+    'Anthropic akan memberi watermark',
+    'Anthropic introduces invisible watermarking for Claude-generated text and files.'
+  );
+  assert.equal(score, 1);
 });

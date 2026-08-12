@@ -3,14 +3,16 @@ const defaultSourceFetcher = require('./sourceFetcher');
 const CACHE_TTL_MS = 45 * 60 * 1000;
 const MAX_CANDIDATES = 8;
 const MAX_FETCH_CANDIDATES = 6;
-const MAX_SELECTED = 3;
+const MAX_SELECTED = 2;
 const SEARCH_TIMEOUT_MS = 10_000;
 const cache = new Map();
 
 const STOP_WORDS = new Set([
-  'yang','dan','atau','dari','untuk','dengan','tentang','pada','ini','itu','baru','terbaru','aplikasi','fitur','cara','the','and','for','with','about','new','latest','app'
+  'yang','dan','atau','dari','untuk','dengan','tentang','pada','ini','itu','baru','terbaru','aplikasi','fitur','cara',
+  'akan','memberi','memberikan','membuat','buat','bisa','dapat','jadi','menjadi','pakai','menggunakan','hadir','menghadirkan',
+  'the','and','for','with','about','new','latest','app','will','give','gives','giving','make','makes','can','could','become','becomes','use','uses','using'
 ]);
-const LOW_VALUE_HOSTS = /(?:facebook\.com|instagram\.com|tiktok\.com|pinterest\.|linkedin\.com|x\.com|twitter\.com|youtube\.com|youtu\.be)$/i;
+const LOW_VALUE_HOSTS = /(?:facebook\.com|instagram\.com|tiktok\.com|pinterest\.|linkedin\.com|x\.com|twitter\.com|youtube\.com|youtu\.be|bing\.com)$/i;
 const LOW_VALUE_PATH = /\/(?:search|tag|tags|category|categories|topics?|author|login|signup|account)(?:\/|$)/i;
 const QUALITY_HOSTS = [
   /(^|\.)reuters\.com$/i, /(^|\.)apnews\.com$/i, /(^|\.)techcrunch\.com$/i,
@@ -34,9 +36,21 @@ function decodeXml(value) {
     .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
     .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
+function unwrapKnownRedirect(raw) {
+  let value = String(raw || '').trim();
+  for (let depth = 0; depth < 2; depth += 1) {
+    let url;
+    try { url = new URL(value); } catch { return value; }
+    if (!/(^|\.)bing\.com$/i.test(url.hostname)) return value;
+    const target = url.searchParams.get('url');
+    if (!target || !/^https?:\/\//i.test(target)) return value;
+    value = target;
+  }
+  return value;
+}
 function canonicalUrl(raw) {
   try {
-    const url = new URL(String(raw || '').trim());
+    const url = new URL(unwrapKnownRedirect(raw));
     if (!['http:', 'https:'].includes(url.protocol)) return null;
     url.hash = '';
     ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','gclid','fbclid'].forEach(key => url.searchParams.delete(key));
@@ -53,7 +67,7 @@ function candidateAllowed(raw) {
 }
 function hostQuality(raw, topic) {
   try {
-    const host = new URL(raw).hostname.toLocaleLowerCase('en-US');
+    const host = new URL(canonicalUrl(raw) || raw).hostname.toLocaleLowerCase('en-US');
     let score = QUALITY_HOSTS.some(pattern => pattern.test(host)) ? 2 : 0;
     const topicTokens = tokens(topic).filter(token => token.length >= 5);
     if (topicTokens.some(token => host.includes(token))) score += 2;
@@ -138,7 +152,7 @@ async function searchWeb(query, options = {}) {
   const seen = new Set();
   return combined.filter(item => {
     const key = canonicalUrl(item.url);
-    if (!key || seen.has(key)) return false;
+    if (!key || !candidateAllowed(key) || seen.has(key)) return false;
     seen.add(key); item.url = key; return true;
   });
 }
@@ -163,9 +177,11 @@ async function fetchViaJinaReader(rawUrl, { fetchImpl = fetch, sourceFetcher = d
   const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
   const text = stripReaderMarkdown(data?.content || data?.text || '');
   if (text.length < 250) throw new Error('Isi Jina Reader terlalu pendek');
+  const finalUrl = canonicalUrl(data?.url || validated.href) || validated.href;
+  if (!candidateAllowed(finalUrl)) throw new Error('Jina Reader berakhir pada URL perantara/search, bukan artikel.');
   return {
     url: rawUrl,
-    finalUrl: canonicalUrl(data?.url || validated.href) || validated.href,
+    finalUrl,
     title: String(data?.title || '').trim(),
     text: text.slice(0, 12000),
     fetchedAt: new Date().toISOString()
@@ -174,6 +190,7 @@ async function fetchViaJinaReader(rawUrl, { fetchImpl = fetch, sourceFetcher = d
 async function fetchCandidate(candidate, { sourceFetcher = defaultSourceFetcher, fetchImpl = fetch } = {}) {
   try {
     const [source] = await sourceFetcher.fetchSources([candidate.url]);
+    if (!source || !candidateAllowed(source.finalUrl || source.url)) throw new Error('Sumber berakhir pada URL perantara/search.');
     return source;
   } catch (directError) {
     try { return await fetchViaJinaReader(candidate.url, { fetchImpl, sourceFetcher }); }
@@ -210,26 +227,31 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
   if (!ranked.length) throw Object.assign(new Error('Tidak menemukan sumber publik yang relevan untuk topik ini.'), { status: 422, code: 'AUTO_SOURCE_SEARCH_EMPTY' });
 
   const topicTokenCount = tokens(cleanTopic).length;
-  const minimumRelevance = topicTokenCount <= 1 ? 1 : 0.66;
+  const minimumRelevance = topicTokenCount <= 2 ? 1 : 0.66;
   const fetched = [];
   for (const candidate of ranked.slice(0, MAX_FETCH_CANDIDATES)) {
     const source = await fetchCandidate(candidate, { sourceFetcher, fetchImpl });
     if (!source) continue;
+    const sourceText = `${source.title || ''} ${String(source.text || '').slice(0, 3500)}`;
+    const relevance = relevanceScore(cleanTopic, sourceText);
+    if (relevance < minimumRelevance) continue;
     const score = fetchedScore(cleanTopic, source, candidate);
-    if (relevanceScore(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 3500)}`) < minimumRelevance) continue;
-    fetched.push({ ...source, discovery: { provider: candidate.provider, query: candidate.query, score } });
+    fetched.push({ ...source, discovery: { provider: candidate.provider, query: candidate.query, score, relevance } });
   }
   fetched.sort((a, b) => b.discovery.score - a.discovery.score);
   const selected = [];
   const usedHosts = new Set();
+  const bestScore = fetched[0]?.discovery?.score || 0;
   for (const source of fetched) {
+    if (selected.length && bestScore > 0 && source.discovery.score < bestScore * 0.65) continue;
     let host = '';
     try { host = new URL(source.finalUrl || source.url).hostname; } catch {}
-    if (selected.length < 2 && host && usedHosts.has(host) && fetched.some(other => {
+    if (!host || LOW_VALUE_HOSTS.test(host)) continue;
+    if (selected.length < 2 && usedHosts.has(host) && fetched.some(other => {
       try { return new URL(other.finalUrl || other.url).hostname !== host && !usedHosts.has(new URL(other.finalUrl || other.url).hostname); } catch { return false; }
     })) continue;
     selected.push(source);
-    if (host) usedHosts.add(host);
+    usedHosts.add(host);
     if (selected.length >= MAX_SELECTED) break;
   }
   if (!selected.length) throw Object.assign(new Error('Sumber ditemukan, tetapi tidak ada artikel yang cukup relevan dan dapat dibaca.'), { status: 422, code: 'AUTO_SOURCE_FETCH_EMPTY' });
@@ -248,7 +270,7 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
 function clearCache() { cache.clear(); }
 
 module.exports = {
-  discover, searchWeb, searchJina, searchBingNews, searchQueries, candidateAllowed, canonicalUrl,
+  discover, searchWeb, searchJina, searchBingNews, searchQueries, candidateAllowed, canonicalUrl, unwrapKnownRedirect,
   relevanceScore, candidateScore, fetchCandidate, fetchViaJinaReader, clearCache,
   CACHE_TTL_MS, MAX_CANDIDATES, MAX_FETCH_CANDIDATES, MAX_SELECTED
 };
