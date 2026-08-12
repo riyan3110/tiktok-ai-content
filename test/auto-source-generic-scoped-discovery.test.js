@@ -15,6 +15,16 @@ function bundle(topic, sources) {
   };
 }
 
+function fakePlannerClient(payload) {
+  return {
+    chat: {
+      completions: {
+        create: async () => ({ choices: [{ message: { content: JSON.stringify(payload) } }] })
+      }
+    }
+  };
+}
+
 test('generic discovery drops a search hit whose fetched article is off-topic', async () => {
   const original = expanded.discover;
   expanded.discover = async () => bundle('Aplikasi Gemini', [
@@ -38,9 +48,10 @@ test('generic discovery drops a search hit whose fetched article is off-topic', 
   } finally { expanded.discover = original; }
 });
 
-test('generic discovery understands bilingual topic anchors', async () => {
+test('generic discovery can dynamically bridge Indonesian topic wording to English sources', async () => {
   const original = expanded.discover;
-  expanded.discover = async () => bundle('Potensi manfaat AI terhadap iklim', [
+  const topic = 'Potensi manfaat AI terhadap iklim';
+  expanded.discover = async ({ topic: query }) => bundle(query, [
     {
       title: 'AI for climate forecasting',
       text: 'Artificial intelligence is used in climate forecasting and climate research.',
@@ -49,7 +60,18 @@ test('generic discovery understands bilingual topic anchors', async () => {
     }
   ]);
   try {
-    const result = await scoped.discover({ topic: 'Potensi manfaat AI terhadap iklim' });
+    const result = await scoped.discover({
+      topic,
+      topicPlannerClient: fakePlannerClient({
+        canonicalTopic: topic,
+        subjects: [],
+        eventTerms: ['AI', 'artificial intelligence', 'iklim', 'climate'],
+        searchQueries: [topic, 'artificial intelligence climate benefits'],
+        marketIntent: false,
+        relation: 'general'
+      })
+    });
     assert.equal(result.sources.length, 1);
+    assert.ok(result.topicPlan.searchQueries.some(query => /climate/i.test(query)));
   } finally { expanded.discover = original; }
 });
