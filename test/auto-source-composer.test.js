@@ -57,6 +57,7 @@ test('composer uses source-locked generator and marks result as auto source', as
   const sources = [{ url: 'https://example.test/lentera', finalUrl: 'https://example.test/lentera', title: 'Lentera OS update', text: evidence, fetchedAt: '2026-08-12T00:00:00.000Z' }];
   const result = await compose({
     content: fakeContent,
+    finalizer: { richnessErrors: () => [] },
     previousTopics: ['topik lama'],
     options: { requestedTopic: 'Lentera OS', contentFormat: 'Fakta singkat', sourceContext: evidence },
     sources,
