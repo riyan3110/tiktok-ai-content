@@ -12,6 +12,7 @@ const FILLER = new Set([
   'yang','dan','atau','untuk','dengan','dari','di','ke','pada','ini','itu','adalah','merupakan','akan','bisa','dapat',
   'the','and','or','to','of','in','on','for','with','from','is','are','was','were','will','can','could'
 ]);
+const COPY_FILLER = new Set([...FILLER, 'fakta', 'utama', 'baru', 'resmi', 'model', 'produk', 'fitur', 'slide', 'bagian']);
 
 function normalize(value) {
   return String(value || '')
@@ -222,8 +223,74 @@ function filterFalsePositiveDuplicateErrors(errors = [], content = {}) {
   });
 }
 
+function claimMeaningTokens(value) {
+  return [...new Set(tokens(value).filter(token => (token.length > 2 || token === 'ai') && !COPY_FILLER.has(token)))];
+}
+
+function nearDuplicateClaimMeaning(left, right) {
+  const leftNorm = normalize(left);
+  const rightNorm = normalize(right);
+  if (!leftNorm || !rightNorm) return false;
+  if (leftNorm === rightNorm) return true;
+  const a = claimMeaningTokens(left);
+  const b = claimMeaningTokens(right);
+  if (!a.length || !b.length) return false;
+  const shared = a.filter(token => b.includes(token)).length;
+  return shared >= 2 && shared / Math.min(a.length, b.length) >= 0.5;
+}
+
+function canonicalClaimKey(claim) {
+  const sourceId = String(claim?.sourceId || '').trim();
+  const evidence = normalize(claim?.evidence);
+  return sourceId && evidence ? `${sourceId}::${evidence}` : '';
+}
+
+function canonicalDuplicateIsDistinct(content, slideIndex) {
+  const slides = Array.isArray(content?.slides) ? content.slides : [];
+  const current = slides[slideIndex];
+  if (!current) return false;
+  const currentClaims = (Array.isArray(current.claims) ? current.claims : [])
+    .filter(claim => !String(claim?.field || '').endsWith(':title'));
+  const earlierClaims = slides.slice(0, slideIndex).flatMap(slide => (Array.isArray(slide?.claims) ? slide.claims : []))
+    .filter(claim => !String(claim?.field || '').endsWith(':title'));
+  const repeatedPairs = [];
+  for (const claim of currentClaims) {
+    const key = canonicalClaimKey(claim);
+    if (!key) continue;
+    for (const previous of earlierClaims) {
+      if (canonicalClaimKey(previous) === key) repeatedPairs.push([previous, claim]);
+    }
+  }
+  if (!repeatedPairs.length) return false;
+  return repeatedPairs.every(([previous, claim]) => !nearDuplicateClaimMeaning(previous?.text, claim?.text));
+}
+
+function denseShortBody(content, slideIndex, requiredMin = 10) {
+  const slide = content?.slides?.[slideIndex];
+  if (!slide) return false;
+  const bodyCount = String(slide?.body || '').trim().split(/\s+/).filter(Boolean).length;
+  if (bodyCount < 8 || bodyCount >= requiredMin) return false;
+  const points = Array.isArray(slide?.points) ? slide.points : [];
+  if (points.length < 2) return false;
+  const pointWords = points.reduce((sum, point) => sum + String(point || '').trim().split(/\s+/).filter(Boolean).length, 0);
+  return bodyCount + pointWords >= requiredMin + (points.length * 3);
+}
+
 function filterFalsePositives(errors = [], content = {}) {
-  return filterFalsePositiveDuplicateErrors(errors, content);
+  return filterFalsePositiveDuplicateErrors(errors, content).filter(error => {
+    const text = String(error || '');
+
+    let match = text.match(/^slide:(\d+):duplicate:\s*fakta canonical mengulang slide sebelumnya\.?$/i);
+    if (match && canonicalDuplicateIsDistinct(content, Number(match[1]))) return false;
+
+    match = text.match(/^slide:(\d+):layout:\s*body harus (\d+)[–-]24 kata agar cukup menjelaskan konteks\.?$/i);
+    if (match && denseShortBody(content, Number(match[1]), Number(match[2]))) return false;
+
+    match = text.match(/^AUTO_SOURCE_RICHNESS:\s*slide\s+(\d+)\s+body terlalu tipis\s*\(\d+ kata\)\.?$/i);
+    if (match && denseShortBody(content, Number(match[1]) - 1, 10)) return false;
+
+    return true;
+  });
 }
 
 module.exports = {
@@ -233,5 +300,7 @@ module.exports = {
   repairNearbyNumericEvidence,
   substantiveExpansion,
   filterFalsePositiveDuplicateErrors,
+  canonicalDuplicateIsDistinct,
+  denseShortBody,
   filterFalsePositives
 };
