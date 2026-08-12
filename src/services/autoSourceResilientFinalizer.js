@@ -4,6 +4,7 @@ const sourceFilter = require('./sourceFilter');
 const sourceUrlFinalizer = require('./sourceUrlFinalizer');
 const strict = require('./autoSourceStrictFinalizer');
 const manualSourceFallback = require('./manualSourceFallback');
+const evidenceRecovery = require('./autoSourceEvidenceRecovery');
 
 // TANPA URL / AUTO SOURCE ONLY.
 // This module is loaded only after autoSourcePatch has already excluded Pakai URL.
@@ -258,14 +259,17 @@ function repairTitleOnlyErrors(content, errors = []) {
 }
 
 function validateCandidate({ draft, sources, topic, format, contentService, facts }) {
-  let prepared = repairEquivalentTimeFormatting(draft, sources);
+  let prepared = evidenceRecovery.repairClaimEvidenceWindows(
+    repairEquivalentTimeFormatting(draft, sources),
+    sources
+  );
   let result = strict.validateStrictCandidate({ draft: prepared, sources, topic, format, contentService, facts });
 
   // Exact duplicate/generic title is a copy-quality issue, not a reason to destroy
   // an otherwise grounded carousel. Repair it deterministically from the grounded body.
   const titleRepair = repairTitleOnlyErrors(result.candidate, result.errors);
   if (titleRepair.changed) {
-    prepared = titleRepair.candidate;
+    prepared = evidenceRecovery.repairClaimEvidenceWindows(titleRepair.candidate, sources);
     result = strict.validateStrictCandidate({ draft: prepared, sources, topic, format, contentService, facts });
   }
 
@@ -280,7 +284,7 @@ function validateCandidate({ draft, sources, topic, format, contentService, fact
 }
 
 function prompt({ generated, sources, facts, format, topic, errors }) {
-  return `${strict.strictPrompt({ generated, sources, facts, format, topic, errors })}\n\nRESILIENT OUTPUT CONTRACT — TAMBAHAN:\n- Jika title menyatakan fakta substantif, WAJIB sertakan claim title dengan field slide:X:title, claim.text sama persis dengan title, sourceId, dan evidence yang mendukung seluruh makna title.\n- Setiap title wajib berbeda antar-slide. Jangan mengulang title slide sebelumnya dan jangan memakai label section sebagai title visible.\n- Jika title hanya heading netral/struktural, jangan menjadikannya klaim faktual baru.\n- Target body tetap 10-20 kata. Hard layout hanya 8-24 kata; jangan korbankan output faktual hanya untuk mengejar hitungan kata.\n- Untuk nama model/versi seperti GPT-5.6 atau produk bernomor, pertahankan ejaan versi jika entity+versi memang tertulis pada source context yang sama.\n- Untuk waktu, jangan mengubah nilai jam. Ikuti format yang dipakai sumber (contoh 23:57 vs 23.57) supaya evidence dan copy konsisten.\n- Jika satu fakta/angka tidak bisa didukung evidence yang sama, GANTI field itu dengan fakta lain dari fact bank; jangan biarkan seluruh carousel gagal.\n- Semua source terpilih tetap wajib menyumbang fakta visible. Source kaya tetap target body padat + 3 bullet fakta berbeda per slide.`;
+  return `${strict.strictPrompt({ generated, sources, facts, format, topic, errors })}\n\nRESILIENT OUTPUT CONTRACT — TAMBAHAN:\n- Jika title menyatakan fakta substantif, WAJIB sertakan claim title dengan field slide:X:title, claim.text sama persis dengan title, sourceId, dan evidence yang mendukung seluruh makna title.\n- Setiap title wajib berbeda antar-slide. Jangan mengulang title slide sebelumnya dan jangan memakai label section sebagai title visible.\n- Jika title hanya heading netral/struktural, jangan menjadikannya klaim faktual baru.\n- Target body tetap 10-20 kata. Hard layout hanya 8-24 kata; jangan korbankan output faktual hanya untuk mengejar hitungan kata.\n- Untuk nama model/versi seperti GPT-5.6 atau produk bernomor, pertahankan ejaan versi jika entity+versi memang tertulis pada source context yang sama.\n- Untuk waktu, jangan mengubah nilai jam. Ikuti format yang dipakai sumber (contoh 23:57 vs 23.57) supaya evidence dan copy konsisten.\n- Pilih evidence yang cukup lengkap untuk menyebut entity, angka/ordinal, lokasi, dan konteks penting pada claim. Jangan memasangkan claim lengkap ke potongan evidence yang terlalu sempit bila source yang sama menyediakan kalimat lebih lengkap.\n- Jika satu fakta/angka tidak bisa didukung evidence yang sama, GANTI field itu dengan fakta lain dari fact bank; jangan biarkan seluruh carousel gagal.\n- Semua source terpilih tetap wajib menyumbang fakta visible. Source kaya tetap target body padat + 3 bullet fakta berbeda per slide.`;
 }
 
 function resilientRecoveryFields(errors = [], content = {}) {
@@ -315,7 +319,7 @@ function resilientRecoveryFields(errors = [], content = {}) {
 }
 
 function repairPrompt({ content, fields, bank, topic, format, errors }) {
-  return `AUTO SOURCE RESILIENT TARGETED REPAIR — TANPA URL SAJA.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nTARGET FIELD: ${JSON.stringify([...fields])}\nERROR: ${JSON.stringify(errors)}\nFACT BANK: ${JSON.stringify(bank)}\nCURRENT SLIDES: ${JSON.stringify(content?.slides || [])}\n\nATURAN KERAS:\n- Perbaiki HANYA target field. Semua field non-target harus tetap sama.\n- Gunakan fakta dari FACT BANK saja. Jangan memakai pengetahuan luar.\n- Jika field lama tidak bisa didukung, ganti dengan fakta berbeda yang evidence-nya benar; jangan menghapus bullet untuk sekadar lolos.\n- Title harus natural, spesifik, 3-10 kata, berbeda dari semua title slide lain, dan tidak boleh hanya label section.\n- Body 8-24 kata (target 10-20). Bullet 3-7 kata.\n- Body/bullet harus natural Bahasa Indonesia, bukan potongan evidence mentah.\n- claim.text harus sama persis dengan copy visible; sourceId dan evidence harus berasal dari source yang sama.\n- Jangan menambah tujuan, manfaat, strategi, sebab-akibat, aplikasi, implikasi, outcome, angka, waktu, versi, atau kepastian yang tidak dinyatakan evidence.\n- Jika menulis angka/waktu/versi, ikuti nilai dan format sumber yang dipilih.\n- Jangan memakai evidence canonical yang sudah dipakai field lain jika ada fakta unik lain yang tersedia.\n- Semua sumber terpilih harus tetap terwakili pada carousel final.\n\nKembalikan HANYA JSON: {"repairs":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}`;
+  return `AUTO SOURCE RESILIENT TARGETED REPAIR — TANPA URL SAJA.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nTARGET FIELD: ${JSON.stringify([...fields])}\nERROR: ${JSON.stringify(errors)}\nFACT BANK: ${JSON.stringify(bank)}\nCURRENT SLIDES: ${JSON.stringify(content?.slides || [])}\n\nATURAN KERAS:\n- Perbaiki HANYA target field. Semua field non-target harus tetap sama.\n- Gunakan fakta dari FACT BANK saja. Jangan memakai pengetahuan luar.\n- Jika field lama tidak bisa didukung, ganti dengan fakta berbeda yang evidence-nya benar; jangan menghapus bullet untuk sekadar lolos.\n- Title harus natural, spesifik, 3-10 kata, berbeda dari semua title slide lain, dan tidak boleh hanya label section.\n- Body 8-24 kata (target 10-20). Bullet 3-7 kata.\n- Body/bullet harus natural Bahasa Indonesia, bukan potongan evidence mentah.\n- claim.text harus sama persis dengan copy visible; sourceId dan evidence harus berasal dari source yang sama.\n- Pilih evidence yang menyebut entity/lokasi/angka/ordinal penting dalam claim; jangan memilih potongan terlalu sempit bila source yang sama punya konteks lebih lengkap.\n- Jangan menambah tujuan, manfaat, strategi, sebab-akibat, aplikasi, implikasi, outcome, angka, waktu, versi, atau kepastian yang tidak dinyatakan evidence.\n- Jika menulis angka/waktu/versi, ikuti nilai dan format sumber yang dipilih.\n- Jangan memakai evidence canonical yang sudah dipakai field lain jika ada fakta unik lain yang tersedia.\n- Semua sumber terpilih harus tetap terwakili pada carousel final.\n\nKembalikan HANYA JSON: {"repairs":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}`;
 }
 
 function parseJsonResponse(response) {

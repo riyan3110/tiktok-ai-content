@@ -2,10 +2,37 @@ const defaultSourceFetcher = require('./sourceFetcher');
 const baseDiscovery = require('./autoSourceDiscovery');
 const { sourceFacts } = require('./manualSourceFallback');
 
-const CACHE_TTL_MS = 30 * 60 * 1000;
-const QUERY_CONCURRENCY = 2;
-const FETCH_CONCURRENCY = 4;
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const QUERY_CONCURRENCY = 3;
+const FETCH_CONCURRENCY = 5;
+const MAX_CANDIDATES = 32;
+const MAX_FETCH_CANDIDATES = 20;
+const MAX_SELECTED = 4;
 const cache = new Map();
+
+const QUERY_STOPWORDS = new Set([
+  'yang','dan','atau','dari','untuk','dengan','tentang','terhadap','pada','ini','itu','baru','terbaru','aplikasi','fitur',
+  'cara','akan','memberi','memberikan','membuat','buat','bisa','dapat','jadi','menjadi','pakai','menggunakan','hadir',
+  'menghadirkan','bermitra','kemitraan','raksasa','potensi','manfaat','the','and','for','with','about','new','latest','app'
+]);
+
+const ENGLISH_REWRITES = [
+  [/\bkecerdasan buatan\b/gi, 'artificial intelligence'],
+  [/\bkeamanan siber\b/gi, 'cybersecurity'],
+  [/\bbermitra dengan\b/gi, 'partners with'],
+  [/\bbermitra\b/gi, 'partners'],
+  [/\bkemitraan\b/gi, 'partnership'],
+  [/\bpotensi\b/gi, 'potential'],
+  [/\bmanfaat\b/gi, 'benefits'],
+  [/\bterhadap\b/gi, 'for'],
+  [/\biklim\b/gi, 'climate'],
+  [/\bcuaca\b/gi, 'weather'],
+  [/\bpeluncuran\b/gi, 'launch'],
+  [/\bdiluncurkan\b/gi, 'launched'],
+  [/\bperusahaan\b/gi, 'company'],
+  [/\bpengguna\b/gi, 'users'],
+  [/\braksasa\b/gi, 'giant']
+];
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
@@ -25,6 +52,43 @@ async function mapLimit(items, limit, worker) {
   return results;
 }
 
+function anchorQuery(topic) {
+  return String(topic || '')
+    .match(/[A-Za-z0-9][A-Za-z0-9.+-]*/g)?.filter(token => token.length > 2 && !QUERY_STOPWORDS.has(token.toLocaleLowerCase('id-ID')))
+    .slice(0, 6).join(' ') || '';
+}
+
+function englishRewrite(topic) {
+  let value = String(topic || '').trim();
+  for (const [pattern, replacement] of ENGLISH_REWRITES) value = value.replace(pattern, replacement);
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function relevanceVariants(topic) {
+  const clean = String(topic || '').trim().replace(/\s+/g, ' ');
+  const english = englishRewrite(clean);
+  const anchors = anchorQuery(clean);
+  return [...new Set([clean, english, anchors].map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function relevanceAcross(variants, value) {
+  return Math.max(0, ...(variants || []).map(variant => baseDiscovery.relevanceScore(variant, value)));
+}
+
+function expandedQueries(topic, category = '') {
+  const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
+  const base = baseDiscovery.searchQueries(cleanTopic, category);
+  const anchors = anchorQuery(cleanTopic);
+  const english = englishRewrite(cleanTopic);
+  const extras = [
+    anchors && anchors.toLocaleLowerCase('id-ID') !== cleanTopic.toLocaleLowerCase('id-ID') ? `${anchors} latest` : '',
+    english && english.toLocaleLowerCase('id-ID') !== cleanTopic.toLocaleLowerCase('id-ID') ? english : '',
+    english ? `${english} latest news` : '',
+    anchors ? `${anchors} announcement partnership report` : ''
+  ];
+  return [...new Set([...base, ...extras].map(value => String(value || '').trim()).filter(Boolean))].slice(0, 7);
+}
+
 async function fastSearchWeb(query, options = {}) {
   const jobs = [];
   const add = (label, fn) => jobs.push((async () => {
@@ -38,7 +102,7 @@ async function fastSearchWeb(query, options = {}) {
   if (options.apiKey || process.env.JINA_API_KEY) add('Jina Search', () => baseDiscovery.searchJina(query, options));
   add('Bing News', () => baseDiscovery.searchBingNews(query, options));
   add('Bing Web', () => baseDiscovery.searchBingWeb(query, options));
-  if (!/\b(?:berita|update|edukasi|teknologi)\b/i.test(query)) {
+  if (!/\b(?:berita|update|edukasi|teknologi|news|latest)\b/i.test(query)) {
     add('Wikipedia ID', () => baseDiscovery.searchWikipedia(query, { ...options, language: 'id' }));
     add('Wikipedia EN', () => baseDiscovery.searchWikipedia(query, { ...options, language: 'en' }));
   }
@@ -54,10 +118,58 @@ async function fastSearchWeb(query, options = {}) {
   });
 }
 
-function fetchedScore(topic, source, candidate, factCount) {
-  const titleRelevance = baseDiscovery.relevanceScore(topic, source?.title || '');
-  const bodyRelevance = baseDiscovery.relevanceScore(topic, String(source?.text || '').slice(0, 5000));
-  return baseDiscovery.candidateScore(topic, candidate) + titleRelevance * 5 + bodyRelevance * 8 + Math.min(12, factCount) * 0.25;
+function freshnessBoost(publishedAt, now = Date.now()) {
+  const timestamp = Date.parse(String(publishedAt || ''));
+  if (!Number.isFinite(timestamp)) return 0;
+  const ageDays = Math.max(0, (now - timestamp) / 86_400_000);
+  if (ageDays <= 2) return 3;
+  if (ageDays <= 7) return 2.25;
+  if (ageDays <= 30) return 1.25;
+  if (ageDays <= 120) return 0.4;
+  if (ageDays > 730) return -1;
+  return 0;
+}
+
+function fetchedScore(topic, source, candidate, factCount, now = Date.now(), variants = relevanceVariants(topic)) {
+  const titleRelevance = relevanceAcross(variants, source?.title || '');
+  const bodyRelevance = relevanceAcross(variants, String(source?.text || '').slice(0, 5000));
+  const searchRelevance = Math.max(
+    relevanceAcross(variants, candidate?.title || ''),
+    relevanceAcross(variants, candidate?.description || '')
+  );
+  return baseDiscovery.candidateScore(topic, candidate)
+    + titleRelevance * 5
+    + bodyRelevance * 8
+    + searchRelevance * 2
+    + Math.min(12, factCount) * 0.25
+    + freshnessBoost(candidate?.publishedAt, now);
+}
+
+function sourceHost(source) {
+  try { return new URL(source?.finalUrl || source?.url).hostname.replace(/^www\./i, '').toLocaleLowerCase('en-US'); }
+  catch { return ''; }
+}
+
+function selectDiverseSources(fetched = [], maxSelected = MAX_SELECTED) {
+  const selected = [];
+  const usedHosts = new Set();
+  const bestScore = fetched[0]?.discovery?.score || 0;
+  const eligible = fetched.filter(source => !(bestScore > 0 && source.discovery.score < bestScore * 0.4));
+
+  for (const source of eligible) {
+    const host = sourceHost(source);
+    if (!host || usedHosts.has(host)) continue;
+    selected.push(source);
+    usedHosts.add(host);
+    if (selected.length >= maxSelected) return selected;
+  }
+
+  for (const source of eligible) {
+    if (selected.includes(source)) continue;
+    selected.push(source);
+    if (selected.length >= maxSelected) break;
+  }
+  return selected;
 }
 
 async function discover({
@@ -75,11 +187,12 @@ async function discover({
   const cached = cache.get(key);
   if (cached && now() - cached.savedAt < CACHE_TTL_MS) return clone(cached.bundle);
 
-  const queries = baseDiscovery.searchQueries(cleanTopic, category);
+  const variants = relevanceVariants(cleanTopic);
+  const queries = expandedQueries(cleanTopic, category);
   const groups = await mapLimit(queries, QUERY_CONCURRENCY, async query => {
     try {
       const results = await searchImpl(query, { fetchImpl });
-      return (results || []).slice(0, 10).map(result => ({ ...result, query }));
+      return (results || []).slice(0, 12).map(result => ({ ...result, query }));
     } catch (error) {
       console.warn(`[AutoSource] query gagal (${query}):`, error.message);
       return [];
@@ -90,25 +203,35 @@ async function discover({
   groups.flat().forEach(candidate => {
     const url = baseDiscovery.canonicalUrl(candidate?.url);
     if (!url || !baseDiscovery.candidateAllowed(url)) return;
-    const value = { ...candidate, url, searchScore: baseDiscovery.candidateScore(cleanTopic, candidate) };
+    const bilingualSearchRelevance = Math.max(
+      relevanceAcross(variants, candidate?.title || ''),
+      relevanceAcross(variants, candidate?.description || '')
+    );
+    const value = {
+      ...candidate,
+      url,
+      searchScore: baseDiscovery.candidateScore(cleanTopic, candidate)
+        + bilingualSearchRelevance * 2
+        + freshnessBoost(candidate?.publishedAt, now())
+    };
     if (!unique.has(url) || value.searchScore > unique.get(url).searchScore) unique.set(url, value);
   });
 
   const ranked = [...unique.values()]
     .sort((a, b) => b.searchScore - a.searchScore)
-    .slice(0, baseDiscovery.MAX_CANDIDATES);
+    .slice(0, MAX_CANDIDATES);
   if (!ranked.length) throw Object.assign(new Error('Tidak menemukan sumber publik yang relevan untuk topik ini.'), { status: 422, code: 'AUTO_SOURCE_SEARCH_EMPTY' });
 
   const minimumRelevance = baseDiscovery.minimumRelevantFraction(cleanTopic);
-  const fetchedRows = await mapLimit(ranked.slice(0, baseDiscovery.MAX_FETCH_CANDIDATES), FETCH_CONCURRENCY, async candidate => {
+  const fetchedRows = await mapLimit(ranked.slice(0, MAX_FETCH_CANDIDATES), FETCH_CONCURRENCY, async candidate => {
     const source = await baseDiscovery.fetchCandidate(candidate, { sourceFetcher, fetchImpl });
     if (!source) return null;
     const combined = `${source.title || ''} ${String(source.text || '').slice(0, 6000)}`;
-    const relevance = baseDiscovery.relevanceScore(cleanTopic, combined);
-    const titleRelevance = baseDiscovery.relevanceScore(cleanTopic, source.title || '');
+    const relevance = relevanceAcross(variants, combined);
+    const titleRelevance = relevanceAcross(variants, source.title || '');
     const searchRelevance = Math.max(
-      baseDiscovery.relevanceScore(cleanTopic, candidate.title),
-      baseDiscovery.relevanceScore(cleanTopic, candidate.description)
+      relevanceAcross(variants, candidate.title),
+      relevanceAcross(variants, candidate.description)
     );
     if (relevance < minimumRelevance && titleRelevance < minimumRelevance && searchRelevance < minimumRelevance) return null;
     const factCount = sourceFacts([source]).length;
@@ -118,7 +241,8 @@ async function discover({
       discovery: {
         provider: candidate.provider,
         query: candidate.query,
-        score: fetchedScore(cleanTopic, source, candidate, factCount),
+        publishedAt: candidate.publishedAt || null,
+        score: fetchedScore(cleanTopic, source, candidate, factCount, now(), variants),
         relevance: Math.max(relevance, titleRelevance, searchRelevance),
         factCount
       }
@@ -126,25 +250,7 @@ async function discover({
   });
 
   const fetched = fetchedRows.filter(Boolean).sort((a, b) => b.discovery.score - a.discovery.score);
-  const selected = [];
-  const usedHosts = new Set();
-  const bestScore = fetched[0]?.discovery?.score || 0;
-  for (const source of fetched) {
-    if (selected.length && bestScore > 0 && source.discovery.score < bestScore * 0.45) continue;
-    let host = '';
-    try { host = new URL(source.finalUrl || source.url).hostname; } catch {}
-    if (!host) continue;
-    const alternative = fetched.some(other => {
-      try {
-        const otherHost = new URL(other.finalUrl || other.url).hostname;
-        return otherHost !== host && !usedHosts.has(otherHost);
-      } catch { return false; }
-    });
-    if (usedHosts.has(host) && alternative && selected.length < 2) continue;
-    selected.push(source);
-    usedHosts.add(host);
-    if (selected.length >= baseDiscovery.MAX_SELECTED) break;
-  }
+  const selected = selectDiverseSources(fetched, MAX_SELECTED);
 
   if (!selected.length) {
     throw Object.assign(new Error('Sumber ditemukan, tetapi belum ada artikel yang cukup relevan, kaya fakta, dan dapat dibaca.'), { status: 422, code: 'AUTO_SOURCE_FETCH_EMPTY' });
@@ -168,7 +274,17 @@ module.exports = {
   fastSearchWeb,
   clearCache,
   mapLimit,
+  expandedQueries,
+  anchorQuery,
+  englishRewrite,
+  relevanceVariants,
+  relevanceAcross,
+  freshnessBoost,
+  selectDiverseSources,
   QUERY_CONCURRENCY,
   FETCH_CONCURRENCY,
-  CACHE_TTL_MS
+  CACHE_TTL_MS,
+  MAX_CANDIDATES,
+  MAX_FETCH_CANDIDATES,
+  MAX_SELECTED
 };
