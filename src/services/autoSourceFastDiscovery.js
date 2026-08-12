@@ -3,6 +3,7 @@ const baseDiscovery = require('./autoSourceDiscovery');
 const { sourceFacts } = require('./manualSourceFallback');
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const QUERY_CONCURRENCY = 2;
 const FETCH_CONCURRENCY = 4;
 const cache = new Map();
 
@@ -24,6 +25,35 @@ async function mapLimit(items, limit, worker) {
   return results;
 }
 
+async function fastSearchWeb(query, options = {}) {
+  const jobs = [];
+  const add = (label, fn) => jobs.push((async () => {
+    try { return await fn(); }
+    catch (error) {
+      console.warn(`[AutoSource] ${label} gagal:`, error.message);
+      return [];
+    }
+  })());
+
+  if (options.apiKey || process.env.JINA_API_KEY) add('Jina Search', () => baseDiscovery.searchJina(query, options));
+  add('Bing News', () => baseDiscovery.searchBingNews(query, options));
+  add('Bing Web', () => baseDiscovery.searchBingWeb(query, options));
+  if (!/\b(?:berita|update|edukasi|teknologi)\b/i.test(query)) {
+    add('Wikipedia ID', () => baseDiscovery.searchWikipedia(query, { ...options, language: 'id' }));
+    add('Wikipedia EN', () => baseDiscovery.searchWikipedia(query, { ...options, language: 'en' }));
+  }
+
+  const combined = (await Promise.all(jobs)).flat();
+  const seen = new Set();
+  return combined.filter(item => {
+    const url = baseDiscovery.canonicalUrl(item?.url);
+    if (!url || !baseDiscovery.candidateAllowed(url) || seen.has(url)) return false;
+    seen.add(url);
+    item.url = url;
+    return true;
+  });
+}
+
 function fetchedScore(topic, source, candidate, factCount) {
   const titleRelevance = baseDiscovery.relevanceScore(topic, source?.title || '');
   const bodyRelevance = baseDiscovery.relevanceScore(topic, String(source?.text || '').slice(0, 5000));
@@ -33,7 +63,7 @@ function fetchedScore(topic, source, candidate, factCount) {
 async function discover({
   topic,
   category = '',
-  searchImpl = baseDiscovery.searchWeb,
+  searchImpl = fastSearchWeb,
   sourceFetcher = defaultSourceFetcher,
   fetchImpl = fetch,
   now = Date.now
@@ -46,7 +76,7 @@ async function discover({
   if (cached && now() - cached.savedAt < CACHE_TTL_MS) return clone(cached.bundle);
 
   const queries = baseDiscovery.searchQueries(cleanTopic, category);
-  const groups = await Promise.all(queries.map(async query => {
+  const groups = await mapLimit(queries, QUERY_CONCURRENCY, async query => {
     try {
       const results = await searchImpl(query, { fetchImpl });
       return (results || []).slice(0, 10).map(result => ({ ...result, query }));
@@ -54,7 +84,7 @@ async function discover({
       console.warn(`[AutoSource] query gagal (${query}):`, error.message);
       return [];
     }
-  }));
+  });
 
   const unique = new Map();
   groups.flat().forEach(candidate => {
@@ -133,4 +163,12 @@ async function discover({
 
 function clearCache() { cache.clear(); }
 
-module.exports = { discover, clearCache, mapLimit, FETCH_CONCURRENCY, CACHE_TTL_MS };
+module.exports = {
+  discover,
+  fastSearchWeb,
+  clearCache,
+  mapLimit,
+  QUERY_CONCURRENCY,
+  FETCH_CONCURRENCY,
+  CACHE_TTL_MS
+};
