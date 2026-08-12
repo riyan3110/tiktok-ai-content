@@ -40,13 +40,23 @@ function install() {
       buildSourceContext: sourceFetcher.buildSourceContext || defaultSourceFetcher.buildSourceContext
     };
     const autoRoleGuard = {
-      repairManualSourceRoles: async ({ options, sources: activeSources }) => autoSourceComposer.compose({
-        content: wrappedContent,
-        previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
-        options,
-        sources: activeSources,
-        discovery
-      })
+      repairManualSourceRoles: async ({ options, sources: activeSources }) => {
+        const compose = () => autoSourceComposer.compose({
+          content: wrappedContent,
+          previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
+          options,
+          sources: activeSources,
+          discovery
+        });
+        try {
+          return await compose();
+        } catch (error) {
+          if (activeSources.length <= 1) throw error;
+          console.warn('[AutoSource] multi-source compose gagal; mencoba ulang dengan sumber terkuat:', error.message);
+          activeSources.splice(1);
+          return compose();
+        }
+      }
     };
 
     return originalGenerateAndSave({
