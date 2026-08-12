@@ -7,6 +7,7 @@ const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
 const defaultSourceUrlFinalizer = require('./sourceUrlFinalizer');
+const sourceSafetyPatch = require('./sourceSafetyPatch');
 const manualSourceFallback = require('./manualSourceFallback');
 const { buildDeterministicSourceFallback } = manualSourceFallback;
 
@@ -166,33 +167,50 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     let generated;
     if (shouldUseSources) {
       if (mode === 'manual') {
-        const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
-        if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
+        // Explicit Pakai URL on the production content service takes the bounded
+        // URL finalizer directly. Auto Source is unaffected because it supplies
+        // a wrapped content service + its own manualSourceRoleGuard override.
+        const explicitPakaiUrl = content === defaultContent && !manualSourceRoleGuard;
+        if (explicitPakaiUrl) {
+          sourceSafetyPatch.sanitizeSourcesForManualTopic(sources, basis);
           const seed = manualSourceSeed(basis, contentFormat);
-          try {
-            generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
-              contentService: content,
-              generated: seed,
-              options: generationOptions,
-              sources
-            });
-          } catch (error) {
-            if (content !== defaultContent) throw error;
-            if (error.sourceFinalizerAttempted) throw error;
-            const recoveryFormat = safeRecoveryFormat(contentFormat);
-            const recoverySeed = manualSourceSeed(basis, recoveryFormat);
-            if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
-            generated = await aiThenDeterministicFallback({
-              generated: recoverySeed,
-              sources,
-              topic: basis,
-              requestedFormat: recoveryFormat,
-              mode,
-              content
-            });
-          }
+          generated = await aiThenDeterministicFallback({
+            generated: seed,
+            sources,
+            topic: basis,
+            requestedFormat: contentFormat,
+            mode,
+            content
+          });
         } else {
-          generated = await content.generateContent(used, generationOptions);
+          const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
+          if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
+            const seed = manualSourceSeed(basis, contentFormat);
+            try {
+              generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
+                contentService: content,
+                generated: seed,
+                options: generationOptions,
+                sources
+              });
+            } catch (error) {
+              if (content !== defaultContent) throw error;
+              if (error.sourceFinalizerAttempted) throw error;
+              const recoveryFormat = safeRecoveryFormat(contentFormat);
+              const recoverySeed = manualSourceSeed(basis, recoveryFormat);
+              if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
+              generated = await aiThenDeterministicFallback({
+                generated: recoverySeed,
+                sources,
+                topic: basis,
+                requestedFormat: recoveryFormat,
+                mode,
+                content
+              });
+            }
+          } else {
+            generated = await content.generateContent(used, generationOptions);
+          }
         }
       } else {
         const activeSourceFilter = sourceFilter || (content === defaultContent ? defaultSourceFilter : null);
