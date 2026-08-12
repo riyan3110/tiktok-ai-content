@@ -31,6 +31,21 @@ test('publisher key collapses mobile/www variants of the same publisher', () => 
   assert.equal(discovery.publisherKey('https://tekno.example.co.id/a'), 'example.co.id');
 });
 
+test('Indonesian broad topics gain generic English anchors for global sources', () => {
+  assert.equal(discovery.englishAnchorQuery('Potensi manfaat AI terhadap iklim'), 'AI climate');
+  assert.equal(
+    discovery.multilingualRelevance(
+      'Potensi manfaat AI terhadap iklim',
+      'Artificial intelligence is being used in climate forecasting and climate research.'
+    ),
+    1
+  );
+  assert.equal(discovery.fetchedContentRelevant('Potensi manfaat AI terhadap iklim', {
+    title: 'AI for climate forecasting',
+    text: 'Artificial intelligence and machine learning are used to improve climate forecasting and climate research.'
+  }), true);
+});
+
 test('expanded discovery rejects misleading fetched pages and selects different publishers', async () => {
   discovery.clearCache();
   const candidates = [
