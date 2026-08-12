@@ -13,6 +13,18 @@ function normalize(value) {
     .replace(/\s+/g, ' ').trim();
 }
 
+function lexicalTokens(value) {
+  return [...new Set(normalize(value).split(' ').filter(token => token.length > 2 || token === 'ai'))];
+}
+
+function evidenceRelated(left, right) {
+  const a = lexicalTokens(left);
+  const b = lexicalTokens(right);
+  if (!a.length || !b.length) return false;
+  const shared = a.filter(token => b.includes(token)).length;
+  return shared >= 2 && shared / Math.min(a.length, b.length) >= 0.55;
+}
+
 function topicScopedFacts(sources = [], facts = [], topic = '') {
   const scoped = sourceUrlFinalizer.relevantSourceFacts(sources, facts, topic);
   return scoped.length ? scoped : facts;
@@ -107,12 +119,18 @@ function topicEvidenceErrors(content = {}, facts = []) {
   for (const slide of content?.slides || []) {
     for (const claim of substantiveClaims(slide)) {
       const sourceId = String(claim?.sourceId || '').trim();
-      const evidence = normalize(claim?.evidence);
+      const rawEvidence = String(claim?.evidence || '').replace(/\s+/g, ' ').trim();
+      const evidence = normalize(rawEvidence);
       const bank = allowed.get(sourceId) || [];
       if (!sourceId || !evidence || !bank.length) continue;
       const supported = bank.some(item => {
         const candidate = normalize(item.evidence);
-        return candidate && (candidate === evidence || evidence.includes(candidate) || candidate.includes(evidence));
+        return candidate && (
+          candidate === evidence
+          || evidence.includes(candidate)
+          || candidate.includes(evidence)
+          || evidenceRelated(rawEvidence, item.evidence)
+        );
       });
       if (!supported) {
         errors.push(`${claim.field}: AUTO_SOURCE_CONTEXT: evidence tidak termasuk fact bank yang relevan dengan topik untuk ${sourceId}.`);
@@ -176,5 +194,6 @@ module.exports = {
   slideSourceCoherenceErrors,
   topicEvidenceErrors,
   forcedDensityErrors,
+  evidenceRelated,
   isInstalled: () => installed
 };
