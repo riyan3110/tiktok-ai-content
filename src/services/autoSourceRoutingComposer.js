@@ -65,9 +65,10 @@ function readableFacts(topic = '', source = {}, plan = {}) {
   for (let index = 0; index < raw.length; index += 1) {
     const fact = raw[index];
     let keep = factRelevant(topic, fact, plan, previousKept);
-    // Some publishers omit the subject from the body after stating it in a very
-    // clear headline. Keep only the first four clean lead facts in that case.
-    if (!keep && anchoredLead && index < 4
+    // If the headline already anchors the topic, only a true pronoun/reference
+    // continuation may borrow that headline context. Independent lead sentences
+    // still need to match the topic themselves so market/roundup side-notes stay out.
+    if (!keep && anchoredLead && index < 4 && continuationFact(fact)
       && !storyFocus.editorialNoise(fact, plan)
       && !storyFocus.marketSnapshot(fact, plan)) keep = true;
     if (keep) out.push(fact);
