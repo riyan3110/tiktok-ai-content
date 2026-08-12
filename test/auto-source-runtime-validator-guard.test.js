@@ -89,3 +89,27 @@ test('numeric blocker remains when same source does not support the claimed perc
   const error = 'AUTO_SOURCE_NUMERIC: slide:0:claim:0 angka/ordinal "52%" tidak didukung evidence/sumber yang sama.';
   assert.deepEqual(guard.filterRuntimeErrors([error], content, sources), [error]);
 });
+
+test('technical or English-looking title is rebuilt from an Indonesian grounded body', () => {
+  const content = {
+    slides: [{
+      title: 'LPDDR6 Memory for Everyday Consumers',
+      body: 'CXMT mempercepat pengembangan RAM LPDDR6 untuk pengguna biasa di pasar konsumen.',
+      points: [],
+      claims: [{
+        field: 'slide:0:body',
+        text: 'CXMT mempercepat pengembangan RAM LPDDR6 untuk pengguna biasa di pasar konsumen.',
+        sourceId: 'source-1',
+        evidence: 'CXMT mempercepat pengembangan RAM LPDDR6 untuk pasar konsumen.'
+      }]
+    }]
+  };
+  const changed = guard.repairLanguageTitleErrors(content, ['slide:0:title: copy tampil harus Bahasa Indonesia.']);
+  assert.equal(changed, true);
+  assert.equal(guard.titleLanguageErrorIndex('slide:0:title: copy tampil harus Bahasa Indonesia.'), 0);
+  assert.match(content.slides[0].title, /CXMT/i);
+  assert.doesNotMatch(content.slides[0].title, /Everyday Consumers/i);
+  const titleClaim = content.slides[0].claims.find(claim => claim.field === 'slide:0:title');
+  assert.equal(titleClaim.sourceId, 'source-1');
+  assert.equal(titleClaim.evidence, content.slides[0].claims.find(claim => claim.field === 'slide:0:body').evidence);
+});
