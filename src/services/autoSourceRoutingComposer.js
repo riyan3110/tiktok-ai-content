@@ -1,21 +1,29 @@
 const identity = require('./autoSourceTopicIdentity');
 const multi = require('./autoSourceMultiEntityTopic');
-const topicScope = require('./autoSourceTopicScope');
+const dynamicScope = require('./autoSourceDynamicScope');
 const versioned = require('./autoSourceTopicLockedComposer');
 const multiEntity = require('./autoSourceMultiEntityComposer');
 const research = require('./autoSourceResearchComposer');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// Every topic type first receives source text narrowed to the requested scope.
-// Specialized composers add stricter rules, but generic topics are no longer
-// allowed to see unrelated side notes from otherwise relevant articles.
+// Every request is scoped from the fresh runtime topic plan produced during
+// discovery. Specialized version/multi-entity composers are extra safeguards;
+// they are not a catalog of supported topics.
 async function compose(args = {}) {
   const topic = String(args?.options?.requestedTopic || args?.discovery?.topic || '').trim();
-  const scopedSources = topicScope.scopeSources(topic, args.sources || []);
+  const plan = args?.discovery?.topicPlan || {};
+  const scopedSources = dynamicScope.scopeSources(topic, args.sources || [], plan);
+  const usableSources = scopedSources.filter(source => String(source?.text || '').trim());
+  if (!usableSources.length) {
+    throw Object.assign(new Error('Auto Source menemukan artikel, tetapi tidak ada fakta yang tetap berada di konteks topik setelah dibaca.'), {
+      status: 422,
+      code: 'AUTO_SOURCE_DYNAMIC_FACT_SCOPE_EMPTY'
+    });
+  }
   const scopedArgs = {
     ...args,
-    sources: scopedSources,
-    discovery: args.discovery ? { ...args.discovery, sources: scopedSources } : args.discovery
+    sources: usableSources,
+    discovery: args.discovery ? { ...args.discovery, sources: usableSources, topicPlan: plan } : args.discovery
   };
 
   if (identity.hasSpecificIdentity(topic)) return versioned.compose(scopedArgs);
