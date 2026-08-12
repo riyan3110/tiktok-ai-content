@@ -50,9 +50,11 @@ function factRelevant(topic = '', fact = '', plan = {}, previousKept = false) {
 function readableFacts(topic = '', source = {}, plan = {}) {
   const raw = storyFocus.atomicFacts(source?.text || '').map(clean).filter(Boolean);
   const out = [];
+  let previousKept = false;
   for (const fact of raw) {
-    const keep = factRelevant(topic, fact, plan, out.length > 0);
+    const keep = factRelevant(topic, fact, plan, previousKept);
     if (keep) out.push(fact);
+    previousKept = keep;
   }
   return out;
 }
