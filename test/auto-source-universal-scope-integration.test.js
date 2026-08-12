@@ -11,11 +11,11 @@ const research = require('../src/services/autoSourceResearchComposer');
 const versioned = require('../src/services/autoSourceTopicLockedComposer');
 const multiEntity = require('../src/services/autoSourceMultiEntityComposer');
 
-function input(topic, text, title = topic) {
+function input(topic, text, title = topic, topicPlan = null) {
   return {
     options: { requestedTopic: topic, contentFormat: 'Fakta singkat' },
     sources: [{ title, text, url: 'https://example.test/article' }],
-    discovery: { topic, sources: [] }
+    discovery: { topic, sources: [], ...(topicPlan ? { topicPlan } : {}) }
   };
 }
 
@@ -35,15 +35,27 @@ test('generic research composer receives only topic-scoped article sentences', a
   } finally { research.compose = original; }
 });
 
-test('versioned composer receives only exact-version sentences', async () => {
+test('versioned composer receives only the requested event around the exact version', async () => {
   const original = versioned.compose;
   let received;
   versioned.compose = async args => { received = args; return { ok: true }; };
   try {
+    const topic = 'SpaceXAI memperkenalkan Grok 4.6';
     await routing.compose(input(
-      'SpaceXAI memperkenalkan Grok 4.6',
-      'Grok 4.6 targets long-running agent tasks. Grok 4.5 launched in July. Google refreshed headphones.',
-      'Grok 4.6 launch'
+      topic,
+      'SpaceXAI introduced Grok 4.6 for long-running agent tasks. Grok 4.6 improves tool use. Grok 4.5 launched in July. Google refreshed headphones.',
+      'SpaceXAI introduces Grok 4.6',
+      {
+        rawTopic: topic,
+        canonicalTopic: topic,
+        subjects: ['SpaceXAI', 'Grok 4.6'],
+        eventTerms: ['introduces Grok 4.6'],
+        actionTerms: ['memperkenalkan', 'introduces'],
+        contextTerms: [],
+        marketIntent: false,
+        relation: 'event',
+        planner: 'ai'
+      }
     ));
     assert.match(received.sources[0].text, /Grok 4\.6/i);
     assert.doesNotMatch(received.sources[0].text, /Grok 4\.5|headphones/i);
