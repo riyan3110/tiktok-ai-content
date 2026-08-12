@@ -19,23 +19,20 @@ function autoSourceRequested(args = {}) {
 }
 
 function loadAutoSourceDependencies() {
-  // Loaded only AFTER Pakai URL has been excluded above. The quality/runtime
-  // guards therefore cannot alter the explicit Pakai URL production path.
-  const autoSourceQualityLayer = require('./autoSourceQualityLayer');
-  autoSourceQualityLayer.install();
-  const autoSourceRuntimeGuard = require('./autoSourceRuntimeGuard');
-  autoSourceRuntimeGuard.install();
+  // Loaded only AFTER explicit Pakai URL has been excluded.
+  // Production Auto Source intentionally does NOT install the old strict,
+  // coherence, density, plan-first, or runtime-guard stack anymore.
   return {
     defaultContent: require('./content'),
     defaultSourceFetcher: require('./sourceFetcher'),
     autoSourceDiscovery: require('./autoSourceExpandedDiscovery'),
-    autoSourceComposer: require('./autoSourceComposer'),
-    autoSourcePlanFinalizer: require('./autoSourcePlanFinalizer')
+    autoSourceSimpleComposer: require('./autoSourceSimpleComposer')
   };
 }
 
 function contentWrapper(content) {
   const base = content || require('./content');
+  // Keep Auto Source isolated from generation.js's explicit Pakai URL final gate.
   return { ...base };
 }
 
@@ -44,8 +41,7 @@ function install() {
   originalGenerateAndSave = generation.generateAndSave;
   generation.generateAndSave = async function generateAndSaveWithAutoSource(args = {}) {
     // HARD ISOLATION LOCK:
-    // Pakai URL stays on its existing production path and is excluded before
-    // any Auto Source dependency is loaded or any request argument is rewritten.
+    // Pakai URL is exact pass-through before any Auto Source dependency loads.
     if (pakaiUrlRequested(args)) return originalGenerateAndSave(args);
     if (!autoSourceRequested(args)) return originalGenerateAndSave(args);
 
@@ -56,9 +52,9 @@ function install() {
       defaultContent,
       defaultSourceFetcher,
       autoSourceDiscovery,
-      autoSourceComposer,
-      autoSourcePlanFinalizer
+      autoSourceSimpleComposer
     } = loadAutoSourceDependencies();
+
     const sourceFetcher = args.sourceFetcher || defaultSourceFetcher;
     const discovery = await autoSourceDiscovery.discover({
       topic,
@@ -73,22 +69,13 @@ function install() {
       fetchSources: async () => sources,
       buildSourceContext: sourceFetcher.buildSourceContext || defaultSourceFetcher.buildSourceContext
     };
+
     const autoRoleGuard = {
-      repairManualSourceRoles: async ({ options, sources: activeSources }) => {
-        // AUTO SOURCE ONLY: every source selected by discovery remains active.
-        // Do not silently degrade multi-source synthesis to one source.
-        // The plan-first finalizer assigns one primary source per slide before
-        // writing so density/coherence are satisfied during composition instead
-        // of repeatedly failing at the final validator.
-        return autoSourceComposer.compose({
-          content: wrappedContent,
-          previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
-          options: { ...options, fastAutoSource: true },
-          sources: activeSources,
-          discovery: { ...discovery, sources: activeSources },
-          finalizer: autoSourcePlanFinalizer
-        });
-      }
+      repairManualSourceRoles: async ({ options, sources: activeSources }) => autoSourceSimpleComposer.compose({
+        options,
+        sources: activeSources,
+        discovery: { ...discovery, sources: activeSources }
+      })
     };
 
     return originalGenerateAndSave({
@@ -116,5 +103,6 @@ module.exports = {
   suppliedSourceUrls,
   pakaiUrlRequested,
   autoSourceRequested,
-  contentWrapper
+  contentWrapper,
+  loadAutoSourceDependencies
 };
