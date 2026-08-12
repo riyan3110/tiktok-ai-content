@@ -96,9 +96,6 @@ function relevantSourceFacts(sources, facts, topic) {
       return { entry, index, score };
     });
     const positive = scored.filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.index - b.index);
-    // If the page title/topic actually anchors enough facts, only expose the
-    // most relevant fact bank to the model. This prevents a second article or
-    // recommendation block from hijacking a manual URL topic.
     if (positive.length >= Math.min(4, entries.length)) {
       const keep = new Set(positive.slice(0, Math.min(18, Math.max(6, positive.length))).map(item => item.entry));
       selected.push(...entries.filter(entry => keep.has(entry)));
@@ -176,7 +173,7 @@ function sourceDisplayCandidates(sourceText) {
     const count = words(text).length;
     const key = normalize(text);
     if (!key || seen.has(key) || count < 6 || count > 24 || isLowValueEvidence(text) || endsDangling(text)) return;
-    // Broken reader excerpts often start mid-quote/mid-sentence in lowercase.
+    if (/^[^.!?]{0,90},?["”']\s*(?:jelas|kata|ujar|tutur|ungkap)\b/i.test(text)) return;
     if (/^[a-zà-ÿ]/u.test(text)) return;
     if (!textFitsCanvas(text, { startSize: 42, minSize: 34, maxLines: 4, maxHeight: 220, lineHeight: 1.24 })) return;
     seen.add(key);
@@ -426,7 +423,7 @@ function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '',
     __urlSourceFallback: true
   });
   const safetyErrors = [
-    ...manualSourceFallback.validateSourceContent(result, sources),
+    ...manualSourceFallback.validateSourceContent(result, sources).filter(error => !/:richness:/.test(error)),
     ...numericGroundingErrors(result),
     ...localLayoutErrors(result),
     ...urlVisualFitErrors(result)
