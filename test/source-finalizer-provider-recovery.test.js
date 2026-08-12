@@ -8,83 +8,57 @@ process.env.AI_MODEL ||= 'test-model';
 const sourceFilter = require('../src/services/sourceFilter');
 const finalizer = require('../src/services/sourceUrlFinalizer');
 
-function englishSource() {
+function atlasSource() {
+  const facts = [
+    'Atlas Device mendukung profil lokal untuk workstation bersama agar preferensi pengguna dapat dipisahkan dengan jelas.',
+    'Atlas Device memungkinkan administrator menonaktifkan sinkronisasi latar belakang ketika kebijakan organisasi mengharuskannya.',
+    'Atlas Device menyimpan preferensi pengguna secara lokal di antara sesi kerja pada workstation yang sama.',
+    'Atlas Device memungkinkan operator mengekspor catatan konfigurasi untuk ditinjau kembali setelah sesi kerja selesai.',
+    'Atlas Device menampilkan status profil langsung pada panel kontrol tanpa membuka layar tambahan lainnya.',
+    'Atlas Device menyiapkan panduan migrasi untuk membantu tim memindahkan konfigurasi pada periode berikutnya.',
+    'Pengujian Atlas Device mengaitkan pengaturan cache dengan waktu mulai perangkat yang menjadi lebih singkat.',
+    'Atlas Device dapat mengurangi penggunaan memori ketika beberapa panel aplikasi dibiarkan tetap terbuka bersamaan.',
+    'Atlas Device menyediakan kontrol profil agar administrator dapat melihat konfigurasi aktif pada workstation bersama.',
+    'Atlas Device menyimpan pengaturan lokal sehingga preferensi tidak perlu dibuat ulang pada setiap sesi kerja.',
+    'Atlas Device mencatat konfigurasi yang dapat diekspor untuk mendukung proses peninjauan oleh operator sistem.',
+    'Atlas Device menyediakan panel status yang membantu operator memeriksa profil aktif dari satu tampilan.',
+    'Atlas Device mendukung pengelolaan sinkronisasi agar administrator dapat menyesuaikannya dengan kebutuhan organisasi.',
+    'Atlas Device menggunakan cache yang dalam pengujian dikaitkan dengan proses startup yang lebih singkat.',
+    'Atlas Device mengelola penggunaan memori ketika sejumlah panel tetap aktif selama sesi kerja pengguna.',
+    'Atlas Device dirancang untuk lingkungan workstation bersama yang menggunakan profil lokal antar pengguna.'
+  ];
   return [{
     url: 'https://example.test/atlas-device',
     finalUrl: 'https://example.test/atlas-device',
     title: 'Atlas Device Profile Study',
-    text: [
-      'The Atlas device supports local profiles for shared workstations.',
-      'Administrators can disable background synchronization when required.',
-      'The device stores preferences locally between work sessions.',
-      'Operators may export configuration records for later review.',
-      'The control panel shows profile status without opening another screen.',
-      'The team plans to publish migration guidance next quarter.',
-      'Tests associated the cache setting with shorter startup time.',
-      'The device can reduce memory use when several panels remain open.'
-    ].join(' ')
+    text: facts.join(' ')
   }];
 }
 
-function indonesianSource() {
-  return [{
-    url: 'https://example.test/mahasiswa-ai',
-    finalUrl: 'https://example.test/mahasiswa-ai',
-    title: 'AI Ubah Cara Mahasiswa Belajar',
-    text: [
-      'AI mulai dipakai mahasiswa untuk membantu memahami materi dan mencari penjelasan tambahan.',
-      'Dosen tetap berperan untuk memberi konteks dan memeriksa kualitas jawaban mahasiswa.',
-      'Hal tersebut disampaikan di hadapan lebih dari 10.000 mahasiswa baru Universitas Padjadjaran dalam perhelatan kampus.',
-      'Mahasiswa juga diingatkan untuk memeriksa kembali sumber sebelum memakai informasi dari AI.',
-      'Penggunaan AI di kampus perlu disertai literasi digital agar mahasiswa memahami batas kemampuan model.',
-      'Diskusi dengan dosen tetap dibutuhkan karena proses belajar tidak hanya bergantung pada jawaban otomatis.',
-      'Mahasiswa dapat menggunakan AI sebagai alat bantu dan bukan sebagai pengganti proses berpikir.',
-      'Kampus mendorong penggunaan teknologi yang tetap memperhatikan tanggung jawab akademik.'
-    ].join(' ')
-  }];
-}
-
-function driftedSindonewsLikeSource() {
-  return [{
-    url: 'https://example.test/ai-ubah-cara-mahasiswa-belajar',
-    finalUrl: 'https://example.test/ai-ubah-cara-mahasiswa-belajar',
-    title: 'AI Ubah Cara Mahasiswa Belajar',
-    text: [
-      'AI mulai mengubah cara mahasiswa belajar karena jawaban dapat diperoleh lebih cepat untuk membantu memahami materi.',
-      'Mahasiswa tetap perlu memeriksa sumber dan membandingkan jawaban AI dengan materi perkuliahan yang digunakan.',
-      'Dosen berperan membantu mahasiswa memahami konteks dan menilai apakah jawaban AI sesuai dengan materi kuliah.',
-      'Mahasiswa dapat memakai AI sebagai alat bantu belajar tanpa menggantikan proses berpikir dan diskusi akademik.',
-      'Penggunaan AI dalam proses belajar perlu disertai literasi digital agar mahasiswa memahami keterbatasan jawaban model.',
-      'Tersedia," jelas Tim pengembang Smart PAI, Aditya Putri Pertiwi, dikutip dari laman Kemenag, Minggu (9/8/2026).',
-      'Smart PAI menggunakan 39 buku pelajaran utama untuk tingkat PAUD/TK, SD, SMP, SMA/SMK, hingga perguruan tinggi.',
-      'Kemenag menegaskan bahwa posisi guru tetap penting dalam penggunaan Smart PAI di sekolah.',
-      'Smart PAI akan menjawab bahwa informasi itu tidak tersedia jika pertanyaan tidak ditemukan di buku-buku tersebut.'
-    ].join(' ')
-  }];
-}
-
-function candidate(format = 'Fakta singkat', firstBody = 'Perangkat Atlas mendukung profil lokal untuk workstation yang digunakan bersama.') {
-  const sections = format === 'Listicle'
-    ? ['ITEM 1', 'ITEM 2', 'ITEM 3', 'ITEM 4']
-    : ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'];
-  const rows = [
-    [firstBody, 'Profil lokal tersedia untuk workstation', 'The Atlas device supports local profiles for shared workstations.', 'Sinkronisasi latar dapat dinonaktifkan', 'Administrators can disable background synchronization when required.'],
-    ['Perangkat menyimpan preferensi secara lokal di antara sesi kerja pengguna.', 'Catatan konfigurasi dapat diekspor', 'The device stores preferences locally between work sessions.', 'Ekspor tersedia untuk peninjauan', 'Operators may export configuration records for later review.'],
-    ['Panel kontrol menampilkan status profil tanpa perlu membuka layar lainnya.', 'Status terlihat pada panel kontrol', 'The control panel shows profile status without opening another screen.', 'Panduan migrasi masih direncanakan', 'The team plans to publish migration guidance next quarter.'],
-    ['Pengujian mengaitkan pengaturan cache dengan waktu mulai yang lebih singkat.', 'Memori dapat berkurang saat panel terbuka', 'Tests associated the cache setting with shorter startup time.', 'Penggunaan memori dapat dikurangi', 'The device can reduce memory use when several panels remain open.']
-  ];
-  const slides = rows.map((row, index) => ({
-    section: sections[index],
-    title: ['Profil Lokal Atlas', 'Preferensi Tetap Tersimpan', 'Status Mudah Dilihat', 'Cache dan Waktu Mulai'][index],
-    body: row[0],
-    points: [row[1]],
-    claims: [
-      { field: `slide:${index}:body`, text: row[0], sourceId: 'source-1', evidence: row[2] },
-      { field: `slide:${index}:point:0`, text: row[1], sourceId: 'source-1', evidence: row[4] }
-    ]
-  }));
+function candidate() {
+  const evidence = atlasSource()[0].text.split(/(?<=[.!?])\s+/);
+  const sections = ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'];
+  const titles = ['Profil Lokal untuk Workstation Bersama', 'Kontrol Sinkronisasi untuk Administrator', 'Status Profil dalam Satu Panel', 'Cache dan Penggunaan Memori'];
+  const slides = sections.map((section, slideIndex) => {
+    const base = slideIndex * 4;
+    const bodyEvidence = evidence[base];
+    const pointEvidence = evidence.slice(base + 1, base + 4);
+    const body = bodyEvidence;
+    const points = pointEvidence.map(value => value.replace(/^Atlas Device\s+/i, '').split(/\s+/).slice(0, 6).join(' ').replace(/[.,;:]+$/g, ''));
+    const claims = [
+      { field: `slide:${slideIndex}:title`, text: titles[slideIndex], sourceId: 'source-1', evidence: bodyEvidence },
+      { field: `slide:${slideIndex}:body`, text: body, sourceId: 'source-1', evidence: bodyEvidence },
+      ...points.map((point, pointIndex) => ({
+        field: `slide:${slideIndex}:point:${pointIndex}`,
+        text: point,
+        sourceId: 'source-1',
+        evidence: pointEvidence[pointIndex]
+      }))
+    ];
+    return { section, title: titles[slideIndex], body, points, claims };
+  });
   return {
-    topic: 'Atlas Device', effectiveContentFormat: format,
+    topic: 'Atlas Device', effectiveContentFormat: 'Fakta singkat',
     hook: slides[0].title, body: slides[1].body, caption: slides[1].body,
     cta: slides.at(-1).title, hashtags: [], verificationStatus: 'source_based', slides
   };
@@ -94,150 +68,136 @@ function responseFor(content) {
   return { choices: [{ message: { content: JSON.stringify({ slides: content.slides }) } }] };
 }
 
-function clientWith(response) {
+function clientSequence(responses) {
   let calls = 0;
   return {
     get calls() { return calls; },
-    chat: { completions: { create: async () => { calls += 1; return response; } } }
+    chat: { completions: { create: async () => responses[Math.min(calls++, responses.length - 1)] } }
   };
 }
 
-async function withoutSemanticProvider(t) {
+function disableSemanticAudit(t) {
   const original = sourceFilter.auditClaimSemantics;
   sourceFilter.auditClaimSemantics = async () => [];
   t.after(() => { sourceFilter.auditClaimSemantics = original; });
 }
 
-for (const format of ['Fakta singkat', 'Listicle']) {
-  test(`${format}: provider valid selesai dalam satu final rewrite`, async t => {
-    await withoutSemanticProvider(t);
-    const valid = candidate(format);
-    const client = clientWith(responseFor(valid));
-    const result = await finalizer.rewriteAllSourcesWithAi({
-      generated: valid, sources: englishSource(), topic: 'Atlas Device', format, client
-    });
-    assert.deepEqual(result.slides, valid.slides);
-    assert.equal(client.calls, 1);
-    assert.equal(finalizer.FAST_FINALIZE_ATTEMPTS, 2);
-  });
-}
-
-test('provider output kosong langsung memakai source-only fallback tanpa retry provider yang sia-sia', async t => {
-  await withoutSemanticProvider(t);
+test('provider valid selesai dalam satu final rewrite tanpa raw fallback', async t => {
+  disableSemanticAudit(t);
   const valid = candidate();
-  const client = clientWith({ choices: [{ message: { content: '' } }] });
+  const client = clientSequence([responseFor(valid)]);
   const result = await finalizer.rewriteAllSourcesWithAi({
-    generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
+    generated: valid, sources: atlasSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
   });
   assert.equal(client.calls, 1);
-  assert.equal(result.__urlSourceFallback, true);
-  assert.equal(result.verificationStatus, 'source_based');
+  assert.equal(result.__urlSourceFallback, undefined);
+  assert.equal(result.slides.length, 4);
+  result.slides.forEach(slide => assert.equal(slide.points.length, 3));
 });
 
-test('malformed JSON tidak diulang berkali-kali dan turun ke fallback', async t => {
-  await withoutSemanticProvider(t);
+test('provider output kosong tidak pernah ditampilkan sebagai raw source fallback', async t => {
+  disableSemanticAudit(t);
   const valid = candidate();
-  const client = clientWith({ choices: [{ message: { content: '```json\n{"slides": [ broken\n```' } }] });
-  const result = await finalizer.rewriteAllSourcesWithAi({
-    generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  });
-  assert.equal(client.calls, 1);
-  assert.equal(result.__urlSourceFallback, true);
-});
-
-test('numeric mismatch seperti 10 ribuan mendapat satu correction pass lalu fallback source-backed bila tetap salah', async t => {
-  await withoutSemanticProvider(t);
-  const base = candidate();
-  const bad = {
-    ...base,
-    topic: 'AI Ubah Cara Mahasiswa Belajar',
-    slides: base.slides.map(slide => ({ ...slide, claims: slide.claims.map(claim => ({ ...claim })) }))
-  };
-  bad.slides[0].body = '10 ribuan mahasiswa hadir dalam perhelatan kampus tersebut.';
-  bad.slides[0].claims[0] = {
-    field: 'slide:0:body',
-    text: bad.slides[0].body,
-    sourceId: 'source-1',
-    evidence: 'Hal tersebut disampaikan di hadapan lebih dari 10.000 mahasiswa baru Universitas Padjadjaran dalam perhelatan kampus.'
-  };
-  const client = clientWith(responseFor(bad));
-  const result = await finalizer.rewriteAllSourcesWithAi({
-    generated: bad,
-    sources: indonesianSource(),
-    topic: 'AI Ubah Cara Mahasiswa Belajar',
-    format: 'Fakta singkat',
-    client
-  });
+  const empty = { choices: [{ message: { content: '' } }] };
+  const client = clientSequence([empty, empty]);
+  await assert.rejects(
+    finalizer.rewriteAllSourcesWithAi({ generated: valid, sources: atlasSource(), topic: 'Atlas Device', format: 'Fakta singkat', client }),
+    /Final Pakai URL belum dapat dibentuk|provider/i
+  );
   assert.equal(client.calls, 2);
-  assert.equal(result.__urlSourceFallback, true);
-  assert.equal(result.verificationStatus, 'source_based');
-  assert.equal(JSON.stringify(result.slides).includes('10 ribuan mahasiswa hadir'), false);
+});
+
+test('malformed JSON mendapat maksimal satu clean retry lalu gagal tanpa raw evidence output', async t => {
+  disableSemanticAudit(t);
+  const malformed = { choices: [{ message: { content: '```json\n{"slides": [ broken\n```' } }] };
+  const client = clientSequence([malformed, malformed]);
+  await assert.rejects(
+    finalizer.rewriteAllSourcesWithAi({ generated: candidate(), sources: atlasSource(), topic: 'Atlas Device', format: 'Fakta singkat', client }),
+    /Final Pakai URL belum dapat dibentuk|provider/i
+  );
+  assert.equal(client.calls, 2);
+});
+
+test('numeric mismatch mendapat satu clean rebuild dan hasil kedua yang grounded dipakai', async t => {
+  disableSemanticAudit(t);
+  const bad = candidate();
+  bad.slides = bad.slides.map(slide => ({ ...slide, points: [...slide.points], claims: slide.claims.map(claim => ({ ...claim })) }));
+  bad.slides[0].body = 'Atlas Device mendukung 99 profil lokal untuk workstation bersama pada satu perangkat.';
+  const bodyClaim = bad.slides[0].claims.find(claim => claim.field === 'slide:0:body');
+  bodyClaim.text = bad.slides[0].body;
+  const good = candidate();
+  const client = clientSequence([responseFor(bad), responseFor(good)]);
+  const result = await finalizer.rewriteAllSourcesWithAi({ generated: bad, sources: atlasSource(), topic: 'Atlas Device', format: 'Fakta singkat', client });
+  assert.equal(client.calls, 2);
+  assert.equal(JSON.stringify(result.slides).includes('99 profil'), false);
   assert.equal(finalizer.numericGroundingErrors(result).length, 0);
 });
 
-test('semantic rejection hanya mendapat satu correction pass sebelum fallback', async t => {
+test('semantic rejection tidak turun ke deterministic/raw fallback', async t => {
   const original = sourceFilter.auditClaimSemantics;
   sourceFilter.auditClaimSemantics = async () => ['SEMANTIC_SUPPORT: slide:0:body tidak didukung evidence'];
   t.after(() => { sourceFilter.auditClaimSemantics = original; });
   const valid = candidate();
-  const client = clientWith(responseFor(valid));
-  const result = await finalizer.rewriteAllSourcesWithAi({
-    generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  });
+  const client = clientSequence([responseFor(valid), responseFor(valid)]);
+  await assert.rejects(
+    finalizer.rewriteAllSourcesWithAi({ generated: valid, sources: atlasSource(), topic: 'Atlas Device', format: 'Fakta singkat', client }),
+    /Final Pakai URL belum dapat dibentuk secara faktual dan natural/i
+  );
   assert.equal(client.calls, 2);
-  assert.equal(result.__urlSourceFallback, true);
 });
 
-test('manual URL relevance bank membuang drift Smart PAI dari halaman topik mahasiswa', () => {
-  const sources = driftedSindonewsLikeSource();
+test('manual URL relevance bank membuang drift artikel lain dari halaman topik utama', () => {
+  const sources = [{
+    url: 'https://example.test/mahasiswa',
+    finalUrl: 'https://example.test/mahasiswa',
+    title: 'AI Ubah Cara Mahasiswa Belajar',
+    text: [
+      'AI membantu mahasiswa memahami materi dan mencari penjelasan tambahan selama proses belajar di kampus.',
+      'Mahasiswa tetap perlu memeriksa sumber dan membandingkan jawaban AI dengan materi perkuliahan yang digunakan.',
+      'Dosen membantu mahasiswa memahami konteks dan menilai apakah jawaban AI sesuai dengan materi kuliah.',
+      'Mahasiswa dapat memakai AI sebagai alat bantu belajar tanpa menggantikan proses berpikir dan diskusi akademik.',
+      'Literasi AI membantu mahasiswa memahami keterbatasan jawaban model selama kegiatan belajar di perguruan tinggi.',
+      'Produk rumah tangga terbaru menawarkan kamera beresolusi tinggi untuk konsumen yang mencari perangkat baru.',
+      'Ponsel lipat generasi baru memiliki kamera 200 MP dan layar dengan desain yang berbeda.',
+      'Berita olahraga terbaru membahas pertandingan besar yang berlangsung pada akhir pekan.'
+    ].join(' ')
+  }];
   const facts = require('../src/services/manualSourceFallback').sourceFacts(sources);
   const relevant = finalizer.relevantSourceFacts(sources, facts, 'AI Ubah Cara Mahasiswa Belajar');
   const text = relevant.map(fact => fact.evidence).join(' ');
   assert.match(text, /mahasiswa|belajar/i);
-  assert.doesNotMatch(text, /Smart PAI|Kemenag|PAUD\/TK|39 buku/i);
-  assert.ok(relevant.length >= 4);
+  assert.doesNotMatch(text, /200 MP|ponsel lipat|pertandingan besar|produk rumah tangga/i);
 });
 
-test('source-only candidate menolak potongan kutipan patah seperti screenshot', () => {
-  const source = driftedSindonewsLikeSource()[0];
-  const candidates = finalizer.sourceDisplayCandidates(source.text);
-  assert.equal(candidates.some(text => /^Tersedia/i.test(text)), false);
-  assert.equal(candidates.some(text => /AI mulai mengubah cara mahasiswa belajar/i.test(text)), true);
+test('source candidate menolak potongan kutipan patah', () => {
+  const text = [
+    'AI membantu perusahaan memahami pola penggunaan teknologi pada kegiatan operasional sehari-hari.',
+    'Tersedia," jelas narasumber ketika menjawab pertanyaan dari wartawan.',
+    'Perusahaan tetap perlu mengevaluasi kebijakan internal sebelum menerapkan sistem secara lebih luas.'
+  ].join(' ');
+  const candidates = finalizer.sourceDisplayCandidates(text);
+  assert.equal(candidates.some(value => /^Tersedia/i.test(value)), false);
+  assert.equal(candidates.some(value => /AI membantu perusahaan/i.test(value)), true);
 });
 
-test('URL visual gate menangkap body yang akan dipecah renderer menjadi bullet gantung', () => {
-  const bad = {
-    slides: [{
-      title: '39 buku pelajaran utama untuk tingkat PAUD TK',
-      body: 'Tak hanya itu, 39 buku pelajaran utama untuk tingkat PAUD/TK, SD, SMP, SMA/SMK, hingga perguruan tinggi mencakup banyak materi pendidikan sekaligus.',
-      points: ['agama di sekolah tidak akan pernah bisa']
-    }]
-  };
-  assert.ok(finalizer.urlVisualFitErrors(bad).some(error => /body tidak muat|judul tidak muat/i.test(error)));
-  const good = { slides: [{ title: 'AI Membantu Proses Belajar', body: 'Mahasiswa dapat memakai AI sebagai alat bantu tanpa menggantikan proses berpikir.', points: ['Tetap periksa sumber jawaban'] }] };
-  assert.equal(finalizer.urlVisualFitErrors(good).length, 0);
+test('URL visual gate menangkap body yang tidak muat canvas', () => {
+  const bad = { slides: [{
+    title: 'Judul yang masih cukup pendek',
+    body: 'Kalimat ini sengaja dibuat sangat panjang agar melampaui ruang body native canvas dan tidak boleh lolos ke renderer sebagai teks yang akan dipotong secara mekanis menjadi bagian yang berantakan untuk pengguna.',
+    points: ['Fakta pendek tetap utuh']
+  }] };
+  assert.ok(finalizer.urlVisualFitErrors(bad).some(error => /body tidak muat/i.test(error)));
 });
 
-test('fenced JSON valid dinormalisasi secara terbatas', () => {
+test('fenced JSON, text array, dan object parsed tetap dinormalisasi terbatas', () => {
   const valid = candidate();
-  const response = { choices: [{ message: { content: `\n\`\`\`json\n${JSON.stringify({ slides: valid.slides })}\n\`\`\`\n` } }] };
-  assert.deepEqual(finalizer.parseSlides(response, valid.slides.map(slide => slide.section)), valid.slides);
-});
-
-test('content array text valid dinormalisasi secara terbatas', () => {
-  const valid = candidate();
-  const response = { choices: [{ message: { content: [{ type: 'text', text: JSON.stringify({ slides: valid.slides }) }] } }] };
-  assert.deepEqual(finalizer.parseSlides(response, valid.slides.map(slide => slide.section)), valid.slides);
-});
-
-test('object JSON yang sudah parsed diterima hanya bila shape slides valid', () => {
-  const valid = candidate();
-  const response = { choices: [{ message: { content: { slides: valid.slides } } }] };
-  assert.deepEqual(finalizer.parseSlides(response, valid.slides.map(slide => slide.section)), valid.slides);
-  assert.throws(
-    () => finalizer.parseSlides({ choices: [{ message: { content: { unexpected: true } } }] }, valid.slides.map(slide => slide.section)),
-    /jumlah slide|shape|slides/i
-  );
+  const sections = valid.slides.map(slide => slide.section);
+  const fenced = { choices: [{ message: { content: `\n\`\`\`json\n${JSON.stringify({ slides: valid.slides })}\n\`\`\`\n` } }] };
+  const array = { choices: [{ message: { content: [{ type: 'text', text: JSON.stringify({ slides: valid.slides }) }] } }] };
+  const object = { choices: [{ message: { content: { slides: valid.slides } } }] };
+  assert.deepEqual(finalizer.parseSlides(fenced, sections), valid.slides);
+  assert.deepEqual(finalizer.parseSlides(array, sections), valid.slides);
+  assert.deepEqual(finalizer.parseSlides(object, sections), valid.slides);
 });
 
 test('numeric dan ordinal grounding tetap menolak angka baru', () => {

@@ -28,10 +28,10 @@ function source() {
 
 function denseCandidate({ badTitle = false, badNumber = false } = {}) {
   const rows = [
-    ['PEMBUKA', 'Apa itu transparansi AI?', 'Perusahaan AI menambahkan watermark pada keluaran model untuk meningkatkan transparansi bagi pengguna.', 'Watermark membantu pengguna mengenali keluaran AI', 'Watermark membantu pengguna mengenali bahwa suatu keluaran dibuat oleh sistem kecerdasan buatan.'],
-    ['FAKTA UTAMA', badTitle ? 'Watermark Berlaku 2 Agustus' : 'Apa fungsi watermark?', badNumber ? 'Watermark diwajibkan mulai 2 Agustus untuk meningkatkan transparansi keluaran model.' : 'Kebijakan transparansi mendorong penyedia model menjelaskan asal keluaran secara lebih jelas.', 'Pengguna tetap perlu memeriksa konteks', 'Pengguna tetap perlu memeriksa konteks sebelum mempercayai informasi yang dihasilkan oleh model AI.'],
-    ['KONTEKS', 'Bagaimana proses identifikasinya?', 'Penyedia model dapat memakai metadata untuk membantu proses identifikasi konten yang dibuat AI.', 'Sumber asli tetap perlu diperiksa', 'Penerapan transparansi tidak menghilangkan kebutuhan pengguna untuk memeriksa sumber informasi asli.'],
-    ['KESIMPULAN', 'Apa yang perlu diingat?', 'Aturan transparansi menekankan pentingnya penandaan konten yang dihasilkan oleh sistem otomatis.', 'Metode penandaan perlu dijelaskan', 'Informasi tentang metode penandaan perlu disampaikan secara jelas agar pengguna memahami fungsinya.']
+    ['PEMBUKA', 'Transparansi pada Keluaran AI', 'Perusahaan AI menambahkan watermark pada keluaran model untuk meningkatkan transparansi bagi pengguna.', 'Watermark membantu mengenali keluaran AI', 'Watermark membantu pengguna mengenali bahwa suatu keluaran dibuat oleh sistem kecerdasan buatan.'],
+    ['FAKTA UTAMA', badTitle ? 'Watermark Berlaku 2 Agustus' : 'Kebijakan Transparansi Model', badNumber ? 'Watermark diwajibkan mulai 2 Agustus untuk meningkatkan transparansi keluaran model.' : 'Kebijakan transparansi mendorong penyedia model menjelaskan asal keluaran secara lebih jelas.', 'Pengguna tetap perlu memeriksa konteks', 'Pengguna tetap perlu memeriksa konteks sebelum mempercayai informasi yang dihasilkan oleh model AI.'],
+    ['KONTEKS', 'Metadata Membantu Identifikasi Konten', 'Penyedia model dapat memakai metadata untuk membantu proses identifikasi konten yang dibuat AI.', 'Sumber asli tetap perlu diperiksa', 'Penerapan transparansi tidak menghilangkan kebutuhan pengguna untuk memeriksa sumber informasi asli.'],
+    ['KESIMPULAN', 'Penandaan Perlu Dijelaskan Jelas', 'Aturan transparansi menekankan pentingnya penandaan konten yang dihasilkan oleh sistem otomatis.', 'Metode penandaan perlu dijelaskan', 'Informasi tentang metode penandaan perlu disampaikan secara jelas agar pengguna memahami fungsinya.']
   ];
   const bodyEvidence = [
     'Perusahaan AI menambahkan watermark pada keluaran model untuk meningkatkan transparansi bagi pengguna.',
@@ -45,18 +45,8 @@ function denseCandidate({ badTitle = false, badNumber = false } = {}) {
     body: row[2],
     points: [row[3]],
     claims: [
-      {
-        field: `slide:${index}:body`,
-        text: row[2],
-        sourceId: 'source-1',
-        evidence: index === 1 && badNumber ? bodyEvidence[index] : bodyEvidence[index]
-      },
-      {
-        field: `slide:${index}:point:0`,
-        text: row[3],
-        sourceId: 'source-1',
-        evidence: row[4]
-      }
+      { field: `slide:${index}:body`, text: row[2], sourceId: 'source-1', evidence: bodyEvidence[index] },
+      { field: `slide:${index}:point:0`, text: row[3], sourceId: 'source-1', evidence: row[4] }
     ]
   }));
   return {
@@ -104,7 +94,7 @@ test('prompt Pakai URL generik memaksa density dan semua source tanpa nama kasus
   });
   assert.match(prompt, /Gunakan SEMUA URL/i);
   assert.match(prompt, /body \+ 3 bullet/i);
-  assert.match(prompt, /judul \+ satu body \+ 3 bullet/i);
+  assert.match(prompt, /3 bullet fakta berbeda/i);
   assert.doesNotMatch(prompt, /Smart PAI|Muse Code|Anthropic|Alibaba/i);
 });
 
@@ -126,21 +116,21 @@ test('relevance bank tetap mempertahankan fakta dari setiap URL', () => {
   assert.equal(ids.has('source-2'), true);
 });
 
-test('title faktual tanpa evidence diperbaiki lokal menjadi pertanyaan struktural', () => {
+test('title faktual tanpa evidence direpair dari evidence body, bukan menjadi pertanyaan/template', () => {
   const content = denseCandidate({ badTitle: true });
-  const repaired = finalizer.repairProblematicTitles(
-    content,
-    ['slide:1:title: klaim faktual tidak memiliki evidence.'],
-    content.topic,
-    'Fakta singkat'
-  );
+  const repaired = finalizer.repairProblematicTitles(content, ['slide:1:title: klaim faktual tidak memiliki evidence.']);
   assert.equal(repaired.changed, true);
-  assert.match(repaired.content.slides[1].title, /\?$/);
   assert.doesNotMatch(repaired.content.slides[1].title, /2 Agustus/);
+  assert.doesNotMatch(repaired.content.slides[1].title, /\?$/);
+  assert.doesNotMatch(repaired.content.slides[1].title, /Transparansi model AI dan watermark:\s*(?:Fakta|Konteks|Kesimpulan)/i);
   assert.equal(repaired.content.slides[1].body, content.slides[1].body);
+  const titleClaim = repaired.content.slides[1].claims.find(claim => claim.field === 'slide:1:title');
+  assert.ok(titleClaim);
+  assert.equal(titleClaim.text, repaired.content.slides[1].title);
+  assert.equal(titleClaim.evidence, content.slides[1].claims.find(claim => claim.field === 'slide:1:body').evidence);
 });
 
-test('numeric grounding error sekarang menunjuk field yang harus direpair', () => {
+test('numeric grounding error menunjuk field yang harus direpair', () => {
   const bad = denseCandidate({ badNumber: true });
   const errors = finalizer.numericGroundingErrors(bad);
   assert.ok(errors.some(error => /slide:1:body/.test(error)));
@@ -160,8 +150,8 @@ test('missing title evidence tidak memicu putaran AI kedua bila body dan bullet 
     client
   });
   assert.equal(client.calls, 1);
-  assert.match(result.slides[1].title, /\?$/);
-  assert.doesNotMatch(result.slides[1].title, /2 Agustus/);
+  assert.doesNotMatch(result.slides[1].title, /2 Agustus|\?$/);
+  assert.ok(result.slides[1].claims.some(claim => claim.field === 'slide:1:title'));
 });
 
 test('numeric mismatch diregenerasi sekali dari source bank lalu menghasilkan konten', async t => {
