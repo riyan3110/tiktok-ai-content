@@ -10,6 +10,23 @@ const generation = require('../src/services/generation');
 const autoSourcePatch = require('../src/services/autoSourcePatch');
 const { autoSourceRequested, pakaiUrlRequested } = autoSourcePatch;
 
+const AUTO_SOURCE_MODULES = [
+  '../src/services/autoSourceFastDiscovery',
+  '../src/services/autoSourceExpandedDiscovery',
+  '../src/services/autoSourceQualityLayer',
+  '../src/services/autoSourceRuntimeGuard',
+  '../src/services/autoSourcePlanFinalizer',
+  '../src/services/autoSourceStrictFinalizer',
+  '../src/services/autoSourceComposer',
+  '../src/services/autoSourceSimpleComposer'
+];
+
+function clearAutoSourceCaches() {
+  for (const modulePath of AUTO_SOURCE_MODULES) {
+    try { delete require.cache[require.resolve(modulePath)]; } catch {}
+  }
+}
+
 test('manual Tanpa URL activates auto source even when legacy UI sends useSources=false', () => {
   assert.equal(autoSourceRequested({ mode: 'manual', useSources: false, sourceUrls: [] }), true);
 });
@@ -36,8 +53,22 @@ test('automatic AI topic mode without URLs is not hijacked by manual auto source
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
 });
 
+test('simple Auto Source loader does not install legacy strict/plan validator stack', () => {
+  clearAutoSourceCaches();
+  const dependencies = autoSourcePatch.loadAutoSourceDependencies();
+  assert.ok(dependencies.autoSourceDiscovery);
+  assert.ok(dependencies.autoSourceSimpleComposer);
+  assert.equal('autoSourceComposer' in dependencies, false);
+  assert.equal('autoSourcePlanFinalizer' in dependencies, false);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourceQualityLayer')], undefined);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourceRuntimeGuard')], undefined);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourcePlanFinalizer')], undefined);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourceStrictFinalizer')], undefined);
+});
+
 test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async () => {
   autoSourcePatch.resetForTests();
+  clearAutoSourceCaches();
   const realGenerateAndSave = generation.generateAndSave;
   const args = {
     mode: 'manual',
@@ -62,12 +93,9 @@ test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async (
     assert.equal(result, 155);
     assert.equal(calls, 1);
     assert.strictEqual(received, args, 'Pakai URL args must be forwarded without cloning or rewriting');
-    assert.equal(require.cache[require.resolve('../src/services/autoSourceFastDiscovery')], undefined);
-    assert.equal(require.cache[require.resolve('../src/services/autoSourceExpandedDiscovery')], undefined);
-    assert.equal(require.cache[require.resolve('../src/services/autoSourceQualityLayer')], undefined);
-    assert.equal(require.cache[require.resolve('../src/services/autoSourceRuntimeGuard')], undefined);
-    assert.equal(require.cache[require.resolve('../src/services/autoSourcePlanFinalizer')], undefined);
-    assert.equal(require.cache[require.resolve('../src/services/autoSourceComposer')], undefined);
+    for (const modulePath of AUTO_SOURCE_MODULES) {
+      assert.equal(require.cache[require.resolve(modulePath)], undefined, `${modulePath} must stay unloaded for Pakai URL`);
+    }
   } finally {
     autoSourcePatch.resetForTests();
     generation.generateAndSave = realGenerateAndSave;
