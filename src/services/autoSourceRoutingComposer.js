@@ -1,3 +1,5 @@
+const identity = require('./autoSourceTopicIdentity');
+const multi = require('./autoSourceMultiEntityTopic');
 const dynamicScope = require('./autoSourceDynamicScope');
 const topicPlanner = require('./autoSourceDynamicTopicPlan');
 const storyFocus = require('./autoSourceStoryFocus');
@@ -23,48 +25,51 @@ function normalizeFactSections(result, format = '') {
   };
 }
 
-function readableFacts(source = {}, plan = {}) {
-  return storyFocus.atomicFacts(source?.text || '')
-    .map(clean)
-    .filter(Boolean)
-    .filter(fact => !storyFocus.editorialNoise(fact, plan));
+function continuationFact(value = '') {
+  return /^(?:it|this|that|these|those|the\s+(?:option|feature|service|system|model|company|product|tool)|ini|itu|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini)\b/i.test(clean(value));
+}
+
+function factRelevant(topic = '', fact = '', plan = {}, previousKept = false) {
+  if (!fact || storyFocus.editorialNoise(fact, plan) || storyFocus.marketSnapshot(fact, plan)) return false;
+  if (previousKept && continuationFact(fact)) return true;
+
+  if (identity.hasSpecificIdentity(topic)) return identity.identityMatches(topic, fact);
+  if (multi.hasMultiEntityTopic(topic)) return multi.matchedEntities(topic, fact).length > 0;
+
+  if (dynamicScope.eventLockRequired(plan)) {
+    return dynamicScope.eventLockSatisfied(plan, fact)
+      || dynamicScope.actionHits(plan, fact).length > 0
+      || dynamicScope.contextHits(plan, fact).length > 0;
+  }
+
+  if ((plan.subjects || []).length) return dynamicScope.subjectHits(plan, fact).length > 0;
+  if ((plan.eventTerms || []).length) return dynamicScope.eventHits(plan, fact).length > 0;
+  return true;
+}
+
+function readableFacts(topic = '', source = {}, plan = {}) {
+  const raw = storyFocus.atomicFacts(source?.text || '').map(clean).filter(Boolean);
+  const out = [];
+  for (const fact of raw) {
+    const keep = factRelevant(topic, fact, plan, out.length > 0);
+    if (keep) out.push(fact);
+  }
+  return out;
 }
 
 function eventNeighborhoodSource(topic = '', source = {}, plan = {}, maxFacts = 10) {
-  const facts = readableFacts(source, plan);
+  const facts = readableFacts(topic, source, plan);
   if (!facts.length) return { ...source, text: '' };
 
-  const selected = [];
-  const push = fact => {
-    if (!fact || selected.includes(fact) || selected.length >= maxFacts) return;
-    selected.push(fact);
-  };
-
-  if (!dynamicScope.eventLockRequired(plan)) {
-    facts.slice(0, maxFacts).forEach(push);
-  } else {
-    const titleLocked = dynamicScope.eventLockSatisfied(plan, source?.title || '');
-    let anchor = titleLocked ? 0 : facts.findIndex(fact => dynamicScope.eventLockSatisfied(plan, fact));
-    if (anchor < 0) {
-      anchor = facts.findIndex(fact =>
-        dynamicScope.actionHits(plan, fact).length > 0 || dynamicScope.contextHits(plan, fact).length > 0
-      );
-    }
+  let selected = facts.slice(0, maxFacts);
+  if (dynamicScope.eventLockRequired(plan)) {
+    let anchor = facts.findIndex(fact => dynamicScope.eventLockSatisfied(plan, fact));
+    if (anchor < 0) anchor = facts.findIndex(fact =>
+      dynamicScope.actionHits(plan, fact).length > 0 || dynamicScope.contextHits(plan, fact).length > 0
+    );
     if (anchor < 0) anchor = 0;
-
-    // Keep a compact event core. Four lead facts are enough to build four slides
-    // without swallowing a separate news item pasted later in the same article.
-    const coreStart = Math.max(0, anchor - (titleLocked ? 0 : 1));
-    const coreEnd = Math.min(facts.length, coreStart + 4);
-    facts.slice(coreStart, coreEnd).forEach(push);
-
-    for (let index = coreEnd; index < facts.length && selected.length < maxFacts; index += 1) {
-      const fact = facts[index];
-      const eventRelated = dynamicScope.eventLockSatisfied(plan, fact)
-        || dynamicScope.contextHits(plan, fact).length > 0;
-      const continuation = /^(?:it|this|that|these|those|the\s+(?:option|feature|service|system|model|company)|ini|itu|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini)\b/i.test(fact);
-      if (eventRelated || continuation) push(fact);
-    }
+    const start = Math.max(0, anchor - 1);
+    selected = facts.slice(start, Math.min(facts.length, start + maxFacts));
   }
 
   return {
@@ -77,8 +82,8 @@ function eventNeighborhoodSource(topic = '', source = {}, plan = {}, maxFacts = 
   };
 }
 
-function factCount(source = {}, plan = {}) {
-  return readableFacts(source, plan).length;
+function factCount(topic = '', source = {}, plan = {}) {
+  return readableFacts(topic, source, plan).length;
 }
 
 function prepareSources(topic = '', sources = [], plan = {}) {
@@ -88,18 +93,18 @@ function prepareSources(topic = '', sources = [], plan = {}) {
   const prepared = sources.map((original, index) => {
     const current = focused[index] || { ...original, text: '' };
     const fallback = eventNeighborhoodSource(topic, original, plan);
+    const currentCount = factCount(topic, current, plan);
+    const fallbackCount = factCount(topic, fallback, plan);
     // Prefer tightly focused text when it still contains enough material.
-    // Otherwise keep the factual neighborhood from the already-accepted article.
-    return factCount(current, plan) >= 4 ? current
-      : factCount(fallback, plan) > factCount(current, plan) ? fallback
-        : current;
+    // Otherwise keep the relevant factual neighborhood from the same article.
+    return currentCount >= 4 ? current : fallbackCount > currentCount ? fallback : current;
   }).filter(source => clean(source?.text));
 
-  const totalFacts = prepared.reduce((sum, source) => sum + factCount(source, plan), 0);
+  const totalFacts = prepared.reduce((sum, source) => sum + factCount(topic, source, plan), 0);
   if (totalFacts >= 4) return prepared;
 
-  // Last factual rescue: use clean leads from the same discovery-approved
-  // articles. This does not broaden to unrelated search results or external facts.
+  // Last factual rescue: widen only within the same discovery-approved articles.
+  // Relevance gates above still reject other stories/market side-notes.
   return sources
     .map(source => eventNeighborhoodSource(topic, source, plan, 14))
     .filter(source => clean(source?.text));
@@ -132,6 +137,8 @@ async function compose(args = {}) {
 module.exports = {
   compose,
   normalizeFactSections,
+  continuationFact,
+  factRelevant,
   readableFacts,
   eventNeighborhoodSource,
   factCount,
