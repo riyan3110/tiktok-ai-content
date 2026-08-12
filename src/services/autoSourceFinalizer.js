@@ -165,12 +165,13 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     const candidate = repairKnownNumericShorthand(compactOverlongPoints(checked.content || draft), sources);
     let checkedErrors = filterFalsePositiveMetadataErrors(checked.errors, candidate);
     checkedErrors = autoSourceValidation.filterFalsePositives(checkedErrors, candidate);
-    const deterministicErrors = [
+    let deterministicErrors = [
       ...autoSourceValidation.numericGroundingErrors(candidate, sources),
       ...checkedErrors,
       ...validateSourceContent(candidate, sources),
       ...richnessErrors(candidate, facts)
     ];
+    deterministicErrors = autoSourceValidation.filterFalsePositives(deterministicErrors, candidate);
     if (deterministicErrors.length) {
       lastErrors = [...new Set(deterministicErrors)];
       draft = candidate;
