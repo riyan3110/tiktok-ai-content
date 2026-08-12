@@ -5,9 +5,10 @@ const topicPlanner = require('./autoSourceDynamicTopicPlan');
 const dynamicScope = require('./autoSourceDynamicScope');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// The topic is interpreted fresh for every request. Search starts with the exact
-// user text; only when those results are weak do we try one dynamically planned
-// alternate query. No catalog of known/trending topics is required.
+// Search starts from the exact free-form topic typed by the user. A dynamic AI
+// topic plan is used only when the exact search has no strong result, so normal
+// trending-news generation stays fast and cheap while unknown/new terms still
+// have a smart global-search fallback.
 
 function sourceUrl(source = {}) {
   return String(source?.finalUrl || source?.url || '').trim();
@@ -65,17 +66,23 @@ async function discover(options = {}) {
   const topic = String(options.topic || '').trim().replace(/\s+/g, ' ');
   if (!topic) throw Object.assign(new Error('Topik wajib diisi untuk pencarian sumber otomatis.'), { status: 400 });
 
-  const plan = await topicPlanner.createPlan(topic, { client: options.topicPlannerClient });
+  // Deterministic parsing already handles arbitrary proper names/version strings
+  // without a catalog. Use it first so successful exact searches cost no extra AI call.
+  let plan = topicPlanner.fallbackPlan(topic);
   let result = await safeDiscover(options, topic);
   let baseSources = uniqueSources(result.sources || []).filter(source =>
     dynamicScope.sourceInScope(topic, source, plan)
   );
 
-  // Keep the normal path cheap/fast. Only broaden dynamically when the exact
-  // user query did not yield enough strong articles for a four-slide carousel.
-  if (baseSources.length < 3) {
+  // Only if exact-topic search yields nothing strong, ask the configured model to
+  // interpret this one runtime topic and propose one alternate/global query.
+  if (!baseSources.length) {
+    plan = await topicPlanner.createPlan(topic, { client: options.topicPlannerClient });
+    baseSources = uniqueSources(result.sources || []).filter(source =>
+      dynamicScope.sourceInScope(topic, source, plan)
+    );
     const alternate = distinctAlternateQuery(topic, plan);
-    if (alternate) {
+    if (!baseSources.length && alternate) {
       const extra = await safeDiscover(options, alternate);
       result = mergeBundle(result, extra);
       baseSources = uniqueSources(result.sources || []).filter(source =>
