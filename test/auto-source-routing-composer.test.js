@@ -97,3 +97,27 @@ test('event neighborhood keeps usable story facts instead of returning an empty 
   assert.ok(routing.factCount(topic, narrowed, plan) >= 4);
   assert.doesNotMatch(narrowed.text, /under 18|Pentagon/i);
 });
+
+test('single-subject article can use its factual lead when the title already anchors the topic', () => {
+  const topic = 'Anthropic';
+  const plan = {
+    rawTopic: topic,
+    canonicalTopic: topic,
+    subjects: ['Anthropic'],
+    eventTerms: [],
+    actionTerms: [],
+    contextTerms: [],
+    marketIntent: false,
+    relation: 'single',
+    planner: 'fallback'
+  };
+  const input = source(
+    'Anthropic expands its enterprise AI offering',
+    'The company expanded access for enterprise customers. It added new administrative controls. The service now supports additional deployment options. This update is rolling out gradually. Gold rose 1% in afternoon trading.'
+  );
+
+  const facts = routing.readableFacts(topic, input, plan);
+  assert.equal(facts.length, 4);
+  assert.match(facts.join(' '), /enterprise customers|administrative controls/i);
+  assert.doesNotMatch(facts.join(' '), /Gold rose/i);
+});
