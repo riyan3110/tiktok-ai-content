@@ -25,7 +25,7 @@ test('broad topic uses expanded queries and relaxed two-anchor relevance without
     validateUrl: async raw => new URL(raw),
     fetchSources: async urls => urls[0].includes('robotics.example') ? [{
       url: urls[0], finalUrl: urls[0], title: 'Humanoid robots move into industrial work',
-      text: 'Humanoid robots use articulated bodies, sensors, actuators, balance control, and software to perform physical tasks. Robot developers are testing humanoid machines for factories, logistics, and other environments where human-shaped movement can be useful.',
+      text: 'Humanoid robots use articulated bodies, sensors, actuators, balance control, and software to perform physical tasks. Robot developers are testing humanoid machines for factories, logistics, and other environments where human-shaped movement can be useful. Some systems combine cameras and force sensors with software that coordinates walking, grasping, and balance.',
       fetchedAt: '2026-08-12T00:00:00.000Z'
     }] : [{
       url: urls[0], finalUrl: urls[0], title: 'Smartphone launch',
