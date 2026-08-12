@@ -7,7 +7,7 @@ const multi = require('./autoSourceMultiEntityTopic');
 // the requested topic scope, so long articles cannot leak unrelated side notes.
 
 const STOPWORDS = new Set([
-  'yang','dan','atau','dari','untuk','dengan','tentang','pada','dalam','ini','itu','adalah','merupakan','sebagai','oleh','ke','di',
+  'yang','dan','atau','dari','untuk','dengan','tentang','pada','dalam','ini','itu','adalah','merupakan','sebagai','oleh','ke','di','terhadap',
   'baru','terbaru','update','berita','info','fakta','singkat','cara','manfaat','potensi','dampak','pengaruh','peran','fitur','aplikasi',
   'menghadirkan','hadirkan','memperkenalkan','meluncurkan','merilis','rilis','mengumumkan','umumkan','membahas','hadapi','prioritaskan',
   'the','and','or','from','for','with','about','on','in','to','of','new','latest','update','news','feature','app','application','launch',
@@ -26,18 +26,25 @@ const ALIASES = new Map([
   ['pendidikan', ['pendidikan','education']],
   ['pemrograman', ['pemrograman','programming']],
   ['kode', ['kode','code']],
-  ['robot', ['robot','robotics']],
+  ['robot', ['robot','robots','robotics']],
+  ['humanoid', ['humanoid','humanoids']],
   ['iklan', ['iklan','advertising','ads']],
   ['gambar', ['gambar','image','images']],
   ['suara', ['suara','voice','audio']],
-  ['agen', ['agen','agent']],
+  ['agen', ['agen','agent','agents']],
   ['pengguna', ['pengguna','user','users']],
+  ['aktif', ['aktif','active']],
+  ['penurunan', ['penurunan','decline','declined','drop','dropped']],
   ['perkiraan', ['perkiraan','forecast','forecasting']],
   ['prakiraan', ['prakiraan','forecast','forecasting']],
-  ['badai', ['badai','storm']],
-  ['topan', ['topan','typhoon']],
+  ['badai', ['badai','storm','storms']],
+  ['topan', ['topan','typhoon','typhoons']],
   ['akses', ['akses','access']]
 ]);
+
+const MARKET_INTENT = /\b(?:saham|stock|stocks|share|shares|harga\s+saham|price|market|pasar|trading|perdagangan|investor|ticker|nasdaq|nyse)\b/i;
+const MARKET_CUES = /\b(?:stock|stocks|share|shares|saham|trading|traded|pre[- ]market|after[- ]hours|ticker|nasdaq|nyse|harga\s+saham|share\s+price)\b/i;
+const ROUNDUP_CUES = /\b(?:gold|emas|bitcoin|btc|crypto|kripto|oil|minyak|treasury|obligasi|forex|dolar\s+index)\b/i;
 
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -116,6 +123,44 @@ function strongAnchorPresent(p, value = '') {
   return p.strong.some(anchor => aliasPresent(anchor, value));
 }
 
+function marketIntent(topic = '') {
+  return MARKET_INTENT.test(String(topic || ''));
+}
+
+function firstAnchorIndex(p, value = '') {
+  const tokens = clean(value).split(/\s+/).filter(Boolean);
+  for (let i = 0; i < tokens.length; i += 1) {
+    const window = tokens.slice(i, Math.min(tokens.length, i + 4)).join(' ');
+    if (p.anchors.some(anchor => aliasPresent(anchor, window))) return i;
+  }
+  return -1;
+}
+
+function genericRoundupSideNote(topic = '', evidence = '') {
+  if (marketIntent(topic)) return false;
+  const p = profile(topic);
+  if (!p.anchors.length) return false;
+  const text = clean(evidence);
+  if (!ROUNDUP_CUES.test(text)) return false;
+  const tokens = text.split(/\s+/).filter(Boolean);
+  const first = firstAnchorIndex(p, text);
+  const late = first >= Math.max(6, Math.floor(tokens.length * 0.45));
+  const prefix = first > 0 ? tokens.slice(0, first).join(' ') : '';
+  const numericBefore = (prefix.match(/\b\d+(?:[.,]\d+)?%?\b/g) || []).length;
+  return late && numericBefore >= 1;
+}
+
+function marketSnapshotPenalty(topic = '', evidence = '') {
+  if (marketIntent(topic)) return 0;
+  if (genericRoundupSideNote(topic, evidence)) return 20;
+  let penalty = 0;
+  const text = clean(evidence);
+  if (MARKET_CUES.test(text)) penalty += 3;
+  if (/\b(?:rose|fell|jumped|surged|slid|gained|dropped|naik|turun|melonjak|anjlok)\b/i.test(text)
+    && /\b\d+(?:[.,]\d+)?%\b/.test(text)) penalty += 2;
+  return penalty;
+}
+
 function sourceInScope(topic = '', source = {}) {
   const p = profile(topic);
   const combined = `${source?.title || ''} ${source?.text || ''}`;
@@ -143,6 +188,7 @@ function evidenceInScope(topic = '', evidence = '', source = {}) {
   if (p.multiEntities.length >= 2) {
     return multi.matchedEntities(topic, text).length > 0 && !multi.isRoundupSideNote(topic, text);
   }
+  if (genericRoundupSideNote(topic, text)) return false;
   if (!p.anchors.length) return true;
 
   const evidenceMatches = p.anchors.filter(anchor => aliasPresent(anchor, text));
@@ -164,7 +210,7 @@ function evidenceScopeScore(topic = '', evidence = '', source = {}) {
   if (!evidenceInScope(topic, evidence, source)) return -100;
   const matches = p.anchors.filter(anchor => aliasPresent(anchor, evidence)).length;
   const strongMatches = p.strong.filter(anchor => aliasPresent(anchor, evidence)).length;
-  return matches * 1.2 + strongMatches * 1.5 + (sourceInScope(topic, source) ? 0.75 : 0);
+  return matches * 1.2 + strongMatches * 1.5 + (sourceInScope(topic, source) ? 0.75 : 0) - marketSnapshotPenalty(topic, evidence);
 }
 
 function evidenceSentences(text = '') {
@@ -174,10 +220,13 @@ function evidenceSentences(text = '') {
 function scopeSource(topic = '', source = {}) {
   if (!sourceInScope(topic, source)) return { ...source, text: '' };
   const sentences = evidenceSentences(source?.text || '');
-  const kept = sentences.filter(sentence => evidenceInScope(topic, sentence, source));
+  const kept = sentences
+    .map((sentence, index) => ({ sentence, index, score: evidenceScopeScore(topic, sentence, source) }))
+    .filter(item => item.score > -100)
+    .sort((a, b) => b.score - a.score || a.index - b.index);
   return {
     ...source,
-    text: kept.join(' '),
+    text: kept.map(item => item.sentence).join(' '),
     topicScope: {
       originalSentenceCount: sentences.length,
       keptSentenceCount: kept.length
@@ -199,5 +248,8 @@ module.exports = {
   scopeSource,
   scopeSources,
   requiredAnchorCount,
+  marketIntent,
+  genericRoundupSideNote,
+  marketSnapshotPenalty,
   normalize
 };
