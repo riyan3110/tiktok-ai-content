@@ -311,7 +311,7 @@ function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '',
     __urlSourceFallback: true
   });
   const safetyErrors = [
-    ...manualSourceFallback.sourceCoverageErrors(result, sources),
+    ...manualSourceFallback.validateSourceContent(result, sources),
     ...numericGroundingErrors(result),
     ...localLayoutErrors(result)
   ];
@@ -328,7 +328,7 @@ function buildUrlSourceFallback({ generated = {}, sources = [], topic = '', form
     });
     const candidate = syncTop({ ...deterministic, verificationStatus: 'source_based', __urlSourceFallback: true });
     const safetyErrors = [
-      ...manualSourceFallback.sourceCoverageErrors(candidate, sources),
+      ...manualSourceFallback.validateSourceContent(candidate, sources),
       ...numericGroundingErrors(candidate),
       ...localLayoutErrors(candidate)
     ];
@@ -375,7 +375,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       format: effectiveFormat,
       manualTopic: mode === 'manual' ? resolvedTopic : '',
       sources,
-      autoSourceTopic: false
+      autoSourceTopic: mode === 'ai'
     });
     const deterministicErrors = [
       ...numericGroundingErrors(draft),
