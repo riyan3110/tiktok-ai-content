@@ -22,6 +22,14 @@ function normalize(value) {
     .trim();
 }
 
+function lexicalNormalize(value) {
+  return String(value || '')
+    .toLocaleLowerCase('id-ID')
+    .replace(/[^a-z0-9%\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function words(value) {
   return String(value || '').trim().split(/\s+/).filter(Boolean);
 }
@@ -55,6 +63,10 @@ function sourceText(source) {
 
 function tokens(value) {
   return normalize(value).split(/\s+/).filter(Boolean);
+}
+
+function lexicalTokens(value) {
+  return lexicalNormalize(value).split(/\s+/).filter(Boolean);
 }
 
 function phraseHasEntityLetters(parts) {
@@ -179,12 +191,12 @@ function numericGroundingErrors(content, sources = []) {
 }
 
 function meaningfulTokens(value) {
-  return [...new Set(tokens(value).filter(token => token.length > 2 && !FILLER.has(token)))];
+  return [...new Set(lexicalTokens(value).filter(token => token.length > 2 && !FILLER.has(token)))];
 }
 
 function substantiveExpansion(base, candidate, minimumNewTokens) {
-  const baseNorm = normalize(base);
-  const candidateNorm = normalize(candidate);
+  const baseNorm = lexicalNormalize(base);
+  const candidateNorm = lexicalNormalize(candidate);
   if (!baseNorm || !candidateNorm || baseNorm === candidateNorm) return false;
   const baseSet = new Set(meaningfulTokens(base));
   const candidateTokens = meaningfulTokens(candidate);
@@ -193,12 +205,12 @@ function substantiveExpansion(base, candidate, minimumNewTokens) {
 }
 
 function claimMeaningTokens(value) {
-  return [...new Set(tokens(value).filter(token => (token.length > 2 || token === 'ai') && !COPY_FILLER.has(token)))];
+  return [...new Set(lexicalTokens(value).filter(token => (token.length > 2 || token === 'ai') && !COPY_FILLER.has(token)))];
 }
 
 function nearDuplicateClaimMeaning(left, right, { minShared = 3, ratio = 0.8 } = {}) {
-  const leftNorm = normalize(left);
-  const rightNorm = normalize(right);
+  const leftNorm = lexicalNormalize(left);
+  const rightNorm = lexicalNormalize(right);
   if (!leftNorm || !rightNorm) return false;
   if (leftNorm === rightNorm) return true;
   const a = claimMeaningTokens(left);
