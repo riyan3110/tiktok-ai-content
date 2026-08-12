@@ -15,7 +15,84 @@ const MIN_FACTS_PER_SOURCE = 5;
 const SEARCH_TIMEOUT_MS = 10_000;
 const cache = new Map();
 
+const INTENT_STOPWORDS = new Set([
+  'yang','dan','atau','dari','untuk','dengan','tentang','pada','dalam','ini','itu','baru','terbaru','cara','aplikasi','fitur',
+  'potensi','manfaat','dampak','pengaruh','terhadap','peran','kemampuan','fungsi','kegunaan','penggunaan','penerapan','contoh',
+  'akan','bisa','dapat','menjadi','membantu','membuat','teknologi','edukasi','fakta','singkat','update','berita',
+  'the','and','or','from','for','with','about','new','latest','how','can','could','benefit','benefits','impact','role','use','uses','using'
+]);
+const BILINGUAL_ALIASES = new Map([
+  ['ai', ['ai', 'artificial intelligence', 'machine learning']],
+  ['iklim', ['iklim', 'climate']],
+  ['cuaca', ['cuaca', 'weather']],
+  ['keamanan', ['keamanan', 'security']],
+  ['siber', ['siber', 'cyber']],
+  ['privasi', ['privasi', 'privacy']],
+  ['energi', ['energi', 'energy']],
+  ['kesehatan', ['kesehatan', 'health']],
+  ['pendidikan', ['pendidikan', 'education']],
+  ['belajar', ['belajar', 'learning']],
+  ['pemrograman', ['pemrograman', 'programming']],
+  ['kode', ['kode', 'code']],
+  ['robot', ['robot', 'robotics']],
+  ['bisnis', ['bisnis', 'business']],
+  ['iklan', ['iklan', 'advertising', 'ads']],
+  ['video', ['video']],
+  ['gambar', ['gambar', 'image', 'images']],
+  ['suara', ['suara', 'voice', 'audio']],
+  ['model', ['model']],
+  ['agen', ['agen', 'agent']],
+  ['coding', ['coding', 'code']]
+]);
+
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function normalized(value) {
+  return String(value || '').toLocaleLowerCase('id-ID')
+    .replace(/[^a-z0-9\s.-]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function anchorGroups(topic) {
+  const raw = normalized(topic).split(' ').filter(Boolean);
+  const groups = [];
+  const seen = new Set();
+  for (const token of raw) {
+    if ((token.length <= 2 && token !== 'ai') || INTENT_STOPWORDS.has(token)) continue;
+    const aliases = BILINGUAL_ALIASES.get(token) || [token];
+    const key = aliases.join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    groups.push(aliases);
+  }
+  return groups;
+}
+
+function multilingualRelevance(topic, value) {
+  const groups = anchorGroups(topic);
+  if (!groups.length) return 0;
+  const haystack = ` ${normalized(value)} `;
+  let matched = 0;
+  for (const aliases of groups) {
+    if (aliases.some(alias => haystack.includes(` ${normalized(alias)} `))) matched += 1;
+  }
+  return matched / groups.length;
+}
+
+function multilingualMinimum(topic) {
+  const count = anchorGroups(topic).length;
+  if (count <= 1) return 1;
+  if (count === 2) return 1;
+  if (count === 3) return 0.66;
+  return 0.5;
+}
+
+function englishAnchorQuery(topic) {
+  const groups = anchorGroups(topic);
+  return groups.map(aliases => {
+    const original = aliases[0];
+    if (original === 'ai') return 'AI';
+    return aliases.find(alias => /^[a-z][a-z\s-]*$/i.test(alias) && alias !== original) || original;
+  }).join(' ').trim();
+}
 
 async function mapLimit(items, limit, worker) {
   const values = Array.from(items || []);
@@ -102,15 +179,17 @@ async function expandedSearchWeb(query, options = {}) {
 
 function expandedQueries(topic, category = '') {
   const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
+  const english = englishAnchorQuery(cleanTopic);
   const base = baseDiscovery.searchQueries(cleanTopic, category);
   const values = [
     ...base,
+    english && normalized(english) !== normalized(cleanTopic) ? `${english} latest` : '',
     `${cleanTopic} terbaru`,
     `${cleanTopic} latest`,
     `${cleanTopic} official`,
     `${cleanTopic} research report`
   ];
-  return [...new Set(values.map(value => value.trim()).filter(Boolean))].slice(0, 6);
+  return [...new Set(values.map(value => value.trim()).filter(Boolean))].slice(0, 7);
 }
 
 function freshnessScore(publishedAt, nowMs = Date.now()) {
@@ -141,12 +220,17 @@ function publisherKey(raw) {
 }
 
 function candidateScore(topic, candidate, nowMs) {
-  return baseDiscovery.candidateScore(topic, candidate) + freshnessScore(candidate?.publishedAt, nowMs);
+  const titleRelevance = multilingualRelevance(topic, candidate?.title || '');
+  const descriptionRelevance = multilingualRelevance(topic, candidate?.description || '');
+  return baseDiscovery.candidateScore(topic, candidate)
+    + titleRelevance * 6
+    + descriptionRelevance * 2.5
+    + freshnessScore(candidate?.publishedAt, nowMs);
 }
 
 function fetchedScore(topic, source, candidate, factCount, nowMs) {
-  const titleRelevance = baseDiscovery.relevanceScore(topic, source?.title || '');
-  const bodyRelevance = baseDiscovery.relevanceScore(topic, String(source?.text || '').slice(0, 7000));
+  const titleRelevance = multilingualRelevance(topic, source?.title || '');
+  const bodyRelevance = multilingualRelevance(topic, `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`);
   return candidateScore(topic, candidate, nowMs)
     + titleRelevance * 6
     + bodyRelevance * 10
@@ -154,11 +238,11 @@ function fetchedScore(topic, source, candidate, factCount, nowMs) {
 }
 
 function fetchedContentRelevant(topic, source) {
-  const minimum = baseDiscovery.minimumRelevantFraction(topic);
-  const titleRelevance = baseDiscovery.relevanceScore(topic, source?.title || '');
-  const bodyRelevance = baseDiscovery.relevanceScore(topic, `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`);
+  const minimum = multilingualMinimum(topic);
+  const titleRelevance = multilingualRelevance(topic, source?.title || '');
+  const bodyRelevance = multilingualRelevance(topic, `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`);
   // Search-result snippets may be stale or misleading. The fetched article itself
-  // must satisfy the topic gate before it can become a selected source.
+  // must satisfy the multilingual topic gate before it can become a selected source.
   return Math.max(titleRelevance, bodyRelevance) >= minimum;
 }
 
@@ -209,6 +293,8 @@ async function discover({
     if (!source || !fetchedContentRelevant(cleanTopic, source)) return null;
     const facts = sourceFacts([source]);
     if (facts.length < MIN_FACTS_PER_SOURCE) return null;
+    const titleRelevance = multilingualRelevance(cleanTopic, source.title || '');
+    const bodyRelevance = multilingualRelevance(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 9000)}`);
     return {
       ...source,
       publishedAt: source.publishedAt || candidate.publishedAt || null,
@@ -216,10 +302,7 @@ async function discover({
         provider: candidate.provider,
         query: candidate.query,
         score: fetchedScore(cleanTopic, source, candidate, facts.length, nowMs),
-        relevance: Math.max(
-          baseDiscovery.relevanceScore(cleanTopic, source.title || ''),
-          baseDiscovery.relevanceScore(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 9000)}`)
-        ),
+        relevance: Math.max(titleRelevance, bodyRelevance),
         factCount: facts.length,
         publishedAt: source.publishedAt || candidate.publishedAt || null,
         publisher: publisherKey(source.finalUrl || source.url)
@@ -269,6 +352,10 @@ module.exports = {
   expandedQueries,
   freshnessScore,
   publisherKey,
+  anchorGroups,
+  multilingualRelevance,
+  multilingualMinimum,
+  englishAnchorQuery,
   fetchedContentRelevant,
   clearCache,
   CACHE_TTL_MS,
