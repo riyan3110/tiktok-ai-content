@@ -1,0 +1,16 @@
+Pakai URL baseline lock
+=======================
+Baseline merge commit: 96f000b94125d295f45632450ff4bd5d6c32a089 (PR #155)
+
+The Auto Source implementation must not modify the existing Pakai URL pipeline files.
+A compare from this baseline to the isolation-lock branch must show no modifications to:
+- src/services/sourceUrlFinalizer.js
+- src/services/generation.js
+- src/services/sourceFilter.js
+- src/services/manualSourceFallback.js
+- src/services/sourceFetcher.js
+- src/services/sourceSafetyPatch.js
+- src/services/content.js
+
+Only Auto Source-specific files and the two-line bootstrap in src/server.js may differ after PR #155.
+Pakai URL requests must pass through to the original generateAndSave function without argument rewriting or loading Auto Source discovery/composer modules.
