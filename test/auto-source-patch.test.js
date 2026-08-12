@@ -6,20 +6,66 @@ process.env.AI_API_KEY ||= 'test-key';
 process.env.AI_BASE_URL ||= 'https://example.test/v1';
 process.env.AI_MODEL ||= 'test-model';
 
-const { autoSourceRequested } = require('../src/services/autoSourcePatch');
+const generation = require('../src/services/generation');
+const autoSourcePatch = require('../src/services/autoSourcePatch');
+const { autoSourceRequested, pakaiUrlRequested } = autoSourcePatch;
 
 test('manual Tanpa URL activates auto source even when legacy UI sends useSources=false', () => {
   assert.equal(autoSourceRequested({ mode: 'manual', useSources: false, sourceUrls: [] }), true);
 });
 
 test('manual Pakai URL stays on the existing URL path', () => {
-  assert.equal(autoSourceRequested({ mode: 'manual', useSources: true, sourceUrls: ['https://example.test/article'] }), false);
+  const args = { mode: 'manual', useSources: true, sourceUrls: ['https://example.test/article'] };
+  assert.equal(pakaiUrlRequested(args), true);
+  assert.equal(autoSourceRequested(args), false);
 });
 
 test('manual Pakai URL with an empty field is still handled by the existing URL validation path', () => {
-  assert.equal(autoSourceRequested({ mode: 'manual', useSources: true, sourceUrls: [] }), false);
+  const args = { mode: 'manual', useSources: true, sourceUrls: [] };
+  assert.equal(pakaiUrlRequested(args), true);
+  assert.equal(autoSourceRequested(args), false);
+});
+
+test('supplied URL never enters Auto Source even if a caller forgets useSources=true', () => {
+  const args = { mode: 'manual', useSources: false, sourceUrls: ['https://example.test/article'] };
+  assert.equal(pakaiUrlRequested(args), true);
+  assert.equal(autoSourceRequested(args), false);
 });
 
 test('automatic AI topic mode without URLs is not hijacked by manual auto source', () => {
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
+});
+
+test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async () => {
+  autoSourcePatch.resetForTests();
+  const realGenerateAndSave = generation.generateAndSave;
+  const args = {
+    mode: 'manual',
+    useSources: true,
+    sourceUrls: ['https://example.test/article'],
+    requestedTopic: 'Topik URL baseline',
+    sentinel: { keep: 'same-object' }
+  };
+  let received = null;
+  let calls = 0;
+
+  generation.generateAndSave = async value => {
+    calls += 1;
+    received = value;
+    return 155;
+  };
+
+  try {
+    const wrapped = autoSourcePatch.install();
+    const result = await wrapped(args);
+
+    assert.equal(result, 155);
+    assert.equal(calls, 1);
+    assert.strictEqual(received, args, 'Pakai URL args must be forwarded without cloning or rewriting');
+    assert.equal(require.cache[require.resolve('../src/services/autoSourceFastDiscovery')], undefined);
+    assert.equal(require.cache[require.resolve('../src/services/autoSourceComposer')], undefined);
+  } finally {
+    autoSourcePatch.resetForTests();
+    generation.generateAndSave = realGenerateAndSave;
+  }
 });
