@@ -39,7 +39,8 @@ const ALIASES = new Map([
   ['prakiraan', ['prakiraan','forecast','forecasting']],
   ['badai', ['badai','storm','storms']],
   ['topan', ['topan','typhoon','typhoons']],
-  ['akses', ['akses','access']]
+  ['akses', ['akses','access']],
+  ['saham', ['saham','stock','stocks','share','shares']]
 ]);
 
 const MARKET_INTENT = /\b(?:saham|stock|stocks|share|shares|harga\s+saham|price|market|pasar|trading|perdagangan|investor|ticker|nasdaq|nyse)\b/i;
