@@ -3,6 +3,7 @@
 // exact evidence already attached to that field. It never discovers new facts,
 // never changes sourceId/evidence, and never touches Auto Source/Tanpa URL.
 
+const MAX_TARGETED_REPAIR_ROUNDS = 2;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 
 function semanticTargetFields(content, errors = []) {
@@ -134,20 +135,46 @@ async function repairUnsupportedFields({ openai, model, content, errors = [], to
 }
 
 async function recoverSemanticFailures({ openai, model, content, errors = [], topic = '', format = '', validate, audit } = {}) {
-  const repaired = await repairUnsupportedFields({ openai, model, content, errors, topic, format });
-  if (!repaired.changed) return { content, errors, changed: false, targets: repaired.targets || [] };
+  let working = content;
+  let remainingErrors = Array.isArray(errors) ? errors : [];
+  let changed = false;
+  let lastTargets = [];
 
-  const validated = typeof validate === 'function' ? validate(repaired.content) : { content: repaired.content, errors: [] };
-  if (validated?.errors?.length) return { content: validated.content || repaired.content, errors: validated.errors, changed: true, targets: repaired.targets };
+  for (let round = 0; round < MAX_TARGETED_REPAIR_ROUNDS; round += 1) {
+    const repaired = await repairUnsupportedFields({
+      openai,
+      model,
+      content: working,
+      errors: remainingErrors,
+      topic,
+      format
+    });
+    lastTargets = repaired.targets || [];
+    if (!repaired.changed) break;
+    changed = true;
+    working = repaired.content;
 
-  const audited = typeof audit === 'function'
-    ? await audit(validated?.content || repaired.content)
-    : { content: validated?.content || repaired.content, errors: [] };
+    const validated = typeof validate === 'function' ? validate(working) : { content: working, errors: [] };
+    working = validated?.content || working;
+    if (validated?.errors?.length) {
+      remainingErrors = validated.errors;
+      break;
+    }
+
+    const audited = typeof audit === 'function'
+      ? await audit(working)
+      : { content: working, errors: [] };
+    working = audited?.content || working;
+    remainingErrors = Array.isArray(audited?.errors) ? audited.errors : [];
+    if (!remainingErrors.length) break;
+    if (!semanticTargetFields(working, remainingErrors).length) break;
+  }
+
   return {
-    content: audited?.content || validated?.content || repaired.content,
-    errors: Array.isArray(audited?.errors) ? audited.errors : [],
-    changed: true,
-    targets: repaired.targets
+    content: working,
+    errors: remainingErrors,
+    changed,
+    targets: lastTargets
   };
 }
 
@@ -157,5 +184,6 @@ module.exports = {
   parseRepairResponse,
   applySemanticRepairs,
   repairUnsupportedFields,
-  recoverSemanticFailures
+  recoverSemanticFailures,
+  MAX_TARGETED_REPAIR_ROUNDS
 };
