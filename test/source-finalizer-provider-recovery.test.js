@@ -44,6 +44,25 @@ function indonesianSource() {
   }];
 }
 
+function driftedSindonewsLikeSource() {
+  return [{
+    url: 'https://example.test/ai-ubah-cara-mahasiswa-belajar',
+    finalUrl: 'https://example.test/ai-ubah-cara-mahasiswa-belajar',
+    title: 'AI Ubah Cara Mahasiswa Belajar',
+    text: [
+      'AI mulai mengubah cara mahasiswa belajar karena jawaban dapat diperoleh lebih cepat untuk membantu memahami materi.',
+      'Mahasiswa tetap perlu memeriksa sumber dan membandingkan jawaban AI dengan materi perkuliahan yang digunakan.',
+      'Dosen berperan membantu mahasiswa memahami konteks dan menilai apakah jawaban AI sesuai dengan materi kuliah.',
+      'Mahasiswa dapat memakai AI sebagai alat bantu belajar tanpa menggantikan proses berpikir dan diskusi akademik.',
+      'Penggunaan AI dalam proses belajar perlu disertai literasi digital agar mahasiswa memahami keterbatasan jawaban model.',
+      'Tersedia," jelas Tim pengembang Smart PAI, Aditya Putri Pertiwi, dikutip dari laman Kemenag, Minggu (9/8/2026).',
+      'Smart PAI menggunakan 39 buku pelajaran utama untuk tingkat PAUD/TK, SD, SMP, SMA/SMK, hingga perguruan tinggi.',
+      'Kemenag menegaskan bahwa posisi guru tetap penting dalam penggunaan Smart PAI di sekolah.',
+      'Smart PAI akan menjawab bahwa informasi itu tidak tersedia jika pertanyaan tidak ditemukan di buku-buku tersebut.'
+    ].join(' ')
+  }];
+}
+
 function candidate(format = 'Fakta singkat', firstBody = 'Perangkat Atlas mendukung profil lokal untuk workstation yang digunakan bersama.') {
   const sections = format === 'Listicle'
     ? ['ITEM 1', 'ITEM 2', 'ITEM 3', 'ITEM 4']
@@ -99,36 +118,31 @@ for (const format of ['Fakta singkat', 'Listicle']) {
     });
     assert.deepEqual(result.slides, valid.slides);
     assert.equal(client.calls, 1);
-    assert.equal(finalizer.FAST_FINALIZE_ATTEMPTS, 1);
+    assert.equal(finalizer.FAST_FINALIZE_ATTEMPTS, 2);
   });
 }
 
-test('provider output kosong langsung memakai source-only fallback tanpa retry panjang', async t => {
+test('provider output kosong langsung memakai source-only fallback tanpa retry provider yang sia-sia', async t => {
   await withoutSemanticProvider(t);
   const valid = candidate();
   const client = clientWith({ choices: [{ message: { content: '' } }] });
-  const result = await finalizer.rewriteAllSourcesWithAi({
+  await assert.rejects(() => finalizer.rewriteAllSourcesWithAi({
     generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  });
+  }), error => error.status === 422 || error.validationErrors);
   assert.equal(client.calls, 1);
-  assert.equal(result.verificationStatus, 'source_based');
-  assert.equal(result.__urlSourceFallback, true);
-  assert.ok(result.slides.length >= 4);
 });
 
-test('malformed JSON langsung memakai source-only fallback tanpa request AI kedua', async t => {
+test('malformed JSON tidak diulang berkali-kali', async t => {
   await withoutSemanticProvider(t);
   const valid = candidate();
   const client = clientWith({ choices: [{ message: { content: '```json\n{"slides": [ broken\n```' } }] });
-  const result = await finalizer.rewriteAllSourcesWithAi({
+  await assert.rejects(() => finalizer.rewriteAllSourcesWithAi({
     generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  });
+  }), error => error.status === 422 || error.validationErrors);
   assert.equal(client.calls, 1);
-  assert.equal(result.__urlSourceFallback, true);
-  assert.equal(result.verificationStatus, 'source_based');
 });
 
-test('numeric mismatch seperti 10 ribuan tidak mematikan konten URL', async t => {
+test('numeric mismatch seperti 10 ribuan mendapat satu correction pass lalu fallback source-backed bila tetap salah', async t => {
   await withoutSemanticProvider(t);
   const base = candidate();
   const bad = {
@@ -151,25 +165,53 @@ test('numeric mismatch seperti 10 ribuan tidak mematikan konten URL', async t =>
     format: 'Fakta singkat',
     client
   });
-  assert.equal(client.calls, 1);
+  assert.equal(client.calls, 2);
   assert.equal(result.__urlSourceFallback, true);
   assert.equal(result.verificationStatus, 'source_based');
   assert.equal(JSON.stringify(result.slides).includes('10 ribuan mahasiswa hadir'), false);
   assert.equal(finalizer.numericGroundingErrors(result).length, 0);
 });
 
-test('semantic rejection langsung turun ke source-only fallback', async t => {
+test('semantic rejection hanya mendapat satu correction pass sebelum fallback', async t => {
   const original = sourceFilter.auditClaimSemantics;
   sourceFilter.auditClaimSemantics = async () => ['SEMANTIC_SUPPORT: slide:0:body tidak didukung evidence'];
   t.after(() => { sourceFilter.auditClaimSemantics = original; });
   const valid = candidate();
   const client = clientWith(responseFor(valid));
-  const result = await finalizer.rewriteAllSourcesWithAi({
+  await assert.rejects(() => finalizer.rewriteAllSourcesWithAi({
     generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  });
-  assert.equal(client.calls, 1);
-  assert.equal(result.__urlSourceFallback, true);
-  assert.equal(result.verificationStatus, 'source_based');
+  }), error => error.status === 422 || error.validationErrors);
+  assert.equal(client.calls, 2);
+});
+
+test('manual URL relevance bank membuang drift Smart PAI dari halaman topik mahasiswa', () => {
+  const sources = driftedSindonewsLikeSource();
+  const facts = require('../src/services/manualSourceFallback').sourceFacts(sources);
+  const relevant = finalizer.relevantSourceFacts(sources, facts, 'AI Ubah Cara Mahasiswa Belajar');
+  const text = relevant.map(fact => fact.evidence).join(' ');
+  assert.match(text, /mahasiswa|belajar/i);
+  assert.doesNotMatch(text, /Smart PAI|Kemenag|PAUD\/TK|39 buku/i);
+  assert.ok(relevant.length >= 4);
+});
+
+test('source-only body candidates menolak potongan kutipan patah seperti screenshot', () => {
+  const source = driftedSindonewsLikeSource()[0];
+  const candidates = finalizer.sourceDisplayCandidates(source.text);
+  assert.equal(candidates.some(text => /^tersedia/i.test(text)), false);
+  assert.equal(candidates.some(text => /AI mulai mengubah cara mahasiswa belajar/i.test(text)), true);
+});
+
+test('URL visual gate menangkap body yang akan dipecah renderer menjadi bullet gantung', () => {
+  const bad = {
+    slides: [{
+      title: '39 buku pelajaran utama untuk tingkat PAUD TK',
+      body: 'Tak hanya itu, 39 buku pelajaran utama untuk tingkat PAUD/TK, SD, SMP, SMA/SMK, hingga perguruan tinggi mencakup banyak materi pendidikan sekaligus.',
+      points: ['agama di sekolah tidak akan pernah bisa']
+    }]
+  };
+  assert.ok(finalizer.urlVisualFitErrors(bad).some(error => /body tidak muat|judul tidak muat/i.test(error)));
+  const good = { slides: [{ title: 'AI Membantu Proses Belajar', body: 'Mahasiswa dapat memakai AI sebagai alat bantu tanpa menggantikan proses berpikir.', points: ['Tetap periksa sumber jawaban'] }] };
+  assert.equal(finalizer.urlVisualFitErrors(good).length, 0);
 });
 
 test('fenced JSON valid dinormalisasi secara terbatas', () => {
