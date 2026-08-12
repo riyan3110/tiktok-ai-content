@@ -54,6 +54,12 @@ test('auto source finalizer uses at most two rewrite attempts', () => {
 
 test('fast composer skips the generic generation call', async () => {
   const evidence = 'Robot humanoid menggunakan sensor dan aktuator untuk membantu mengendalikan gerakan tubuh.';
+  const slideBodies = [
+    'Sensor membantu robot humanoid membaca kondisi lingkungan sebelum menentukan gerakan tubuh berikutnya.',
+    'Aktuator mengubah perintah sistem menjadi gerakan fisik pada bagian tubuh robot humanoid.',
+    'Perangkat lunak mengoordinasikan sensor dan aktuator agar gerakan robot tetap terkendali selama operasi.',
+    'Pengujian keseimbangan membantu pengembang menilai kestabilan robot saat bergerak di permukaan berbeda.'
+  ];
   let generateCalls = 0;
   let finalizeCalls = 0;
   const fakeContent = {
@@ -63,14 +69,14 @@ test('fast composer skips the generic generation call', async () => {
   };
   const finalContent = {
     focus: { masalah: 'Robot humanoid', penyebab: 'Robot humanoid', solusi: 'Robot humanoid', hasil: 'Robot humanoid' },
-    topic: 'Robot humanoid', hook: 'Robot humanoid bergerak dengan sensor', body: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.', caption: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.', hashtags: [], cta: 'Perkembangan robot humanoid',
+    topic: 'Robot humanoid', hook: 'Robot humanoid bergerak dengan sensor', body: slideBodies[1], caption: slideBodies[1], hashtags: [], cta: 'Perkembangan robot humanoid',
     trendKeywordsUsed: [], content_angle: 'cara robot humanoid bergerak', primary_tool: 'tanpa tool', hook_pattern: 'source-grounded', verificationStatus: 'source_based', unsupportedClaims: [],
     slides: Array.from({ length: 4 }, (_, index) => ({
       section: ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'][index],
       title: `Robot humanoid ${index + 1}`,
-      body: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.',
+      body: slideBodies[index],
       points: [],
-      claims: [{ field: `slide:${index}:body`, text: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.', sourceId: 'source-1', evidence }]
+      claims: [{ field: `slide:${index}:body`, text: slideBodies[index], sourceId: 'source-1', evidence }]
     }))
   };
   const fakeFinalizer = {
