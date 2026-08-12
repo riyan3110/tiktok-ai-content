@@ -66,6 +66,7 @@ test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async (
     assert.equal(require.cache[require.resolve('../src/services/autoSourceExpandedDiscovery')], undefined);
     assert.equal(require.cache[require.resolve('../src/services/autoSourceQualityLayer')], undefined);
     assert.equal(require.cache[require.resolve('../src/services/autoSourceRuntimeGuard')], undefined);
+    assert.equal(require.cache[require.resolve('../src/services/autoSourcePlanFinalizer')], undefined);
     assert.equal(require.cache[require.resolve('../src/services/autoSourceComposer')], undefined);
   } finally {
     autoSourcePatch.resetForTests();
