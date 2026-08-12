@@ -16,23 +16,41 @@ function normalize(value) {
     .trim();
 }
 
+function looseNormalize(value) {
+  return normalize(value).replace(/[.-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function phrasePresent(phrase = '', value = '') {
   const needle = normalize(phrase);
   const haystack = ` ${normalize(value)} `;
-  return Boolean(needle && haystack.includes(` ${needle} `));
+  if (needle && haystack.includes(` ${needle} `)) return true;
+  const looseNeedle = looseNormalize(phrase);
+  const looseHaystack = ` ${looseNormalize(value)} `;
+  return Boolean(looseNeedle && looseHaystack.includes(` ${looseNeedle} `));
 }
 
 function termWords(term = '') {
-  return normalize(term).split(' ').filter(Boolean);
+  return looseNormalize(term).split(' ').filter(Boolean);
+}
+
+function simpleWordVariant(word, token) {
+  if (word === token) return true;
+  if (word.length < 4 || token.length < 4) return false;
+  const variants = new Set([
+    `${word}s`, `${word}es`, `${word}ed`, `${word}ing`,
+    word.endsWith('e') ? `${word.slice(0, -1)}ing` : '',
+    word.endsWith('y') ? `${word.slice(0, -1)}ies` : ''
+  ].filter(Boolean));
+  return variants.has(token);
 }
 
 function termPresent(term = '', value = '') {
   if (phrasePresent(term, value)) return true;
   const words = termWords(term);
   if (!words.length) return false;
-  const haystack = new Set(normalize(value).split(' ').filter(Boolean));
-  if (words.length === 1) return haystack.has(words[0]);
-  const matched = words.filter(word => haystack.has(word)).length;
+  const tokens = looseNormalize(value).split(' ').filter(Boolean);
+  if (words.length === 1) return tokens.some(token => simpleWordVariant(words[0], token));
+  const matched = words.filter(word => tokens.some(token => simpleWordVariant(word, token))).length;
   return matched / words.length >= 0.67;
 }
 
@@ -171,6 +189,7 @@ function relevance(plan = {}, value = '') {
 module.exports = {
   clean,
   normalize,
+  looseNormalize,
   phrasePresent,
   termPresent,
   subjectHits,
