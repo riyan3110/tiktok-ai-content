@@ -5,7 +5,13 @@ const manualSourceFallback = require('./manualSourceFallback');
 const sourceUrlFinalizer = require('./sourceUrlFinalizer');
 const autoSourceValidation = require('./autoSourceValidation');
 
-const { sourceFacts, sourceRichness, validateSourceContent, compactPoint } = manualSourceFallback;
+const {
+  sourceFacts,
+  sourceRichness,
+  sourceCoverageErrors,
+  naturalCopyErrors,
+  compactPoint
+} = manualSourceFallback;
 const MAX_AUTO_FINALIZE_ATTEMPTS = 2;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/\s+/g, ' ');
@@ -111,10 +117,18 @@ function richnessErrors(content, facts) {
   slides.forEach((slide, index) => {
     const bodyCount = words(slide?.body).length;
     const points = Array.isArray(slide?.points) ? slide.points : [];
-    const visibleCount = words(slide?.title).length + bodyCount + points.reduce((sum, point) => sum + words(point).length, 0);
-    if (bodyCount < Math.max(8, profile.bodyMin)) errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} body terlalu tipis (${bodyCount} kata).`);
+    const pointWords = points.reduce((sum, point) => sum + words(point).length, 0);
+    const visibleCount = words(slide?.title).length + bodyCount + pointWords;
+    const desiredBodyMin = Math.max(8, profile.bodyMin);
+    const densityFloor = Math.max(20, profile.hardFloor);
+
+    if (bodyCount < 8) {
+      errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} body terlalu tipis (${bodyCount} kata).`);
+    } else if (bodyCount < desiredBodyMin && visibleCount < densityFloor) {
+      errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} konteks masih terlalu tipis untuk kepadatan source.`);
+    }
     if (points.length < profile.targetPoints) errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} baru ${points.length} fakta ringkas; target ${profile.targetPoints}.`);
-    if (visibleCount < Math.max(20, profile.hardFloor)) errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} belum cukup padat fakta.`);
+    if (visibleCount < densityFloor) errors.push(`AUTO_SOURCE_RICHNESS: slide ${index + 1} belum cukup padat fakta.`);
   });
   return [...new Set(errors)];
 }
@@ -123,7 +137,7 @@ function autoPrompt({ generated, sources, facts, format, topic, errors }) {
   const sections = sourceUrlFinalizer.targetSections(generated, format, facts, sources, topic);
   const sourceGroups = sourceUrlFinalizer.groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
-  return `AUTO SOURCE FINAL REWRITE — BUAT CAROUSEL FAKTUAL, PADAT, NATURAL.\n\nTOPIK USER: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER TERPILIH + FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN WAJIB:\n- Tulis Bahasa Indonesia natural seperti editor manusia, bukan template/fallback.\n- HANYA gunakan fakta dari FACT BANK. Tidak boleh menambah pengetahuan luar, asumsi, angka, ranking, sebab-akibat, atau kepastian yang tidak ada pada evidence.\n- Setiap slide harus punya SATU ide utama yang spesifik, bukan judul generik.\n- Judul 3–10 kata, spesifik terhadap fakta slide.\n- Body 10–20 kata, satu kalimat utuh yang menjelaskan fakta/konteks utama. Maksimal 24 kata.\n- Jika source cukup kaya, isi ${profile.targetPoints} bullet fakta berbeda pada SETIAP slide. Maksimal 3 bullet.\n- Setiap bullet WAJIB 3–7 kata, utuh, faktual, dan menambah informasi baru. Jangan memotong kalimat; parafrase singkat.\n- Judul dan body BOLEH sama-sama menyebut nama produk/topik. Yang dilarang adalah mengulang kalimat/ide tanpa informasi baru. Body wajib menambah fakta atau konteks baru.\n- Jangan ulang ide body di bullet. Jangan ulang fakta antar-slide.\n- Setiap body dan bullet wajib punya claim dengan field yang tepat, sourceId, dan evidence dari sumber yang sama.\n- SATU field/claim jangan menggabungkan dua fakta yang hanya didukung evidence berbeda. Evidence claim itu sendiri harus cukup membuktikan seluruh makna field.\n- Evidence boleh Inggris, copy visible wajib Indonesia natural tanpa mengubah makna.\n- Angka visible hanya boleh dipakai bila angka yang sama tertulis di evidence claim tersebut ATAU merupakan bagian nama/model/version yang benar-benar tertulis di konteks sumber yang sama. Jangan menciptakan angka baru dari makna implisit.\n- Jangan mengubah kata seperti everyday/daily menjadi angka. Khusus everyday/daily harus ditulis sebagai setiap hari, BUKAN 24/7.\n- Jika topik luas, pilih fakta paling informatif: definisi/konteks, kemampuan/fitur, penggunaan/dampak, lalu perkembangan/implikasi yang benar-benar ada di sumber.\n- Jika format Listicle, tiap item harus fakta berbeda, bukan variasi kalimat yang sama.\n- Jika format Tutorial/Tips/Masalah-Solusi tidak didukung evidence sebagai tindakan nyata, gunakan fakta aman dan jangan mengarang instruksi.\n- Dilarang copy placeholder seperti \"Fakta utama tentang...\", \"Fakta berikutnya...\", \"Sumber membahas...\", \"Lanjut baca...\".\n- Dilarang metadata publisher, tanggal publikasi, Baca Juga, cookie policy, privacy policy, newsletter, URL, atau headline artikel terkait. Kata normal seperti privasi/login yang memang bagian fakta produk BUKAN otomatis metadata.\n- Gunakan semua sourceId yang diberikan minimal sekali bila lebih dari satu sumber.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["...","...","..."],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `AUTO SOURCE FINAL REWRITE — BUAT CAROUSEL FAKTUAL, PADAT, NATURAL.\n\nTOPIK USER: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER TERPILIH + FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN WAJIB:\n- Tulis Bahasa Indonesia natural seperti editor manusia, bukan template/fallback.\n- HANYA gunakan fakta dari FACT BANK. Tidak boleh menambah pengetahuan luar, asumsi, angka, ranking, sebab-akibat, atau kepastian yang tidak ada pada evidence.\n- Setiap slide harus punya SATU ide utama yang spesifik, bukan judul generik.\n- Judul 3–10 kata, spesifik terhadap fakta slide.\n- Target body 10–20 kata; 8–24 masih boleh jika kalimat utuh dan slide tetap padat fakta.\n- Jika source cukup kaya, isi ${profile.targetPoints} bullet fakta berbeda pada SETIAP slide. Maksimal 3 bullet.\n- Setiap bullet WAJIB 3–7 kata, utuh, faktual, dan menambah informasi baru. Jangan memotong kalimat; parafrase singkat.\n- Judul dan body BOLEH sama-sama menyebut nama produk/topik. Yang dilarang adalah mengulang kalimat/ide tanpa informasi baru. Body wajib menambah fakta atau konteks baru.\n- Jangan ulang ide body di bullet. Jangan ulang fakta antar-slide.\n- Setiap body dan bullet wajib punya claim dengan field yang tepat, sourceId, dan evidence dari sumber yang sama.\n- SATU field/claim jangan menggabungkan dua fakta yang hanya didukung evidence berbeda. Evidence claim itu sendiri harus cukup membuktikan seluruh makna field.\n- Evidence boleh Inggris, copy visible wajib Indonesia natural tanpa mengubah makna.\n- Angka visible hanya boleh dipakai bila angka yang sama tertulis di evidence claim tersebut ATAU merupakan bagian nama/model/version yang benar-benar tertulis di konteks sumber yang sama. Jangan menciptakan angka baru dari makna implisit.\n- Jangan mengubah kata seperti everyday/daily menjadi angka. Khusus everyday/daily harus ditulis sebagai setiap hari, BUKAN 24/7.\n- Topik apa pun harus dinilai dengan aturan grounding, keunikan fakta, kelengkapan konteks, dan keterbacaan yang sama; jangan membuat aturan berdasarkan nama brand, produk, perusahaan, atau jenis topik tertentu.\n- Jika topik luas, pilih fakta paling informatif: definisi/konteks, kemampuan/fitur, penggunaan/dampak, lalu perkembangan/implikasi yang benar-benar ada di sumber.\n- Jika format Listicle, tiap item harus fakta berbeda, bukan variasi kalimat yang sama.\n- Jika format Tutorial/Tips/Masalah-Solusi tidak didukung evidence sebagai tindakan nyata, gunakan fakta aman dan jangan mengarang instruksi.\n- Dilarang copy placeholder seperti \"Fakta utama tentang...\", \"Fakta berikutnya...\", \"Sumber membahas...\", \"Lanjut baca...\".\n- Dilarang metadata publisher, tanggal publikasi, Baca Juga, cookie policy, privacy policy, newsletter, URL, atau headline artikel terkait. Kata normal seperti privasi/login yang memang bagian fakta produk BUKAN otomatis metadata.\n- Gunakan semua sourceId yang diberikan minimal sekali bila lebih dari satu sumber.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["...","...","..."],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', format = 'Fakta singkat', contentService, client } = {}) {
@@ -160,18 +174,19 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       format: effectiveFormat,
       manualTopic: resolvedTopic,
       sources,
-      autoSourceTopic: true
+      autoSourceTopic: false
     });
     const candidate = repairKnownNumericShorthand(compactOverlongPoints(checked.content || draft), sources);
     let checkedErrors = filterFalsePositiveMetadataErrors(checked.errors, candidate);
     checkedErrors = autoSourceValidation.filterFalsePositives(checkedErrors, candidate);
-    let deterministicErrors = [
+    const deterministicErrors = [
       ...autoSourceValidation.numericGroundingErrors(candidate, sources),
       ...checkedErrors,
-      ...validateSourceContent(candidate, sources),
+      ...sourceCoverageErrors(candidate, sources),
+      ...naturalCopyErrors(candidate),
+      ...autoSourceValidation.autoSourceStructureErrors(candidate),
       ...richnessErrors(candidate, facts)
     ];
-    deterministicErrors = autoSourceValidation.filterFalsePositives(deterministicErrors, candidate);
     if (deterministicErrors.length) {
       lastErrors = [...new Set(deterministicErrors)];
       draft = candidate;
