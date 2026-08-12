@@ -34,27 +34,44 @@ function eventNeighborhoodSource(topic = '', source = {}, plan = {}, maxFacts = 
   const facts = readableFacts(source, plan);
   if (!facts.length) return { ...source, text: '' };
 
-  let anchor = 0;
-  if (dynamicScope.eventLockRequired(plan)) {
+  const selected = [];
+  const push = fact => {
+    if (!fact || selected.includes(fact) || selected.length >= maxFacts) return;
+    selected.push(fact);
+  };
+
+  if (!dynamicScope.eventLockRequired(plan)) {
+    facts.slice(0, maxFacts).forEach(push);
+  } else {
     const titleLocked = dynamicScope.eventLockSatisfied(plan, source?.title || '');
-    if (!titleLocked) {
-      const direct = facts.findIndex(fact => dynamicScope.eventLockSatisfied(plan, fact));
-      const split = facts.findIndex(fact =>
+    let anchor = titleLocked ? 0 : facts.findIndex(fact => dynamicScope.eventLockSatisfied(plan, fact));
+    if (anchor < 0) {
+      anchor = facts.findIndex(fact =>
         dynamicScope.actionHits(plan, fact).length > 0 || dynamicScope.contextHits(plan, fact).length > 0
       );
-      anchor = direct >= 0 ? direct : (split >= 0 ? split : 0);
+    }
+    if (anchor < 0) anchor = 0;
+
+    // Keep a compact event core. Four lead facts are enough to build four slides
+    // without swallowing a separate news item pasted later in the same article.
+    const coreStart = Math.max(0, anchor - (titleLocked ? 0 : 1));
+    const coreEnd = Math.min(facts.length, coreStart + 4);
+    facts.slice(coreStart, coreEnd).forEach(push);
+
+    for (let index = coreEnd; index < facts.length && selected.length < maxFacts; index += 1) {
+      const fact = facts[index];
+      const eventRelated = dynamicScope.eventLockSatisfied(plan, fact)
+        || dynamicScope.contextHits(plan, fact).length > 0;
+      const continuation = /^(?:it|this|that|these|those|the\s+(?:option|feature|service|system|model|company)|ini|itu|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini)\b/i.test(fact);
+      if (eventRelated || continuation) push(fact);
     }
   }
 
-  const start = Math.max(0, anchor - 1);
-  const end = Math.min(facts.length, start + maxFacts);
-  const selected = facts.slice(start, end);
   return {
     ...source,
     text: selected.map(fact => /[.!?]$/.test(fact) ? fact : `${fact}.`).join(' '),
     autoSourceFallback: {
       mode: dynamicScope.eventLockRequired(plan) ? 'event-neighborhood' : 'article-lead',
-      anchor,
       keptFactCount: selected.length
     }
   };
@@ -71,7 +88,7 @@ function prepareSources(topic = '', sources = [], plan = {}) {
   const prepared = sources.map((original, index) => {
     const current = focused[index] || { ...original, text: '' };
     const fallback = eventNeighborhoodSource(topic, original, plan);
-    // Prefer the tightly focused text when it still contains enough material.
+    // Prefer tightly focused text when it still contains enough material.
     // Otherwise keep the factual neighborhood from the already-accepted article.
     return factCount(current, plan) >= 4 ? current
       : factCount(fallback, plan) > factCount(current, plan) ? fallback
