@@ -66,6 +66,8 @@ test('generic discovery can dynamically bridge Indonesian topic wording to Engli
         canonicalTopic: topic,
         subjects: [],
         eventTerms: ['AI', 'artificial intelligence', 'iklim', 'climate'],
+        actionTerms: [],
+        contextTerms: ['iklim', 'climate'],
         searchQueries: [topic, 'artificial intelligence climate benefits'],
         marketIntent: false,
         relation: 'general'
@@ -73,5 +75,41 @@ test('generic discovery can dynamically bridge Indonesian topic wording to Engli
     });
     assert.equal(result.sources.length, 1);
     assert.ok(result.topicPlan.searchQueries.some(query => /climate/i.test(query)));
+  } finally { expanded.discover = original; }
+});
+
+test('event discovery falls back to a relevant article when action and context are split across the article', async () => {
+  const original = expanded.discover;
+  const topic = 'OpenAI sedang menguji fitur batasan penggunaan';
+  const article = {
+    title: 'OpenAI is testing a new ChatGPT option',
+    text: [
+      'OpenAI is testing a new option for some ChatGPT users.',
+      'The control appears in account settings for selected users.',
+      'A depleted weekly usage quota can be reset after users reach their limits.',
+      'Users can also wait for the normal quota reset.'
+    ].join(' '),
+    url: 'https://event.test/openai-quota',
+    discovery: { publisher: 'event.test', score: 20 }
+  };
+  expanded.discover = async ({ topic: query }) => bundle(query, [article]);
+
+  try {
+    const result = await scoped.discover({
+      topic,
+      topicPlannerClient: fakePlannerClient({
+        canonicalTopic: topic,
+        subjects: ['OpenAI'],
+        eventTerms: ['testing usage limits', 'quota reset'],
+        actionTerms: ['testing'],
+        contextTerms: ['usage limits', 'quota'],
+        searchQueries: [topic, 'OpenAI testing usage limits quota reset'],
+        marketIntent: false,
+        relation: 'event'
+      })
+    });
+    assert.equal(result.sources.length, 1);
+    assert.equal(result.scopeMode, 'soft-relevant');
+    assert.match(result.sources[0].title, /OpenAI/i);
   } finally { expanded.discover = original; }
 });
