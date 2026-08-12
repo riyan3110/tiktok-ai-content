@@ -7,18 +7,23 @@ const {
   sourceFacts,
   requestedListicleCount,
   sourceRichness,
-  expandEvidenceForBody,
   compactPoint,
   naturalTitleFromEvidence,
   isLowValueEvidence
 } = manualSourceFallback;
 
-// Keep the legacy exported ceiling for compatibility, but Pakai URL now only
-// performs one final rewrite pass. Any failure then falls back to source text.
+// Pakai URL gets one normal pass plus at most one focused correction. This is
+// deliberately bounded: valid content still completes after the first call.
 const MAX_FINALIZE_ATTEMPTS = 3;
-const FAST_FINALIZE_ATTEMPTS = 1;
+const FAST_FINALIZE_ATTEMPTS = 2;
+const URL_SAFE_WIDTH = 740;
+const TOPIC_STOP = new Set([
+  'yang','dan','atau','dari','untuk','dengan','pada','dalam','adalah','ini','itu','sebagai','oleh','akan','bisa','dapat','telah','sudah','lebih','juga',
+  'cara','ubah','terbaru','baru','update','fakta','tips','tutorial','edukasi','pendidikan','teknologi','artificial','intelligence','ai'
+]);
+const DANGLING_END = new Set(['yang','dan','atau','di','ke','dari','dengan','oleh','pada','untuk','sebagai','secara','adalah','merupakan','berada','memiliki','menjadi','termasuk','maupun','karena','agar','jika','bila','saat','ketika','dalam']);
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
-const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/\s+/g, ' ');
+const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/[^a-z0-9%\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const visibleCount = slide => [slide?.title, slide?.body, ...(Array.isArray(slide?.points) ? slide.points : [])]
   .reduce((sum, value) => sum + words(value).length, 0);
 
@@ -61,6 +66,142 @@ function targetSections(generated, format, facts, sources = [], topic = '') {
   return defaultSections(format, count);
 }
 
+function topicTerms(value) {
+  return [...new Set(normalize(value).split(' ').filter(token => token.length >= 4 && !TOPIC_STOP.has(token)))];
+}
+
+function relevantSourceFacts(sources, facts, topic) {
+  const bySource = new Map();
+  for (const fact of facts) {
+    if (!bySource.has(fact.sourceId)) bySource.set(fact.sourceId, []);
+    bySource.get(fact.sourceId).push(fact);
+  }
+  const selected = [];
+  for (const [sourceIndex, source] of (sources || []).entries()) {
+    const sourceId = `source-${sourceIndex + 1}`;
+    const entries = bySource.get(sourceId) || [];
+    if (!entries.length) continue;
+    const wanted = topicTerms(`${topic} ${source?.title || ''}`);
+    if (!wanted.length) { selected.push(...entries); continue; }
+
+    const documentFrequency = new Map(wanted.map(term => [term, 0]));
+    const entryTokens = entries.map(entry => new Set(normalize(entry.evidence).split(' ').filter(Boolean)));
+    for (const tokens of entryTokens) for (const term of wanted) if (tokens.has(term)) documentFrequency.set(term, documentFrequency.get(term) + 1);
+    const scored = entries.map((entry, index) => {
+      let score = 0;
+      for (const term of wanted) if (entryTokens[index].has(term)) {
+        const df = documentFrequency.get(term) || 0;
+        score += 1 + Math.log((entries.length + 1) / (df + 1));
+      }
+      return { entry, index, score };
+    });
+    const positive = scored.filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.index - b.index);
+    if (positive.length >= Math.min(4, entries.length)) {
+      const keep = new Set(positive.slice(0, Math.min(18, Math.max(6, positive.length))).map(item => item.entry));
+      selected.push(...entries.filter(entry => keep.has(entry)));
+    } else selected.push(...entries);
+  }
+  return selected.length >= 4 ? selected : facts;
+}
+
+function measureTextWidth(text, fontSize, bold = false) {
+  let em = 0;
+  for (const character of String(text)) {
+    if (/\s/.test(character)) em += 0.28;
+    else if (/[ilI1.,'`:;!|]/.test(character)) em += 0.27;
+    else if (/[MW@%&mw]/.test(character)) em += 0.88;
+    else if (/[A-Z0-9]/.test(character)) em += 0.64;
+    else em += 0.54;
+  }
+  return em * fontSize * (bold ? 1.04 : 1);
+}
+
+function wrappedLines(text, fontSize, bold = false) {
+  const lines = [];
+  for (const paragraph of String(text || '').trim().split(/\n+/)) {
+    const tokens = paragraph.trim().split(/\s+/).filter(Boolean);
+    let line = '';
+    for (let token of tokens) {
+      const candidate = line ? `${line} ${token}` : token;
+      if (measureTextWidth(candidate, fontSize, bold) <= URL_SAFE_WIDTH) { line = candidate; continue; }
+      if (line) { lines.push(line); line = ''; }
+      while (measureTextWidth(token, fontSize, bold) > URL_SAFE_WIDTH) {
+        let end = 1;
+        while (end < token.length && measureTextWidth(token.slice(0, end + 1), fontSize, bold) <= URL_SAFE_WIDTH) end += 1;
+        lines.push(token.slice(0, end));
+        token = token.slice(end);
+      }
+      line = token;
+    }
+    if (line) lines.push(line);
+  }
+  return lines;
+}
+
+function textFitsCanvas(text, { startSize, minSize, maxLines, maxHeight, lineHeight }) {
+  for (let fontSize = startSize; fontSize >= minSize; fontSize -= 1) {
+    const lines = wrappedLines(text, fontSize, true);
+    if (lines.length <= maxLines && lines.length * fontSize * lineHeight <= maxHeight) return true;
+  }
+  return false;
+}
+
+function urlVisualFitErrors(content) {
+  const errors = [];
+  for (const [slideIndex, slide] of (content?.slides || []).entries()) {
+    if (slide?.title && !textFitsCanvas(slide.title, { startSize: 76, minSize: 46, maxLines: 3, maxHeight: 250, lineHeight: 1.08 })) {
+      errors.push(`slide:${slideIndex}:url-layout: judul tidak muat maksimal tiga baris native canvas.`);
+    }
+    if (slide?.body && !textFitsCanvas(slide.body, { startSize: 42, minSize: 34, maxLines: 4, maxHeight: 220, lineHeight: 1.24 })) {
+      errors.push(`slide:${slideIndex}:url-layout: body tidak muat maksimal empat baris native canvas.`);
+    }
+  }
+  return errors;
+}
+
+function endsDangling(value) {
+  const text = String(value || '').trim();
+  if (!text || /[,;:\-–—]$/.test(text)) return true;
+  return DANGLING_END.has(normalize(text).split(' ').filter(Boolean).at(-1));
+}
+
+function sourceDisplayCandidates(sourceText) {
+  const candidates = [];
+  const seen = new Set();
+  const push = value => {
+    const text = String(value || '').replace(/\s+/g, ' ').trim().replace(/^["“”'‘’]+|["“”'‘’]+$/g, '').trim();
+    const count = words(text).length;
+    const key = normalize(text);
+    if (!key || seen.has(key) || count < 6 || count > 24 || isLowValueEvidence(text) || endsDangling(text)) return;
+    if (/^[^.!?]{0,90},?["”']\s*(?:jelas|kata|ujar|tutur|ungkap)\b/i.test(text)) return;
+    if (/^[a-zà-ÿ]/u.test(text)) return;
+    if (!textFitsCanvas(text, { startSize: 42, minSize: 34, maxLines: 4, maxHeight: 220, lineHeight: 1.24 })) return;
+    seen.add(key);
+    candidates.push(text);
+  };
+  for (const sentence of String(sourceText || '').replace(/\r/g, '\n').split(/(?<=[.!?])\s+|\n+/).map(value => value.trim()).filter(Boolean)) {
+    push(sentence);
+    for (const clause of sentence.split(/;\s+|:\s+|,\s+(?=[A-ZÀ-Ý])/u)) push(clause);
+  }
+  return candidates;
+}
+
+function overlapScore(left, right) {
+  const a = new Set(normalize(left).split(' ').filter(token => token.length > 2));
+  const b = new Set(normalize(right).split(' ').filter(token => token.length > 2));
+  let score = 0;
+  for (const token of a) if (b.has(token)) score += 1;
+  return score;
+}
+
+function completeEvidenceForFact(source, fact) {
+  const candidates = sourceDisplayCandidates(source?.text);
+  if (!candidates.length) return '';
+  const ranked = candidates.map((candidate, index) => ({ candidate, index, score: overlapScore(candidate, fact?.evidence) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  return ranked[0]?.score > 0 ? ranked[0].candidate : candidates[0];
+}
+
 function groupedFacts(sources, facts) {
   return (sources || []).map((source, index) => {
     const sourceId = `source-${index + 1}`;
@@ -68,12 +209,12 @@ function groupedFacts(sources, facts) {
     const seenBodies = new Set();
     const bodyFacts = [];
     for (const fact of sourceFactsForId) {
-      const evidence = expandEvidenceForBody(source?.text, fact.evidence, 10, 24);
+      const evidence = completeEvidenceForFact(source, fact);
       const key = normalize(evidence);
-      if (words(evidence).length < 10 || !key || seenBodies.has(key)) continue;
+      if (words(evidence).length < 6 || !key || seenBodies.has(key)) continue;
       seenBodies.add(key);
       bodyFacts.push(evidence);
-      if (bodyFacts.length >= 24) break;
+      if (bodyFacts.length >= 18) break;
     }
     return {
       sourceId,
@@ -93,9 +234,9 @@ function contentShapeGoalErrors(content, facts) {
     const bodyCount = words(slide?.body).length;
     const points = Array.isArray(slide?.points) ? slide.points : [];
     const count = visibleCount(slide);
-    if (bodyCount < profile.bodyMin) errors.push(`slide:${index}:shape-goal: body baru ${bodyCount} kata; wajib minimal ${profile.bodyMin} kata dan target 10–18 kata.`);
+    if (bodyCount < profile.bodyMin) errors.push(`slide:${index}:shape-goal: body baru ${bodyCount} kata; wajib minimal ${profile.bodyMin} kata.`);
     if (points.length < profile.targetPoints) errors.push(`slide:${index}:shape-goal: baru ${points.length} bullet; target ${profile.targetPoints} bullet fakta berbeda.`);
-    if (count < profile.visibleGoal) errors.push(`slide:${index}:shape-goal: baru ${count} kata visible; perkaya menuju sekitar ${profile.visibleGoal} tanpa filler.`);
+    if (count < profile.visibleGoal) errors.push(`slide:${index}:shape-goal: baru ${count} kata visible; perkaya tanpa filler.`);
     return errors;
   });
 }
@@ -115,22 +256,18 @@ function finalizerPrompt({ generated, sources, facts, format, topic, errors }) {
   const sections = targetSections(generated, format, facts, sources, topic);
   const sourceGroups = groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
-  return `FINAL AI REWRITE — SEMUA URL WAJIB DIPAKAI DAN OUTPUT HARUS NATURAL.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nTARGET BENTUK SLIDE: judul unik dan spesifik + body minimal ${profile.bodyMin} kata (ideal 10–18) + ${profile.targetPoints} bullet fakta bila source mendukung\nTARGET KEPADATAN NATURAL: sekitar ${profile.visibleGoal} kata visible\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK PER URL:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI (BOLEH DIBUANG TOTAL JIKA JELEK/GENERIC):\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- Tulis ulang seluruh carousel dalam Bahasa Indonesia yang benar-benar natural, enak dibaca, informatif, dan tetap setia pada konteks sumber. Jangan mempertahankan wording draft hanya karena sudah ada.\n- SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta yang terlihat pada body atau bullet. Jangan ada URL yang diabaikan.\n- HANYA gunakan BODY FACT BANK dan FACT BANK di atas. Jangan memakai pengetahuan luar, asumsi, filler, atau klaim yang tidak dinyatakan sumber.\n- JUDUL setiap slide WAJIB spesifik terhadap fakta slide, 3–10 kata bila memungkinkan, unik antar-slide, dan terdengar seperti judul editorial manusia. DILARANG memakai judul generik seperti \"Ringkasan dari sumber\", \"Fakta sumber 2\", \"Poin 3 dari sumber\", \"Kesimpulan dari sumber\", atau variasinya.\n- Jangan sekadar menyalin judul artikel mentah ke setiap slide. Ringkas ide slide menjadi judul yang lebih natural tanpa menambah klaim. Jika judul faktual, sertakan claim title dengan evidence yang mendukung.\n- BODY WAJIB minimal ${profile.bodyMin} kata. Untuk source kaya targetkan 10–18 kata; maksimal 24. Body harus berupa kalimat utuh, bukan potongan metadata atau headline.\n- Untuk claim body, evidence WAJIB PERSIS salah satu entry bodyFacts dari sourceId yang sama. Untuk bullet, evidence WAJIB PERSIS salah satu entry facts dari sourceId yang sama.\n- Setiap body dan setiap bullet WAJIB mempunyai claim dengan field tepat, text PERSIS sama dengan copy terlihat, sourceId benar, dan evidence benar.\n- Evidence boleh berbahasa Inggris, tetapi copy terlihat harus diparafrase/diterjemahkan natural ke Bahasa Indonesia tanpa mengubah makna, angka, modalitas, subjek, sebab-akibat, atau tingkat kepastian.\n- SETIAP angka visible pada title/body/points WAJIB berasal dari evidence untuk claim field yang sama dan dipertahankan PERSIS. Jika evidence tidak memiliki angka, copy claim dilarang menambah angka.\n- Ordinal seperti ke-2, ke-14, pertama, kedua, ketiga, dan seterusnya hanya boleh dipakai bila evidence claim yang sama menyatakan urutan/ordinal itu.\n- Jangan mengubah tahun menjadi jumlah, menyimpulkan ranking/posisi dari jumlah item, atau membuat \"produk ke-N\", \"fitur ke-N\", \"model ke-N\", maupun \"versi ke-N\" hanya karena source menyebut beberapa item.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun lintas slide. Jangan mengulang ide dengan wording berbeda.\n- Untuk source kaya, pola minimum mengikuti contoh produksi: judul yang bagus; satu kalimat body yang menjelaskan konteks utama; lalu 3 bullet fakta pendek yang berbeda.\n- Bullet masing-masing 3–7 kata dan WAJIB berupa frasa/kalimat mini yang utuh. DILARANG mengakhiri bullet dengan kata gantung seperti \"yang\", \"di\", \"dari\", \"oleh\", \"berada\", \"adalah\", \"dengan\", \"untuk\", \"secara\", \"memiliki\", atau \"menjadi\". Jangan memotong kalimat hanya karena batas 7 kata; parafrase menjadi frasa lengkap.\n- Bullet harus menambah informasi baru terhadap body dan bullet lain. Jangan mengulang body dalam bentuk lebih pendek.\n- DILARANG memasukkan nama publisher/byline, tanggal/jam publikasi, WIB/WITA/WIT, URL/link, dateline situs, caption gambar, atau metadata artikel sebagai isi slide.\n- DILARANG memasukkan headline artikel terkait/rekomendasi/Baca Juga, walaupun teks itu muncul di draft lama. Jika fakta tidak ada di FACT BANK bersih, jangan dipakai.\n- Jika ERROR SEBELUMNYA menyebut natural, metadata, duplicate, body pendek, shape-goal, atau richness, perbaiki slide tersebut dengan menulis ulang copy dari evidence yang berbeda.\n- Satu slide = satu ide utama yang koheren. Usahakan body dan seluruh bullet slide berasal dari konteks/sourceId yang sama; campur sourceId hanya bila fakta benar-benar membahas ide yang sama.\n- Pertahankan section PERSIS sesuai SECTION WAJIB. Jika Listicle sumber eksplisit menyebut 4 atau 5 item, jumlah slide harus mengikuti jumlah itu.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu. Jangan mengubah fitur, risiko, atau tindakan pihak lain menjadi instruksi palsu.\n- Untuk BEFORE/AFTER/HASIL, hubungan perubahan atau outcome hanya boleh ditulis jika evidence mendukung hubungan tersebut.\n- Jangan masukkan Baca Juga, rekomendasi artikel, cookie/privacy policy, newsletter, copyright, sidebar, teaser, atau metadata situs.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural spesifik","body":"kalimat utuh natural","points":["bullet utuh","bullet utuh","bullet utuh"],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `FINAL AI REWRITE — PAKAI URL MANUAL, WAJIB ON-TOPIC DAN SIAP RENDER.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT EFEKTIF: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\nTARGET: judul spesifik 3–8 kata + body ${profile.bodyMin}–16 kata + bullet fakta seperlunya\nERROR SEBELUMNYA: ${JSON.stringify(errors || [])}\n\nSUMBER DAN FACT BANK YANG SUDAH DIFILTER RELEVAN:\n${JSON.stringify(sourceGroups)}\n\nDRAF SAAT INI:\n${JSON.stringify(generated?.slides || [])}\n\nATURAN KERAS:\n- TOPIK PENGGUNA adalah pagar utama. Jangan pindah ke produk, program, orang, sekolah, artikel, atau subtopik lain hanya karena muncul di halaman URL.\n- Tulis Bahasa Indonesia natural. Dilarang copy patah, kutipan setengah, byline, tanggal publikasi, headline artikel terkait, atau potongan yang mulai/berakhir di tengah kalimat.\n- HANYA gunakan BODY FACT BANK dan FACT BANK di atas. Jangan memakai pengetahuan luar.\n- SETIAP sourceId wajib menyumbang minimal satu fakta jika ada beberapa URL.\n- JUDUL maksimal 8 kata, spesifik, natural, tidak boleh generik, dan harus aman untuk maksimal 3 baris canvas.\n- BODY maksimal 16 kata, satu kalimat utuh, aman untuk maksimal 4 baris canvas. Jangan memotong kalimat demi batas kata.\n- Bullet 3–7 kata, utuh, tidak boleh berakhir pada kata gantung. Maksimal 3 bullet.\n- Setiap body dan bullet wajib mempunyai claim field/text yang PERSIS sama dengan copy visible, sourceId benar, dan evidence yang benar-benar ada pada source tersebut.\n- Evidence body wajib PERSIS salah satu bodyFacts. Evidence bullet wajib berasal dari facts sourceId yang sama.\n- Evidence Inggris boleh diterjemahkan/parafrase ke Indonesia tanpa mengubah makna, angka, modalitas, subjek, hubungan sebab-akibat, atau tingkat kepastian.\n- Angka/ordinal visible wajib berasal dari evidence claim yang sama dan tidak boleh diubah bentuk maknanya. Jangan ubah “lebih dari 10.000” menjadi “10 ribuan”.\n- Jangan mengulang evidence canonical yang sama lintas body/bullet.\n- Untuk LANGKAH/SOLUSI/TIPS, hanya tulis tindakan pengguna bila evidence memang mendukung tindakan itu.\n- Untuk BEFORE/AFTER/HASIL, hubungan outcome harus dinyatakan sumber.\n- Jika draft lama memuat Smart PAI atau isi lain yang tidak relevan dengan TOPIK PENGGUNA, buang total walaupun muncul di halaman yang sama.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat utuh","points":["bullet utuh"],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function responseJson(response) {
   const content = response?.choices?.[0]?.message?.content;
   if (content && typeof content === 'object' && !Array.isArray(content)) return content;
-
   let raw = content;
   if (Array.isArray(content)) {
-    if (!content.length || content.some(part => part?.type !== 'text' || typeof part?.text !== 'string')) {
-      throw new Error('content array tidak berisi textual JSON yang didukung.');
-    }
+    if (!content.length || content.some(part => part?.type !== 'text' || typeof part?.text !== 'string')) throw new Error('content array tidak berisi textual JSON yang didukung.');
     raw = content.map(part => part.text).join('');
   }
   if (typeof raw !== 'string' || !raw.trim()) throw new Error('provider output kosong.');
-
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   const jsonText = fenced ? fenced[1].trim() : trimmed;
@@ -159,21 +296,14 @@ function parseSlides(response, sections) {
   });
 }
 
-const ORDINAL_WORDS = new Set([
-  'pertama', 'kedua', 'ketiga', 'keempat', 'kelima', 'keenam', 'ketujuh', 'kedelapan', 'kesembilan', 'kesepuluh'
-]);
-
+const ORDINAL_WORDS = new Set(['pertama','kedua','ketiga','keempat','kelima','keenam','ketujuh','kedelapan','kesembilan','kesepuluh']);
 function ordinalTokens(value) {
   const text = String(value || '').toLocaleLowerCase('id-ID');
   const found = text.match(/\bke-?\d+\b/g) || [];
   for (const word of text.match(/[a-z]+/g) || []) if (ORDINAL_WORDS.has(word)) found.push(word);
   return found;
 }
-
-function numberTokens(value) {
-  return String(value || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || [];
-}
-
+function numberTokens(value) { return String(value || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || []; }
 function numericGroundingErrors(content) {
   const errors = [];
   for (const slide of Array.isArray(content?.slides) ? content.slides : []) {
@@ -184,9 +314,7 @@ function numericGroundingErrors(content) {
       const unsupportedNumbers = numberTokens(text).filter(number => !evidenceNumbers.has(number));
       const evidenceOrdinals = new Set(ordinalTokens(evidence));
       const unsupportedOrdinals = ordinalTokens(text).filter(ordinal => !evidenceOrdinals.has(ordinal));
-      if (unsupportedNumbers.length || unsupportedOrdinals.length) {
-        errors.push(`NUMERIC_GROUNDING: angka/ordinal pada claim tidak didukung evidence yang sama: ${text}. Evidence: ${evidence}`);
-      }
+      if (unsupportedNumbers.length || unsupportedOrdinals.length) errors.push(`NUMERIC_GROUNDING: angka/ordinal pada claim tidak didukung evidence yang sama: ${text}. Evidence: ${evidence}`);
     }
   }
   return [...new Set(errors)];
@@ -199,21 +327,15 @@ function syncTop(content) {
   const middle = slides.find((slide, index) => index > 0 && (slide.body || slide.points?.length)) || first;
   const last = slides.at(-1);
   const main = slide => String(slide?.body || '').trim() || (slide?.points || []).join(' ').trim() || String(slide?.title || '').trim();
-  return {
-    ...content,
-    hook: String(first?.title || content?.hook || '').trim(),
-    body: main(middle),
-    caption: main(middle),
-    cta: String(last?.title || content?.cta || '').trim()
-  };
+  return { ...content, hook: String(first?.title || content?.hook || '').trim(), body: main(middle), caption: main(middle), cta: String(last?.title || content?.cta || '').trim() };
 }
 
 function localLayoutErrors(content) {
   const errors = [];
   (content?.slides || []).forEach((slide, slideIndex) => {
     const titleCount = words(slide?.title).length;
-    if (!titleCount || titleCount > 12) errors.push(`slide:${slideIndex}: title harus 1–12 kata.`);
-    if (!words(slide?.body).length || words(slide?.body).length > 24) errors.push(`slide:${slideIndex}: body harus 1–24 kata.`);
+    if (!titleCount || titleCount > 10) errors.push(`slide:${slideIndex}: title harus 1–10 kata.`);
+    if (!words(slide?.body).length || words(slide?.body).length > 18) errors.push(`slide:${slideIndex}: body harus 1–18 kata untuk Pakai URL.`);
     if ((slide?.points || []).length > 3) errors.push(`slide:${slideIndex}: maksimal 3 point.`);
     (slide?.points || []).forEach((point, pointIndex) => {
       const count = words(point).length;
@@ -225,80 +347,70 @@ function localLayoutErrors(content) {
 
 function rawSeedFact(source, sourceIndex) {
   const sourceId = `source-${sourceIndex + 1}`;
-  const text = String(source?.text || '').replace(/\s+/g, ' ').trim();
-  if (!text) return null;
-  const sentences = text.split(/(?<=[.!?])\s+/).map(value => value.trim()).filter(Boolean);
-  const sentence = sentences.find(value => words(value).length >= 3 && !isLowValueEvidence(value));
-  const evidence = sentence || words(text).slice(0, 24).join(' ');
-  if (!evidence || words(evidence).length < 3) return null;
-  return { sourceId, evidence };
+  const candidate = sourceDisplayCandidates(source?.text)[0];
+  if (!candidate) return null;
+  return { sourceId, evidence: candidate };
 }
 
-function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '', format = 'Fakta singkat' } = {}) {
-  const cleanFacts = sourceFacts(sources);
-  const perSource = sources.map((source, index) => {
-    const sourceId = `source-${index + 1}`;
-    const facts = cleanFacts.filter(fact => fact.sourceId === sourceId);
-    if (facts.length) return facts;
-    const raw = rawSeedFact(source, index);
-    return raw ? [raw] : [];
-  });
-  if (perSource.some(queue => !queue.length)) return null;
-
-  const allFacts = [];
-  const maxDepth = Math.max(...perSource.map(queue => queue.length));
-  for (let depth = 0; depth < maxDepth; depth += 1) {
-    for (const queue of perSource) if (queue[depth]) allFacts.push(queue[depth]);
+function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '', format = 'Fakta singkat', facts = [] } = {}) {
+  const cleanFacts = facts.length ? facts : sourceFacts(sources);
+  const usable = [];
+  const usedEvidence = new Set();
+  for (const fact of cleanFacts) {
+    const sourceIndex = Number(String(fact.sourceId).match(/^source-(\d+)$/)?.[1]) - 1;
+    const source = sources[sourceIndex];
+    if (!source) continue;
+    const evidence = completeEvidenceForFact(source, fact);
+    const key = `${fact.sourceId}::${normalize(evidence)}`;
+    if (!evidence || usedEvidence.has(key)) continue;
+    usedEvidence.add(key);
+    usable.push({ sourceId: fact.sourceId, evidence });
   }
-  if (!allFacts.length) return null;
+  for (const [sourceIndex, source] of sources.entries()) {
+    const sourceId = `source-${sourceIndex + 1}`;
+    if (!usable.some(item => item.sourceId === sourceId)) {
+      const raw = rawSeedFact(source, sourceIndex);
+      if (raw) usable.push(raw);
+    }
+  }
+  if (usable.length < 4) return null;
 
   const resolvedTopic = String(topic || generated?.topic || sources?.[0]?.title || 'Ringkasan sumber').trim();
-  const sections = targetSections(generated, format, allFacts, sources, resolvedTopic);
+  const sections = targetSections(generated, format, usable, sources, resolvedTopic);
   const slideCount = Math.max(4, Math.min(5, sections.length || 4));
-  const used = new Set();
-  const selected = [];
-  for (const fact of allFacts) {
-    const key = `${fact.sourceId}::${normalize(fact.evidence)}`;
-    if (used.has(key)) continue;
-    used.add(key);
-    selected.push(fact);
-    if (selected.length >= slideCount) break;
-  }
-  while (selected.length < slideCount) selected.push(allFacts[selected.length % allFacts.length]);
-
+  const selected = usable.slice(0, slideCount);
+  if (selected.length < slideCount) return null;
+  const remaining = usable.slice(slideCount);
   const slides = selected.map((fact, slideIndex) => {
-    const sourceIndex = Number(String(fact.sourceId).match(/^source-(\d+)$/)?.[1]) - 1;
-    const source = sources[sourceIndex] || {};
-    const bodyEvidence = expandEvidenceForBody(source.text, fact.evidence, 6, 24) || fact.evidence;
-    const body = words(bodyEvidence).slice(0, 24).join(' ').trim();
-    const title = naturalTitleFromEvidence(fact.evidence) || words(fact.evidence).slice(0, 8).join(' ');
+    const title = naturalTitleFromEvidence(fact.evidence);
+    if (!title || !textFitsCanvas(title, { startSize: 76, minSize: 46, maxLines: 3, maxHeight: 250, lineHeight: 1.08 })) return null;
     return {
       section: sections[slideIndex] || defaultSections(format, slideCount)[slideIndex],
-      title: words(title).slice(0, 12).join(' '),
-      body,
+      title,
+      body: fact.evidence,
       points: [],
       claims: [
-        { field: `slide:${slideIndex}:title`, text: words(title).slice(0, 12).join(' '), sourceId: fact.sourceId, evidence: bodyEvidence },
-        { field: `slide:${slideIndex}:body`, text: body, sourceId: fact.sourceId, evidence: bodyEvidence }
+        { field: `slide:${slideIndex}:title`, text: title, sourceId: fact.sourceId, evidence: fact.evidence },
+        { field: `slide:${slideIndex}:body`, text: fact.evidence, sourceId: fact.sourceId, evidence: fact.evidence }
       ]
     };
   });
+  if (slides.some(slide => !slide)) return null;
 
+  const profile = sourceRichness(cleanFacts, slides.length);
   const covered = new Set(slides.flatMap(slide => slide.claims.map(claim => claim.sourceId)));
-  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-    const sourceId = `source-${sourceIndex + 1}`;
-    if (covered.has(sourceId)) continue;
-    const fact = perSource[sourceIndex][0];
-    let point = compactPoint(fact.evidence);
-    if (!point) point = words(fact.evidence).slice(0, 7).join(' ');
-    if (words(point).length < 3) continue;
-    const slide = slides.find(item => item.points.length < 3);
-    if (!slide) return null;
-    const slideIndex = slides.indexOf(slide);
-    const pointIndex = slide.points.length;
-    slide.points.push(point);
-    slide.claims.push({ field: `slide:${slideIndex}:point:${pointIndex}`, text: point, sourceId, evidence: fact.evidence });
-    covered.add(sourceId);
+  for (const [slideIndex, slide] of slides.entries()) {
+    while (slide.points.length < profile.targetPoints && remaining.length) {
+      let detailIndex = remaining.findIndex(detail => !covered.has(detail.sourceId));
+      if (detailIndex < 0) detailIndex = 0;
+      const [detail] = remaining.splice(detailIndex, 1);
+      const point = compactPoint(detail.evidence);
+      if (!point || endsDangling(point) || slide.points.some(existing => normalize(existing) === normalize(point))) continue;
+      const pointIndex = slide.points.length;
+      slide.points.push(point);
+      slide.claims.push({ field: `slide:${slideIndex}:point:${pointIndex}`, text: point, sourceId: detail.sourceId, evidence: detail.evidence });
+      covered.add(detail.sourceId);
+    }
   }
 
   const result = syncTop({
@@ -311,39 +423,23 @@ function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '',
     __urlSourceFallback: true
   });
   const safetyErrors = [
-    ...manualSourceFallback.validateSourceContent(result, sources),
+    ...manualSourceFallback.validateSourceContent(result, sources).filter(error => !/:richness:/.test(error)),
     ...numericGroundingErrors(result),
-    ...localLayoutErrors(result)
+    ...localLayoutErrors(result),
+    ...urlVisualFitErrors(result)
   ];
   return safetyErrors.length ? null : result;
 }
 
-function buildUrlSourceFallback({ generated = {}, sources = [], topic = '', format = 'Fakta singkat' } = {}) {
-  try {
-    const deterministic = manualSourceFallback.buildDeterministicSourceFallback({
-      generated,
-      sources,
-      topic,
-      requestedFormat: format
-    });
-    const candidate = syncTop({ ...deterministic, verificationStatus: 'source_based', __urlSourceFallback: true });
-    const safetyErrors = [
-      ...manualSourceFallback.validateSourceContent(candidate, sources),
-      ...numericGroundingErrors(candidate),
-      ...localLayoutErrors(candidate)
-    ];
-    if (!safetyErrors.length) return candidate;
-  } catch {}
-  return emergencySourceOnlyFallback({ generated, sources, topic, format });
+function buildUrlSourceFallback({ generated = {}, sources = [], topic = '', format = 'Fakta singkat', facts = [] } = {}) {
+  return emergencySourceOnlyFallback({ generated, sources, topic, format, facts });
 }
 
 async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', format = 'Fakta singkat', mode = 'manual', contentService, client } = {}) {
   if (!sources.length) throw Object.assign(new Error('Tidak ada URL sumber yang dapat dipakai.'), { status: 422 });
-
-  const cleanedFacts = sourceFacts(sources);
-  const seedFacts = cleanedFacts.length
-    ? cleanedFacts
-    : sources.map((source, index) => rawSeedFact(source, index)).filter(Boolean);
+  const allFacts = sourceFacts(sources);
+  const rawSeeds = sources.map((source, index) => rawSeedFact(source, index)).filter(Boolean);
+  const seedFacts = relevantSourceFacts(sources, allFacts.length ? allFacts : rawSeeds, topic);
   if (!seedFacts.length) throw Object.assign(new Error('URL tidak menghasilkan teks sumber yang dapat dipakai.'), { status: 422 });
 
   const effectiveFormat = generated?.effectiveContentFormat || format || 'Fakta singkat';
@@ -359,7 +455,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       response = await openai.chat.completions.create({
         model: config.aiModel,
         messages: [
-          { role: 'system', content: 'Anda editor final carousel source-grounded. Semua URL wajib dipakai. Hasil harus natural seperti tulisan manusia: judul spesifik, body kalimat utuh, bullet fakta utuh. Metadata, headline terkait, fragment, dan fakta di luar evidence dilarang.' },
+          { role: 'system', content: 'Anda editor final khusus Pakai URL. Tetap pada topik pengguna, hanya gunakan evidence URL, dan hasil harus langsung muat canvas tanpa renderer memotong teks.' },
           { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts: seedFacts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors }) }
         ],
         response_format: { type: 'json_object' }
@@ -377,40 +473,35 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       sources,
       autoSourceTopic: mode === 'ai'
     });
+    const candidate = checked.content || draft;
     const deterministicErrors = [
-      ...numericGroundingErrors(draft),
+      ...numericGroundingErrors(candidate),
       ...checked.errors,
-      ...manualSourceFallback.validateSourceContent(checked.content || draft, sources),
-      ...manualSourceDedupe.manualCrossSlideDuplicateErrors(checked.content || draft),
-      ...localLayoutErrors(checked.content || draft)
+      ...manualSourceFallback.validateSourceContent(candidate, sources),
+      ...manualSourceDedupe.manualCrossSlideDuplicateErrors(candidate),
+      ...localLayoutErrors(candidate),
+      ...urlVisualFitErrors(candidate)
     ];
     if (deterministicErrors.length) {
       lastErrors = [...new Set(deterministicErrors)];
-      draft = checked.content || draft;
+      draft = candidate;
+      if (attempt < FAST_FINALIZE_ATTEMPTS - 1) continue;
       break;
     }
 
-    const semanticErrors = await sourceFilter.auditClaimSemantics(openai, checked.content, resolvedTopic, effectiveFormat);
+    const semanticErrors = await sourceFilter.auditClaimSemantics(openai, candidate, resolvedTopic, effectiveFormat);
     if (semanticErrors.length) {
       lastErrors = semanticErrors;
-      draft = checked.content;
+      draft = candidate;
+      if (attempt < FAST_FINALIZE_ATTEMPTS - 1) continue;
       break;
     }
-
-    // Once the candidate is grounded, return immediately. Richness is a quality
-    // target, not a reason to make Pakai URL perform extra AI rewrite rounds.
-    return syncTop(checked.content);
+    return syncTop(candidate);
   }
 
-  const fallback = buildUrlSourceFallback({
-    generated: draft,
-    sources,
-    topic: resolvedTopic,
-    format: effectiveFormat
-  });
+  const fallback = buildUrlSourceFallback({ generated: draft, sources, topic: resolvedTopic, format: effectiveFormat, facts: seedFacts });
   if (fallback) return fallback;
-
-  throw Object.assign(new Error(`Final AI rewrite semua URL belum lolos: ${lastErrors[0] || 'URL tidak menyediakan teks yang dapat dipakai dengan aman'}`), {
+  throw Object.assign(new Error(`Final Pakai URL belum lolos tanpa memotong atau keluar topik: ${lastErrors[0] || 'URL tidak menyediakan teks yang dapat dipakai dengan aman'}`), {
     status: 422,
     validationErrors: lastErrors
   });
@@ -430,6 +521,9 @@ module.exports = {
   densityScore,
   buildUrlSourceFallback,
   emergencySourceOnlyFallback,
+  relevantSourceFacts,
+  urlVisualFitErrors,
+  sourceDisplayCandidates,
   FAST_FINALIZE_ATTEMPTS,
   MAX_FINALIZE_ATTEMPTS
 };
