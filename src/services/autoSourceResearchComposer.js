@@ -45,7 +45,8 @@ function canonicalNumbers(value) {
   const values = [];
   const pattern = /\b(\d+(?:[.,]\d+)?)(?:\s*(%|persen|percent|per\s+cent))?/gi;
   for (const match of String(value || '').matchAll(pattern)) {
-    let number = String(match[1]).replace(',', '.').replace(/0+$/, '').replace(/\.$/, '');
+    let number = String(match[1]).replace(',', '.');
+    if (/^\d+\.\d+$/.test(number)) number = number.replace(/0+$/, '').replace(/\.$/, '');
     values.push(`${number}${match[2] ? '%' : ''}`);
   }
   return values;
