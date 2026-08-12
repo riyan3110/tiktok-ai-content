@@ -13,6 +13,8 @@ const { autoSourceRequested, pakaiUrlRequested } = autoSourcePatch;
 const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourceFastDiscovery',
   '../src/services/autoSourceExpandedDiscovery',
+  '../src/services/autoSourceScopedDiscovery',
+  '../src/services/autoSourceTopicIdentity',
   '../src/services/autoSourceQualityLayer',
   '../src/services/autoSourceRuntimeGuard',
   '../src/services/autoSourcePlanFinalizer',
@@ -20,6 +22,7 @@ const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourceComposer',
   '../src/services/autoSourceSimpleComposer',
   '../src/services/autoSourceResearchComposer',
+  '../src/services/autoSourceTopicLockedComposer',
   '../src/services/autoSourceVisualFit'
 ];
 
@@ -55,13 +58,12 @@ test('automatic AI topic mode without URLs is not hijacked by manual auto source
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
 });
 
-test('research Auto Source loader does not install legacy strict/plan validator stack', () => {
+test('topic-locked research loader does not install legacy strict/plan validator stack', () => {
   clearAutoSourceCaches();
   const dependencies = autoSourcePatch.loadAutoSourceDependencies();
   assert.ok(dependencies.autoSourceDiscovery);
-  assert.ok(dependencies.autoSourceResearchComposer);
+  assert.ok(dependencies.autoSourceComposer);
   assert.ok(dependencies.autoSourceVisualFit);
-  assert.equal('autoSourceComposer' in dependencies, false);
   assert.equal('autoSourcePlanFinalizer' in dependencies, false);
   assert.equal(require.cache[require.resolve('../src/services/autoSourceQualityLayer')], undefined);
   assert.equal(require.cache[require.resolve('../src/services/autoSourceRuntimeGuard')], undefined);
