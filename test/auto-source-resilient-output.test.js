@@ -9,6 +9,7 @@ process.env.AI_BASE_URL ||= 'https://example.test/v1';
 process.env.AI_MODEL ||= 'test-model';
 
 const finalizer = require('../src/services/autoSourceResilientFinalizer');
+const validation = require('../src/services/autoSourceValidation');
 
 function facts(count = 20) {
   return Array.from({ length: count }, (_, index) => ({
@@ -43,15 +44,39 @@ test('source kaya tetap mewajibkan tiga bullet fakta per slide', () => {
 });
 
 test('model/version dianggap grounded bila entity plus versi ada pada source context yang sama', () => {
-  const claim = { text: 'ChatGPT 5.6 membawa pembaruan baru', sourceId: 'source-1' };
+  const content = {
+    slides: [{
+      title: 'Pembaruan ChatGPT',
+      body: 'ChatGPT 5.6 membawa pembaruan baru.',
+      points: [],
+      claims: [{
+        field: 'slide:0:body',
+        text: 'ChatGPT 5.6 membawa pembaruan baru.',
+        sourceId: 'source-1',
+        evidence: 'OpenAI menjelaskan pembaruan baru dalam catatan rilis.'
+      }]
+    }]
+  };
   const source = { title: 'OpenAI memperkenalkan ChatGPT-5.6', text: 'ChatGPT 5.6 is described in the release notes.' };
-  assert.equal(finalizer.modelVersionSupportedBySource(claim, source), true);
+  assert.deepEqual(validation.numericGroundingErrors(content, [source]), []);
 });
 
 test('angka biasa tidak diloloskan hanya karena ada angka lain di source', () => {
-  const claim = { text: 'ChatGPT 5.6 membawa pembaruan baru', sourceId: 'source-1' };
+  const content = {
+    slides: [{
+      title: 'Pembaruan ChatGPT',
+      body: 'ChatGPT 5.6 membawa pembaruan baru.',
+      points: [],
+      claims: [{
+        field: 'slide:0:body',
+        text: 'ChatGPT 5.6 membawa pembaruan baru.',
+        sourceId: 'source-1',
+        evidence: 'OpenAI menjelaskan pembaruan baru dalam catatan rilis.'
+      }]
+    }]
+  };
   const source = { title: 'OpenAI memperkenalkan ChatGPT 5.5', text: 'Release notes discuss version 5.5 only.' };
-  assert.equal(finalizer.modelVersionSupportedBySource(claim, source), false);
+  assert.ok(validation.numericGroundingErrors(content, [source]).some(error => /5\.6/.test(error)));
 });
 
 test('format waktu 23.57 diselaraskan ke 23:57 bila sumber memakai waktu yang sama', () => {
