@@ -30,6 +30,8 @@ test('runtime planner understands a never-before-seen trending product without c
       canonicalTopic: topic,
       subjects: ['AetherNova', 'NovaKite ZX-9'],
       eventTerms: ['memperkenalkan', 'pusat data', 'launch', 'data center'],
+      actionTerms: ['memperkenalkan', 'launch'],
+      contextTerms: ['pusat data', 'data center'],
       searchQueries: [topic, 'AetherNova NovaKite ZX-9 data center launch'],
       marketIntent: false,
       relation: 'event'
@@ -38,6 +40,7 @@ test('runtime planner understands a never-before-seen trending product without c
 
   assert.deepEqual(plan.subjects, ['AetherNova', 'NovaKite ZX-9']);
   assert.ok(plan.searchQueries.some(query => query.includes('NovaKite ZX-9')));
+  assert.ok(plan.actionTerms.includes('launch'));
   assert.equal(plan.marketIntent, false);
 });
 
@@ -45,6 +48,7 @@ test('fallback planner also preserves unknown names and version strings', () => 
   const plan = planner.fallbackPlan('AetherNova meluncurkan NovaKite ZX-9');
   assert.ok(plan.subjects.some(subject => /AetherNova/i.test(subject)));
   assert.ok(plan.subjects.some(subject => /NovaKite ZX-9/i.test(subject)));
+  assert.ok(plan.actionTerms.some(term => /meluncurkan/i.test(term)));
   assert.ok(plan.searchQueries[0].includes('NovaKite ZX-9'));
 });
 
@@ -101,6 +105,8 @@ test('scoped discovery broadens with a runtime-generated query only when exact t
         canonicalTopic: topic,
         subjects: ['AetherNova', 'NovaKite ZX-9'],
         eventTerms: ['memperkenalkan', 'launch'],
+        actionTerms: ['memperkenalkan', 'launch'],
+        contextTerms: [],
         searchQueries: [topic, 'AetherNova NovaKite ZX-9 launch'],
         marketIntent: false,
         relation: 'event'
@@ -116,7 +122,7 @@ test('scoped discovery broadens with a runtime-generated query only when exact t
   }
 });
 
-test('exact topic does not pay for an alternate search when enough strong sources already exist', async () => {
+test('exact topic does not run another web search when fetched sources become strong after runtime interpretation', async () => {
   const original = expanded.discover;
   let calls = 0;
   expanded.discover = async ({ topic }) => {
@@ -144,6 +150,8 @@ test('exact topic does not pay for an alternate search when enough strong source
         canonicalTopic: topic,
         subjects: ['AetherNova', 'NovaKite ZX-9'],
         eventTerms: ['memperkenalkan', 'launch'],
+        actionTerms: ['memperkenalkan', 'launch'],
+        contextTerms: [],
         searchQueries: [topic, 'AetherNova NovaKite ZX-9 launch'],
         marketIntent: false,
         relation: 'event'

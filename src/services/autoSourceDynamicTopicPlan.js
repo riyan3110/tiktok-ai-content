@@ -2,9 +2,9 @@ const OpenAI = require('openai');
 const config = require('../config');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// Build a fresh topic plan from the exact user input on every generation.
-// No product/company/topic catalog is required, so newly trending names work
-// without adding aliases to the codebase.
+// Build a fresh topic plan from the exact user input. The plan is intentionally
+// small: subjects + event/action/context + search queries. No catalog of known
+// companies/products/news topics is required.
 
 const GLUE_WORDS = new Set([
   'yang','dan','atau','dari','untuk','dengan','tentang','pada','dalam','ini','itu','adalah','merupakan','sebagai','oleh','ke','di','terhadap',
@@ -15,6 +15,18 @@ const SUBJECT_NOISE = new Set([
   'kegunaan','penggunaan','penerapan','contoh','fakta','info','memperkenalkan','menghadirkan','meluncurkan','merilis','mengumumkan',
   'hadapi','menghadapi','prioritaskan','menambahkan','memperbarui','launch','launches','launched','introduce','introduces','introduced',
   'release','releases','released','announce','announces','announced','adds','updates','unveils','reveals'
+]);
+const ASPECT_WORDS = new Set([
+  'sedang','tengah','telah','sudah','akan','bakal','kini','masih','mulai','kembali','baru','currently','now','still','already','will','plans','plan'
+]);
+const EVENT_VERBS = new Set([
+  'uji','menguji','test','tests','testing','tested','rilis','merilis','release','releases','released','launch','launches','launched',
+  'luncurkan','meluncurkan','hadir','hadirkan','menghadirkan','introduce','introduces','introduced','memperkenalkan','umumkan','mengumumkan',
+  'announce','announces','announced','tambah','menambahkan','add','adds','added','perbarui','memperbarui','update','updates','updated',
+  'ubah','mengubah','change','changes','changed','hapus','menghapus','remove','removes','removed','batasi','membatasi','limit','limits','limited',
+  'perluas','memperluas','expand','expands','expanded','hadapi','menghadapi','face','faces','faced','prioritaskan','prioritize','prioritizes',
+  'lampaui','melampaui','beat','beats','beating','exceed','exceeds','exceeded','turun','menurun','rise','rises','rose','naik','meningkat','increase','increases','increased',
+  'akuisisi','mengakuisisi','acquire','acquires','acquired','kerja','bekerja','partner','partners','partnered','sign','signs','signed','menang','wins','won','lapor','melaporkan','report','reports','reported'
 ]);
 const MARKET_RE = /\b(?:saham|stock|stocks|share|shares|harga\s+saham|market|pasar|trading|perdagangan|investor|ticker|nasdaq|nyse)\b/i;
 
@@ -47,6 +59,37 @@ function rawTokens(topic = '') {
   return clean(topic).match(/[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*/g) || [];
 }
 
+function verbLike(token = '') {
+  const key = normalize(token);
+  if (!key) return false;
+  if (EVENT_VERBS.has(key)) return true;
+  if (/^(?:meng|meny|men|mem|me|ber|ter|di)[a-z]{3,}$/i.test(key)) return true;
+  if (/(?:kan)$/i.test(key) && key.length >= 6) return true;
+  return false;
+}
+
+function fallbackEventParts(topic = '', subjects = []) {
+  const tokens = rawTokens(topic);
+  const subjectWords = new Set(subjects.flatMap(subject => normalize(subject).split(' ').filter(Boolean)));
+  const candidates = [];
+
+  for (const token of tokens) {
+    const key = normalize(token);
+    if (!key || subjectWords.has(key) || GLUE_WORDS.has(key) || ASPECT_WORDS.has(key)) continue;
+    if (SUBJECT_NOISE.has(key) && !verbLike(token)) continue;
+    candidates.push(token);
+  }
+
+  if (!candidates.length) return { actionTerms: [], contextTerms: [] };
+  const first = candidates[0];
+  const actionTerms = verbLike(first) ? [first] : [];
+  const contextTerms = actionTerms.length ? candidates.slice(1) : candidates;
+  return {
+    actionTerms: uniq(actionTerms, 4),
+    contextTerms: uniq(contextTerms, 8)
+  };
+}
+
 function fallbackPlan(topic = '') {
   const cleanTopic = clean(topic);
   const tokens = rawTokens(cleanTopic);
@@ -63,7 +106,7 @@ function fallbackPlan(topic = '') {
   };
   for (const token of tokens) {
     const key = normalize(token);
-    if (SUBJECT_NOISE.has(key) || GLUE_WORDS.has(key)) {
+    if (SUBJECT_NOISE.has(key) || GLUE_WORDS.has(key) || ASPECT_WORDS.has(key)) {
       flush();
       continue;
     }
@@ -76,14 +119,18 @@ function fallbackPlan(topic = '') {
   }
   flush();
 
-  const subjectTokens = new Set(named.flatMap(value => normalize(value).split(' ').filter(Boolean)));
-  const eventTerms = contentTerms.filter(term => !subjectTokens.has(normalize(term)));
+  const subjects = uniq(named.length ? named : contentTerms.filter(term => !SUBJECT_NOISE.has(normalize(term))).slice(0, 2), 4);
+  const subjectTokens = new Set(subjects.flatMap(value => normalize(value).split(' ').filter(Boolean)));
+  const eventTerms = contentTerms.filter(term => !subjectTokens.has(normalize(term)) && !ASPECT_WORDS.has(normalize(term)));
+  const eventParts = fallbackEventParts(cleanTopic, subjects);
 
   return {
     rawTopic: cleanTopic,
     canonicalTopic: cleanTopic,
-    subjects: uniq(named.length ? named : contentTerms.filter(term => !SUBJECT_NOISE.has(normalize(term))).slice(0, 2), 4),
+    subjects,
     eventTerms: uniq(eventTerms.length ? eventTerms : contentTerms, 8),
+    actionTerms: eventParts.actionTerms,
+    contextTerms: eventParts.contextTerms,
     searchQueries: uniq([
       cleanTopic,
       `${cleanTopic} terbaru`,
@@ -92,15 +139,21 @@ function fallbackPlan(topic = '') {
     marketIntent: MARKET_RE.test(cleanTopic),
     relation: /\b(?:vs\.?|versus|dibanding(?:kan)?|perbandingan)\b/i.test(cleanTopic) ? 'comparison'
       : /\b(?:dan|&)\b/i.test(cleanTopic) && named.length >= 2 ? 'multi'
-        : 'single',
+        : eventParts.actionTerms.length ? 'event' : 'single',
     planner: 'fallback'
   };
 }
 
 function normalizePlan(raw, topic) {
   const fallback = fallbackPlan(topic);
-  const subjects = uniq(Array.isArray(raw?.subjects) ? raw.subjects : fallback.subjects, 4);
-  const eventTerms = uniq(Array.isArray(raw?.eventTerms) ? raw.eventTerms : fallback.eventTerms, 10);
+  const hasSubjects = Array.isArray(raw?.subjects);
+  const hasEvents = Array.isArray(raw?.eventTerms);
+  const hasActions = Array.isArray(raw?.actionTerms);
+  const hasContexts = Array.isArray(raw?.contextTerms);
+  const subjects = uniq(hasSubjects ? raw.subjects : fallback.subjects, 4);
+  const eventTerms = uniq(hasEvents ? raw.eventTerms : fallback.eventTerms, 10);
+  const actionTerms = uniq(hasActions ? raw.actionTerms : fallback.actionTerms, 8);
+  const contextTerms = uniq(hasContexts ? raw.contextTerms : fallback.contextTerms, 12);
   const searchQueries = uniq([
     topic,
     ...(Array.isArray(raw?.searchQueries) ? raw.searchQueries : []),
@@ -110,8 +163,10 @@ function normalizePlan(raw, topic) {
   return {
     rawTopic: clean(topic),
     canonicalTopic: clean(raw?.canonicalTopic || topic),
-    subjects: subjects.length ? subjects : fallback.subjects,
-    eventTerms: eventTerms.length ? eventTerms : fallback.eventTerms,
+    subjects: hasSubjects ? subjects : (subjects.length ? subjects : fallback.subjects),
+    eventTerms: hasEvents ? eventTerms : (eventTerms.length ? eventTerms : fallback.eventTerms),
+    actionTerms: hasActions ? actionTerms : fallback.actionTerms,
+    contextTerms: hasContexts ? contextTerms : fallback.contextTerms,
     searchQueries,
     marketIntent: typeof raw?.marketIntent === 'boolean' ? raw.marketIntent : fallback.marketIntent,
     relation: ['single','multi','comparison','event','general'].includes(raw?.relation) ? raw.relation : fallback.relation,
@@ -144,7 +199,7 @@ async function createPlan(topic = '', { client } = {}) {
         },
         {
           role: 'user',
-          content: `TOPIK USER: ${JSON.stringify(cleanTopic)}\n\nKembalikan HANYA JSON dengan schema:\n{"canonicalTopic":"...","subjects":["..."],"eventTerms":["..."],"searchQueries":["..."],"marketIntent":false,"relation":"single|multi|comparison|event|general"}\n\nAturan:\n- subjects = nama orang/perusahaan/produk/model/fitur/tempat/organisasi yang benar-benar tertulis atau jelas merupakan subjek literal topik. Jangan invent nama baru.\n- Pertahankan ejaan nama, nomor versi, singkatan, dan angka identitas persis.\n- eventTerms = aksi/peristiwa/konteks inti topik. Boleh sertakan padanan Inggris jika itu membantu pencarian global, tetapi jangan menambah fakta.\n- searchQueries maksimal 4, selalu relevan dengan topik yang sama. Minimal satu query mempertahankan nama subjek persis; boleh buat versi Inggris untuk kata aksi/konteks.\n- marketIntent true hanya bila user memang meminta saham/pasar/harga/trading.\n- Ini parser, bukan fact checker. Jangan menyimpulkan sesuatu yang tidak ada di topik.`
+          content: `TOPIK USER: ${JSON.stringify(cleanTopic)}\n\nKembalikan HANYA JSON dengan schema:\n{"canonicalTopic":"...","subjects":["..."],"eventTerms":["..."],"actionTerms":["..."],"contextTerms":["..."],"searchQueries":["..."],"marketIntent":false,"relation":"single|multi|comparison|event|general"}\n\nAturan:\n- subjects = nama orang/perusahaan/produk/model/fitur/tempat/organisasi yang benar-benar tertulis atau jelas merupakan subjek literal topik. Jangan invent nama baru.\n- Pertahankan ejaan nama, nomor versi, singkatan, dan angka identitas persis.\n- actionTerms = aksi inti yang diminta user (contoh literal: menguji, meluncurkan, melampaui). Sertakan padanan Inggris sebagai ALTERNATIF bila membantu pencarian global, tetapi jangan menambah aksi baru. Jika topik tidak punya aksi/event spesifik, kembalikan [].\n- contextTerms = objek/konteks yang membedakan event itu dari berita lain tentang subjek yang sama. Padanan bahasa boleh menjadi item alternatif. Jika tidak ada konteks pembeda, kembalikan [].\n- eventTerms = frasa event yang berguna untuk pencarian; tetap satu event yang sama.\n- searchQueries maksimal 4, selalu relevan dengan topik yang sama. Minimal satu query mempertahankan nama subjek persis; boleh buat versi Inggris untuk aksi/konteks.\n- marketIntent true hanya bila user memang meminta saham/pasar/harga/trading.\n- Ini parser, bukan fact checker. Jangan menyimpulkan sesuatu yang tidak ada di topik.`
         }
       ],
       response_format: { type: 'json_object' }
@@ -159,8 +214,10 @@ async function createPlan(topic = '', { client } = {}) {
 module.exports = {
   createPlan,
   fallbackPlan,
+  fallbackEventParts,
   normalizePlan,
   clean,
   normalize,
-  uniq
+  uniq,
+  verbLike
 };
