@@ -19,6 +19,7 @@ const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourceStrictFinalizer',
   '../src/services/autoSourceComposer',
   '../src/services/autoSourceSimpleComposer',
+  '../src/services/autoSourceResearchComposer',
   '../src/services/autoSourceVisualFit'
 ];
 
@@ -54,11 +55,11 @@ test('automatic AI topic mode without URLs is not hijacked by manual auto source
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
 });
 
-test('simple Auto Source loader does not install legacy strict/plan validator stack', () => {
+test('research Auto Source loader does not install legacy strict/plan validator stack', () => {
   clearAutoSourceCaches();
   const dependencies = autoSourcePatch.loadAutoSourceDependencies();
   assert.ok(dependencies.autoSourceDiscovery);
-  assert.ok(dependencies.autoSourceSimpleComposer);
+  assert.ok(dependencies.autoSourceResearchComposer);
   assert.ok(dependencies.autoSourceVisualFit);
   assert.equal('autoSourceComposer' in dependencies, false);
   assert.equal('autoSourcePlanFinalizer' in dependencies, false);
