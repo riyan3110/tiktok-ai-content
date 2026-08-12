@@ -21,10 +21,12 @@ const ASPECT_WORDS = new Set([
 ]);
 const EVENT_VERBS = new Set([
   'uji','menguji','test','tests','testing','tested','rilis','merilis','release','releases','released','launch','launches','launched',
-  'luncurkan','meluncurkan','hadirkan','menghadirkan','introduce','introduces','introduced','memperkenalkan','umumkan','mengumumkan',
+  'luncurkan','meluncurkan','hadir','hadirkan','menghadirkan','introduce','introduces','introduced','memperkenalkan','umumkan','mengumumkan',
   'announce','announces','announced','tambah','menambahkan','add','adds','added','perbarui','memperbarui','update','updates','updated',
-  'hapus','menghapus','remove','removes','removed','batasi','membatasi','limit','limits','limited','perluas','memperluas','expand','expands','expanded',
-  'lampaui','melampaui','beat','beats','beating','exceed','exceeds','exceeded','turun','menurun','rise','rises','rose','naik','meningkat','increase','increases','increased'
+  'ubah','mengubah','change','changes','changed','hapus','menghapus','remove','removes','removed','batasi','membatasi','limit','limits','limited',
+  'perluas','memperluas','expand','expands','expanded','hadapi','menghadapi','face','faces','faced','prioritaskan','prioritize','prioritizes',
+  'lampaui','melampaui','beat','beats','beating','exceed','exceeds','exceeded','turun','menurun','rise','rises','rose','naik','meningkat','increase','increases','increased',
+  'akuisisi','mengakuisisi','acquire','acquires','acquired','kerja','bekerja','partner','partners','partnered','sign','signs','signed','menang','wins','won','lapor','melaporkan','report','reports','reported'
 ]);
 const MARKET_RE = /\b(?:saham|stock|stocks|share|shares|harga\s+saham|market|pasar|trading|perdagangan|investor|ticker|nasdaq|nyse)\b/i;
 
@@ -80,8 +82,7 @@ function fallbackEventParts(topic = '', subjects = []) {
 
   if (!candidates.length) return { actionTerms: [], contextTerms: [] };
   const first = candidates[0];
-  const hasContextAfter = candidates.length >= 2;
-  const actionTerms = verbLike(first) || hasContextAfter ? [first] : [];
+  const actionTerms = verbLike(first) ? [first] : [];
   const contextTerms = actionTerms.length ? candidates.slice(1) : candidates;
   return {
     actionTerms: uniq(actionTerms, 4),
@@ -145,10 +146,14 @@ function fallbackPlan(topic = '') {
 
 function normalizePlan(raw, topic) {
   const fallback = fallbackPlan(topic);
-  const subjects = uniq(Array.isArray(raw?.subjects) ? raw.subjects : fallback.subjects, 4);
-  const eventTerms = uniq(Array.isArray(raw?.eventTerms) ? raw.eventTerms : fallback.eventTerms, 10);
-  const actionTerms = uniq(Array.isArray(raw?.actionTerms) ? raw.actionTerms : fallback.actionTerms, 8);
-  const contextTerms = uniq(Array.isArray(raw?.contextTerms) ? raw.contextTerms : fallback.contextTerms, 12);
+  const hasSubjects = Array.isArray(raw?.subjects);
+  const hasEvents = Array.isArray(raw?.eventTerms);
+  const hasActions = Array.isArray(raw?.actionTerms);
+  const hasContexts = Array.isArray(raw?.contextTerms);
+  const subjects = uniq(hasSubjects ? raw.subjects : fallback.subjects, 4);
+  const eventTerms = uniq(hasEvents ? raw.eventTerms : fallback.eventTerms, 10);
+  const actionTerms = uniq(hasActions ? raw.actionTerms : fallback.actionTerms, 8);
+  const contextTerms = uniq(hasContexts ? raw.contextTerms : fallback.contextTerms, 12);
   const searchQueries = uniq([
     topic,
     ...(Array.isArray(raw?.searchQueries) ? raw.searchQueries : []),
@@ -158,10 +163,10 @@ function normalizePlan(raw, topic) {
   return {
     rawTopic: clean(topic),
     canonicalTopic: clean(raw?.canonicalTopic || topic),
-    subjects: subjects.length ? subjects : fallback.subjects,
-    eventTerms: eventTerms.length ? eventTerms : fallback.eventTerms,
-    actionTerms: actionTerms.length ? actionTerms : fallback.actionTerms,
-    contextTerms: contextTerms.length ? contextTerms : fallback.contextTerms,
+    subjects: hasSubjects ? subjects : (subjects.length ? subjects : fallback.subjects),
+    eventTerms: hasEvents ? eventTerms : (eventTerms.length ? eventTerms : fallback.eventTerms),
+    actionTerms: hasActions ? actionTerms : fallback.actionTerms,
+    contextTerms: hasContexts ? contextTerms : fallback.contextTerms,
     searchQueries,
     marketIntent: typeof raw?.marketIntent === 'boolean' ? raw.marketIntent : fallback.marketIntent,
     relation: ['single','multi','comparison','event','general'].includes(raw?.relation) ? raw.relation : fallback.relation,
@@ -194,7 +199,7 @@ async function createPlan(topic = '', { client } = {}) {
         },
         {
           role: 'user',
-          content: `TOPIK USER: ${JSON.stringify(cleanTopic)}\n\nKembalikan HANYA JSON dengan schema:\n{"canonicalTopic":"...","subjects":["..."],"eventTerms":["..."],"actionTerms":["..."],"contextTerms":["..."],"searchQueries":["..."],"marketIntent":false,"relation":"single|multi|comparison|event|general"}\n\nAturan:\n- subjects = nama orang/perusahaan/produk/model/fitur/tempat/organisasi yang benar-benar tertulis atau jelas merupakan subjek literal topik. Jangan invent nama baru.\n- Pertahankan ejaan nama, nomor versi, singkatan, dan angka identitas persis.\n- actionTerms = aksi inti yang diminta user (contoh literal: menguji, meluncurkan, melampaui). Sertakan padanan Inggris sebagai ALTERNATIF bila membantu pencarian global, tetapi jangan menambah aksi baru.\n- contextTerms = objek/konteks yang membedakan event itu dari berita lain tentang subjek yang sama (contoh: batasan penggunaan, usage limits, quota). Padanan bahasa boleh menjadi item alternatif.\n- eventTerms = frasa event yang berguna untuk pencarian; tetap satu event yang sama.\n- searchQueries maksimal 4, selalu relevan dengan topik yang sama. Minimal satu query mempertahankan nama subjek persis; boleh buat versi Inggris untuk aksi/konteks.\n- marketIntent true hanya bila user memang meminta saham/pasar/harga/trading.\n- Ini parser, bukan fact checker. Jangan menyimpulkan sesuatu yang tidak ada di topik.`
+          content: `TOPIK USER: ${JSON.stringify(cleanTopic)}\n\nKembalikan HANYA JSON dengan schema:\n{"canonicalTopic":"...","subjects":["..."],"eventTerms":["..."],"actionTerms":["..."],"contextTerms":["..."],"searchQueries":["..."],"marketIntent":false,"relation":"single|multi|comparison|event|general"}\n\nAturan:\n- subjects = nama orang/perusahaan/produk/model/fitur/tempat/organisasi yang benar-benar tertulis atau jelas merupakan subjek literal topik. Jangan invent nama baru.\n- Pertahankan ejaan nama, nomor versi, singkatan, dan angka identitas persis.\n- actionTerms = aksi inti yang diminta user (contoh literal: menguji, meluncurkan, melampaui). Sertakan padanan Inggris sebagai ALTERNATIF bila membantu pencarian global, tetapi jangan menambah aksi baru. Jika topik tidak punya aksi/event spesifik, kembalikan [].\n- contextTerms = objek/konteks yang membedakan event itu dari berita lain tentang subjek yang sama. Padanan bahasa boleh menjadi item alternatif. Jika tidak ada konteks pembeda, kembalikan [].\n- eventTerms = frasa event yang berguna untuk pencarian; tetap satu event yang sama.\n- searchQueries maksimal 4, selalu relevan dengan topik yang sama. Minimal satu query mempertahankan nama subjek persis; boleh buat versi Inggris untuk aksi/konteks.\n- marketIntent true hanya bila user memang meminta saham/pasar/harga/trading.\n- Ini parser, bukan fact checker. Jangan menyimpulkan sesuatu yang tidak ada di topik.`
         }
       ],
       response_format: { type: 'json_object' }
