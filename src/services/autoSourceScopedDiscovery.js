@@ -1,10 +1,11 @@
 const expanded = require('./autoSourceExpandedDiscovery');
 const identity = require('./autoSourceTopicIdentity');
 const multi = require('./autoSourceMultiEntityTopic');
+const topicScope = require('./autoSourceTopicScope');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// Versioned topics get an exact identity gate. Explicit multi-entity topics get
-// a strong entity-coverage gate plus targeted discovery for a missing entity.
+// Every discovered article must first be strongly inside the requested topic.
+// Versioned and multi-entity topics then receive their stricter existing gates.
 
 function sourceUrl(source = {}) {
   return String(source?.finalUrl || source?.url || '').trim();
@@ -33,9 +34,10 @@ function entityCoverage(sources = [], entities = []) {
 async function discover(options = {}) {
   const result = await expanded.discover(options);
   const topic = String(options.topic || result?.topic || '').trim();
+  const baseSources = (result.sources || []).filter(source => topicScope.sourceInScope(topic, source));
 
   if (identity.hasSpecificIdentity(topic)) {
-    const sources = (result.sources || []).filter(source =>
+    const sources = baseSources.filter(source =>
       identity.identityMatches(topic, `${source?.title || ''} ${source?.text || ''}`)
     );
     if (!sources.length) {
@@ -51,10 +53,23 @@ async function discover(options = {}) {
     };
   }
 
-  if (!multi.hasMultiEntityTopic(topic)) return result;
+  if (!multi.hasMultiEntityTopic(topic)) {
+    if (!baseSources.length) {
+      throw Object.assign(new Error('Sumber terbaru ditemukan, tetapi tidak ada artikel yang cukup kuat membahas inti topik.'), {
+        status: 422,
+        code: 'AUTO_SOURCE_TOPIC_SCOPE_EMPTY'
+      });
+    }
+    return {
+      ...result,
+      topic,
+      sources: baseSources,
+      publishers: [...new Set(baseSources.map(source => source?.discovery?.publisher).filter(Boolean))]
+    };
+  }
 
   const entities = multi.entities(topic);
-  let sources = (result.sources || []).filter(source =>
+  let sources = baseSources.filter(source =>
     entities.some(entity => multi.sourceStrongForEntity(source, entity))
   );
   const extraQueries = [];
