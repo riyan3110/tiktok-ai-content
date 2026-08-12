@@ -36,6 +36,18 @@ test('automatic AI topic mode without URLs is not hijacked by manual auto source
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
 });
 
+test('simple Auto Source loader does not install legacy strict/plan validator stack', () => {
+  const dependencies = autoSourcePatch.loadAutoSourceDependencies();
+  assert.ok(dependencies.autoSourceDiscovery);
+  assert.ok(dependencies.autoSourceSimpleComposer);
+  assert.equal('autoSourceComposer' in dependencies, false);
+  assert.equal('autoSourcePlanFinalizer' in dependencies, false);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourceQualityLayer')], undefined);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourceRuntimeGuard')], undefined);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourcePlanFinalizer')], undefined);
+  assert.equal(require.cache[require.resolve('../src/services/autoSourceStrictFinalizer')], undefined);
+});
+
 test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async () => {
   autoSourcePatch.resetForTests();
   const realGenerateAndSave = generation.generateAndSave;
@@ -68,6 +80,7 @@ test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async (
     assert.equal(require.cache[require.resolve('../src/services/autoSourceRuntimeGuard')], undefined);
     assert.equal(require.cache[require.resolve('../src/services/autoSourcePlanFinalizer')], undefined);
     assert.equal(require.cache[require.resolve('../src/services/autoSourceComposer')], undefined);
+    assert.equal(require.cache[require.resolve('../src/services/autoSourceSimpleComposer')], undefined);
   } finally {
     autoSourcePatch.resetForTests();
     generation.generateAndSave = realGenerateAndSave;
