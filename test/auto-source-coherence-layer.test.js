@@ -48,7 +48,26 @@ test('mixed sourceIds inside one slide are rejected with field-addressable coher
   const errors = layer.slideSourceCoherenceErrors(content);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /slide:0:point:1/);
-  assert.match(errors[0], /satu slide harus satu sumber utama/i);
+  assert.match(errors[0], /satu sumber utama/i);
+});
+
+test('factual title claim must use the same primary source as body and bullets', () => {
+  const content = {
+    slides: [{
+      title: 'Muse Code diluncurkan dalam beta',
+      body: 'Muse Code membantu berbagai pekerjaan software engineering melalui agen AI.',
+      points: ['Menulis dan memperbaiki kode', 'Debugging dan pengujian'],
+      claims: [
+        { field: 'slide:0:title', text: 'x', sourceId: 'source-2', evidence: 'e0' },
+        { field: 'slide:0:body', text: 'x', sourceId: 'source-1', evidence: 'e1' },
+        { field: 'slide:0:point:0', text: 'x', sourceId: 'source-1', evidence: 'e2' },
+        { field: 'slide:0:point:1', text: 'x', sourceId: 'source-1', evidence: 'e3' }
+      ]
+    }]
+  };
+  const errors = layer.slideSourceCoherenceErrors(content);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /slide:0:title/);
 });
 
 test('topic evidence gate rejects body or bullet evidence outside the scoped fact bank', () => {
