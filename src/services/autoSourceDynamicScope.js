@@ -44,6 +44,14 @@ function eventHits(plan = {}, value = '') {
   return (plan.eventTerms || []).filter(term => termPresent(term, value));
 }
 
+function requiredSubjectMatches(plan = {}) {
+  const count = (plan.subjects || []).length;
+  if (!count) return 0;
+  if (plan.relation === 'multi' || plan.relation === 'comparison') return 1;
+  if (count <= 2) return count;
+  return Math.max(2, Math.ceil(count * 0.67));
+}
+
 function sourceInScope(topic = '', source = {}, plan = {}) {
   const combined = `${source?.title || ''} ${String(source?.text || '').slice(0, 12000)}`;
   if (identity.hasSpecificIdentity(topic)) return identity.identityMatches(topic, combined);
@@ -57,9 +65,9 @@ function sourceInScope(topic = '', source = {}, plan = {}) {
   const eventMatches = eventHits(plan, combined);
 
   if (subjects.length) {
-    if (!subjectMatches.length) return false;
+    if (subjectMatches.length < requiredSubjectMatches(plan)) return false;
     // For a narrowly worded event, require at least one event/context signal as
-    // well so an old article about the same brand does not outrank the new story.
+    // well so an old article about the same subject does not outrank the new story.
     if ((plan.eventTerms || []).length >= 2 && !eventMatches.length) return false;
     return true;
   }
@@ -167,6 +175,7 @@ module.exports = {
   termPresent,
   subjectHits,
   eventHits,
+  requiredSubjectMatches,
   sourceInScope,
   evidenceInScope,
   evidenceScore,
