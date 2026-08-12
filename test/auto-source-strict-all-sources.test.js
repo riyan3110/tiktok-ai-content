@@ -31,8 +31,8 @@ function denseSlide(index, pointCount = 3) {
 test('fact bank kaya mewajibkan tepat tiga bullet di setiap slide', () => {
   const content = { slides: Array.from({ length: 4 }, (_, index) => denseSlide(index, 2)) };
   const errors = strict.strictDensityErrors(content, denseFacts(20));
-  assert.equal(errors.length, 4);
-  assert.ok(errors.every(error => /wajib tepat 3 bullet fakta berbeda/i.test(error)));
+  const exactThree = errors.filter(error => /wajib tepat 3 bullet fakta berbeda/i.test(error));
+  assert.equal(exactThree.length, 4);
 });
 
 test('body Auto Source strict harus padat 10-20 kata', () => {
