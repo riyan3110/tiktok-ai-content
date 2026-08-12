@@ -73,7 +73,8 @@ function fallbackEventParts(topic = '', subjects = []) {
 
   for (const token of tokens) {
     const key = normalize(token);
-    if (!key || subjectWords.has(key) || GLUE_WORDS.has(key) || SUBJECT_NOISE.has(key) || ASPECT_WORDS.has(key)) continue;
+    if (!key || subjectWords.has(key) || GLUE_WORDS.has(key) || ASPECT_WORDS.has(key)) continue;
+    if (SUBJECT_NOISE.has(key) && !verbLike(token)) continue;
     candidates.push(token);
   }
 
