@@ -8,6 +8,7 @@ process.env.AI_MODEL ||= 'test-model';
 
 const finalizer = require('../src/services/autoSourceFinalizer');
 const fastDiscovery = require('../src/services/autoSourceFastDiscovery');
+const { compose } = require('../src/services/autoSourceComposer');
 
 function baseContent(title, point, evidence) {
   return {
@@ -49,6 +50,42 @@ test('actual privacy policy boilerplate is still rejected', () => {
 
 test('auto source finalizer uses at most two rewrite attempts', () => {
   assert.equal(finalizer.MAX_AUTO_FINALIZE_ATTEMPTS, 2);
+});
+
+test('fast composer skips the generic generation call', async () => {
+  const evidence = 'Robot humanoid menggunakan sensor dan aktuator untuk membantu mengendalikan gerakan tubuh.';
+  let generateCalls = 0;
+  let finalizeCalls = 0;
+  const fakeContent = {
+    generateContent: async () => { generateCalls += 1; throw new Error('should not run'); },
+    validateContent: () => [],
+    validateSourceGrounding: () => []
+  };
+  const finalContent = {
+    focus: { masalah: 'Robot humanoid', penyebab: 'Robot humanoid', solusi: 'Robot humanoid', hasil: 'Robot humanoid' },
+    topic: 'Robot humanoid', hook: 'Robot humanoid bergerak dengan sensor', body: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.', caption: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.', hashtags: [], cta: 'Perkembangan robot humanoid',
+    trendKeywordsUsed: [], content_angle: 'cara robot humanoid bergerak', primary_tool: 'tanpa tool', hook_pattern: 'source-grounded', verificationStatus: 'source_based', unsupportedClaims: [],
+    slides: Array.from({ length: 4 }, (_, index) => ({
+      section: ['PEMBUKA', 'FAKTA UTAMA', 'KONTEKS', 'KESIMPULAN'][index],
+      title: `Robot humanoid ${index + 1}`,
+      body: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.',
+      points: [],
+      claims: [{ field: `slide:${index}:body`, text: 'Sensor dan aktuator membantu sistem mengendalikan gerakan tubuh robot humanoid.', sourceId: 'source-1', evidence }]
+    }))
+  };
+  const fakeFinalizer = {
+    rewriteAllSourcesWithAi: async () => { finalizeCalls += 1; return structuredClone(finalContent); },
+    richnessErrors: () => []
+  };
+  const result = await compose({
+    content: fakeContent,
+    finalizer: fakeFinalizer,
+    options: { requestedTopic: 'Robot humanoid', contentFormat: 'Fakta singkat', sourceContext: evidence, fastAutoSource: true },
+    sources: [{ url: 'https://example.test/robot', title: 'Robot humanoid', text: evidence }]
+  });
+  assert.equal(generateCalls, 0);
+  assert.equal(finalizeCalls, 1);
+  assert.equal(result.sourceMode, 'auto');
 });
 
 test('fast discovery runs independent query searches concurrently', async () => {
