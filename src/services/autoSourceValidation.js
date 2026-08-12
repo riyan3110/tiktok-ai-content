@@ -58,12 +58,15 @@ function conceptSupportedByEntityContext(claimText, concept, source) {
     if (numericConcepts(token).has(concept)) indexes.push(index);
   });
   for (const index of indexes) {
+    const token = parts[index];
+    if (/[a-z]/i.test(token) && /\d/.test(token) && token.length >= 4 && sourceHaystack.includes(token)) return true;
+
     for (let radius = 1; radius <= 2; radius += 1) {
       const start = Math.max(0, index - radius);
       const end = Math.min(parts.length, index + radius + 1);
       const window = parts.slice(start, end);
       if (window.length < 2) continue;
-      const hasLetters = window.some(token => /[a-z]/i.test(token) && !FILLER.has(token));
+      const hasLetters = window.some(part => /[a-z]/i.test(part) && !FILLER.has(part));
       if (!hasLetters) continue;
       const phrase = window.join(' ');
       if (phrase.length >= 5 && sourceHaystack.includes(phrase)) return true;
