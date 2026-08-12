@@ -201,11 +201,11 @@ test('resilient finalizer memberi dua kesempatan repair terarah tanpa loop tak t
   assert.equal(finalizer.MAX_COMPOSE_ATTEMPTS, 2);
 });
 
-test('production tetap mengunci Pakai URL sebelum memuat Auto Source dan memakai resilient finalizer', () => {
+test('production tetap mengunci Pakai URL sebelum memuat Auto Source dan memakai plan-first finalizer', () => {
   const patchSource = fs.readFileSync(path.join(__dirname, '../src/services/autoSourcePatch.js'), 'utf8');
   assert.match(patchSource, /if \(pakaiUrlRequested\(args\)\) return originalGenerateAndSave\(args\);/);
-  assert.match(patchSource, /autoSourceResilientFinalizer/);
-  assert.match(patchSource, /finalizer:\s*autoSourceResilientFinalizer/);
+  assert.match(patchSource, /autoSourcePlanFinalizer/);
+  assert.match(patchSource, /finalizer:\s*autoSourcePlanFinalizer/);
   assert.doesNotMatch(patchSource, /finalizer:\s*autoSourceStrictFinalizer/);
   assert.doesNotMatch(patchSource, /\[activeSources\.length,\s*1\]/);
 });
