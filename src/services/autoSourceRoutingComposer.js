@@ -1,6 +1,7 @@
 const identity = require('./autoSourceTopicIdentity');
 const multi = require('./autoSourceMultiEntityTopic');
 const dynamicScope = require('./autoSourceDynamicScope');
+const topicPlanner = require('./autoSourceDynamicTopicPlan');
 const versioned = require('./autoSourceTopicLockedComposer');
 const multiEntity = require('./autoSourceMultiEntityComposer');
 const research = require('./autoSourceResearchComposer');
@@ -11,7 +12,7 @@ const research = require('./autoSourceResearchComposer');
 // they are not a catalog of supported topics.
 async function compose(args = {}) {
   const topic = String(args?.options?.requestedTopic || args?.discovery?.topic || '').trim();
-  const plan = args?.discovery?.topicPlan || {};
+  const plan = args?.discovery?.topicPlan || topicPlanner.fallbackPlan(topic);
   const scopedSources = dynamicScope.scopeSources(topic, args.sources || [], plan);
   const usableSources = scopedSources.filter(source => String(source?.text || '').trim());
   if (!usableSources.length) {
@@ -23,7 +24,7 @@ async function compose(args = {}) {
   const scopedArgs = {
     ...args,
     sources: usableSources,
-    discovery: args.discovery ? { ...args.discovery, sources: usableSources, topicPlan: plan } : args.discovery
+    discovery: args.discovery ? { ...args.discovery, sources: usableSources, topicPlan: plan } : { topic, sources: usableSources, topicPlan: plan }
   };
 
   if (identity.hasSpecificIdentity(topic)) return versioned.compose(scopedArgs);
