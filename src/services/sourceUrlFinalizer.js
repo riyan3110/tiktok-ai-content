@@ -73,8 +73,9 @@ function topicTerms(value) {
   return [...new Set(normalize(value).split(' ').filter(token => token.length >= 4 && !TOPIC_STOP.has(token)))];
 }
 
-// Rank independently inside every supplied URL. This preserves ALL sourceIds,
-// while preferring facts that actually match the manual topic / article title.
+// Rank independently inside every supplied URL. Strong topic matches anchor a
+// local context window so the finalizer keeps enough nearby factual context for
+// dense slides without drifting into unrelated blocks farther down the page.
 function relevantSourceFacts(sources, facts, topic) {
   const bySource = new Map();
   for (const fact of facts) {
@@ -87,7 +88,7 @@ function relevantSourceFacts(sources, facts, topic) {
     const entries = bySource.get(sourceId) || [];
     if (!entries.length) continue;
     const wanted = topicTerms(`${topic} ${source?.title || ''}`);
-    if (!wanted.length) { selected.push(...entries); continue; }
+    if (!wanted.length) { selected.push(...entries.slice(0, 28)); continue; }
 
     const scored = entries.map((entry, index) => {
       const tokenSet = new Set(normalize(entry.evidence).split(' ').filter(Boolean));
@@ -96,11 +97,31 @@ function relevantSourceFacts(sources, facts, topic) {
     }).sort((a, b) => b.overlap - a.overlap || a.index - b.index);
 
     const positive = scored.filter(item => item.overlap > 0);
-    // Keep a meaningful pool for density, but never delete the whole URL.
-    const pool = positive.length >= Math.min(3, entries.length)
-      ? positive.slice(0, Math.min(20, Math.max(8, positive.length))).map(item => item.entry)
-      : entries;
-    selected.push(...pool);
+    if (positive.length >= Math.min(3, entries.length)) {
+      const keepIndexes = new Set();
+      for (const item of positive.slice(0, 12)) {
+        for (let offset = -2; offset <= 2; offset += 1) {
+          const index = item.index + offset;
+          if (index >= 0 && index < entries.length) keepIndexes.add(index);
+        }
+      }
+      const anchored = entries.filter((_, index) => keepIndexes.has(index));
+      const positiveSet = new Set(positive.map(item => item.entry));
+      const ordered = [
+        ...positive.map(item => item.entry),
+        ...anchored.filter(entry => !positiveSet.has(entry))
+      ];
+      const seen = new Set();
+      const pool = ordered.filter(entry => {
+        const key = `${entry.sourceId}::${normalize(entry.evidence)}`;
+        if (!normalize(entry.evidence) || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 28);
+      selected.push(...(pool.length >= 6 ? pool : entries.slice(0, 28)));
+    } else {
+      selected.push(...entries.slice(0, 28));
+    }
   }
   return selected.length >= 4 ? selected : facts;
 }
@@ -254,10 +275,23 @@ const densityScore = qualityScore;
 function densityInstruction(facts, slideCount) {
   const profile = sourceRichness(facts, slideCount);
   const targetPoints = Math.min(3, profile.targetPoints);
-  if (targetPoints >= 3) return 'Setiap slide WAJIB berisi body + 3 bullet fakta berbeda.';
-  if (targetPoints === 2) return 'Setiap slide WAJIB berisi body + 2 bullet fakta berbeda jika tersedia.';
-  if (targetPoints === 1) return 'Setiap slide WAJIB berisi body + minimal 1 bullet fakta.';
-  return 'Setiap slide wajib memiliki body faktual; tambahkan bullet bila ada fakta berbeda.';
+  if (targetPoints >= 3) return 'Setiap slide WAJIB berisi satu body + 3 bullet fakta berbeda.';
+  if (targetPoints === 2) return 'Setiap slide WAJIB berisi satu body + 2 bullet fakta berbeda jika fact bank mendukung.';
+  if (targetPoints === 1) return 'Setiap slide WAJIB berisi satu body + minimal 1 bullet fakta.';
+  return 'Setiap slide wajib memiliki body faktual; tambahkan bullet sebanyak fakta berbeda yang tersedia.';
+}
+
+function urlDensityErrors(content, facts = []) {
+  const slides = Array.isArray(content?.slides) ? content.slides : [];
+  if (!slides.length) return [];
+  const profile = sourceRichness(facts, slides.length);
+  const targetPoints = Math.min(3, profile.targetPoints);
+  const errors = [];
+  slides.forEach((slide, index) => {
+    const points = Array.isArray(slide?.points) ? slide.points : [];
+    if (points.length < targetPoints) errors.push(`slide:${index}:url-density: source relevan cukup kaya untuk ${targetPoints} bullet fakta berbeda; baru ada ${points.length}.`);
+  });
+  return errors;
 }
 
 function finalizerPrompt({ generated, sources, facts, format, topic, errors, recovery = false }) {
@@ -265,7 +299,7 @@ function finalizerPrompt({ generated, sources, facts, format, topic, errors, rec
   const sourceGroups = groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
   const draft = recovery ? 'DIBUANG — tulis ulang dari nol.' : JSON.stringify(generated?.slides || []);
-  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — HASIL WAJIB FAKTUAL, PADAT, NATURAL, DAN SIAP RENDER.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${densityInstruction(facts, sections.length)}\nTARGET BODY: ${Math.max(8, profile.bodyMin)}–18 kata, satu kalimat utuh.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nDRAF: ${draft}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: setiap sourceId harus menyumbang minimal satu fakta visible pada carousel.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan mengambil related article, rekomendasi, byline, tanggal publikasi, metadata, caption, atau bagian halaman yang membahas topik lain.\n- HANYA gunakan evidence dari fact bank di atas. Dilarang menambah pengetahuan luar, asumsi, angka, tanggal, ranking, hasil, sebab-akibat, atau kemampuan yang tidak dinyatakan evidence.\n- Bahasa Indonesia harus natural seperti editor manusia, bukan terjemahan kaku dan bukan potongan kalimat.\n- Untuk format Fakta singkat, JUDUL sebaiknya berupa pertanyaan/heading struktural yang tidak membuat klaim baru, misalnya pola “Apa itu …?”, “Apa yang bisa dilakukan?”, “Bagaimana cara kerjanya?”, “Apa yang perlu diketahui?”. Jangan menambahkan claim title jika judul hanya pertanyaan struktural.\n- Jangan memakai contoh nama/topik tertentu sebagai aturan. Semua aturan harus diterapkan generik ke topik apa pun.\n- BODY harus 8–18 kata, kalimat utuh, natural, dan muat maksimal 4 baris.\n- Bullet harus 3–7 kata, utuh, natural, maksimal 3, dan masing-masing menyampaikan fakta berbeda dari body/bullet lain.\n- Setiap BODY dan setiap BULLET WAJIB punya tepat satu claim dengan field/text yang sama persis, sourceId benar, dan evidence dari sourceId yang sama.\n- Evidence BODY wajib persis salah satu bodyFacts. Evidence BULLET wajib persis salah satu facts.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika ragu, HAPUS angka dari copy dan tulis fakta tanpa angka; jangan mengarang pengganti.\n- Jangan membuat title/body/bullet factual yang tidak punya evidence. Satu field bermasalah harus diperbaiki, bukan menggagalkan seluruh carousel.\n- Jangan mengulang evidence canonical yang sama untuk dua body/bullet.\n- Judul maksimal 9 kata dan 3 baris; body maksimal 4 baris; jangan memotong copy di renderer.\n- Jika source kaya, prioritaskan pola padat: judul + satu body + 3 bullet seperti contoh struktur pengguna.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis jika evidence memang menyatakan tindakan tersebut.\n- Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan itu.\n${recovery ? '- ABAIKAN TOTAL copy draft sebelumnya. Bangun ulang seluruh carousel langsung dari fact bank bersih dan pastikan semua error sebelumnya hilang.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul/pertanyaan natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — HASIL WAJIB FAKTUAL, PADAT, NATURAL, DAN SIAP RENDER.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${densityInstruction(facts, sections.length)}\nTARGET BODY: ${Math.max(10, profile.bodyMin)}–20 kata, satu kalimat utuh.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nDRAF: ${draft}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: setiap sourceId harus menyumbang minimal satu fakta visible pada body atau bullet carousel.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan mengambil related article, rekomendasi, byline, tanggal publikasi, metadata, caption, atau bagian halaman yang membahas topik lain.\n- HANYA gunakan evidence dari fact bank di atas. Dilarang menambah pengetahuan luar, asumsi, angka, tanggal, ranking, hasil, sebab-akibat, atau kemampuan yang tidak dinyatakan evidence.\n- Bahasa Indonesia harus natural seperti editor manusia, bukan terjemahan kaku dan bukan potongan kalimat.\n- JUDUL wajib deklaratif/informatif, ringkas 3–9 kata, dan BUKAN kalimat tanya. Dilarang mengakhiri judul dengan tanda tanya.\n- Judul boleh berupa heading struktural yang spesifik terhadap topik tanpa membuat klaim baru. Jika judul sendiri menyatakan fakta substantif, sertakan claim title dengan evidence yang benar.\n- Jangan memakai contoh nama/topik tertentu sebagai aturan. Semua aturan harus diterapkan generik ke topik apa pun.\n- BODY harus 10–20 kata, kalimat utuh, natural, dan muat maksimal 4 baris.\n- Bullet harus 3–7 kata, utuh, natural, maksimal 3, dan masing-masing menyampaikan fakta berbeda dari body/bullet lain.\n- Setiap BODY dan setiap BULLET WAJIB punya tepat satu claim dengan field/text yang sama persis, sourceId benar, dan evidence dari sourceId yang sama.\n- Evidence BODY wajib persis salah satu bodyFacts. Evidence BULLET wajib persis salah satu facts.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika ragu, HAPUS angka dari copy dan tulis fakta tanpa angka; jangan mengarang pengganti.\n- Jangan membuat title/body/bullet factual yang tidak punya evidence. Satu field bermasalah harus diperbaiki, bukan menggagalkan seluruh carousel.\n- Jangan mengulang evidence canonical yang sama untuk dua body/bullet.\n- Judul maksimal 3 baris dan body maksimal 4 baris; jangan memotong copy di renderer.\n- Jika source kaya, WAJIB prioritaskan pola padat: judul + satu body + 3 bullet fakta berbeda seperti kepadatan contoh pengguna.\n- Jika fact bank belum cukup untuk 3 bullet per slide, gunakan sebanyak mungkin fakta berbeda yang benar-benar didukung; DILARANG mengisi kekurangan dengan filler atau fakta rekaan.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis jika evidence memang menyatakan tindakan tersebut.\n- Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan itu.\n${recovery ? '- ABAIKAN TOTAL copy draft sebelumnya. Bangun ulang seluruh carousel langsung dari fact bank bersih dan pastikan semua error sebelumnya hilang.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul deklaratif natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function responseJson(response) {
@@ -344,10 +378,12 @@ function syncTop(content) {
 function localLayoutErrors(content) {
   const errors = [];
   (content?.slides || []).forEach((slide, slideIndex) => {
-    const titleCount = words(slide?.title).length;
-    if (!titleCount || titleCount > 10) errors.push(`slide:${slideIndex}: title harus 1–10 kata.`);
+    const title = String(slide?.title || '').trim();
+    const titleCount = words(title).length;
+    if (!titleCount || titleCount > 10) errors.push(`slide:${slideIndex}:title: title harus 1–10 kata.`);
+    if (/\?\s*$/.test(title)) errors.push(`slide:${slideIndex}:title: judul Pakai URL harus deklaratif, bukan pertanyaan.`);
     const bodyCount = words(slide?.body).length;
-    if (!bodyCount || bodyCount > 20) errors.push(`slide:${slideIndex}: body harus 1–20 kata untuk Pakai URL.`);
+    if (!bodyCount || bodyCount > 20) errors.push(`slide:${slideIndex}:body: body harus 1–20 kata untuk Pakai URL.`);
     if ((slide?.points || []).length > 3) errors.push(`slide:${slideIndex}: maksimal 3 point.`);
     (slide?.points || []).forEach((point, pointIndex) => {
       const count = words(point).length;
@@ -360,17 +396,27 @@ function localLayoutErrors(content) {
 function shortTopicSubject(topic) {
   const raw = String(topic || '').replace(/[?!.]+$/g, '').trim();
   const filtered = words(raw).filter(token => !/^\d/.test(token));
-  return filtered.slice(0, 4).join(' ') || 'topik ini';
+  return filtered.slice(0, 4).join(' ') || 'Topik Utama';
 }
 
+// Structural title used only as a safe local recovery/fallback. It is
+// declarative, topic-specific, unique per section, and intentionally avoids a
+// new factual assertion that would require invented evidence.
 function structuralTitle(section, topic, slideIndex) {
+  const subject = shortTopicSubject(topic);
   const label = String(section || '').toLocaleUpperCase('id-ID');
-  if (slideIndex === 0) return `Apa itu ${shortTopicSubject(topic)}?`;
-  if (/FAKTA UTAMA/.test(label)) return 'Apa fakta utamanya?';
-  if (/PENJELASAN/.test(label)) return 'Apa yang bisa diketahui?';
-  if (/KONTEKS/.test(label)) return 'Apa konteks pentingnya?';
-  if (/KESIMPULAN|PENUTUP|HASIL/.test(label)) return 'Apa yang perlu diingat?';
-  return `Apa poin penting ${slideIndex + 1}?`;
+  if (slideIndex === 0) return `${subject}: Gambaran Utama`;
+  if (/FAKTA UTAMA/.test(label)) return `${subject}: Fakta Utama`;
+  if (/PENJELASAN/.test(label)) return `${subject}: Penjelasan`;
+  if (/KONTEKS/.test(label)) return `${subject}: Konteks Penting`;
+  if (/KESIMPULAN|PENUTUP|HASIL/.test(label)) return `${subject}: Kesimpulan`;
+  if (/LANGKAH/.test(label)) return `${subject}: Langkah ${slideIndex}`;
+  if (/SOLUSI/.test(label)) return `${subject}: Solusi ${slideIndex}`;
+  if (/TIPS/.test(label)) return `${subject}: Tips ${slideIndex}`;
+  if (/ITEM/.test(label)) return `${subject}: Bagian ${slideIndex + 1}`;
+  if (/BEFORE/.test(label)) return `${subject}: Sebelum`;
+  if (/AFTER/.test(label)) return `${subject}: Sesudah`;
+  return `${subject}: Poin ${slideIndex + 1}`;
 }
 
 function titleErrorIndexes(errors = []) {
@@ -384,11 +430,10 @@ function titleErrorIndexes(errors = []) {
   return indexes;
 }
 
-// A factual title should never be allowed to kill an otherwise valid carousel.
-// For Fakta singkat only, turn ONLY the offending title into a non-factual
-// structural question and remove its title claim. Body/bullets remain unchanged.
-function repairProblematicTitles(content, errors, topic, format) {
-  if (String(format || '').toLocaleLowerCase('id-ID') !== 'fakta singkat') return { content, changed: false };
+// A title mistake must not kill an otherwise grounded carousel. Replace only
+// the offending title with a declarative topic-specific heading and remove its
+// stale title claim. Body/bullets and their evidence remain untouched.
+function repairProblematicTitles(content, errors, topic) {
   const indexes = titleErrorIndexes(errors);
   if (!indexes.size || !content?.slides) return { content, changed: false };
   const slides = content.slides.map((slide, index) => {
@@ -438,10 +483,9 @@ function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '',
   const selected = usable.slice(0, slideCount);
   if (selected.length < slideCount) return null;
   const remaining = usable.slice(slideCount);
-  const isFacts = String(format || '').toLocaleLowerCase('id-ID') === 'fakta singkat';
 
   const slides = selected.map((fact, slideIndex) => {
-    const title = isFacts ? structuralTitle(sections[slideIndex], resolvedTopic, slideIndex) : naturalTitleFromEvidence(fact.evidence);
+    const title = structuralTitle(sections[slideIndex], resolvedTopic, slideIndex);
     if (!title || !textFitsCanvas(title, { startSize: 76, minSize: 46, maxLines: 3, maxHeight: 250, lineHeight: 1.08, bold: true })) return null;
     return {
       section: sections[slideIndex] || defaultSections(format, slideCount)[slideIndex],
@@ -449,7 +493,6 @@ function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '',
       body: fact.evidence,
       points: [],
       claims: [
-        ...(isFacts ? [] : [{ field: `slide:${slideIndex}:title`, text: title, sourceId: fact.sourceId, evidence: fact.evidence }]),
         { field: `slide:${slideIndex}:body`, text: fact.evidence, sourceId: fact.sourceId, evidence: fact.evidence }
       ]
     };
@@ -484,6 +527,7 @@ function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '',
   });
   const safetyErrors = [
     ...manualSourceFallback.validateSourceContent(result, sources).filter(error => !/:richness:/.test(error)),
+    ...urlDensityErrors(result, cleanFacts),
     ...numericGroundingErrors(result),
     ...localLayoutErrors(result),
     ...urlVisualFitErrors(result)
@@ -495,7 +539,7 @@ function buildUrlSourceFallback({ generated = {}, sources = [], topic = '', form
   return emergencySourceOnlyFallback({ generated, sources, topic, format, facts });
 }
 
-function validateCandidate(base, candidate, { contentService, format, topic, sources, mode }) {
+function validateCandidate(base, candidate, { contentService, format, topic, sources, mode, facts = [] }) {
   const checked = sourceFilter.validateVerifiedContent(base, { slides: candidate.slides }, {
     contentService,
     format,
@@ -508,6 +552,7 @@ function validateCandidate(base, candidate, { contentService, format, topic, sou
     ...numericGroundingErrors(content),
     ...checked.errors,
     ...manualSourceFallback.validateSourceContent(content, sources),
+    ...urlDensityErrors(content, facts),
     ...manualSourceDedupe.manualCrossSlideDuplicateErrors(content),
     ...localLayoutErrors(content),
     ...urlVisualFitErrors(content)
@@ -537,8 +582,8 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
         model: config.aiModel,
         messages: [
           { role: 'system', content: recovery
-            ? 'Anda recovery editor Pakai URL. Bangun ulang carousel dari fact bank bersih. Semua sourceId harus dipakai, copy harus Bahasa Indonesia natural, dan tidak boleh ada klaim tanpa evidence.'
-            : 'Anda editor final khusus Pakai URL. Gunakan semua URL, tetap pada konteks sumber, buat carousel padat dan natural, dan jangan menambah klaim di luar evidence.' },
+            ? 'Anda recovery editor Pakai URL. Bangun ulang carousel dari fact bank bersih. Semua sourceId harus dipakai, judul harus deklaratif bukan pertanyaan, copy harus Bahasa Indonesia natural, padat, dan tidak boleh ada klaim tanpa evidence.'
+            : 'Anda editor final khusus Pakai URL. Gunakan semua URL, tetap pada konteks sumber, buat carousel padat dan natural, gunakan judul deklaratif bukan pertanyaan, dan jangan menambah klaim di luar evidence.' },
           { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts: seedFacts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors, recovery }) }
         ],
         response_format: { type: 'json_object' }
@@ -555,10 +600,11 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       format: effectiveFormat,
       topic: resolvedTopic,
       sources,
-      mode
+      mode,
+      facts: seedFacts
     });
 
-    // Fix title-only grounding mistakes locally without another model call.
+    // Fix title-only mistakes locally without another model call.
     const titleRepair = repairProblematicTitles(validated.content, validated.errors, resolvedTopic, effectiveFormat);
     if (titleRepair.changed) {
       draft = titleRepair.content;
@@ -567,7 +613,8 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
         format: effectiveFormat,
         topic: resolvedTopic,
         sources,
-        mode
+        mode,
+        facts: seedFacts
       });
     }
 
@@ -615,6 +662,7 @@ module.exports = {
   sourceDisplayCandidates,
   repairProblematicTitles,
   structuralTitle,
+  urlDensityErrors,
   FAST_FINALIZE_ATTEMPTS,
   MAX_FINALIZE_ATTEMPTS
 };
