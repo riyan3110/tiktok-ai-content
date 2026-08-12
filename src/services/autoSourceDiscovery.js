@@ -1,9 +1,9 @@
 const defaultSourceFetcher = require('./sourceFetcher');
 
 const CACHE_TTL_MS = 45 * 60 * 1000;
-const MAX_CANDIDATES = 8;
-const MAX_FETCH_CANDIDATES = 6;
-const MAX_SELECTED = 2;
+const MAX_CANDIDATES = 18;
+const MAX_FETCH_CANDIDATES = 10;
+const MAX_SELECTED = 3;
 const SEARCH_TIMEOUT_MS = 10_000;
 const cache = new Map();
 
@@ -20,7 +20,8 @@ const QUALITY_HOSTS = [
   /(^|\.)bloomberg\.com$/i, /(^|\.)bloombergtechnoz\.com$/i, /(^|\.)cnet\.com$/i,
   /(^|\.)zdnet\.com$/i, /(^|\.)github\.com$/i, /(^|\.)openai\.com$/i,
   /(^|\.)anthropic\.com$/i, /(^|\.)google\.com$/i, /(^|\.)blog\.google$/i,
-  /(^|\.)microsoft\.com$/i, /(^|\.)apple\.com$/i, /(^|\.)meta\.com$/i
+  /(^|\.)microsoft\.com$/i, /(^|\.)apple\.com$/i, /(^|\.)meta\.com$/i,
+  /(^|\.)nature\.com$/i, /(^|\.)science\.org$/i, /(^|\.)ieee\.org$/i
 ];
 
 function normalized(value) {
@@ -38,13 +39,22 @@ function decodeXml(value) {
 }
 function unwrapKnownRedirect(raw) {
   let value = String(raw || '').trim();
-  for (let depth = 0; depth < 2; depth += 1) {
+  for (let depth = 0; depth < 3; depth += 1) {
     let url;
     try { url = new URL(value); } catch { return value; }
-    if (!/(^|\.)bing\.com$/i.test(url.hostname)) return value;
-    const target = url.searchParams.get('url');
-    if (!target || !/^https?:\/\//i.test(target)) return value;
-    value = target;
+    if (/(^|\.)bing\.com$/i.test(url.hostname)) {
+      const target = url.searchParams.get('url');
+      if (!target || !/^https?:\/\//i.test(target)) return value;
+      value = target;
+      continue;
+    }
+    if (/(^|\.)duckduckgo\.com$/i.test(url.hostname)) {
+      const target = url.searchParams.get('uddg');
+      if (!target || !/^https?:\/\//i.test(target)) return value;
+      value = target;
+      continue;
+    }
+    return value;
   }
   return value;
 }
@@ -65,6 +75,14 @@ function candidateAllowed(raw) {
   if (url.pathname === '/' && !/\.(?:gov|edu)$/i.test(url.hostname)) return false;
   return true;
 }
+function providerBoost(provider) {
+  if (provider === 'jina') return 1.5;
+  if (provider === 'bing-news') return 1.25;
+  if (provider === 'bing-web') return 0.9;
+  if (provider === 'wikipedia-id') return 0.45;
+  if (provider === 'wikipedia-en') return 0.35;
+  return 0;
+}
 function hostQuality(raw, topic) {
   try {
     const host = new URL(canonicalUrl(raw) || raw).hostname.toLocaleLowerCase('en-US');
@@ -72,6 +90,7 @@ function hostQuality(raw, topic) {
     const topicTokens = tokens(topic).filter(token => token.length >= 5);
     if (topicTokens.some(token => host.includes(token))) score += 2;
     if (/\.(?:gov|edu)$/i.test(host)) score += 1.5;
+    if (/(^|\.)wikipedia\.org$/i.test(host)) score += 0.4;
     return score;
   } catch { return 0; }
 }
@@ -83,16 +102,26 @@ function relevanceScore(topic, value) {
   return overlap / wanted.length;
 }
 function candidateScore(topic, candidate) {
-  const titleScore = relevanceScore(topic, candidate.title) * 5;
-  const descriptionScore = relevanceScore(topic, candidate.description) * 2;
-  return titleScore + descriptionScore + hostQuality(candidate.url, topic);
+  const titleScore = relevanceScore(topic, candidate.title) * 6;
+  const descriptionScore = relevanceScore(topic, candidate.description) * 2.5;
+  return titleScore + descriptionScore + hostQuality(candidate.url, topic) + providerBoost(candidate.provider);
 }
 function fetchedScore(topic, source, candidate) {
-  return candidateScore(topic, candidate) + relevanceScore(topic, `${source.title || ''} ${String(source.text || '').slice(0, 2500)}`) * 7;
+  const titleRelevance = relevanceScore(topic, source.title || '');
+  const bodyRelevance = relevanceScore(topic, String(source.text || '').slice(0, 5000));
+  return candidateScore(topic, candidate) + titleRelevance * 5 + bodyRelevance * 8;
 }
 function searchQueries(topic, category = '') {
-  const values = [String(topic || '').trim(), `${String(topic || '').trim()} ${String(category || '').trim()}`.trim()];
-  return [...new Set(values.filter(Boolean))].slice(0, 2);
+  const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
+  const cleanCategory = String(category || '').trim().replace(/\s+/g, ' ');
+  const anchors = tokens(cleanTopic).join(' ');
+  const values = [
+    cleanTopic,
+    anchors && anchors !== normalized(cleanTopic) ? anchors : '',
+    cleanCategory ? `${cleanTopic} ${cleanCategory}` : '',
+    `${cleanTopic} berita update`
+  ];
+  return [...new Set(values.map(value => value.trim()).filter(Boolean))].slice(0, 4);
 }
 
 async function fetchWithTimeout(fetchImpl, url, options = {}) {
@@ -100,6 +129,21 @@ async function fetchWithTimeout(fetchImpl, url, options = {}) {
   const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
   try { return await fetchImpl(url, { ...options, signal: controller.signal }); }
   finally { clearTimeout(timer); }
+}
+
+function parseRssItems(xml, provider) {
+  return [...String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/gi)].map(match => {
+    const item = match[1];
+    const read = tag => decodeXml(item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'))?.[1] || '');
+    const rawUrl = read('link');
+    return {
+      title: read('title'),
+      url: canonicalUrl(rawUrl),
+      description: read('description'),
+      publishedAt: read('pubDate') || null,
+      provider
+    };
+  }).filter(item => item.url && candidateAllowed(item.url));
 }
 
 async function searchJina(query, { fetchImpl = fetch, apiKey = process.env.JINA_API_KEY } = {}) {
@@ -127,33 +171,53 @@ async function searchJina(query, { fetchImpl = fetch, apiKey = process.env.JINA_
 
 async function searchBingNews(query, { fetchImpl = fetch } = {}) {
   const url = `https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss&setlang=id-ID`;
-  const response = await fetchWithTimeout(fetchImpl, url, { headers: { 'User-Agent': 'AIAdsLabAutoSource/1.0', Accept: 'application/rss+xml,text/xml;q=0.9,*/*;q=0.1' } });
+  const response = await fetchWithTimeout(fetchImpl, url, { headers: { 'User-Agent': 'AIAdsLabAutoSource/1.1', Accept: 'application/rss+xml,text/xml;q=0.9,*/*;q=0.1' } });
   if (!response.ok) throw new Error(`Bing News HTTP ${response.status}`);
-  const xml = await response.text();
-  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map(match => {
-    const item = match[1];
-    const read = tag => decodeXml(item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'))?.[1] || '');
-    const rawUrl = read('link');
-    return {
-      title: read('title'), url: canonicalUrl(rawUrl), description: read('description'),
-      publishedAt: read('pubDate') || null, provider: 'bing-news'
-    };
-  }).filter(item => item.url && candidateAllowed(item.url));
+  return parseRssItems(await response.text(), 'bing-news');
+}
+
+async function searchBingWeb(query, { fetchImpl = fetch } = {}) {
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss&setlang=id-ID`;
+  const response = await fetchWithTimeout(fetchImpl, url, { headers: { 'User-Agent': 'AIAdsLabAutoSource/1.1', Accept: 'application/rss+xml,text/xml;q=0.9,*/*;q=0.1' } });
+  if (!response.ok) throw new Error(`Bing Web HTTP ${response.status}`);
+  return parseRssItems(await response.text(), 'bing-web');
+}
+
+async function searchWikipedia(query, { fetchImpl = fetch, language = 'id' } = {}) {
+  const endpoint = `https://${language}.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&format=json&origin=*`;
+  const response = await fetchWithTimeout(fetchImpl, endpoint, { headers: { 'User-Agent': 'AIAdsLabAutoSource/1.1', Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`Wikipedia ${language} HTTP ${response.status}`);
+  const payload = await response.json();
+  const titles = Array.isArray(payload?.[1]) ? payload[1] : [];
+  const descriptions = Array.isArray(payload?.[2]) ? payload[2] : [];
+  const urls = Array.isArray(payload?.[3]) ? payload[3] : [];
+  return urls.map((rawUrl, index) => ({
+    title: String(titles[index] || '').trim(),
+    url: canonicalUrl(rawUrl),
+    description: String(descriptions[index] || '').trim(),
+    publishedAt: null,
+    provider: language === 'id' ? 'wikipedia-id' : 'wikipedia-en'
+  })).filter(item => item.url && candidateAllowed(item.url));
 }
 
 async function searchWeb(query, options = {}) {
   const combined = [];
-  if (options.apiKey || process.env.JINA_API_KEY) {
-    try { combined.push(...await searchJina(query, options)); } catch (error) { console.warn('[AutoSource] Jina Search gagal:', error.message); }
-  }
-  if (combined.length < 4) {
-    try { combined.push(...await searchBingNews(query, options)); } catch (error) { console.warn('[AutoSource] Bing News gagal:', error.message); }
-  }
+  const add = async (label, fn) => {
+    try { combined.push(...await fn()); }
+    catch (error) { console.warn(`[AutoSource] ${label} gagal:`, error.message); }
+  };
+  if (options.apiKey || process.env.JINA_API_KEY) await add('Jina Search', () => searchJina(query, options));
+  await add('Bing News', () => searchBingNews(query, options));
+  await add('Bing Web', () => searchBingWeb(query, options));
+  if (combined.length < 8) await add('Wikipedia ID', () => searchWikipedia(query, { ...options, language: 'id' }));
+  if (combined.length < 6) await add('Wikipedia EN', () => searchWikipedia(query, { ...options, language: 'en' }));
   const seen = new Set();
   return combined.filter(item => {
     const key = canonicalUrl(item.url);
     if (!key || !candidateAllowed(key) || seen.has(key)) return false;
-    seen.add(key); item.url = key; return true;
+    seen.add(key);
+    item.url = key;
+    return true;
   });
 }
 
@@ -183,7 +247,7 @@ async function fetchViaJinaReader(rawUrl, { fetchImpl = fetch, sourceFetcher = d
     url: rawUrl,
     finalUrl,
     title: String(data?.title || '').trim(),
-    text: text.slice(0, 12000),
+    text: text.slice(0, 16000),
     fetchedAt: new Date().toISOString()
   };
 }
@@ -202,6 +266,14 @@ async function fetchCandidate(candidate, { sourceFetcher = defaultSourceFetcher,
 }
 function cloneBundle(bundle) { return JSON.parse(JSON.stringify(bundle)); }
 
+function minimumRelevantFraction(topic) {
+  const count = tokens(topic).length;
+  if (count <= 1) return 1;
+  if (count === 2) return 0.5;
+  if (count === 3) return 0.66;
+  return 0.5;
+}
+
 async function discover({ topic, category = '', searchImpl = searchWeb, sourceFetcher = defaultSourceFetcher, fetchImpl = fetch, now = Date.now } = {}) {
   const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
   if (!cleanTopic) throw Object.assign(new Error('Topik wajib diisi untuk pencarian sumber otomatis.'), { status: 400 });
@@ -213,8 +285,7 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
   const candidates = [];
   for (const query of queries) {
     const results = await searchImpl(query, { fetchImpl });
-    candidates.push(...results.map(result => ({ ...result, query })));
-    if (candidates.length >= MAX_CANDIDATES) break;
+    candidates.push(...results.slice(0, 10).map(result => ({ ...result, query })));
   }
   const unique = new Map();
   candidates.forEach(candidate => {
@@ -226,35 +297,40 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
   const ranked = [...unique.values()].sort((a, b) => b.searchScore - a.searchScore).slice(0, MAX_CANDIDATES);
   if (!ranked.length) throw Object.assign(new Error('Tidak menemukan sumber publik yang relevan untuk topik ini.'), { status: 422, code: 'AUTO_SOURCE_SEARCH_EMPTY' });
 
-  const topicTokenCount = tokens(cleanTopic).length;
-  const minimumRelevance = topicTokenCount <= 2 ? 1 : 0.66;
+  const minimumRelevance = minimumRelevantFraction(cleanTopic);
   const fetched = [];
   for (const candidate of ranked.slice(0, MAX_FETCH_CANDIDATES)) {
     const source = await fetchCandidate(candidate, { sourceFetcher, fetchImpl });
     if (!source) continue;
-    const sourceText = `${source.title || ''} ${String(source.text || '').slice(0, 3500)}`;
-    const relevance = relevanceScore(cleanTopic, sourceText);
-    if (relevance < minimumRelevance) continue;
+    const combinedText = `${source.title || ''} ${String(source.text || '').slice(0, 6000)}`;
+    const relevance = relevanceScore(cleanTopic, combinedText);
+    const titleRelevance = relevanceScore(cleanTopic, source.title || '');
+    const searchRelevance = Math.max(relevanceScore(cleanTopic, candidate.title), relevanceScore(cleanTopic, candidate.description));
+    if (relevance < minimumRelevance && titleRelevance < minimumRelevance && searchRelevance < minimumRelevance) continue;
     const score = fetchedScore(cleanTopic, source, candidate);
-    fetched.push({ ...source, discovery: { provider: candidate.provider, query: candidate.query, score, relevance } });
+    fetched.push({ ...source, discovery: { provider: candidate.provider, query: candidate.query, score, relevance: Math.max(relevance, titleRelevance, searchRelevance) } });
   }
   fetched.sort((a, b) => b.discovery.score - a.discovery.score);
   const selected = [];
   const usedHosts = new Set();
   const bestScore = fetched[0]?.discovery?.score || 0;
   for (const source of fetched) {
-    if (selected.length && bestScore > 0 && source.discovery.score < bestScore * 0.65) continue;
+    if (selected.length && bestScore > 0 && source.discovery.score < bestScore * 0.45) continue;
     let host = '';
     try { host = new URL(source.finalUrl || source.url).hostname; } catch {}
     if (!host || LOW_VALUE_HOSTS.test(host)) continue;
-    if (selected.length < 2 && usedHosts.has(host) && fetched.some(other => {
-      try { return new URL(other.finalUrl || other.url).hostname !== host && !usedHosts.has(new URL(other.finalUrl || other.url).hostname); } catch { return false; }
-    })) continue;
+    const hasAlternativeHost = fetched.some(other => {
+      try {
+        const otherHost = new URL(other.finalUrl || other.url).hostname;
+        return otherHost !== host && !usedHosts.has(otherHost);
+      } catch { return false; }
+    });
+    if (usedHosts.has(host) && hasAlternativeHost && selected.length < 2) continue;
     selected.push(source);
     usedHosts.add(host);
     if (selected.length >= MAX_SELECTED) break;
   }
-  if (!selected.length) throw Object.assign(new Error('Sumber ditemukan, tetapi tidak ada artikel yang cukup relevan dan dapat dibaca.'), { status: 422, code: 'AUTO_SOURCE_FETCH_EMPTY' });
+  if (!selected.length) throw Object.assign(new Error('Sumber ditemukan, tetapi belum ada artikel yang cukup relevan dan dapat dibaca setelah pencarian diperluas.'), { status: 422, code: 'AUTO_SOURCE_FETCH_EMPTY' });
 
   const bundle = {
     topic: cleanTopic,
@@ -270,7 +346,8 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
 function clearCache() { cache.clear(); }
 
 module.exports = {
-  discover, searchWeb, searchJina, searchBingNews, searchQueries, candidateAllowed, canonicalUrl, unwrapKnownRedirect,
-  relevanceScore, candidateScore, fetchCandidate, fetchViaJinaReader, clearCache,
+  discover, searchWeb, searchJina, searchBingNews, searchBingWeb, searchWikipedia, searchQueries,
+  candidateAllowed, canonicalUrl, unwrapKnownRedirect, relevanceScore, candidateScore,
+  fetchCandidate, fetchViaJinaReader, clearCache, minimumRelevantFraction,
   CACHE_TTL_MS, MAX_CANDIDATES, MAX_FETCH_CANDIDATES, MAX_SELECTED
 };
