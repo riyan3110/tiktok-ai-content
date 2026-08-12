@@ -94,6 +94,6 @@ test('event neighborhood keeps usable story facts instead of returning an empty 
 
   const narrowed = routing.eventNeighborhoodSource(topic, input, plan);
   assert.match(narrowed.text, /usage limits|quota reset/i);
-  assert.ok(routing.factCount(narrowed, plan) >= 4);
-  assert.doesNotMatch(narrowed.text, /Pentagon/i);
+  assert.ok(routing.factCount(topic, narrowed, plan) >= 4);
+  assert.doesNotMatch(narrowed.text, /under 18|Pentagon/i);
 });
