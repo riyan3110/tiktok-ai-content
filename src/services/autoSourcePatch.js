@@ -1,7 +1,7 @@
 const generation = require('./generation');
 const defaultContent = require('./content');
 const defaultSourceFetcher = require('./sourceFetcher');
-const autoSourceDiscovery = require('./autoSourceDiscovery');
+const autoSourceDiscovery = require('./autoSourceFastDiscovery');
 const autoSourceComposer = require('./autoSourceComposer');
 
 let installed = false;
@@ -42,13 +42,14 @@ function install() {
     const autoRoleGuard = {
       repairManualSourceRoles: async ({ options, sources: activeSources }) => {
         let lastError = null;
-        for (let count = activeSources.length; count >= 1; count -= 1) {
+        const counts = activeSources.length > 1 ? [activeSources.length, 1] : [1];
+        for (const count of counts) {
           const workingSources = activeSources.slice(0, count);
           try {
             const result = await autoSourceComposer.compose({
               content: wrappedContent,
               previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
-              options,
+              options: { ...options, fastAutoSource: true },
               sources: workingSources,
               discovery: { ...discovery, sources: workingSources }
             });
@@ -56,7 +57,7 @@ function install() {
             return result;
           } catch (error) {
             lastError = error;
-            if (count > 1) console.warn(`[AutoSource] compose ${count} sumber gagal; mencoba ${count - 1} sumber terkuat:`, error.message);
+            if (count > 1) console.warn('[AutoSource] multi-source gagal; satu retry terakhir memakai sumber terkuat:', error.message);
           }
         }
         throw lastError || Object.assign(new Error('Auto Source tidak dapat membentuk konten valid.'), { status: 422 });

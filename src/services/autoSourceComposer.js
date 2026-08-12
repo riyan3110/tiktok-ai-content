@@ -99,23 +99,10 @@ async function compose({ content = defaultContent, previousTopics = [], options 
   if (!sources.length) throw Object.assign(new Error('Tidak ada sumber otomatis yang dapat dipakai.'), { status: 422 });
   const topic = String(options.requestedTopic || discovery?.topic || sources[0]?.title || 'Topik sumber').trim();
   let generated;
-  let initialFailure = null;
-  try {
-    generated = await content.generateContent(previousTopics, {
-      ...options,
-      topicSource: 'manual',
-      useSources: true,
-      sources,
-      deferSourceGroundingValidation: false
-    });
-  } catch (error) {
-    initialFailure = error;
-    generated = recoverySeed(topic, options.contentFormat);
-  }
+  let errors = [];
 
-  let errors = initialFailure ? [`INITIAL_GENERATION: ${initialFailure.message}`] : validationErrors(content, generated, options, sources, finalizer);
-  const needsRecovery = Boolean(errors.length || generated?.verificationStatus === 'needs_review' || genericCopyErrors(generated).length);
-  if (needsRecovery) {
+  if (options.fastAutoSource === true) {
+    generated = recoverySeed(topic, options.contentFormat);
     generated = await finalizer.rewriteAllSourcesWithAi({
       generated,
       sources,
@@ -124,6 +111,33 @@ async function compose({ content = defaultContent, previousTopics = [], options 
       contentService: content
     });
     errors = validationErrors(content, generated, options, sources, finalizer);
+  } else {
+    let initialFailure = null;
+    try {
+      generated = await content.generateContent(previousTopics, {
+        ...options,
+        topicSource: 'manual',
+        useSources: true,
+        sources,
+        deferSourceGroundingValidation: false
+      });
+    } catch (error) {
+      initialFailure = error;
+      generated = recoverySeed(topic, options.contentFormat);
+    }
+
+    errors = initialFailure ? [`INITIAL_GENERATION: ${initialFailure.message}`] : validationErrors(content, generated, options, sources, finalizer);
+    const needsRecovery = Boolean(errors.length || generated?.verificationStatus === 'needs_review' || genericCopyErrors(generated).length);
+    if (needsRecovery) {
+      generated = await finalizer.rewriteAllSourcesWithAi({
+        generated,
+        sources,
+        topic,
+        format: options.contentFormat || 'Fakta singkat',
+        contentService: content
+      });
+      errors = validationErrors(content, generated, options, sources, finalizer);
+    }
   }
 
   if (errors.length) throw Object.assign(new Error(`Konten dari sumber otomatis belum lolos validasi: ${errors[0].replace(/^SOURCE_GROUNDING:\s*/, '')}`), { status: 422, validationErrors: errors });
