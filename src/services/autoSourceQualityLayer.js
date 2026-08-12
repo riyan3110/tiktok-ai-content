@@ -6,6 +6,7 @@ const sourceUrlFinalizer = require('./sourceUrlFinalizer');
 let installed = false;
 let originalStrictPrompt = null;
 let originalValidateStrictCandidate = null;
+let originalStrictDensityProfile = null;
 
 function normalize(value) {
   return String(value || '').toLocaleLowerCase('id-ID')
@@ -45,39 +46,65 @@ function groupedBySource(facts = []) {
   return groups;
 }
 
+function slideCapacityForPoints(facts = [], pointCount = 3) {
+  const factsPerSlide = 1 + Math.max(0, pointCount); // one body + N bullets
+  return [...groupedBySource(facts).values()]
+    .reduce((sum, queue) => sum + Math.floor(queue.length / factsPerSlide), 0);
+}
+
+function coherentDensityProfile(facts = [], slideCount = 4) {
+  const count = Math.max(1, Number(slideCount) || 4);
+  let targetPoints = 0;
+  for (const candidate of [3, 2, 1]) {
+    if (slideCapacityForPoints(facts, candidate) >= count) {
+      targetPoints = candidate;
+      break;
+    }
+  }
+  return {
+    bodyMin: targetPoints >= 2 ? 10 : 8,
+    bodyMax: 20,
+    targetPoints,
+    richEnoughForThree: targetPoints === 3
+  };
+}
+
 function buildCoherentPlan(sources = [], facts = [], slideCount = 4) {
   const groups = groupedBySource(facts);
   const sourceIds = sources.map((_, index) => `source-${index + 1}`).filter(id => groups.get(id)?.length);
   if (!sourceIds.length || !slideCount) return [];
 
+  const profile = coherentDensityProfile(facts, slideCount);
+  const factsPerSlide = 1 + profile.targetPoints;
   const queues = new Map(sourceIds.map(id => [id, [...groups.get(id)]]));
-  const assignedCount = new Map(sourceIds.map(id => [id, 0]));
   const owners = [];
 
-  // First guarantee that every selected source owns at least one slide when the
-  // slide count allows it. Remaining slides go to the source with the largest
-  // unused topic-scoped fact queue.
+  // Every selected source gets a slide first. Remaining slides go to a source
+  // that can still support the current per-slide density without borrowing
+  // facts from another source.
   for (const id of sourceIds) {
     if (owners.length >= slideCount) break;
     owners.push(id);
-    assignedCount.set(id, (assignedCount.get(id) || 0) + 1);
   }
   while (owners.length < slideCount) {
+    const usedBySource = new Map(sourceIds.map(id => [id, owners.filter(owner => owner === id).length]));
     const ranked = [...sourceIds].sort((a, b) => {
-      const aRemaining = (queues.get(a)?.length || 0) - (assignedCount.get(a) || 0) * 4;
-      const bRemaining = (queues.get(b)?.length || 0) - (assignedCount.get(b) || 0) * 4;
+      const aRemaining = (queues.get(a)?.length || 0) - (usedBySource.get(a) || 0) * factsPerSlide;
+      const bRemaining = (queues.get(b)?.length || 0) - (usedBySource.get(b) || 0) * factsPerSlide;
       return bRemaining - aRemaining;
     });
-    const id = ranked[0] || sourceIds[owners.length % sourceIds.length];
-    owners.push(id);
-    assignedCount.set(id, (assignedCount.get(id) || 0) + 1);
+    const capable = ranked.find(id => {
+      const used = usedBySource.get(id) || 0;
+      return (queues.get(id)?.length || 0) >= (used + 1) * factsPerSlide;
+    });
+    owners.push(capable || ranked[0] || sourceIds[owners.length % sourceIds.length]);
   }
 
   const plan = [];
   for (let slideIndex = 0; slideIndex < owners.length; slideIndex += 1) {
     const sourceId = owners[slideIndex];
     const queue = queues.get(sourceId) || [];
-    const evidence = queue.splice(0, 4);
+    const evidence = queue.splice(0, Math.max(1, factsPerSlide));
     plan.push({ slide: slideIndex + 1, primarySourceId: sourceId, evidence });
   }
   return plan;
@@ -140,16 +167,28 @@ function topicEvidenceErrors(content = {}, facts = []) {
   return errors;
 }
 
-function forcedDensityErrors(content = {}, facts = []) {
+function capacityDensityErrors(content = {}, facts = []) {
   const slides = Array.isArray(content?.slides) ? content.slides : [];
-  if (!slides.length || facts.length < slides.length * 4) return [];
-  return slides.flatMap((slide, slideIndex) => {
+  if (!slides.length) return [];
+  const profile = coherentDensityProfile(facts, slides.length);
+  const errors = [];
+  slides.forEach((slide, slideIndex) => {
+    const bodyCount = String(slide?.body || '').trim().split(/\s+/).filter(Boolean).length;
     const points = Array.isArray(slide?.points) ? slide.points : [];
-    return points.length === 3
-      ? []
-      : [`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: fact bank cukup kaya; slide ${slideIndex + 1} wajib body + tepat 3 bullet fakta berbeda.`];
+    if (bodyCount < profile.bodyMin || bodyCount > 24) {
+      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: body harus ${profile.bodyMin}-24 kata agar padat dan tetap rapi.`);
+    }
+    if (points.length < profile.targetPoints) {
+      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: kapasitas fakta per sumber mendukung ${profile.targetPoints} bullet; baru ada ${points.length}.`);
+    }
+    if (profile.richEnoughForThree && points.length !== 3) {
+      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: kapasitas fact bank per sumber cukup; slide ${slideIndex + 1} wajib body + tepat 3 bullet fakta berbeda.`);
+    }
   });
+  return [...new Set(errors)];
 }
+
+const forcedDensityErrors = capacityDensityErrors;
 
 function coherentPrompt(args = {}) {
   const scopedFacts = topicScopedFacts(args.sources, args.facts, args.topic);
@@ -160,19 +199,24 @@ function coherentPrompt(args = {}) {
     args.sources,
     args.topic
   );
+  const profile = coherentDensityProfile(scopedFacts, sections.length);
   const plan = buildCoherentPlan(args.sources, scopedFacts, sections.length);
   const base = originalStrictPrompt({ ...args, facts: scopedFacts });
-  return `${base}\n\nAUTO SOURCE COHERENCE CONTRACT — MENGALAHKAN FACT PLAN ROUND-ROBIN DI ATAS:\nCOHERENT SOURCE PLAN PER SLIDE:\n${JSON.stringify(plan)}\n\nATURAN TAMBAHAN WAJIB:\n- SATU SLIDE = SATU SUBTOPIK = SATU primarySourceId dari COHERENT SOURCE PLAN.\n- Body dan semua bullet pada slide yang sama WAJIB memakai primarySourceId yang sama. DILARANG mencampur artikel/sumber berbeda dalam satu slide.\n- Gunakan evidence yang dialokasikan pada slide itu sebagai prioritas. Jika perlu mengganti, pilih evidence LAIN dari primarySourceId yang sama, masih relevan dengan TOPIK USER, dan belum dipakai slide lain.\n- Jangan memasukkan fakta sampingan dari artikel yang hanya kebetulan mengandung kata AI/Indonesia/perusahaan tetapi tidak menjelaskan topik user.\n- Setiap slide harus koheren seperti contoh editorial: judul menjawab satu pertanyaan/subtopik, body menjelaskan inti, lalu 3 bullet menambah detail tentang inti yang sama.\n- Bila fact bank relevan memiliki sedikitnya 4 fakta unik per slide, hasil minimal WAJIB body 10-20 kata + tepat 3 bullet 3-7 kata.\n- Semua sumber terpilih tetap WAJIB terwakili, tetapi penyebarannya dilakukan antar-slide, BUKAN dicampur dalam satu slide.\n- Jangan gunakan fakta dari sourceId lain hanya untuk mengejar kepadatan. Akurasi konteks lebih penting daripada filler.`;
+  const densityRule = profile.richEnoughForThree
+    ? 'Kapasitas fakta per sumber cukup: SETIAP slide WAJIB body 10-20 kata + tepat 3 bullet fakta berbeda, masing-masing 3-7 kata.'
+    : `Kapasitas fakta per sumber mendukung ${profile.targetPoints} bullet per slide. Gunakan minimal jumlah itu; boleh lebih sampai 3 hanya jika semua bullet tetap unik, satu sumber, dan benar-benar didukung.`;
+  return `${base}\n\nAUTO SOURCE COHERENCE CONTRACT — MENGALAHKAN FACT PLAN/DENSITY GLOBAL DI ATAS:\nCOHERENT SOURCE PLAN PER SLIDE:\n${JSON.stringify(plan)}\n\nATURAN TAMBAHAN WAJIB:\n- SATU SLIDE = SATU SUBTOPIK = SATU primarySourceId dari COHERENT SOURCE PLAN.\n- Body dan semua bullet pada slide yang sama WAJIB memakai primarySourceId yang sama. DILARANG mencampur artikel/sumber berbeda dalam satu slide.\n- Gunakan evidence yang dialokasikan pada slide itu sebagai prioritas. Jika perlu mengganti, pilih evidence LAIN dari primarySourceId yang sama, masih relevan dengan TOPIK USER, dan belum dipakai slide lain.\n- Jangan memasukkan fakta sampingan dari artikel yang hanya kebetulan mengandung kata AI/Indonesia/perusahaan tetapi tidak menjelaskan topik user.\n- Setiap slide harus koheren seperti contoh editorial: judul menjawab satu pertanyaan/subtopik, body menjelaskan inti, lalu bullet menambah detail tentang inti yang sama.\n- ${densityRule}\n- Semua sumber terpilih tetap WAJIB terwakili, tetapi penyebarannya dilakukan antar-slide, BUKAN dicampur dalam satu slide.\n- Jangan gunakan fakta dari sourceId lain hanya untuk mengejar kepadatan. Akurasi konteks lebih penting daripada filler.\n- Jika kapasitas sumber tidak cukup untuk 3 bullet di semua slide, JANGAN mengarang dan JANGAN mencampur sumber; gunakan kepadatan maksimum yang benar menurut aturan kapasitas di atas.`;
 }
 
 function coherentValidate(args = {}) {
   const scopedFacts = topicScopedFacts(args.sources, args.facts, args.topic);
   const result = originalValidateStrictCandidate({ ...args, facts: scopedFacts });
+  const originalErrors = (result.errors || []).filter(error => !/^AUTO_SOURCE_DENSITY:/i.test(String(error || '').trim()));
   const errors = [
-    ...(result.errors || []),
+    ...originalErrors,
     ...slideSourceCoherenceErrors(result.candidate),
     ...topicEvidenceErrors(result.candidate, scopedFacts),
-    ...forcedDensityErrors(result.candidate, scopedFacts)
+    ...capacityDensityErrors(result.candidate, scopedFacts)
   ];
   return { candidate: result.candidate, errors: [...new Set(errors)] };
 }
@@ -181,8 +225,12 @@ function install() {
   if (installed) return false;
   originalStrictPrompt = strict.strictPrompt;
   originalValidateStrictCandidate = strict.validateStrictCandidate;
+  originalStrictDensityProfile = strict.strictDensityProfile;
   strict.strictPrompt = coherentPrompt;
   strict.validateStrictCandidate = coherentValidate;
+  // Resilient finalizer reads this exported function dynamically, so its final
+  // density gate now uses per-source capacity too instead of total fact count.
+  strict.strictDensityProfile = coherentDensityProfile;
   installed = true;
   return true;
 }
@@ -193,7 +241,11 @@ module.exports = {
   buildCoherentPlan,
   slideSourceCoherenceErrors,
   topicEvidenceErrors,
+  capacityDensityErrors,
   forcedDensityErrors,
   evidenceRelated,
-  isInstalled: () => installed
+  slideCapacityForPoints,
+  coherentDensityProfile,
+  isInstalled: () => installed,
+  originalStrictDensityProfile: () => originalStrictDensityProfile
 };
