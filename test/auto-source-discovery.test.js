@@ -36,18 +36,21 @@ test('auto source discovery ranks relevant readable sources and removes duplicat
     now: () => Date.parse('2026-08-12T00:00:00.000Z')
   });
 
-  assert.ok(searchCalls.length >= 1 && searchCalls.length <= 2);
+  assert.ok(searchCalls.length >= 2 && searchCalls.length <= 4);
   assert.equal(result.topic, 'Northstar Browser');
-  assert.ok(result.sources.length >= 1 && result.sources.length <= 2);
+  assert.ok(result.sources.length >= 1 && result.sources.length <= 3);
   assert.equal(new Set(result.sources.map(item => item.finalUrl)).size, result.sources.length);
   assert.ok(result.sources.every(item => /northstar/i.test(`${item.title} ${item.text}`)));
   assert.ok(!result.sources.some(item => item.finalUrl === 'https://food.example/story'));
 });
 
-test('manual search queries stay bounded and include the exact topic', () => {
+test('manual search queries expand the topic while remaining bounded', () => {
   const queries = discovery.searchQueries('Lentera OS', 'Edukasi teknologi');
-  assert.deepEqual(queries, ['Lentera OS', 'Lentera OS Edukasi teknologi']);
-  assert.ok(queries.length <= 2);
+  assert.equal(queries[0], 'Lentera OS');
+  assert.ok(queries.includes('lentera'));
+  assert.ok(queries.includes('Lentera OS Edukasi teknologi'));
+  assert.ok(queries.includes('Lentera OS berita update'));
+  assert.ok(queries.length <= 4);
 });
 
 test('low-value search and social URLs are rejected before fetch', () => {
