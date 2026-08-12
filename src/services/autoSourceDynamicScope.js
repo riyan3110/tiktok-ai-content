@@ -226,12 +226,15 @@ function scopeEventSource(topic = '', source = {}, plan = {}) {
   const titleLocked = eventLockSatisfied(plan, source?.title || '');
 
   if (titleLocked) {
+    // The opening core is usually the dek/lead of the requested story. Keep it,
+    // but do not let later paragraphs survive merely because they repeat the
+    // company/product name; later rows still need event context.
     for (let index = 0; index < Math.min(4, rows.length); index += 1) keepIndexes.add(index);
   }
 
   rows.forEach((sentence, index) => {
     const direct = eventLockSatisfied(plan, sentence);
-    const contextual = titleLocked && (subjectHits(plan, sentence).length || contextHits(plan, sentence).length);
+    const contextual = titleLocked && contextHits(plan, sentence).length > 0;
     if (!direct && !contextual) return;
     keepIndexes.add(index);
     const next = rows[index + 1];
