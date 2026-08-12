@@ -11,7 +11,8 @@ const GLUE_WORDS = new Set([
   'baru','terbaru','update','berita','news','latest','new','info','fakta','singkat','the','and','or','from','for','with','about','on','in','to','of'
 ]);
 const SUBJECT_NOISE = new Set([
-  'aplikasi','fitur','teknologi','berita','update','baru','terbaru','memperkenalkan','menghadirkan','meluncurkan','merilis','mengumumkan',
+  'aplikasi','fitur','teknologi','berita','update','baru','terbaru','potensi','manfaat','dampak','pengaruh','peran','cara','kemampuan','fungsi',
+  'kegunaan','penggunaan','penerapan','contoh','fakta','info','memperkenalkan','menghadirkan','meluncurkan','merilis','mengumumkan',
   'hadapi','menghadapi','prioritaskan','menambahkan','memperbarui','launch','launches','launched','introduce','introduces','introduced',
   'release','releases','released','announce','announces','announced','adds','updates','unveils','reveals'
 ]);
@@ -75,11 +76,14 @@ function fallbackPlan(topic = '') {
   }
   flush();
 
+  const subjectTokens = new Set(named.flatMap(value => normalize(value).split(' ').filter(Boolean)));
+  const eventTerms = contentTerms.filter(term => !subjectTokens.has(normalize(term)));
+
   return {
     rawTopic: cleanTopic,
     canonicalTopic: cleanTopic,
     subjects: uniq(named.length ? named : contentTerms.filter(term => !SUBJECT_NOISE.has(normalize(term))).slice(0, 2), 4),
-    eventTerms: uniq(contentTerms, 8),
+    eventTerms: uniq(eventTerms.length ? eventTerms : contentTerms, 8),
     searchQueries: uniq([
       cleanTopic,
       `${cleanTopic} terbaru`,
