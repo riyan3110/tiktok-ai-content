@@ -19,6 +19,7 @@ const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourceTopicScope',
   '../src/services/autoSourceDynamicTopicPlan',
   '../src/services/autoSourceDynamicScope',
+  '../src/services/autoSourceStoryFocus',
   '../src/services/autoSourceQualityLayer',
   '../src/services/autoSourceRuntimeGuard',
   '../src/services/autoSourcePlanFinalizer',
