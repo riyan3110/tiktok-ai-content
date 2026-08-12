@@ -23,7 +23,8 @@ function loadAutoSourceDependencies() {
     defaultContent: require('./content'),
     defaultSourceFetcher: require('./sourceFetcher'),
     autoSourceDiscovery: require('./autoSourceFastDiscovery'),
-    autoSourceComposer: require('./autoSourceComposer')
+    autoSourceComposer: require('./autoSourceComposer'),
+    autoSourceStrictFinalizer: require('./autoSourceStrictFinalizer')
   };
 }
 
@@ -49,7 +50,8 @@ function install() {
       defaultContent,
       defaultSourceFetcher,
       autoSourceDiscovery,
-      autoSourceComposer
+      autoSourceComposer,
+      autoSourceStrictFinalizer
     } = loadAutoSourceDependencies();
     const sourceFetcher = args.sourceFetcher || defaultSourceFetcher;
     const discovery = await autoSourceDiscovery.discover({
@@ -67,26 +69,17 @@ function install() {
     };
     const autoRoleGuard = {
       repairManualSourceRoles: async ({ options, sources: activeSources }) => {
-        let lastError = null;
-        const counts = activeSources.length > 1 ? [activeSources.length, 1] : [1];
-        for (const count of counts) {
-          const workingSources = activeSources.slice(0, count);
-          try {
-            const result = await autoSourceComposer.compose({
-              content: wrappedContent,
-              previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
-              options: { ...options, fastAutoSource: true },
-              sources: workingSources,
-              discovery: { ...discovery, sources: workingSources }
-            });
-            if (activeSources.length !== workingSources.length) activeSources.splice(0, activeSources.length, ...workingSources);
-            return result;
-          } catch (error) {
-            lastError = error;
-            if (count > 1) console.warn('[AutoSource] multi-source gagal; satu retry terakhir memakai sumber terkuat:', error.message);
-          }
-        }
-        throw lastError || Object.assign(new Error('Auto Source tidak dapat membentuk konten valid.'), { status: 422 });
+        // AUTO SOURCE ONLY: every source selected by discovery remains active.
+        // Do not silently degrade multi-source synthesis to one source after a
+        // validation failure; the strict finalizer must repair the same bundle.
+        return autoSourceComposer.compose({
+          content: wrappedContent,
+          previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
+          options: { ...options, fastAutoSource: true },
+          sources: activeSources,
+          discovery: { ...discovery, sources: activeSources },
+          finalizer: autoSourceStrictFinalizer
+        });
       }
     };
 
