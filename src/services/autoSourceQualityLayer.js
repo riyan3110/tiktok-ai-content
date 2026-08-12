@@ -116,6 +116,12 @@ function substantiveClaims(slide) {
   );
 }
 
+function factualTitleClaim(slide) {
+  return (Array.isArray(slide?.claims) ? slide.claims : []).find(claim =>
+    /^slide:\d+:title$/.test(String(claim?.field || '').trim())
+  ) || null;
+}
+
 function slideSourceCoherenceErrors(content = {}) {
   const errors = [];
   for (const [slideIndex, slide] of (content?.slides || []).entries()) {
@@ -131,10 +137,12 @@ function slideSourceCoherenceErrors(content = {}) {
       || [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
       || '';
     if (!primary) continue;
-    for (const claim of claims) {
+    const titleClaim = factualTitleClaim(slide);
+    const checkedClaims = titleClaim ? [...claims, titleClaim] : claims;
+    for (const claim of checkedClaims) {
       const sourceId = String(claim?.sourceId || '').trim();
       if (!sourceId || sourceId === primary) continue;
-      errors.push(`${claim.field}: AUTO_SOURCE_COHERENCE: slide ${slideIndex + 1} mencampur ${primary} dengan ${sourceId}; satu slide harus satu sumber utama dan satu subtopik.`);
+      errors.push(`${claim.field}: AUTO_SOURCE_COHERENCE: slide ${slideIndex + 1} mencampur ${primary} dengan ${sourceId}; judul, body, dan bullet faktual harus mengikuti satu sumber utama dan satu subtopik.`);
     }
   }
   return errors;
@@ -144,7 +152,9 @@ function topicEvidenceErrors(content = {}, facts = []) {
   const allowed = groupedBySource(facts);
   const errors = [];
   for (const slide of content?.slides || []) {
-    for (const claim of substantiveClaims(slide)) {
+    const titleClaim = factualTitleClaim(slide);
+    const claims = titleClaim ? [...substantiveClaims(slide), titleClaim] : substantiveClaims(slide);
+    for (const claim of claims) {
       const sourceId = String(claim?.sourceId || '').trim();
       const rawEvidence = String(claim?.evidence || '').replace(/\s+/g, ' ').trim();
       const evidence = normalize(rawEvidence);
@@ -205,7 +215,7 @@ function coherentPrompt(args = {}) {
   const densityRule = profile.richEnoughForThree
     ? 'Kapasitas fakta per sumber cukup: SETIAP slide WAJIB body 10-20 kata + tepat 3 bullet fakta berbeda, masing-masing 3-7 kata.'
     : `Kapasitas fakta per sumber mendukung ${profile.targetPoints} bullet per slide. Gunakan minimal jumlah itu; boleh lebih sampai 3 hanya jika semua bullet tetap unik, satu sumber, dan benar-benar didukung.`;
-  return `${base}\n\nAUTO SOURCE COHERENCE CONTRACT — MENGALAHKAN FACT PLAN/DENSITY GLOBAL DI ATAS:\nCOHERENT SOURCE PLAN PER SLIDE:\n${JSON.stringify(plan)}\n\nATURAN TAMBAHAN WAJIB:\n- SATU SLIDE = SATU SUBTOPIK = SATU primarySourceId dari COHERENT SOURCE PLAN.\n- Body dan semua bullet pada slide yang sama WAJIB memakai primarySourceId yang sama. DILARANG mencampur artikel/sumber berbeda dalam satu slide.\n- Gunakan evidence yang dialokasikan pada slide itu sebagai prioritas. Jika perlu mengganti, pilih evidence LAIN dari primarySourceId yang sama, masih relevan dengan TOPIK USER, dan belum dipakai slide lain.\n- Jangan memasukkan fakta sampingan dari artikel yang hanya kebetulan mengandung kata AI/Indonesia/perusahaan tetapi tidak menjelaskan topik user.\n- Setiap slide harus koheren seperti contoh editorial: judul menjawab satu pertanyaan/subtopik, body menjelaskan inti, lalu bullet menambah detail tentang inti yang sama.\n- ${densityRule}\n- Semua sumber terpilih tetap WAJIB terwakili, tetapi penyebarannya dilakukan antar-slide, BUKAN dicampur dalam satu slide.\n- Jangan gunakan fakta dari sourceId lain hanya untuk mengejar kepadatan. Akurasi konteks lebih penting daripada filler.\n- Jika kapasitas sumber tidak cukup untuk 3 bullet di semua slide, JANGAN mengarang dan JANGAN mencampur sumber; gunakan kepadatan maksimum yang benar menurut aturan kapasitas di atas.`;
+  return `${base}\n\nAUTO SOURCE COHERENCE CONTRACT — MENGALAHKAN FACT PLAN/DENSITY GLOBAL DI ATAS:\nCOHERENT SOURCE PLAN PER SLIDE:\n${JSON.stringify(plan)}\n\nATURAN TAMBAHAN WAJIB:\n- SATU SLIDE = SATU SUBTOPIK = SATU primarySourceId dari COHERENT SOURCE PLAN.\n- Body dan semua bullet pada slide yang sama WAJIB memakai primarySourceId yang sama. Jika title memiliki claim faktual, claim title juga WAJIB memakai primarySourceId yang sama. DILARANG mencampur artikel/sumber berbeda dalam satu slide.\n- Gunakan evidence yang dialokasikan pada slide itu sebagai prioritas. Jika perlu mengganti, pilih evidence LAIN dari primarySourceId yang sama, masih relevan dengan TOPIK USER, dan belum dipakai slide lain.\n- Jangan memasukkan fakta sampingan dari artikel yang hanya kebetulan mengandung kata AI/Indonesia/perusahaan tetapi tidak menjelaskan topik user.\n- Setiap slide harus koheren seperti contoh editorial: judul menjawab satu pertanyaan/subtopik, body menjelaskan inti, lalu bullet menambah detail tentang inti yang sama.\n- ${densityRule}\n- Semua sumber terpilih tetap WAJIB terwakili, tetapi penyebarannya dilakukan antar-slide, BUKAN dicampur dalam satu slide.\n- Jangan gunakan fakta dari sourceId lain hanya untuk mengejar kepadatan. Akurasi konteks lebih penting daripada filler.\n- Jika kapasitas sumber tidak cukup untuk 3 bullet di semua slide, JANGAN mengarang dan JANGAN mencampur sumber; gunakan kepadatan maksimum yang benar menurut aturan kapasitas di atas.`;
 }
 
 function coherentValidate(args = {}) {
@@ -246,6 +256,7 @@ module.exports = {
   evidenceRelated,
   slideCapacityForPoints,
   coherentDensityProfile,
+  factualTitleClaim,
   isInstalled: () => installed,
   originalStrictDensityProfile: () => originalStrictDensityProfile
 };
