@@ -114,10 +114,13 @@ function fetchedScore(topic, source, candidate) {
 function searchQueries(topic, category = '') {
   const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
   const cleanCategory = String(category || '').trim().replace(/\s+/g, ' ');
-  const anchors = tokens(cleanTopic).join(' ');
+  const anchorTokens = tokens(cleanTopic);
+  const anchors = anchorTokens.join(' ');
+  const reversedAnchors = anchorTokens.length === 2 ? [...anchorTokens].reverse().join(' ') : '';
   const values = [
     cleanTopic,
     anchors && anchors !== normalized(cleanTopic) ? anchors : '',
+    reversedAnchors && reversedAnchors !== normalized(cleanTopic) && reversedAnchors !== anchors ? reversedAnchors : '',
     cleanCategory ? `${cleanTopic} ${cleanCategory}` : '',
     `${cleanTopic} berita update`
   ];
@@ -209,8 +212,13 @@ async function searchWeb(query, options = {}) {
   if (options.apiKey || process.env.JINA_API_KEY) await add('Jina Search', () => searchJina(query, options));
   await add('Bing News', () => searchBingNews(query, options));
   await add('Bing Web', () => searchBingWeb(query, options));
-  if (combined.length < 8) await add('Wikipedia ID', () => searchWikipedia(query, { ...options, language: 'id' }));
-  if (combined.length < 6) await add('Wikipedia EN', () => searchWikipedia(query, { ...options, language: 'en' }));
+  const referenceFriendly = !/\b(?:berita|update|edukasi|teknologi)\b/i.test(query);
+  if (referenceFriendly) {
+    let wikiId = [];
+    try { wikiId = await searchWikipedia(query, { ...options, language: 'id' }); combined.push(...wikiId); }
+    catch (error) { console.warn('[AutoSource] Wikipedia ID gagal:', error.message); }
+    if (!wikiId.length) await add('Wikipedia EN', () => searchWikipedia(query, { ...options, language: 'en' }));
+  }
   const seen = new Set();
   return combined.filter(item => {
     const key = canonicalUrl(item.url);
