@@ -42,12 +42,17 @@ function eventHits(plan = {}, value = '') {
   return dynamicScope.eventHits({ ...plan, eventTerms }, value);
 }
 
+function requestedText(plan = {}) {
+  return clean(`${plan.rawTopic || ''} ${plan.canonicalTopic || ''}`);
+}
+
 function editorialNoise(value = '', plan = {}) {
   const text = clean(value);
   if (!text) return true;
-  if (HARD_PROMO.test(text)) return true;
-  if (!plan.marketIntent && STOCK_PICK_EDITORIAL.test(text)) return true;
-  if (RELATIVE_METADATA.test(text) && words(text).length <= 16) return true;
+  const requested = requestedText(plan);
+  if (HARD_PROMO.test(text) && !HARD_PROMO.test(requested)) return true;
+  if (!plan.marketIntent && STOCK_PICK_EDITORIAL.test(text) && !STOCK_PICK_EDITORIAL.test(requested)) return true;
+  if (RELATIVE_METADATA.test(text) && words(text).length <= 16 && !RELATIVE_METADATA.test(requested)) return true;
   return false;
 }
 
@@ -109,7 +114,8 @@ function focusScore(topic = '', evidence = '', source = {}, plan = {}) {
 }
 
 function focusSource(topic = '', source = {}, plan = {}, maxFacts = 14) {
-  const facts = atomicFacts(source?.text || '')
+  const originalFacts = atomicFacts(source?.text || '');
+  const facts = originalFacts
     .map((evidence, order) => ({
       evidence,
       order,
@@ -126,7 +132,7 @@ function focusSource(topic = '', source = {}, plan = {}, maxFacts = 14) {
     // clear fact at a time instead of one compound sentence with two metrics.
     text: facts.map(row => /[.!?]$/.test(row.evidence) ? row.evidence : `${row.evidence}.`).join(' '),
     storyFocus: {
-      originalFactCount: atomicFacts(source?.text || '').length,
+      originalFactCount: originalFacts.length,
       keptFactCount: facts.length,
       eventFocusedCount: facts.filter(row => row.eventHits > 0).length
     }
@@ -140,6 +146,7 @@ function focusSources(topic = '', sources = [], plan = {}) {
 module.exports = {
   storyEventTerms,
   eventHits,
+  requestedText,
   editorialNoise,
   marketSnapshot,
   sentenceRows,
