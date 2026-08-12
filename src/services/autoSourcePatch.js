@@ -19,10 +19,14 @@ function autoSourceRequested(args = {}) {
 }
 
 function loadAutoSourceDependencies() {
+  // Loaded only AFTER Pakai URL has been excluded above. The quality layer
+  // therefore cannot alter the explicit Pakai URL production path.
+  const autoSourceQualityLayer = require('./autoSourceQualityLayer');
+  autoSourceQualityLayer.install();
   return {
     defaultContent: require('./content'),
     defaultSourceFetcher: require('./sourceFetcher'),
-    autoSourceDiscovery: require('./autoSourceFastDiscovery'),
+    autoSourceDiscovery: require('./autoSourceExpandedDiscovery'),
     autoSourceComposer: require('./autoSourceComposer'),
     autoSourceResilientFinalizer: require('./autoSourceResilientFinalizer')
   };
