@@ -22,6 +22,10 @@ function normalize(value) {
     .trim();
 }
 
+function words(value) {
+  return String(value || '').trim().split(/\s+/).filter(Boolean);
+}
+
 function numericConcepts(value) {
   const raw = String(value || '');
   const concepts = new Set((raw.match(/\b\d+(?:[.,]\d+)?%?/g) || []).map(number => number.replace(/(?<=\d),(?=\d)/g, '.')));
@@ -84,8 +88,7 @@ function conceptSupportedByEntityContext(claimText, concept, source) {
       const start = Math.max(0, index - radius);
       const end = Math.min(parts.length, index + radius + 1);
       const window = parts.slice(start, end);
-      if (window.length < 2) continue;
-      if (!phraseHasEntityLetters(window)) continue;
+      if (window.length < 2 || !phraseHasEntityLetters(window)) continue;
       const phrase = window.join(' ');
       if (phrase.length >= 5 && sourceHaystack.includes(phrase)) return true;
     }
@@ -104,9 +107,7 @@ function previousSentenceStart(text, evidenceStart) {
 
 function nextSentenceEnd(text, evidenceEnd) {
   const after = text.slice(evidenceEnd);
-  const positions = ['.', '!', '?', '\n']
-    .map(char => after.indexOf(char))
-    .filter(index => index >= 0);
+  const positions = ['.', '!', '?', '\n'].map(char => after.indexOf(char)).filter(index => index >= 0);
   if (!positions.length) return text.length;
   return evidenceEnd + Math.min(...positions) + 1;
 }
@@ -128,9 +129,7 @@ function repairNearbyNumericEvidence(content, sources = []) {
       const titleSupportsMissing = Boolean(rawTitle)
         && missing.every(number => conceptSupportedByEntityContext(claim?.text, number.replace(/(?<=\d),(?=\d)/g, '.'), source));
       const titleAlreadyInText = rawTitle && normalize(originalSourceText).includes(normalize(rawTitle));
-      const rawSource = titleSupportsMissing && !titleAlreadyInText
-        ? `${rawTitle}. ${originalSourceText}`
-        : originalSourceText;
+      const rawSource = titleSupportsMissing && !titleAlreadyInText ? `${rawTitle}. ${originalSourceText}` : originalSourceText;
 
       const sourceLower = rawSource.toLocaleLowerCase('id-ID');
       const evidenceLower = rawEvidence.toLocaleLowerCase('id-ID');
@@ -146,11 +145,11 @@ function repairNearbyNumericEvidence(content, sources = []) {
       ]
         .map(value => value.replace(/\s+/g, ' ').trim())
         .filter(Boolean)
-        .sort((a, b) => a.split(/\s+/).length - b.split(/\s+/).length);
+        .sort((a, b) => words(a).length - words(b).length);
 
       const replacement = candidates.find(candidate => {
         const candidateNumbers = new Set(rawNumberTokens(candidate));
-        const count = candidate.split(/\s+/).filter(Boolean).length;
+        const count = words(candidate).length;
         return count >= 4 && count <= 32 && missing.every(number => candidateNumbers.has(number));
       });
       if (replacement) {
@@ -193,13 +192,29 @@ function substantiveExpansion(base, candidate, minimumNewTokens) {
   return additions.length >= minimumNewTokens;
 }
 
+function claimMeaningTokens(value) {
+  return [...new Set(tokens(value).filter(token => (token.length > 2 || token === 'ai') && !COPY_FILLER.has(token)))];
+}
+
+function nearDuplicateClaimMeaning(left, right, { minShared = 3, ratio = 0.8 } = {}) {
+  const leftNorm = normalize(left);
+  const rightNorm = normalize(right);
+  if (!leftNorm || !rightNorm) return false;
+  if (leftNorm === rightNorm) return true;
+  const a = claimMeaningTokens(left);
+  const b = claimMeaningTokens(right);
+  if (!a.length || !b.length) return false;
+  const shared = a.filter(token => b.includes(token)).length;
+  return shared >= minShared && shared / Math.min(a.length, b.length) >= ratio;
+}
+
 function filterFalsePositiveDuplicateErrors(errors = [], content = {}) {
   return errors.filter(error => {
     const text = String(error || '');
     let match = text.match(/^slide:(\d+):body:\s*copy mengulang title\.?$/i);
     if (match) {
       const slide = content?.slides?.[Number(match[1])];
-      if (slide && String(slide.body || '').trim().split(/\s+/).length >= 8 && substantiveExpansion(slide.title, slide.body, 4)) return false;
+      if (slide && words(slide.body).length >= 8 && substantiveExpansion(slide.title, slide.body, 4)) return false;
       return true;
     }
 
@@ -223,74 +238,74 @@ function filterFalsePositiveDuplicateErrors(errors = [], content = {}) {
   });
 }
 
-function claimMeaningTokens(value) {
-  return [...new Set(tokens(value).filter(token => (token.length > 2 || token === 'ai') && !COPY_FILLER.has(token)))];
-}
-
-function nearDuplicateClaimMeaning(left, right) {
-  const leftNorm = normalize(left);
-  const rightNorm = normalize(right);
-  if (!leftNorm || !rightNorm) return false;
-  if (leftNorm === rightNorm) return true;
-  const a = claimMeaningTokens(left);
-  const b = claimMeaningTokens(right);
-  if (!a.length || !b.length) return false;
-  const shared = a.filter(token => b.includes(token)).length;
-  return shared >= 2 && shared / Math.min(a.length, b.length) >= 0.5;
-}
-
-function canonicalClaimKey(claim) {
-  const sourceId = String(claim?.sourceId || '').trim();
-  const evidence = normalize(claim?.evidence);
-  return sourceId && evidence ? `${sourceId}::${evidence}` : '';
-}
-
-function canonicalDuplicateIsDistinct(content, slideIndex) {
+function autoSourceLayoutErrors(content) {
   const slides = Array.isArray(content?.slides) ? content.slides : [];
-  const current = slides[slideIndex];
-  if (!current) return false;
-  const currentClaims = (Array.isArray(current.claims) ? current.claims : [])
-    .filter(claim => !String(claim?.field || '').endsWith(':title'));
-  const earlierClaims = slides.slice(0, slideIndex).flatMap(slide => (Array.isArray(slide?.claims) ? slide.claims : []))
-    .filter(claim => !String(claim?.field || '').endsWith(':title'));
-  const repeatedPairs = [];
-  for (const claim of currentClaims) {
-    const key = canonicalClaimKey(claim);
-    if (!key) continue;
-    for (const previous of earlierClaims) {
-      if (canonicalClaimKey(previous) === key) repeatedPairs.push([previous, claim]);
-    }
-  }
-  if (!repeatedPairs.length) return false;
-  return repeatedPairs.every(([previous, claim]) => !nearDuplicateClaimMeaning(previous?.text, claim?.text));
+  const errors = [];
+  if (slides.length < 4 || slides.length > 5) errors.push('AUTO_SOURCE_LAYOUT: carousel harus 4–5 slide.');
+  slides.forEach((slide, slideIndex) => {
+    const titleCount = words(slide?.title).length;
+    const bodyCount = words(slide?.body).length;
+    const points = Array.isArray(slide?.points) ? slide.points : [];
+    if (!titleCount || titleCount > 12) errors.push(`AUTO_SOURCE_LAYOUT: slide:${slideIndex}: title harus 1–12 kata.`);
+    if (bodyCount < 8 || bodyCount > 24) errors.push(`AUTO_SOURCE_LAYOUT: slide:${slideIndex}: body harus 8–24 kata.`);
+    if (points.length > 3) errors.push(`AUTO_SOURCE_LAYOUT: slide:${slideIndex}: maksimal 3 point.`);
+    points.forEach((point, pointIndex) => {
+      const count = words(point).length;
+      if (count < 3 || count > 7) errors.push(`AUTO_SOURCE_LAYOUT: slide:${slideIndex}:point:${pointIndex}: point harus 3–7 kata.`);
+    });
+  });
+  return [...new Set(errors)];
 }
 
-function denseShortBody(content, slideIndex, requiredMin = 10) {
-  const slide = content?.slides?.[slideIndex];
-  if (!slide) return false;
-  const bodyCount = String(slide?.body || '').trim().split(/\s+/).filter(Boolean).length;
-  if (bodyCount < 8 || bodyCount >= requiredMin) return false;
-  const points = Array.isArray(slide?.points) ? slide.points : [];
-  if (points.length < 2) return false;
-  const pointWords = points.reduce((sum, point) => sum + String(point || '').trim().split(/\s+/).filter(Boolean).length, 0);
-  return bodyCount + pointWords >= requiredMin + (points.length * 3);
+function autoSourceDuplicateErrors(content) {
+  const slides = Array.isArray(content?.slides) ? content.slides : [];
+  const errors = [];
+  const previousSubstantive = [];
+
+  slides.forEach((slide, slideIndex) => {
+    const title = String(slide?.title || '').trim();
+    const body = String(slide?.body || '').trim();
+    const points = Array.isArray(slide?.points) ? slide.points.map(value => String(value || '').trim()).filter(Boolean) : [];
+
+    if (title && body && nearDuplicateClaimMeaning(title, body, { minShared: 3, ratio: 0.85 }) && !substantiveExpansion(title, body, 3)) {
+      errors.push(`AUTO_SOURCE_DUPLICATE: slide:${slideIndex}: body mengulang title tanpa informasi baru.`);
+    }
+
+    points.forEach((point, pointIndex) => {
+      if (title && nearDuplicateClaimMeaning(title, point, { minShared: 2, ratio: 0.9 }) && !substantiveExpansion(title, point, 2)) {
+        errors.push(`AUTO_SOURCE_DUPLICATE: slide:${slideIndex}:point:${pointIndex}: point mengulang title.`);
+      }
+      if (body && nearDuplicateClaimMeaning(body, point, { minShared: 2, ratio: 0.9 }) && !substantiveExpansion(point, body, 3)) {
+        errors.push(`AUTO_SOURCE_DUPLICATE: slide:${slideIndex}:point:${pointIndex}: point mengulang body.`);
+      }
+      for (let earlier = 0; earlier < pointIndex; earlier += 1) {
+        if (nearDuplicateClaimMeaning(points[earlier], point, { minShared: 2, ratio: 0.9 })) {
+          errors.push(`AUTO_SOURCE_DUPLICATE: slide:${slideIndex}:point:${pointIndex}: point mengulang point lain.`);
+          break;
+        }
+      }
+    });
+
+    const current = [
+      ...(body ? [{ kind: 'body', value: body }] : []),
+      ...points.map((value, pointIndex) => ({ kind: `point:${pointIndex}`, value }))
+    ];
+    current.forEach(record => {
+      const duplicate = previousSubstantive.some(previous => nearDuplicateClaimMeaning(previous.value, record.value, { minShared: 3, ratio: 0.82 }));
+      if (duplicate) errors.push(`AUTO_SOURCE_DUPLICATE: slide:${slideIndex}:${record.kind}: pembahasan mengulang fakta slide sebelumnya.`);
+    });
+    previousSubstantive.push(...current.map(record => ({ ...record, slideIndex })));
+  });
+
+  return [...new Set(errors)];
+}
+
+function autoSourceStructureErrors(content) {
+  return [...autoSourceLayoutErrors(content), ...autoSourceDuplicateErrors(content)];
 }
 
 function filterFalsePositives(errors = [], content = {}) {
-  return filterFalsePositiveDuplicateErrors(errors, content).filter(error => {
-    const text = String(error || '');
-
-    let match = text.match(/^slide:(\d+):duplicate:\s*fakta canonical mengulang slide sebelumnya\.?$/i);
-    if (match && canonicalDuplicateIsDistinct(content, Number(match[1]))) return false;
-
-    match = text.match(/^slide:(\d+):layout:\s*body harus (\d+)[–-]24 kata agar cukup menjelaskan konteks\.?$/i);
-    if (match && denseShortBody(content, Number(match[1]), Number(match[2]))) return false;
-
-    match = text.match(/^AUTO_SOURCE_RICHNESS:\s*slide\s+(\d+)\s+body terlalu tipis\s*\(\d+ kata\)\.?$/i);
-    if (match && denseShortBody(content, Number(match[1]) - 1, 10)) return false;
-
-    return true;
-  });
+  return filterFalsePositiveDuplicateErrors(errors, content);
 }
 
 module.exports = {
@@ -299,8 +314,10 @@ module.exports = {
   conceptSupportedByEntityContext,
   repairNearbyNumericEvidence,
   substantiveExpansion,
+  nearDuplicateClaimMeaning,
   filterFalsePositiveDuplicateErrors,
-  canonicalDuplicateIsDistinct,
-  denseShortBody,
+  autoSourceLayoutErrors,
+  autoSourceDuplicateErrors,
+  autoSourceStructureErrors,
   filterFalsePositives
 };
