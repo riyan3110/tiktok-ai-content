@@ -49,6 +49,7 @@ test('numeric grounding still rejects invented shorthand that is not written in 
   };
   const errors = autoSourceValidation.numericGroundingErrors(content, [{ title: 'Layanan harian', text: 'Layanan tersedia setiap hari untuk pengguna.' }]);
   assert.ok(errors.some(error => /24|7/.test(error)));
+  assert.deepEqual([...finalizer.autoRecoveryFieldKeys(errors, content)], ['slide:0:body']);
 });
 
 test('layout validation uses one generic range independent of topic category', () => {
@@ -75,6 +76,39 @@ test('richness evaluates total slide information instead of a rigid source-speci
   const facts = Array.from({ length: 12 }, (_, index) => ({ sourceId: 'source-1', evidence: `Fakta sumber nomor ${index + 1} memiliki detail berbeda yang cukup untuk pengujian.` }));
   const errors = finalizer.richnessErrors(content, facts);
   assert.equal(errors.some(error => /body terlalu tipis/i.test(error)), false);
+});
+
+test('richness allows one grounded bullet after safe recovery when the slide remains dense', () => {
+  const content = { slides: Array.from({ length: 4 }, () => slide(
+    'Konteks sistem perangkat utama',
+    'Sistem menggabungkan beberapa sinyal lokal agar respons perangkat tetap stabil saat kondisi berubah.',
+    ['Sensor membaca kondisi sekitar']
+  )) };
+  const facts = Array.from({ length: 16 }, (_, index) => ({ sourceId: 'source-1', evidence: `Fakta sumber ${index + 1} memiliki detail berbeda yang cukup untuk pengujian kepadatan.` }));
+  assert.deepEqual(finalizer.richnessErrors(content, facts), []);
+});
+
+test('targeted recovery can delete an unsupported point without shifting another point into the wrong claim', () => {
+  const draft = { slides: [slide('Konteks', 'Body tetap sama untuk pengujian targeted recovery.', ['Detail unsupported lama', 'Detail grounded lain'], [
+    { field: 'slide:0:point:0', text: 'Detail unsupported lama', sourceId: 'source-1', evidence: 'Evidence lama.' },
+    { field: 'slide:0:point:1', text: 'Detail grounded lain', sourceId: 'source-1', evidence: 'Evidence grounded lain.' }
+  ])] };
+  const incoming = { slides: [{
+    ...draft.slides[0],
+    points: [null, 'Detail grounded lain'],
+    claims: [{ field: 'slide:0:point:1', text: 'Detail grounded lain', sourceId: 'source-1', evidence: 'Evidence grounded lain.' }]
+  }] };
+  const merged = finalizer.mergeAutoRecoveryFields(draft, incoming, new Set(['slide:0:point:0']));
+  assert.deepEqual(merged.slides[0].points, ['Detail grounded lain']);
+  assert.equal(merged.slides[0].claims.length, 1);
+  assert.equal(merged.slides[0].claims[0].field, 'slide:0:point:0');
+});
+
+test('semantic support errors remain targetable for the final safe recovery pass', () => {
+  const keys = finalizer.autoRecoveryFieldKeys([
+    "SEMANTIC_SUPPORT: slide:1:point:0 tidak didukung evidence: Claim adds 'via text' not stated in evidence."
+  ], { slides: [] });
+  assert.deepEqual([...keys], ['slide:1:point:0']);
 });
 
 test('duplicate validation compares visible meaning rather than canonical evidence identity', () => {
