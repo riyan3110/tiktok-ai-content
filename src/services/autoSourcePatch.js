@@ -32,30 +32,34 @@ function install() {
       sourceFetcher
     });
     const sources = discovery.sources;
-    const selectedUrls = sources.map(source => source.finalUrl || source.url).filter(Boolean);
     const wrappedContent = contentWrapper(args.content || defaultContent);
+    const currentUrls = () => sources.map(source => source.finalUrl || source.url).filter(Boolean);
     const autoFetcher = {
-      validateSourceUrls: () => selectedUrls,
+      validateSourceUrls: () => currentUrls(),
       fetchSources: async () => sources,
       buildSourceContext: sourceFetcher.buildSourceContext || defaultSourceFetcher.buildSourceContext
     };
     const autoRoleGuard = {
       repairManualSourceRoles: async ({ options, sources: activeSources }) => {
-        const compose = () => autoSourceComposer.compose({
-          content: wrappedContent,
-          previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
-          options,
-          sources: activeSources,
-          discovery
-        });
-        try {
-          return await compose();
-        } catch (error) {
-          if (activeSources.length <= 1) throw error;
-          console.warn('[AutoSource] multi-source compose gagal; mencoba ulang dengan sumber terkuat:', error.message);
-          activeSources.splice(1);
-          return compose();
+        let lastError = null;
+        for (let count = activeSources.length; count >= 1; count -= 1) {
+          const workingSources = activeSources.slice(0, count);
+          try {
+            const result = await autoSourceComposer.compose({
+              content: wrappedContent,
+              previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
+              options,
+              sources: workingSources,
+              discovery: { ...discovery, sources: workingSources }
+            });
+            if (activeSources.length !== workingSources.length) activeSources.splice(0, activeSources.length, ...workingSources);
+            return result;
+          } catch (error) {
+            lastError = error;
+            if (count > 1) console.warn(`[AutoSource] compose ${count} sumber gagal; mencoba ${count - 1} sumber terkuat:`, error.message);
+          }
         }
+        throw lastError || Object.assign(new Error('Auto Source tidak dapat membentuk konten valid.'), { status: 422 });
       }
     };
 
@@ -65,7 +69,7 @@ function install() {
       sourceFetcher: autoFetcher,
       manualSourceRoleGuard: autoRoleGuard,
       useSources: true,
-      sourceUrls: selectedUrls
+      sourceUrls: currentUrls()
     });
   };
   installed = true;
