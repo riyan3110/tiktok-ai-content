@@ -34,6 +34,10 @@ function numericConcepts(value) {
   return concepts;
 }
 
+function rawNumberTokens(value) {
+  return String(value || '').match(/\b\d+(?:[.,]\d+)?%?\b/g) || [];
+}
+
 function sourceForClaim(sources, sourceId) {
   const match = String(sourceId || '').match(/^source-(\d+)$/);
   if (!match) return null;
@@ -73,6 +77,64 @@ function conceptSupportedByEntityContext(claimText, concept, source) {
     }
   }
   return false;
+}
+
+function previousSentenceStart(text, evidenceStart) {
+  const before = text.slice(0, evidenceStart);
+  const lastBreak = Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('\n'));
+  if (lastBreak < 0) return 0;
+  const earlier = before.slice(0, Math.max(0, lastBreak));
+  const priorBreak = Math.max(earlier.lastIndexOf('.'), earlier.lastIndexOf('!'), earlier.lastIndexOf('?'), earlier.lastIndexOf('\n'));
+  return priorBreak >= 0 ? priorBreak + 1 : 0;
+}
+
+function nextSentenceEnd(text, evidenceEnd) {
+  const after = text.slice(evidenceEnd);
+  const positions = ['.', '!', '?', '\n']
+    .map(char => after.indexOf(char))
+    .filter(index => index >= 0);
+  if (!positions.length) return text.length;
+  return evidenceEnd + Math.min(...positions) + 1;
+}
+
+function repairNearbyNumericEvidence(content, sources = []) {
+  (content?.slides || []).forEach(slide => {
+    (slide?.claims || []).forEach(claim => {
+      const visibleNumbers = rawNumberTokens(claim?.text);
+      const evidenceNumbers = new Set(rawNumberTokens(claim?.evidence));
+      const missing = visibleNumbers.filter(number => !evidenceNumbers.has(number));
+      if (!missing.length) return;
+
+      const source = sourceForClaim(sources, claim?.sourceId);
+      const rawSource = String(source?.text || '');
+      const rawEvidence = String(claim?.evidence || '').trim();
+      if (!rawSource || !rawEvidence) return;
+
+      const sourceLower = rawSource.toLocaleLowerCase('id-ID');
+      const evidenceLower = rawEvidence.toLocaleLowerCase('id-ID');
+      const evidenceStart = sourceLower.indexOf(evidenceLower);
+      if (evidenceStart < 0) return;
+      const evidenceEnd = evidenceStart + rawEvidence.length;
+      const prevStart = previousSentenceStart(rawSource, evidenceStart);
+      const nextEnd = nextSentenceEnd(rawSource, evidenceEnd);
+      const candidates = [
+        rawSource.slice(prevStart, evidenceEnd),
+        rawSource.slice(evidenceStart, nextEnd),
+        rawSource.slice(prevStart, nextEnd)
+      ]
+        .map(value => value.replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .sort((a, b) => a.split(/\s+/).length - b.split(/\s+/).length);
+
+      const replacement = candidates.find(candidate => {
+        const candidateNumbers = new Set(rawNumberTokens(candidate));
+        const count = candidate.split(/\s+/).filter(Boolean).length;
+        return count >= 4 && count <= 32 && missing.every(number => candidateNumbers.has(number));
+      });
+      if (replacement) claim.evidence = replacement;
+    });
+  });
+  return content;
 }
 
 function numericGroundingErrors(content, sources = []) {
@@ -144,6 +206,7 @@ module.exports = {
   numericConcepts,
   numericGroundingErrors,
   conceptSupportedByEntityContext,
+  repairNearbyNumericEvidence,
   substantiveExpansion,
   filterFalsePositiveDuplicateErrors,
   filterFalsePositives
