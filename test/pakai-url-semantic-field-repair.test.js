@@ -113,6 +113,49 @@ test('targeted semantic repair mempertahankan slide padat dan tidak full rebuild
   assert.match(result.content.slides[0].body, /tersedia untuk pengguna/i);
 });
 
+test('semantic repair boleh melakukan satu retry kecil lagi jika audit pertama masih menolak field yang sama', async () => {
+  const content = contentFixture();
+  const initialErrors = ['SEMANTIC_SUPPORT: slide:0:body tidak didukung evidence: tujuan tambahan tidak ada di evidence'];
+  const repairTexts = [
+    'Fitur beta ini membantu pengguna mengelola pekerjaan dalam aplikasi utama.',
+    'Fitur ini tersedia untuk pengguna dalam versi beta yang sedang dirilis.'
+  ];
+  let calls = 0;
+  let audits = 0;
+  const openai = {
+    chat: { completions: { create: async () => {
+      const text = repairTexts[calls] || repairTexts.at(-1);
+      calls += 1;
+      return { choices: [{ message: { content: JSON.stringify({ repairs: [{ field: 'slide:0:body', text }] }) } }] };
+    } } }
+  };
+
+  const result = await repair.recoverSemanticFailures({
+    openai,
+    model: 'test-model',
+    content,
+    errors: initialErrors,
+    topic: 'Topik uji',
+    format: 'Fakta singkat',
+    validate: candidate => ({ content: candidate, errors: [] }),
+    audit: async candidate => {
+      audits += 1;
+      if (audits === 1) return {
+        content: candidate,
+        errors: ['SEMANTIC_SUPPORT: slide:0:body tidak didukung evidence: claim masih menambahkan manfaat']
+      };
+      return { content: candidate, errors: [] };
+    }
+  });
+
+  assert.equal(repair.MAX_TARGETED_REPAIR_ROUNDS, 2);
+  assert.equal(calls, 2);
+  assert.equal(audits, 2);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.content.slides[0].body, repairTexts[1]);
+  assert.equal(result.content.slides[0].points.length, 3);
+});
+
 test('repair prompt melarang inferensi tujuan/manfaat/strategi dan tetap menjaga density', () => {
   const prompt = repair.semanticRepairPrompt([
     {
