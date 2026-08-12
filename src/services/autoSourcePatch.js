@@ -26,7 +26,7 @@ function loadAutoSourceDependencies() {
     defaultContent: require('./content'),
     defaultSourceFetcher: require('./sourceFetcher'),
     autoSourceDiscovery: require('./autoSourceExpandedDiscovery'),
-    autoSourceSimpleComposer: require('./autoSourceSimpleComposer'),
+    autoSourceResearchComposer: require('./autoSourceResearchComposer'),
     autoSourceVisualFit: require('./autoSourceVisualFit')
   };
 }
@@ -53,7 +53,7 @@ function install() {
       defaultContent,
       defaultSourceFetcher,
       autoSourceDiscovery,
-      autoSourceSimpleComposer,
+      autoSourceResearchComposer,
       autoSourceVisualFit
     } = loadAutoSourceDependencies();
 
@@ -74,7 +74,7 @@ function install() {
 
     const autoRoleGuard = {
       repairManualSourceRoles: async ({ options, sources: activeSources }) => {
-        const generated = await autoSourceSimpleComposer.compose({
+        const generated = await autoSourceResearchComposer.compose({
           options,
           sources: activeSources,
           discovery: { ...discovery, sources: activeSources }
