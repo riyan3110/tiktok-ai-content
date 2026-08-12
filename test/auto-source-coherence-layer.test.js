@@ -70,7 +70,7 @@ test('factual title claim must use the same primary source as body and bullets',
   assert.match(errors[0], /slide:0:title/);
 });
 
-test('topic evidence gate rejects body or bullet evidence outside the scoped fact bank', () => {
+test('topic evidence gate rejects evidence outside both scoped bank and selected source', () => {
   const facts = [
     { sourceId: 'source-1', evidence: 'Muse Code dapat menulis dan memperbaiki kode untuk tugas software engineering.' },
     { sourceId: 'source-1', evidence: 'Muse Code mendukung debugging dan pengujian kode.' }
@@ -85,13 +85,31 @@ test('topic evidence gate rejects body or bullet evidence outside the scoped fac
       ]
     }]
   };
-  const errors = layer.topicEvidenceErrors(content, facts);
+  const errors = layer.topicEvidenceErrors(content, facts, [{ text: facts.map(fact => fact.evidence).join(' ') }]);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /slide:0:point:0/);
   assert.match(errors[0], /AUTO_SOURCE_CONTEXT/);
 });
 
-test('rich per-source capacity forces body plus exactly three bullets per slide', () => {
+test('literal evidence from the same selected source survives scoped fact-bank narrowing', () => {
+  const facts = [
+    { sourceId: 'source-1', evidence: 'Ask Maps membantu pengguna menjelajahi tempat melalui pengalaman percakapan.' }
+  ];
+  const expanded = 'Fitur itu tersedia di Google Maps dan membantu pengguna menjelajahi tempat melalui pengalaman percakapan yang lebih alami.';
+  const sources = [{
+    title: 'Google menghadirkan Ask Maps',
+    text: `Ask Maps menjadi fitur baru Google Maps. ${expanded}`
+  }];
+  const content = {
+    slides: [{
+      body: 'Ask Maps membantu eksplorasi tempat di Google Maps.',
+      claims: [{ field: 'slide:0:body', text: 'x', sourceId: 'source-1', evidence: expanded }]
+    }]
+  };
+  assert.deepEqual(layer.topicEvidenceErrors(content, facts, sources), []);
+});
+
+test('rich per-source capacity supplies optional evidence but does not force three visible bullets', () => {
   const content = {
     slides: Array.from({ length: 4 }, () => ({
       body: 'Body faktual yang cukup panjang untuk menjelaskan konteks pengujian secara lengkap di sini.',
@@ -103,30 +121,27 @@ test('rich per-source capacity forces body plus exactly three bullets per slide'
     ...factsFor('source-2', 'Dua', 8)
   ];
   const profile = layer.coherentDensityProfile(facts, 4);
-  assert.equal(profile.richEnoughForThree, true);
+  assert.equal(profile.richEnoughForThree, true, 'planning may still reserve enough evidence for three optional bullets');
   assert.equal(profile.targetPoints, 3);
-  const errors = layer.capacityDensityErrors(content, facts);
-  const exactThree = errors.filter(error => /tepat 3 bullet/.test(error));
-  assert.equal(exactThree.length, 4);
-  assert.ok(exactThree.every(error => /slide [1-4]/.test(error)));
+  assert.deepEqual(layer.capacityDensityErrors(content, facts), [], 'visible output is not required to consume all optional bullet capacity');
 });
 
-test('total facts do not force impossible three-bullet slides when per-source capacity is insufficient', () => {
+test('total facts do not create a visible bullet minimum when per-source capacity is lower', () => {
   const facts = [
     ...factsFor('source-1', 'Satu', 5),
     ...factsFor('source-2', 'Dua', 5),
     ...factsFor('source-3', 'Tiga', 6)
   ];
-  assert.equal(facts.length, 16, 'total bank looks rich enough for four body+3-bullet slides');
-  assert.equal(layer.slideCapacityForPoints(facts, 3), 3, 'but only three dense slides fit without mixing sources');
+  assert.equal(facts.length, 16);
+  assert.equal(layer.slideCapacityForPoints(facts, 3), 3);
   const profile = layer.coherentDensityProfile(facts, 4);
   assert.equal(profile.richEnoughForThree, false);
-  assert.equal(profile.targetPoints, 2, 'maximum safe density is body + two bullets per slide');
+  assert.equal(profile.targetPoints, 2, 'planning capacity remains available without becoming an output requirement');
 
   const content = {
     slides: Array.from({ length: 4 }, () => ({
       body: 'Body faktual cukup panjang dan tetap menjelaskan satu subtopik secara utuh.',
-      points: ['Fakta pendek pertama', 'Fakta pendek kedua']
+      points: []
     }))
   };
   assert.deepEqual(layer.capacityDensityErrors(content, facts), []);

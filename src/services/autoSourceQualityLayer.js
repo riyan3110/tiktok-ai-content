@@ -47,7 +47,7 @@ function groupedBySource(facts = []) {
 }
 
 function slideCapacityForPoints(facts = [], pointCount = 3) {
-  const factsPerSlide = 1 + Math.max(0, pointCount); // one body + N bullets
+  const factsPerSlide = 1 + Math.max(0, pointCount); // one body + N optional bullets
   return [...groupedBySource(facts).values()]
     .reduce((sum, queue) => sum + Math.floor(queue.length / factsPerSlide), 0);
 }
@@ -64,6 +64,7 @@ function coherentDensityProfile(facts = [], slideCount = 4) {
   return {
     bodyMin: targetPoints >= 2 ? 10 : 8,
     bodyMax: 20,
+    // targetPoints is planning capacity only. It is NOT a minimum visible bullet count.
     targetPoints,
     richEnoughForThree: targetPoints === 3
   };
@@ -80,8 +81,7 @@ function buildCoherentPlan(sources = [], facts = [], slideCount = 4) {
   const owners = [];
 
   // Every selected source gets a slide first. Remaining slides go to a source
-  // that can still support the current per-slide density without borrowing
-  // facts from another source.
+  // that can still support useful optional detail without borrowing facts from another source.
   for (const id of sourceIds) {
     if (owners.length >= slideCount) break;
     owners.push(id);
@@ -148,7 +148,18 @@ function slideSourceCoherenceErrors(content = {}) {
   return errors;
 }
 
-function topicEvidenceErrors(content = {}, facts = []) {
+function sourceLiteralEvidence(sourceId, rawEvidence, sources = []) {
+  const match = String(sourceId || '').match(/^source-(\d+)$/);
+  if (!match) return false;
+  const source = sources[Number(match[1]) - 1];
+  if (!source) return false;
+  const evidence = normalize(rawEvidence);
+  if (!evidence) return false;
+  const haystack = normalize(`${source?.title || ''} ${source?.text || ''}`);
+  return Boolean(haystack) && haystack.includes(evidence);
+}
+
+function topicEvidenceErrors(content = {}, facts = [], sources = []) {
   const allowed = groupedBySource(facts);
   const errors = [];
   for (const slide of content?.slides || []) {
@@ -159,8 +170,8 @@ function topicEvidenceErrors(content = {}, facts = []) {
       const rawEvidence = String(claim?.evidence || '').replace(/\s+/g, ' ').trim();
       const evidence = normalize(rawEvidence);
       const bank = allowed.get(sourceId) || [];
-      if (!sourceId || !evidence || !bank.length) continue;
-      const supported = bank.some(item => {
+      if (!sourceId || !evidence) continue;
+      const supportedByBank = bank.some(item => {
         const candidate = normalize(item.evidence);
         return candidate && (
           candidate === evidence
@@ -169,6 +180,10 @@ function topicEvidenceErrors(content = {}, facts = []) {
           || evidenceRelated(rawEvidence, item.evidence)
         );
       });
+      // Evidence recovery may widen a valid quote beyond the topic-scoped fact-bank
+      // fragment. If the widened quote is still literal in the same selected source,
+      // keep it; plan ownership + semantic entailment remain the factual gates.
+      const supported = supportedByBank || sourceLiteralEvidence(sourceId, rawEvidence, sources);
       if (!supported) {
         errors.push(`${claim.field}: AUTO_SOURCE_CONTEXT: evidence tidak termasuk fact bank yang relevan dengan topik untuk ${sourceId}.`);
       }
@@ -185,14 +200,11 @@ function capacityDensityErrors(content = {}, facts = []) {
   slides.forEach((slide, slideIndex) => {
     const bodyCount = String(slide?.body || '').trim().split(/\s+/).filter(Boolean).length;
     const points = Array.isArray(slide?.points) ? slide.points : [];
-    if (bodyCount < profile.bodyMin || bodyCount > 24) {
-      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: body harus ${profile.bodyMin}-24 kata agar padat dan tetap rapi.`);
+    if (bodyCount < 8 || bodyCount > 24) {
+      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: body harus 8-24 kata agar padat dan tetap rapi.`);
     }
-    if (points.length < profile.targetPoints) {
-      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: kapasitas fakta per sumber mendukung ${profile.targetPoints} bullet; baru ada ${points.length}.`);
-    }
-    if (profile.richEnoughForThree && points.length !== 3) {
-      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: kapasitas fact bank per sumber cukup; slide ${slideIndex + 1} wajib body + tepat 3 bullet fakta berbeda.`);
+    if (points.length > 3) {
+      errors.push(`slide:${slideIndex}:body: AUTO_SOURCE_DENSITY: maksimal 3 bullet; gunakan hanya detail tambahan yang unik.`);
     }
   });
   return [...new Set(errors)];
@@ -212,10 +224,8 @@ function coherentPrompt(args = {}) {
   const profile = coherentDensityProfile(scopedFacts, sections.length);
   const plan = buildCoherentPlan(args.sources, scopedFacts, sections.length);
   const base = originalStrictPrompt({ ...args, facts: scopedFacts });
-  const densityRule = profile.richEnoughForThree
-    ? 'Kapasitas fakta per sumber cukup: SETIAP slide WAJIB body 10-20 kata + tepat 3 bullet fakta berbeda, masing-masing 3-7 kata.'
-    : `Kapasitas fakta per sumber mendukung ${profile.targetPoints} bullet per slide. Gunakan minimal jumlah itu; boleh lebih sampai 3 hanya jika semua bullet tetap unik, satu sumber, dan benar-benar didukung.`;
-  return `${base}\n\nAUTO SOURCE COHERENCE CONTRACT — MENGALAHKAN FACT PLAN/DENSITY GLOBAL DI ATAS:\nCOHERENT SOURCE PLAN PER SLIDE:\n${JSON.stringify(plan)}\n\nATURAN TAMBAHAN WAJIB:\n- SATU SLIDE = SATU SUBTOPIK = SATU primarySourceId dari COHERENT SOURCE PLAN.\n- Body dan semua bullet pada slide yang sama WAJIB memakai primarySourceId yang sama. Jika title memiliki claim faktual, claim title juga WAJIB memakai primarySourceId yang sama. DILARANG mencampur artikel/sumber berbeda dalam satu slide.\n- Gunakan evidence yang dialokasikan pada slide itu sebagai prioritas. Jika perlu mengganti, pilih evidence LAIN dari primarySourceId yang sama, masih relevan dengan TOPIK USER, dan belum dipakai slide lain.\n- Jangan memasukkan fakta sampingan dari artikel yang hanya kebetulan mengandung kata AI/Indonesia/perusahaan tetapi tidak menjelaskan topik user.\n- Setiap slide harus koheren seperti contoh editorial: judul menjawab satu pertanyaan/subtopik, body menjelaskan inti, lalu bullet menambah detail tentang inti yang sama.\n- ${densityRule}\n- Semua sumber terpilih tetap WAJIB terwakili, tetapi penyebarannya dilakukan antar-slide, BUKAN dicampur dalam satu slide.\n- Jangan gunakan fakta dari sourceId lain hanya untuk mengejar kepadatan. Akurasi konteks lebih penting daripada filler.\n- Jika kapasitas sumber tidak cukup untuk 3 bullet di semua slide, JANGAN mengarang dan JANGAN mencampur sumber; gunakan kepadatan maksimum yang benar menurut aturan kapasitas di atas.`;
+  const densityRule = 'Bullet bukan target jumlah: gunakan 0-3 bullet hanya untuk fakta tambahan yang unik. Body yang sudah padat boleh berdiri sendiri tanpa bullet.';
+  return `${base}\n\nAUTO SOURCE COHERENCE CONTRACT — MENGALAHKAN FACT PLAN/DENSITY GLOBAL DI ATAS:\nCOHERENT SOURCE PLAN PER SLIDE:\n${JSON.stringify(plan)}\n\nATURAN TAMBAHAN WAJIB:\n- SATU SLIDE = SATU SUBTOPIK = SATU primarySourceId dari COHERENT SOURCE PLAN.\n- Body dan semua bullet pada slide yang sama WAJIB memakai primarySourceId yang sama. Jika title memiliki claim faktual, claim title juga WAJIB memakai primarySourceId yang sama. DILARANG mencampur artikel/sumber berbeda dalam satu slide.\n- Gunakan evidence yang dialokasikan pada slide itu sebagai prioritas. Jika perlu mengganti, pilih evidence LAIN dari primarySourceId yang sama, masih relevan dengan TOPIK USER, dan belum dipakai slide lain.\n- Jangan memasukkan fakta sampingan dari artikel yang hanya kebetulan mengandung kata AI/Indonesia/perusahaan tetapi tidak menjelaskan topik user.\n- Setiap slide harus koheren seperti contoh editorial: judul menjawab satu pertanyaan/subtopik, body menjelaskan inti, lalu bullet hanya menambah detail tentang inti yang sama.\n- ${densityRule}\n- Semua sumber terpilih tetap WAJIB terwakili, tetapi penyebarannya dilakukan antar-slide, BUKAN dicampur dalam satu slide.\n- Jangan gunakan fakta dari sourceId lain hanya untuk mengejar kepadatan. Akurasi konteks lebih penting daripada filler.`;
 }
 
 function coherentValidate(args = {}) {
@@ -225,7 +235,7 @@ function coherentValidate(args = {}) {
   const errors = [
     ...originalErrors,
     ...slideSourceCoherenceErrors(result.candidate),
-    ...topicEvidenceErrors(result.candidate, scopedFacts),
+    ...topicEvidenceErrors(result.candidate, scopedFacts, args.sources || []),
     ...capacityDensityErrors(result.candidate, scopedFacts)
   ];
   return { candidate: result.candidate, errors: [...new Set(errors)] };
@@ -238,8 +248,8 @@ function install() {
   originalStrictDensityProfile = strict.strictDensityProfile;
   strict.strictPrompt = coherentPrompt;
   strict.validateStrictCandidate = coherentValidate;
-  // Resilient finalizer reads this exported function dynamically, so its final
-  // density gate now uses per-source capacity too instead of total fact count.
+  // Resilient finalizer reads this exported function dynamically. targetPoints is
+  // retained only as planning capacity; output no longer has a bullet minimum.
   strict.strictDensityProfile = coherentDensityProfile;
   installed = true;
   return true;
@@ -254,6 +264,7 @@ module.exports = {
   capacityDensityErrors,
   forcedDensityErrors,
   evidenceRelated,
+  sourceLiteralEvidence,
   slideCapacityForPoints,
   coherentDensityProfile,
   factualTitleClaim,

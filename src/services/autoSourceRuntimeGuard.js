@@ -3,6 +3,7 @@
 // Do not import this module from the explicit URL pipeline.
 
 const strict = require('./autoSourceStrictFinalizer');
+const sourceFilter = require('./sourceFilter');
 
 let installed = false;
 let originalValidateStrictCandidate = null;
@@ -14,6 +15,7 @@ const STOPWORDS = new Set([
   'di','ke','oleh','dalam','sebagai','lebih','juga','telah','sudah','sebuah','para','the','and','or','to','of','in','on',
   'for','with','from','is','are','was','were','will','can','could','has','have','had','a','an','of'
 ]);
+const DANGLING_TITLE_END = new Set(['yang','dan','atau','di','ke','dari','dengan','untuk','pada','oleh','sebagai']);
 
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '')
@@ -192,6 +194,50 @@ function isSameSlideEvidenceReuse(error) {
   return /duplicate:\s*evidence yang sama dipakai lebih dari sekali dalam satu slide\s*\(body\/bullet\)/i.test(String(error || ''));
 }
 
+function titleLanguageErrorIndex(error) {
+  const match = String(error || '').match(/^slide:(\d+):title:\s*copy tampil harus Bahasa Indonesia\.?$/i);
+  return match ? Number(match[1]) : null;
+}
+
+function titleFromIndonesianBody(body) {
+  const tokens = words(String(body || '').replace(/[.!?]+$/g, '').trim());
+  if (tokens.length < 3) return '';
+  const selected = tokens.slice(0, Math.min(8, tokens.length));
+  while (selected.length > 3 && DANGLING_TITLE_END.has(normalize(selected.at(-1)))) selected.pop();
+  const raw = selected.join(' ').replace(/[,;:\-–—]+$/g, '').trim();
+  if (!raw) return '';
+  return raw.charAt(0).toLocaleUpperCase('id-ID') + raw.slice(1);
+}
+
+function repairLanguageTitleErrors(content, errors = []) {
+  if (!content || !Array.isArray(content.slides)) return false;
+  let changed = false;
+  for (const error of errors || []) {
+    const slideIndex = titleLanguageErrorIndex(error);
+    if (slideIndex === null) continue;
+    const slide = content.slides[slideIndex];
+    if (!slide || sourceFilter.likelyEnglishDisplayText(slide.body)) continue;
+    const replacement = titleFromIndonesianBody(slide.body);
+    if (!replacement || sourceFilter.likelyEnglishDisplayText(replacement)) continue;
+
+    const bodyField = `slide:${slideIndex}:body`;
+    const titleField = `slide:${slideIndex}:title`;
+    const bodyClaim = (slide.claims || []).find(claim => String(claim?.field || '') === bodyField);
+    slide.title = replacement;
+    slide.claims = (slide.claims || []).filter(claim => String(claim?.field || '') !== titleField);
+    if (bodyClaim?.sourceId && bodyClaim?.evidence) {
+      slide.claims.push({
+        field: titleField,
+        text: replacement,
+        sourceId: bodyClaim.sourceId,
+        evidence: bodyClaim.evidence
+      });
+    }
+    changed = true;
+  }
+  return changed;
+}
+
 function filterRuntimeErrors(errors = [], content = {}, sources = []) {
   return (errors || []).filter(error => {
     if (safePointWidth(error, content)) return false;
@@ -212,8 +258,17 @@ function filterRuntimeErrors(errors = [], content = {}, sources = []) {
 
 function guardedValidateStrictCandidate(args = {}) {
   repairNumericEvidence(args.draft, args.sources || []);
-  const result = originalValidateStrictCandidate(args);
+  let result = originalValidateStrictCandidate(args);
   repairNumericEvidence(result?.candidate, args.sources || []);
+
+  // A technical/product title can be misclassified as English even when the
+  // grounded body is already natural Indonesian. Repair only the title from the
+  // Indonesian body and inherit the body claim's source/evidence, then revalidate.
+  if (repairLanguageTitleErrors(result?.candidate, result?.errors || [])) {
+    result = originalValidateStrictCandidate({ ...args, draft: result.candidate });
+    repairNumericEvidence(result?.candidate, args.sources || []);
+  }
+
   return {
     ...result,
     errors: [...new Set(filterRuntimeErrors(result?.errors || [], result?.candidate || args.draft, args.sources || []))]
@@ -244,6 +299,9 @@ module.exports = {
   filterRuntimeErrors,
   safePointWidth,
   isSameSlideEvidenceReuse,
+  titleLanguageErrorIndex,
+  titleFromIndonesianBody,
+  repairLanguageTitleErrors,
   POINT_TARGET_MAX,
   POINT_HARD_MAX
 };
