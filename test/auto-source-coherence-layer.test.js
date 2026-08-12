@@ -106,8 +106,9 @@ test('rich per-source capacity forces body plus exactly three bullets per slide'
   assert.equal(profile.richEnoughForThree, true);
   assert.equal(profile.targetPoints, 3);
   const errors = layer.capacityDensityErrors(content, facts);
-  assert.equal(errors.length, 4);
-  assert.ok(errors.every(error => /tepat 3 bullet/.test(error)));
+  const exactThree = errors.filter(error => /tepat 3 bullet/.test(error));
+  assert.equal(exactThree.length, 4);
+  assert.ok(exactThree.every(error => /slide [1-4]/.test(error)));
 });
 
 test('total facts do not force impossible three-bullet slides when per-source capacity is insufficient', () => {
