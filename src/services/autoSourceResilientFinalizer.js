@@ -88,17 +88,12 @@ function modelVersionSupportedBySource(claim, source) {
   return false;
 }
 
-function filterRecoverableErrors(errors = [], content = {}, sources = [], facts = []) {
-  const relaxedDensity = new Set(relaxedDensityErrors(content, facts));
+function filterRecoverableErrors(errors = [], content = {}, sources = []) {
   return errors.filter(error => {
     const text = String(error || '');
 
-    // Replace PR #176 exact 10-20 blocker with the resilient 8-24 hard range.
-    if (/^AUTO_SOURCE_DENSITY:\s+slide:\d+:body harus 10-20 kata/i.test(text)) {
-      const match = text.match(/slide:(\d+):body/i);
-      const bodyCount = words(content?.slides?.[Number(match?.[1])]?.body).length;
-      return bodyCount < 8 || bodyCount > 24;
-    }
+    // PR #176's exact 10-20 density error is replaced by relaxedDensityErrors().
+    if (/^AUTO_SOURCE_DENSITY:\s+slide:\d+:body harus 10-20 kata/i.test(text)) return false;
 
     // Model/version numbers are valid when the same entity+version exists in the same source context.
     if (/^AUTO_SOURCE_NUMERIC:/i.test(text)) {
@@ -107,17 +102,18 @@ function filterRecoverableErrors(errors = [], content = {}, sources = [], facts 
     }
 
     return true;
-  }).filter(error => {
-    if (!/^AUTO_SOURCE_DENSITY:/i.test(String(error || ''))) return true;
-    return relaxedDensity.has(error) || !/body harus/i.test(String(error || ''));
   });
 }
 
 function validateCandidate({ draft, sources, topic, format, contentService, facts }) {
   const result = strict.validateStrictCandidate({ draft, sources, topic, format, contentService, facts });
+  const errors = [
+    ...filterRecoverableErrors(result.errors, result.candidate, sources),
+    ...relaxedDensityErrors(result.candidate, facts)
+  ];
   return {
     candidate: result.candidate,
-    errors: [...new Set(filterRecoverableErrors(result.errors, result.candidate, sources, facts))]
+    errors: [...new Set(errors)]
   };
 }
 
@@ -202,6 +198,8 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       facts
     });
 
+    // Validation errors such as title-without-evidence and unsupported numeric fields
+    // get one bounded field repair BEFORE throwing away the whole draft.
     if (validation.errors.length && repairCount < MAX_TARGETED_REPAIRS) {
       const repaired = await tryTargetedRepair({
         openai,
