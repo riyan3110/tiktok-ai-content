@@ -26,6 +26,24 @@ function englishSource() {
   }];
 }
 
+function indonesianSource() {
+  return [{
+    url: 'https://example.test/mahasiswa-ai',
+    finalUrl: 'https://example.test/mahasiswa-ai',
+    title: 'AI Ubah Cara Mahasiswa Belajar',
+    text: [
+      'AI mulai dipakai mahasiswa untuk membantu memahami materi dan mencari penjelasan tambahan.',
+      'Dosen tetap berperan untuk memberi konteks dan memeriksa kualitas jawaban mahasiswa.',
+      'Hal tersebut disampaikan di hadapan lebih dari 10.000 mahasiswa baru Universitas Padjadjaran dalam perhelatan kampus.',
+      'Mahasiswa juga diingatkan untuk memeriksa kembali sumber sebelum memakai informasi dari AI.',
+      'Penggunaan AI di kampus perlu disertai literasi digital agar mahasiswa memahami batas kemampuan model.',
+      'Diskusi dengan dosen tetap dibutuhkan karena proses belajar tidak hanya bergantung pada jawaban otomatis.',
+      'Mahasiswa dapat menggunakan AI sebagai alat bantu dan bukan sebagai pengganti proses berpikir.',
+      'Kampus mendorong penggunaan teknologi yang tetap memperhatikan tanggung jawab akademik.'
+    ].join(' ')
+  }];
+}
+
 function candidate(format = 'Fakta singkat', firstBody = 'Perangkat Atlas mendukung profil lokal untuk workstation yang digunakan bersama.') {
   const sections = format === 'Listicle'
     ? ['ITEM 1', 'ITEM 2', 'ITEM 3', 'ITEM 4']
@@ -57,15 +75,11 @@ function responseFor(content) {
   return { choices: [{ message: { content: JSON.stringify({ slides: content.slides }) } }] };
 }
 
-function clientWith(responses) {
+function clientWith(response) {
   let calls = 0;
   return {
     get calls() { return calls; },
-    chat: { completions: { create: async () => {
-      const response = responses[Math.min(calls, responses.length - 1)];
-      calls += 1;
-      return response;
-    } } }
+    chat: { completions: { create: async () => { calls += 1; return response; } } }
   };
 }
 
@@ -76,31 +90,87 @@ async function withoutSemanticProvider(t) {
 }
 
 for (const format of ['Fakta singkat', 'Listicle']) {
-  test(`${format}: provider valid pada request pertama menghasilkan candidate grounded`, async t => {
+  test(`${format}: provider valid selesai dalam satu final rewrite`, async t => {
     await withoutSemanticProvider(t);
     const valid = candidate(format);
-    const client = clientWith([responseFor(valid)]);
+    const client = clientWith(responseFor(valid));
     const result = await finalizer.rewriteAllSourcesWithAi({
       generated: valid, sources: englishSource(), topic: 'Atlas Device', format, client
     });
     assert.deepEqual(result.slides, valid.slides);
-    assert.ok(client.calls >= 1 && client.calls <= finalizer.MAX_FINALIZE_ATTEMPTS);
-  });
-
-  test(`${format}: response kosong pertama pulih dengan fresh response valid kedua`, async t => {
-    await withoutSemanticProvider(t);
-    const valid = candidate(format);
-    const client = clientWith([
-      { choices: [{ message: { content: '' } }] },
-      responseFor(valid)
-    ]);
-    const result = await finalizer.rewriteAllSourcesWithAi({
-      generated: valid, sources: englishSource(), topic: 'Atlas Device', format, client
-    });
-    assert.equal(client.calls, 2);
-    assert.deepEqual(result.slides, valid.slides);
+    assert.equal(client.calls, 1);
+    assert.equal(finalizer.FAST_FINALIZE_ATTEMPTS, 1);
   });
 }
+
+test('provider output kosong langsung memakai source-only fallback tanpa retry panjang', async t => {
+  await withoutSemanticProvider(t);
+  const valid = candidate();
+  const client = clientWith({ choices: [{ message: { content: '' } }] });
+  const result = await finalizer.rewriteAllSourcesWithAi({
+    generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
+  });
+  assert.equal(client.calls, 1);
+  assert.equal(result.verificationStatus, 'source_based');
+  assert.equal(result.__urlSourceFallback, true);
+  assert.ok(result.slides.length >= 4);
+});
+
+test('malformed JSON langsung memakai source-only fallback tanpa request AI kedua', async t => {
+  await withoutSemanticProvider(t);
+  const valid = candidate();
+  const client = clientWith({ choices: [{ message: { content: '```json\n{"slides": [ broken\n```' } }] });
+  const result = await finalizer.rewriteAllSourcesWithAi({
+    generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
+  });
+  assert.equal(client.calls, 1);
+  assert.equal(result.__urlSourceFallback, true);
+  assert.equal(result.verificationStatus, 'source_based');
+});
+
+test('numeric mismatch seperti 10 ribuan tidak mematikan konten URL', async t => {
+  await withoutSemanticProvider(t);
+  const base = candidate();
+  const bad = {
+    ...base,
+    topic: 'AI Ubah Cara Mahasiswa Belajar',
+    slides: base.slides.map((slide, index) => ({ ...slide, claims: slide.claims.map(claim => ({ ...claim })) }))
+  };
+  bad.slides[0].body = '10 ribuan mahasiswa hadir dalam perhelatan kampus tersebut.';
+  bad.slides[0].claims[0] = {
+    field: 'slide:0:body',
+    text: bad.slides[0].body,
+    sourceId: 'source-1',
+    evidence: 'Hal tersebut disampaikan di hadapan lebih dari 10.000 mahasiswa baru Universitas Padjadjaran dalam perhelatan kampus.'
+  };
+  const client = clientWith(responseFor(bad));
+  const result = await finalizer.rewriteAllSourcesWithAi({
+    generated: bad,
+    sources: indonesianSource(),
+    topic: 'AI Ubah Cara Mahasiswa Belajar',
+    format: 'Fakta singkat',
+    client
+  });
+  assert.equal(client.calls, 1);
+  assert.equal(result.__urlSourceFallback, true);
+  assert.equal(result.verificationStatus, 'source_based');
+  assert.equal(JSON.stringify(result.slides).includes('10 ribuan mahasiswa hadir'), false);
+  assert.equal(finalizer.numericGroundingErrors(result).length, 0);
+});
+
+test('semantic rejection langsung turun ke source-only fallback', async t => {
+  const original = sourceFilter.auditClaimSemantics;
+  sourceFilter.auditClaimSemantics = async () => ['SEMANTIC_SUPPORT: slide:0:body tidak didukung evidence'];
+  t.after(() => { sourceFilter.auditClaimSemantics = original; });
+  const valid = candidate();
+  const client = clientWith(responseFor(valid));
+  const result = await finalizer.rewriteAllSourcesWithAi({
+    generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
+  });
+  assert.equal(client.calls, 1);
+  assert.equal(result.__urlSourceFallback, true);
+  assert.equal(result.verificationStatus, 'source_based');
+});
 
 test('fenced JSON valid dinormalisasi secara terbatas', () => {
   const valid = candidate();
@@ -124,38 +194,7 @@ test('object JSON yang sudah parsed diterima hanya bila shape slides valid', () 
   );
 });
 
-test('malformed fenced JSON pertama pulih dengan response valid kedua', async t => {
-  await withoutSemanticProvider(t);
-  const valid = candidate();
-  const client = clientWith([
-    { choices: [{ message: { content: '```json\n{"slides": [ broken\n```' } }] },
-    responseFor(valid)
-  ]);
-  const result = await finalizer.rewriteAllSourcesWithAi({
-    generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  });
-  assert.equal(client.calls, 2);
-  assert.deepEqual(result.slides, valid.slides);
-});
-
-test('semua response kosong atau malformed berhenti tepat pada bounded limit', async t => {
-  await withoutSemanticProvider(t);
-  const valid = candidate();
-  const client = clientWith([
-    { choices: [{ message: { content: '' } }] },
-    { choices: [{ message: { content: '```json\n{"slides": [' } }] },
-    { choices: [{ message: { content: '   ' } }] }
-  ]);
-  await assert.rejects(
-    finalizer.rewriteAllSourcesWithAi({ generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client }),
-    error => error.status === 422
-      && /provider output invalid/i.test(error.message)
-      && Array.isArray(error.validationErrors)
-  );
-  assert.equal(client.calls, finalizer.MAX_FINALIZE_ATTEMPTS);
-});
-
-test('numeric dan ordinal grounding membedakan cardinal dari urutan', () => {
+test('numeric dan ordinal grounding tetap menolak angka baru', () => {
   const checks = [
     ['Perangkat mendukung 14 profil.', 'Perangkat mendukung 14 profil.', true],
     ['Perangkat mendukung 15 profil.', 'Perangkat mendukung 14 profil.', false],
@@ -169,25 +208,3 @@ test('numeric dan ordinal grounding membedakan cardinal dari urutan', () => {
     }).length === 0, valid, `${text} <> ${evidence}`);
   }
 });
-
-for (const format of ['Fakta singkat', 'Listicle']) {
-  test(`${format}: angka hallucinated diberi feedback spesifik lalu corrected candidate lolos`, async t => {
-    await withoutSemanticProvider(t);
-    const invalid = candidate(format, 'Produk ke-14 perusahaan tersebut mendukung profil lokal untuk workstation bersama.');
-    invalid.slides[0].claims[0].text = invalid.slides[0].body;
-    const valid = candidate(format);
-    const prompts = [];
-    const client = {
-      chat: { completions: { create: async request => {
-        prompts.push(request.messages[1].content);
-        return prompts.length === 1 ? responseFor(invalid) : responseFor(valid);
-      } } }
-    };
-    const result = await finalizer.rewriteAllSourcesWithAi({
-      generated: valid, sources: englishSource(), topic: 'Atlas Device', format, client
-    });
-    assert.equal(prompts.length, 2);
-    assert.match(prompts[1], /ordinal|ke-14|angka.*evidence/i);
-    assert.equal(result.slides[0].body, valid.slides[0].body);
-  });
-}
