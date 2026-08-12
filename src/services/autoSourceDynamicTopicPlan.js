@@ -10,6 +10,11 @@ const GLUE_WORDS = new Set([
   'yang','dan','atau','dari','untuk','dengan','tentang','pada','dalam','ini','itu','adalah','merupakan','sebagai','oleh','ke','di','terhadap',
   'baru','terbaru','update','berita','news','latest','new','info','fakta','singkat','the','and','or','from','for','with','about','on','in','to','of'
 ]);
+const SUBJECT_NOISE = new Set([
+  'aplikasi','fitur','teknologi','berita','update','baru','terbaru','memperkenalkan','menghadirkan','meluncurkan','merilis','mengumumkan',
+  'hadapi','menghadapi','prioritaskan','menambahkan','memperbarui','launch','launches','launched','introduce','introduces','introduced',
+  'release','releases','released','announce','announces','announced','adds','updates','unveils','reveals'
+]);
 const MARKET_RE = /\b(?:saham|stock|stocks|share|shares|harga\s+saham|market|pasar|trading|perdagangan|investor|ticker|nasdaq|nyse)\b/i;
 
 function clean(value) {
@@ -56,6 +61,11 @@ function fallbackPlan(topic = '') {
     buffer = [];
   };
   for (const token of tokens) {
+    const key = normalize(token);
+    if (SUBJECT_NOISE.has(key) || GLUE_WORDS.has(key)) {
+      flush();
+      continue;
+    }
     const namedLike = /[a-z][A-Z]/.test(token)
       || /^[A-Z0-9]{2,}$/.test(token)
       || /^[A-Z][A-Za-z0-9.-]{2,}$/.test(token)
@@ -68,7 +78,7 @@ function fallbackPlan(topic = '') {
   return {
     rawTopic: cleanTopic,
     canonicalTopic: cleanTopic,
-    subjects: uniq(named.length ? named : contentTerms.slice(0, 2), 4),
+    subjects: uniq(named.length ? named : contentTerms.filter(term => !SUBJECT_NOISE.has(normalize(term))).slice(0, 2), 4),
     eventTerms: uniq(contentTerms, 8),
     searchQueries: uniq([
       cleanTopic,
