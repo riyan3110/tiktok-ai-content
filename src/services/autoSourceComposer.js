@@ -1,5 +1,6 @@
 const defaultContent = require('./content');
 const defaultAutoSourceFinalizer = require('./autoSourceFinalizer');
+const autoSourceValidation = require('./autoSourceValidation');
 const { sourceFacts } = require('./manualSourceFallback');
 
 const NUMBER_WORDS = new Map([
@@ -35,18 +36,8 @@ function numericConcepts(value) {
   }
   return concepts;
 }
-function numericGroundingErrors(content) {
-  const errors = [];
-  (content?.slides || []).forEach((slide, slideIndex) => {
-    (slide?.claims || []).forEach((claim, claimIndex) => {
-      const visible = numericConcepts(claim?.text);
-      const evidence = numericConcepts(claim?.evidence);
-      for (const concept of visible) {
-        if (!evidence.has(concept)) errors.push(`AUTO_SOURCE_NUMERIC: slide:${slideIndex}:claim:${claimIndex} angka/ordinal "${concept}" tidak didukung evidence yang sama.`);
-      }
-    });
-  });
-  return [...new Set(errors)];
+function numericGroundingErrors(content, sources = []) {
+  return autoSourceValidation.numericGroundingErrors(content, sources);
 }
 function genericCopyErrors(content) {
   const errors = [];
@@ -59,11 +50,13 @@ function genericCopyErrors(content) {
   return errors;
 }
 function validationErrors(contentService, generated, options, sources, finalizer = defaultAutoSourceFinalizer) {
-  const errors = [];
+  let errors = [];
   if (contentService.validateContent) errors.push(...contentService.validateContent(generated, { format: options.contentFormat, manualTopic: options.requestedTopic }));
   if (contentService.validateSourceGrounding) errors.push(...contentService.validateSourceGrounding(generated, options.sourceContext, sources));
-  errors.push(...numericGroundingErrors(generated), ...genericCopyErrors(generated));
+  errors.push(...numericGroundingErrors(generated, sources), ...genericCopyErrors(generated));
   if (finalizer?.richnessErrors) errors.push(...finalizer.richnessErrors(generated, sourceFacts(sources)));
+  if (finalizer?.filterFalsePositiveMetadataErrors) errors = finalizer.filterFalsePositiveMetadataErrors(errors, generated);
+  errors = autoSourceValidation.filterFalsePositives(errors, generated);
   return [...new Set(errors)];
 }
 
