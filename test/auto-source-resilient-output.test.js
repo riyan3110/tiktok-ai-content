@@ -54,17 +54,126 @@ test('angka biasa tidak diloloskan hanya karena ada angka lain di source', () =>
   assert.equal(finalizer.modelVersionSupportedBySource(claim, source), false);
 });
 
-test('prompt mewajibkan evidence untuk title faktual', () => {
+test('format waktu 23.57 diselaraskan ke 23:57 bila sumber memakai waktu yang sama', () => {
+  const content = {
+    slides: [{
+      section: 'KESIMPULAN',
+      title: 'Puncak gerhana malam ini',
+      body: 'Puncak gerhana diperkirakan terjadi pukul 23.57 WIB dan dapat diamati dari beberapa wilayah.',
+      points: ['Puncak terjadi malam hari', 'Waktu mengikuti sumber resmi', 'Pengamatan bergantung wilayah'],
+      claims: [{
+        field: 'slide:0:body',
+        text: 'Puncak gerhana diperkirakan terjadi pukul 23.57 WIB dan dapat diamati dari beberapa wilayah.',
+        sourceId: 'source-1',
+        evidence: 'Puncak gerhana dapat diamati pada malam hari.'
+      }]
+    }]
+  };
+  const sources = [{
+    title: 'Jadwal gerhana matahari total',
+    text: 'Puncak gerhana terjadi pukul 23:57 WIB menurut jadwal astronomi yang dipublikasikan. Pengamatan bergantung pada wilayah.'
+  }];
+  const repaired = finalizer.repairEquivalentTimeFormatting(content, sources);
+  assert.match(repaired.slides[0].body, /23:57 WIB/);
+  assert.match(repaired.slides[0].claims[0].text, /23:57 WIB/);
+  assert.match(repaired.slides[0].claims[0].evidence, /23:57 WIB/);
+});
+
+test('angka desimal tanpa konteks waktu tidak diubah menjadi format jam', () => {
+  const content = {
+    slides: [{
+      section: 'FAKTA UTAMA',
+      title: 'Nilai pengujian model',
+      body: 'Nilai pengujian model tercatat 23.57 pada metrik evaluasi internal yang dijelaskan sumber.',
+      points: ['Nilai berasal dari pengujian', 'Metrik dijelaskan sumber resmi', 'Angka tidak diubah'],
+      claims: [{
+        field: 'slide:0:body',
+        text: 'Nilai pengujian model tercatat 23.57 pada metrik evaluasi internal yang dijelaskan sumber.',
+        sourceId: 'source-1',
+        evidence: 'Nilai pengujian model tercatat 23.57 pada metrik evaluasi internal.'
+      }]
+    }]
+  };
+  const sources = [{ title: 'Evaluasi model', text: 'Nilai pengujian model tercatat 23.57 pada metrik evaluasi internal.' }];
+  const repaired = finalizer.repairEquivalentTimeFormatting(content, sources);
+  assert.match(repaired.slides[0].body, /23\.57/);
+  assert.doesNotMatch(repaired.slides[0].body, /23:57/);
+});
+
+test('error judul natural berulang dipetakan ke field title untuk repair', () => {
+  const content = {
+    slides: [
+      { title: 'Ask Maps hadir di Google Maps', body: 'Google memperkenalkan Ask Maps sebagai fitur baru untuk membantu eksplorasi informasi tempat.', points: [], claims: [] },
+      { title: 'Ask Maps hadir di Google Maps', body: 'Fitur ini memakai konteks Maps untuk menjawab pertanyaan pengguna tentang lokasi.', points: [], claims: [] }
+    ]
+  };
+  const fields = finalizer.resilientRecoveryFields(['slide:1:natural: judul mengulang slide 1.'], content);
+  assert.equal(fields.has('slide:1:title'), true);
+});
+
+test('duplicate canonical diarahkan ke claim field yang mengulang, bukan menggagalkan semua slide', () => {
+  const evidence = 'Sumber menjelaskan satu fakta yang sama untuk pengujian duplicate.';
+  const content = {
+    slides: [
+      {
+        title: 'Fakta pertama', body: 'Fakta pertama berasal dari sumber yang sama dan sudah dipakai.', points: [],
+        claims: [{ field: 'slide:0:body', text: 'Fakta pertama berasal dari sumber yang sama dan sudah dipakai.', sourceId: 'source-1', evidence }]
+      },
+      {
+        title: 'Fakta berikutnya', body: 'Fakta berikutnya masih memakai evidence canonical yang sama pada slide ini.', points: [],
+        claims: [{ field: 'slide:1:body', text: 'Fakta berikutnya masih memakai evidence canonical yang sama pada slide ini.', sourceId: 'source-1', evidence }]
+      }
+    ]
+  };
+  const fields = finalizer.resilientRecoveryFields(['slide:1:duplicate: fakta canonical mengulang slide sebelumnya.'], content);
+  assert.equal(fields.has('slide:1:body'), true);
+});
+
+test('judul duplicate dapat diperbaiki deterministik dari body grounded dan mendapat claim evidence', () => {
+  const evidence1 = 'Google memperkenalkan Ask Maps sebagai fitur baru di layanan Maps.';
+  const evidence2 = 'Ask Maps menggunakan konteks lokasi untuk membantu menjawab pertanyaan pengguna.';
+  const content = {
+    slides: [
+      {
+        title: 'Ask Maps hadir di Google Maps',
+        body: 'Google memperkenalkan Ask Maps sebagai fitur baru di layanan Maps untuk pengguna.',
+        points: [],
+        claims: [{ field: 'slide:0:body', text: 'Google memperkenalkan Ask Maps sebagai fitur baru di layanan Maps untuk pengguna.', sourceId: 'source-1', evidence: evidence1 }]
+      },
+      {
+        title: 'Ask Maps hadir di Google Maps',
+        body: 'Ask Maps menggunakan konteks lokasi untuk membantu menjawab pertanyaan pengguna tentang tempat.',
+        points: [],
+        claims: [{ field: 'slide:1:body', text: 'Ask Maps menggunakan konteks lokasi untuk membantu menjawab pertanyaan pengguna tentang tempat.', sourceId: 'source-2', evidence: evidence2 }]
+      }
+    ]
+  };
+  const repaired = finalizer.repairTitleOnlyErrors(content, ['slide:1:natural: judul mengulang slide 1.']);
+  assert.equal(repaired.changed, true);
+  assert.notEqual(repaired.candidate.slides[1].title, repaired.candidate.slides[0].title);
+  const claim = repaired.candidate.slides[1].claims.find(item => item.field === 'slide:1:title');
+  assert.ok(claim);
+  assert.equal(claim.sourceId, 'source-2');
+  assert.equal(claim.evidence, evidence2);
+});
+
+test('prompt mewajibkan evidence title, title unik, semua source, dan target density', () => {
   const generated = { slides: [slide('Produk ini memiliki konteks faktual yang cukup jelas untuk pembaca.')], topic: 'Produk AI' };
   const sources = [
     { title: 'Sumber satu', text: 'Produk AI memiliki beberapa kemampuan baru dan tersedia bertahap.' },
     { title: 'Sumber dua', text: 'Sumber kedua memberikan konteks tambahan yang berbeda dan relevan.' }
   ];
   const prompt = finalizer.prompt({ generated, sources, facts: facts(), format: 'Fakta singkat', topic: 'Produk AI', errors: [] });
-  assert.match(prompt, /TITLE EVIDENCE CONTRACT/i);
   assert.match(prompt, /claim title dengan field slide:X:title/i);
+  assert.match(prompt, /Setiap title wajib berbeda antar-slide/i);
   assert.match(prompt, /Target body tetap 10-20 kata/i);
   assert.match(prompt, /Hard layout hanya 8-24 kata/i);
+  assert.match(prompt, /Semua source terpilih tetap wajib menyumbang fakta visible/i);
+});
+
+test('resilient finalizer memberi dua kesempatan repair terarah tanpa loop tak terbatas', () => {
+  assert.equal(finalizer.MAX_TARGETED_REPAIRS, 2);
+  assert.equal(finalizer.MAX_COMPOSE_ATTEMPTS, 2);
 });
 
 test('production tetap mengunci Pakai URL sebelum memuat Auto Source dan memakai resilient finalizer', () => {
