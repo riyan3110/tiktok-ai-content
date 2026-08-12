@@ -22,7 +22,9 @@ const ENGLISH_REWRITES = [
   [/\bbermitra dengan\b/gi, 'partners with'],
   [/\bbermitra\b/gi, 'partners'],
   [/\bkemitraan\b/gi, 'partnership'],
+  [/\bpotensi\b/gi, 'potential'],
   [/\bmanfaat\b/gi, 'benefits'],
+  [/\bterhadap\b/gi, 'for'],
   [/\biklim\b/gi, 'climate'],
   [/\bcuaca\b/gi, 'weather'],
   [/\bpeluncuran\b/gi, 'launch'],
@@ -60,6 +62,17 @@ function englishRewrite(topic) {
   let value = String(topic || '').trim();
   for (const [pattern, replacement] of ENGLISH_REWRITES) value = value.replace(pattern, replacement);
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function relevanceVariants(topic) {
+  const clean = String(topic || '').trim().replace(/\s+/g, ' ');
+  const english = englishRewrite(clean);
+  const anchors = anchorQuery(clean);
+  return [...new Set([clean, english, anchors].map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function relevanceAcross(variants, value) {
+  return Math.max(0, ...(variants || []).map(variant => baseDiscovery.relevanceScore(variant, value)));
 }
 
 function expandedQueries(topic, category = '') {
@@ -117,12 +130,17 @@ function freshnessBoost(publishedAt, now = Date.now()) {
   return 0;
 }
 
-function fetchedScore(topic, source, candidate, factCount, now = Date.now()) {
-  const titleRelevance = baseDiscovery.relevanceScore(topic, source?.title || '');
-  const bodyRelevance = baseDiscovery.relevanceScore(topic, String(source?.text || '').slice(0, 5000));
+function fetchedScore(topic, source, candidate, factCount, now = Date.now(), variants = relevanceVariants(topic)) {
+  const titleRelevance = relevanceAcross(variants, source?.title || '');
+  const bodyRelevance = relevanceAcross(variants, String(source?.text || '').slice(0, 5000));
+  const searchRelevance = Math.max(
+    relevanceAcross(variants, candidate?.title || ''),
+    relevanceAcross(variants, candidate?.description || '')
+  );
   return baseDiscovery.candidateScore(topic, candidate)
     + titleRelevance * 5
     + bodyRelevance * 8
+    + searchRelevance * 2
     + Math.min(12, factCount) * 0.25
     + freshnessBoost(candidate?.publishedAt, now);
 }
@@ -138,7 +156,6 @@ function selectDiverseSources(fetched = [], maxSelected = MAX_SELECTED) {
   const bestScore = fetched[0]?.discovery?.score || 0;
   const eligible = fetched.filter(source => !(bestScore > 0 && source.discovery.score < bestScore * 0.4));
 
-  // First pass: one article per publisher whenever possible.
   for (const source of eligible) {
     const host = sourceHost(source);
     if (!host || usedHosts.has(host)) continue;
@@ -147,7 +164,6 @@ function selectDiverseSources(fetched = [], maxSelected = MAX_SELECTED) {
     if (selected.length >= maxSelected) return selected;
   }
 
-  // Second pass: fill only when there are not enough distinct publishers.
   for (const source of eligible) {
     if (selected.includes(source)) continue;
     selected.push(source);
@@ -171,6 +187,7 @@ async function discover({
   const cached = cache.get(key);
   if (cached && now() - cached.savedAt < CACHE_TTL_MS) return clone(cached.bundle);
 
+  const variants = relevanceVariants(cleanTopic);
   const queries = expandedQueries(cleanTopic, category);
   const groups = await mapLimit(queries, QUERY_CONCURRENCY, async query => {
     try {
@@ -186,10 +203,16 @@ async function discover({
   groups.flat().forEach(candidate => {
     const url = baseDiscovery.canonicalUrl(candidate?.url);
     if (!url || !baseDiscovery.candidateAllowed(url)) return;
+    const bilingualSearchRelevance = Math.max(
+      relevanceAcross(variants, candidate?.title || ''),
+      relevanceAcross(variants, candidate?.description || '')
+    );
     const value = {
       ...candidate,
       url,
-      searchScore: baseDiscovery.candidateScore(cleanTopic, candidate) + freshnessBoost(candidate?.publishedAt, now())
+      searchScore: baseDiscovery.candidateScore(cleanTopic, candidate)
+        + bilingualSearchRelevance * 2
+        + freshnessBoost(candidate?.publishedAt, now())
     };
     if (!unique.has(url) || value.searchScore > unique.get(url).searchScore) unique.set(url, value);
   });
@@ -204,11 +227,11 @@ async function discover({
     const source = await baseDiscovery.fetchCandidate(candidate, { sourceFetcher, fetchImpl });
     if (!source) return null;
     const combined = `${source.title || ''} ${String(source.text || '').slice(0, 6000)}`;
-    const relevance = baseDiscovery.relevanceScore(cleanTopic, combined);
-    const titleRelevance = baseDiscovery.relevanceScore(cleanTopic, source.title || '');
+    const relevance = relevanceAcross(variants, combined);
+    const titleRelevance = relevanceAcross(variants, source.title || '');
     const searchRelevance = Math.max(
-      baseDiscovery.relevanceScore(cleanTopic, candidate.title),
-      baseDiscovery.relevanceScore(cleanTopic, candidate.description)
+      relevanceAcross(variants, candidate.title),
+      relevanceAcross(variants, candidate.description)
     );
     if (relevance < minimumRelevance && titleRelevance < minimumRelevance && searchRelevance < minimumRelevance) return null;
     const factCount = sourceFacts([source]).length;
@@ -219,7 +242,7 @@ async function discover({
         provider: candidate.provider,
         query: candidate.query,
         publishedAt: candidate.publishedAt || null,
-        score: fetchedScore(cleanTopic, source, candidate, factCount, now()),
+        score: fetchedScore(cleanTopic, source, candidate, factCount, now(), variants),
         relevance: Math.max(relevance, titleRelevance, searchRelevance),
         factCount
       }
@@ -254,6 +277,8 @@ module.exports = {
   expandedQueries,
   anchorQuery,
   englishRewrite,
+  relevanceVariants,
+  relevanceAcross,
   freshnessBoost,
   selectDiverseSources,
   QUERY_CONCURRENCY,
