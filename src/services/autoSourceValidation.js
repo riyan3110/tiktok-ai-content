@@ -52,6 +52,10 @@ function tokens(value) {
   return normalize(value).split(/\s+/).filter(Boolean);
 }
 
+function phraseHasEntityLetters(parts) {
+  return parts.some(part => /[a-z]/i.test(part) && !FILLER.has(part));
+}
+
 function conceptSupportedByEntityContext(claimText, concept, source) {
   if (!source) return false;
   const sourceHaystack = sourceText(source);
@@ -65,13 +69,22 @@ function conceptSupportedByEntityContext(claimText, concept, source) {
     const token = parts[index];
     if (/[a-z]/i.test(token) && /\d/.test(token) && token.length >= 4 && sourceHaystack.includes(token)) return true;
 
+    const adjacentPairs = [
+      parts.slice(Math.max(0, index - 1), index + 1),
+      parts.slice(index, Math.min(parts.length, index + 2))
+    ];
+    for (const window of adjacentPairs) {
+      if (window.length !== 2 || !phraseHasEntityLetters(window)) continue;
+      const phrase = window.join(' ');
+      if (phrase.length >= 4 && sourceHaystack.includes(phrase)) return true;
+    }
+
     for (let radius = 1; radius <= 2; radius += 1) {
       const start = Math.max(0, index - radius);
       const end = Math.min(parts.length, index + radius + 1);
       const window = parts.slice(start, end);
       if (window.length < 2) continue;
-      const hasLetters = window.some(part => /[a-z]/i.test(part) && !FILLER.has(part));
-      if (!hasLetters) continue;
+      if (!phraseHasEntityLetters(window)) continue;
       const phrase = window.join(' ');
       if (phrase.length >= 5 && sourceHaystack.includes(phrase)) return true;
     }
@@ -106,9 +119,17 @@ function repairNearbyNumericEvidence(content, sources = []) {
       if (!missing.length) return;
 
       const source = sourceForClaim(sources, claim?.sourceId);
-      const rawSource = String(source?.text || '');
+      const originalSourceText = String(source?.text || '').trim();
+      const rawTitle = String(source?.title || '').replace(/\s+/g, ' ').trim();
       const rawEvidence = String(claim?.evidence || '').trim();
-      if (!rawSource || !rawEvidence) return;
+      if (!source || !originalSourceText || !rawEvidence) return;
+
+      const titleSupportsMissing = Boolean(rawTitle)
+        && missing.every(number => conceptSupportedByEntityContext(claim?.text, number.replace(/(?<=\d),(?=\d)/g, '.'), source));
+      const titleAlreadyInText = rawTitle && normalize(originalSourceText).includes(normalize(rawTitle));
+      const rawSource = titleSupportsMissing && !titleAlreadyInText
+        ? `${rawTitle}. ${originalSourceText}`
+        : originalSourceText;
 
       const sourceLower = rawSource.toLocaleLowerCase('id-ID');
       const evidenceLower = rawEvidence.toLocaleLowerCase('id-ID');
@@ -131,7 +152,10 @@ function repairNearbyNumericEvidence(content, sources = []) {
         const count = candidate.split(/\s+/).filter(Boolean).length;
         return count >= 4 && count <= 32 && missing.every(number => candidateNumbers.has(number));
       });
-      if (replacement) claim.evidence = replacement;
+      if (replacement) {
+        claim.evidence = replacement;
+        if (rawSource !== originalSourceText) source.text = rawSource;
+      }
     });
   });
   return content;
