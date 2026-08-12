@@ -24,7 +24,7 @@ function loadAutoSourceDependencies() {
     defaultSourceFetcher: require('./sourceFetcher'),
     autoSourceDiscovery: require('./autoSourceFastDiscovery'),
     autoSourceComposer: require('./autoSourceComposer'),
-    autoSourceStrictFinalizer: require('./autoSourceStrictFinalizer')
+    autoSourceResilientFinalizer: require('./autoSourceResilientFinalizer')
   };
 }
 
@@ -38,8 +38,8 @@ function install() {
   originalGenerateAndSave = generation.generateAndSave;
   generation.generateAndSave = async function generateAndSaveWithAutoSource(args = {}) {
     // HARD ISOLATION LOCK:
-    // Pakai URL stays on the exact pre-Auto-Source generation path from PR #155.
-    // Do not load Auto Source discovery/composer modules or rewrite any request args here.
+    // Pakai URL stays on its existing production path and is excluded before
+    // any Auto Source dependency is loaded or any request argument is rewritten.
     if (pakaiUrlRequested(args)) return originalGenerateAndSave(args);
     if (!autoSourceRequested(args)) return originalGenerateAndSave(args);
 
@@ -51,7 +51,7 @@ function install() {
       defaultSourceFetcher,
       autoSourceDiscovery,
       autoSourceComposer,
-      autoSourceStrictFinalizer
+      autoSourceResilientFinalizer
     } = loadAutoSourceDependencies();
     const sourceFetcher = args.sourceFetcher || defaultSourceFetcher;
     const discovery = await autoSourceDiscovery.discover({
@@ -70,15 +70,14 @@ function install() {
     const autoRoleGuard = {
       repairManualSourceRoles: async ({ options, sources: activeSources }) => {
         // AUTO SOURCE ONLY: every source selected by discovery remains active.
-        // Do not silently degrade multi-source synthesis to one source after a
-        // validation failure; the strict finalizer must repair the same bundle.
+        // Do not silently degrade multi-source synthesis to one source.
         return autoSourceComposer.compose({
           content: wrappedContent,
           previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
           options: { ...options, fastAutoSource: true },
           sources: activeSources,
           discovery: { ...discovery, sources: activeSources },
-          finalizer: autoSourceStrictFinalizer
+          finalizer: autoSourceResilientFinalizer
         });
       }
     };
