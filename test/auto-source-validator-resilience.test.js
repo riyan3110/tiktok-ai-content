@@ -51,7 +51,7 @@ test('numeric grounding still rejects invented shorthand that is not written in 
   assert.ok(errors.some(error => /24|7/.test(error)));
 });
 
-test('layout validation uses one generic range instead of source-specific body word gates', () => {
+test('layout validation uses one generic range independent of topic category', () => {
   const accepted = { slides: [
     slide('Konteks pertama', 'Sistem baru membantu perangkat membaca kondisi lingkungan secara langsung.', ['Sensor membaca kondisi sekitar', 'Data diproses di perangkat']),
     slide('Konteks kedua', 'Platform menggabungkan beberapa sinyal untuk menghasilkan respons yang lebih stabil.', ['Sinyal diproses secara lokal', 'Respons menyesuaikan kondisi sekitar']),
@@ -65,7 +65,7 @@ test('layout validation uses one generic range instead of source-specific body w
   assert.ok(autoSourceValidation.autoSourceLayoutErrors(rejected).some(error => /slide:1: body harus 8–24 kata/i.test(error)));
 });
 
-test('richness evaluates total slide information instead of rejecting a valid short body by topic type', () => {
+test('richness evaluates total slide information instead of a rigid source-specific body minimum', () => {
   const content = { slides: [
     slide('Konteks sistem utama', 'Sistem membaca beberapa sinyal untuk menentukan respons perangkat.', ['Sensor membaca kondisi sekitar', 'Proses berjalan di perangkat']),
     slide('Fungsi utama perangkat', 'Perangkat menggabungkan data sensor untuk menjaga respons tetap stabil.', ['Data sensor diproses lokal', 'Respons mengikuti kondisi terbaru']),
@@ -77,7 +77,7 @@ test('richness evaluates total slide information instead of rejecting a valid sh
   assert.equal(errors.some(error => /body terlalu tipis/i.test(error)), false);
 });
 
-test('same evidence can support different visible facts without being treated as duplicate automatically', () => {
+test('duplicate validation compares visible meaning rather than canonical evidence identity', () => {
   const evidence = 'Satu sumber menjelaskan fitur pemrosesan lokal sekaligus kontrol antarmuka baru.';
   const content = { slides: [
     slide('Pemrosesan lokal', 'Perangkat memproses sebagian data secara lokal untuk respons lebih cepat.', [], [{ field: 'slide:0:body', text: 'Perangkat memproses sebagian data secara lokal untuk respons lebih cepat.', sourceId: 'source-1', evidence }]),
@@ -86,10 +86,28 @@ test('same evidence can support different visible facts without being treated as
   assert.deepEqual(autoSourceValidation.autoSourceDuplicateErrors(content), []);
 });
 
-test('genuinely repeated visible facts are rejected even when source evidence differs', () => {
+test('genuinely repeated visible facts are rejected even when wording is slightly changed', () => {
   const content = { slides: [
     slide('Pemrosesan lokal', 'Perangkat memproses data secara lokal untuk respons yang lebih cepat.'),
     slide('Proses lokal perangkat', 'Perangkat memproses data lokal agar respons menjadi lebih cepat.')
   ] };
   assert.ok(autoSourceValidation.autoSourceDuplicateErrors(content).some(error => /mengulang fakta slide sebelumnya/i.test(error)));
+});
+
+test('generic validators produce the same outcome for unrelated topic labels', () => {
+  const bodies = [
+    'Sistem menggabungkan beberapa sinyal untuk menghasilkan respons yang lebih stabil.',
+    'Perangkat memproses data secara lokal agar hasil tersedia lebih cepat.',
+    'Platform menambahkan kontrol baru untuk mengatur informasi yang ditampilkan.'
+  ];
+  const labels = ['Perangkat komputasi', 'Teknologi kesehatan', 'Sistem transportasi'];
+  labels.forEach((label, index) => {
+    const content = { slides: [
+      slide(`${label} satu`, bodies[index], ['Sensor membaca kondisi sekitar', 'Data diproses secara lokal']),
+      slide(`${label} dua`, 'Pembaruan menambahkan fungsi baru tanpa mengganti seluruh sistem perangkat.', ['Fungsi baru tersedia bertahap', 'Sistem lama tetap digunakan']),
+      slide(`${label} tiga`, 'Antarmuka menyatukan informasi utama agar hasil lebih mudah dibaca pengguna.', ['Informasi tampil lebih ringkas', 'Kontrol tersedia dalam antarmuka']),
+      slide(`${label} empat`, 'Pengguna menerima hasil pemrosesan setelah sistem menyelesaikan analisis data utama.', ['Hasil mengikuti data terbaru', 'Analisis berjalan dalam sistem'])
+    ] };
+    assert.deepEqual(autoSourceValidation.autoSourceLayoutErrors(content), []);
+  });
 });
