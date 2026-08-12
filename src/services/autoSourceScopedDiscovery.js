@@ -73,6 +73,10 @@ function softSourceScore(topic = '', source = {}, plan = {}) {
   const contextHits = dynamicScope.contextHits(plan, combined).length;
   const eventHits = dynamicScope.eventHits(plan, combined).length;
 
+  // Version/model identity never becomes soft. Relax only the placement of event
+  // wording inside an article, not which model/version the article is about.
+  if (identity.hasSpecificIdentity(topic) && !identity.identityMatches(topic, combined)) return -1;
+
   // Event-shaped topics still need the same event ingredients. The relaxed
   // fallback merely allows those ingredients to appear across the article
   // instead of requiring them in one exact sentence/pair.
@@ -161,9 +165,6 @@ async function discover(options = {}) {
     const exactIdentity = baseSources.filter(source =>
       identity.identityMatches(topic, `${source?.title || ''} ${source?.text || ''}`)
     );
-    // Prefer exact version/model identity when available, but do not discard all
-    // otherwise relevant sources solely because punctuation/version formatting
-    // differs in the fetched article text.
     if (exactIdentity.length) baseSources = exactIdentity;
   }
 
