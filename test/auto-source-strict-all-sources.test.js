@@ -111,7 +111,7 @@ test('targeted repair hanya mengubah field yang ditargetkan', () => {
 test('production Auto Source tidak lagi turun dari multi-source ke satu source dan Pakai URL lock tetap ada', () => {
   const patchSource = fs.readFileSync(path.join(__dirname, '../src/services/autoSourcePatch.js'), 'utf8');
   assert.match(patchSource, /if \(pakaiUrlRequested\(args\)\) return originalGenerateAndSave\(args\);/);
-  assert.match(patchSource, /finalizer:\s*autoSourceStrictFinalizer/);
+  assert.match(patchSource, /finalizer:\s*autoSourceResilientFinalizer/);
   assert.doesNotMatch(patchSource, /\[activeSources\.length,\s*1\]/);
   assert.doesNotMatch(patchSource, /multi-source gagal; satu retry terakhir memakai sumber terkuat/i);
   assert.match(patchSource, /sources:\s*activeSources/);
