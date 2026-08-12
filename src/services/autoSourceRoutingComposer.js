@@ -3,14 +3,17 @@ const multi = require('./autoSourceMultiEntityTopic');
 const dynamicScope = require('./autoSourceDynamicScope');
 const topicPlanner = require('./autoSourceDynamicTopicPlan');
 const storyFocus = require('./autoSourceStoryFocus');
-const versioned = require('./autoSourceTopicLockedComposer');
-const multiEntity = require('./autoSourceMultiEntityComposer');
-const research = require('./autoSourceResearchComposer');
+const simple = require('./autoSourceSimpleComposer');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// Every request is scoped from the fresh runtime topic plan produced during
-// discovery. Before writing, the scoped article text is reduced to atomic,
-// substantive story facts so editorial side-notes cannot steal a slide.
+// One production path for every free-form topic:
+// accepted sources -> story facts -> simple writer -> fact-check/editor -> output.
+// Scope is used to rank/trim facts, never to turn a readable relevant article
+// into an empty generation merely because wording differs from the user query.
+
+function clean(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
 
 function normalizeFactSections(result, format = '') {
   if (String(format || '').toLocaleLowerCase('id-ID') !== 'fakta singkat') return result;
@@ -22,30 +25,142 @@ function normalizeFactSections(result, format = '') {
   };
 }
 
+function continuationFact(value = '') {
+  return /^(?:it|this|that|these|those|the\s+(?:option|feature|service|system|model|company|product|tool|reset|control)|ini|itu|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini|reset\s+ini)\b/i.test(clean(value));
+}
+
+function factRelevant(topic = '', fact = '', plan = {}, previousKept = false) {
+  if (!fact || storyFocus.editorialNoise(fact, plan) || storyFocus.marketSnapshot(fact, plan)) return false;
+  if (previousKept && continuationFact(fact)) return true;
+
+  if (identity.hasSpecificIdentity(topic)) return identity.identityMatches(topic, fact);
+  if (multi.hasMultiEntityTopic(topic)) return multi.matchedEntities(topic, fact).length > 0;
+
+  if (dynamicScope.eventLockRequired(plan)) {
+    return dynamicScope.eventLockSatisfied(plan, fact)
+      || dynamicScope.actionHits(plan, fact).length > 0
+      || dynamicScope.contextHits(plan, fact).length > 0;
+  }
+
+  if ((plan.subjects || []).length) return dynamicScope.subjectHits(plan, fact).length > 0;
+  if ((plan.eventTerms || []).length) return dynamicScope.eventHits(plan, fact).length > 0;
+  return true;
+}
+
+function titleAnchorsTopic(topic = '', source = {}, plan = {}) {
+  if (identity.hasSpecificIdentity(topic) || multi.hasMultiEntityTopic(topic)) return false;
+  const title = clean(source?.title || '');
+  if (!title) return false;
+  if (dynamicScope.eventLockRequired(plan)) return dynamicScope.eventLockSatisfied(plan, title);
+  if ((plan.subjects || []).length) return dynamicScope.subjectHits(plan, title).length > 0;
+  if ((plan.eventTerms || []).length) return dynamicScope.eventHits(plan, title).length > 0;
+  return false;
+}
+
+function readableFacts(topic = '', source = {}, plan = {}) {
+  const raw = storyFocus.atomicFacts(source?.text || '').map(clean).filter(Boolean);
+  const out = [];
+  const anchoredLead = titleAnchorsTopic(topic, source, plan);
+  let previousKept = false;
+  for (let index = 0; index < raw.length; index += 1) {
+    const fact = raw[index];
+    let keep = factRelevant(topic, fact, plan, previousKept);
+    // Some publishers omit the subject from the body after stating it in a very
+    // clear headline. Keep only the first four clean lead facts in that case.
+    if (!keep && anchoredLead && index < 4
+      && !storyFocus.editorialNoise(fact, plan)
+      && !storyFocus.marketSnapshot(fact, plan)) keep = true;
+    if (keep) out.push(fact);
+    previousKept = keep;
+  }
+  return out;
+}
+
+function eventNeighborhoodSource(topic = '', source = {}, plan = {}, maxFacts = 10) {
+  const facts = readableFacts(topic, source, plan);
+  if (!facts.length) return { ...source, text: '' };
+
+  let selected = facts.slice(0, maxFacts);
+  if (dynamicScope.eventLockRequired(plan)) {
+    let anchor = facts.findIndex(fact => dynamicScope.eventLockSatisfied(plan, fact));
+    if (anchor < 0) anchor = facts.findIndex(fact =>
+      dynamicScope.actionHits(plan, fact).length > 0 || dynamicScope.contextHits(plan, fact).length > 0
+    );
+    if (anchor < 0) anchor = 0;
+    const start = Math.max(0, anchor - 1);
+    selected = facts.slice(start, Math.min(facts.length, start + maxFacts));
+  }
+
+  return {
+    ...source,
+    text: selected.map(fact => /[.!?]$/.test(fact) ? fact : `${fact}.`).join(' '),
+    autoSourceFallback: {
+      mode: dynamicScope.eventLockRequired(plan) ? 'event-neighborhood' : 'article-lead',
+      keptFactCount: selected.length
+    }
+  };
+}
+
+function factCount(topic = '', source = {}, plan = {}) {
+  return readableFacts(topic, source, plan).length;
+}
+
+function prepareSources(topic = '', sources = [], plan = {}) {
+  const scoped = dynamicScope.scopeSources(topic, sources, plan);
+  const focused = storyFocus.focusSources(topic, scoped, plan);
+
+  const prepared = sources.map((original, index) => {
+    const current = focused[index] || { ...original, text: '' };
+    const fallback = eventNeighborhoodSource(topic, original, plan);
+    const currentCount = factCount(topic, current, plan);
+    const fallbackCount = factCount(topic, fallback, plan);
+    // Prefer tightly focused text when it still contains enough material.
+    // Otherwise keep the relevant factual neighborhood from the same article.
+    return currentCount >= 4 ? current : fallbackCount > currentCount ? fallback : current;
+  }).filter(source => clean(source?.text));
+
+  const totalFacts = prepared.reduce((sum, source) => sum + factCount(topic, source, plan), 0);
+  if (totalFacts >= 4) return prepared;
+
+  // Last factual rescue: widen only within the same discovery-approved articles.
+  // Relevance gates above still reject other stories/market side-notes.
+  return sources
+    .map(source => eventNeighborhoodSource(topic, source, plan, 14))
+    .filter(source => clean(source?.text));
+}
+
 async function compose(args = {}) {
   const topic = String(args?.options?.requestedTopic || args?.discovery?.topic || '').trim();
   const plan = args?.discovery?.topicPlan || topicPlanner.fallbackPlan(topic);
-  const scopedSources = dynamicScope.scopeSources(topic, args.sources || [], plan);
-  const focusedSources = storyFocus.focusSources(topic, scopedSources, plan);
-  const usableSources = focusedSources.filter(source => String(source?.text || '').trim());
+  const usableSources = prepareSources(topic, args.sources || [], plan);
+
   if (!usableSources.length) {
-    throw Object.assign(new Error('Auto Source menemukan artikel, tetapi tidak ada fakta berita yang tetap berada di konteks topik setelah dibaca.'), {
+    throw Object.assign(new Error('Auto Source tidak menemukan teks artikel yang dapat dipakai setelah sumber dibaca.'), {
       status: 422,
-      code: 'AUTO_SOURCE_STORY_FACTS_EMPTY'
+      code: 'AUTO_SOURCE_READABLE_FACTS_EMPTY'
     });
   }
+
   const scopedArgs = {
     ...args,
     sources: usableSources,
-    discovery: args.discovery ? { ...args.discovery, sources: usableSources, topicPlan: plan } : { topic, sources: usableSources, topicPlan: plan }
+    discovery: args.discovery
+      ? { ...args.discovery, sources: usableSources, topicPlan: plan }
+      : { topic, sources: usableSources, topicPlan: plan }
   };
 
-  let result;
-  if (identity.hasSpecificIdentity(topic)) result = await versioned.compose(scopedArgs);
-  else if (multi.hasMultiEntityTopic(topic)) result = await multiEntity.compose(scopedArgs);
-  else result = await research.compose(scopedArgs);
-
+  const result = await simple.compose(scopedArgs);
   return normalizeFactSections(result, args?.options?.contentFormat || 'Fakta singkat');
 }
 
-module.exports = { compose, normalizeFactSections };
+module.exports = {
+  compose,
+  normalizeFactSections,
+  continuationFact,
+  factRelevant,
+  titleAnchorsTopic,
+  readableFacts,
+  eventNeighborhoodSource,
+  factCount,
+  prepareSources
+};
