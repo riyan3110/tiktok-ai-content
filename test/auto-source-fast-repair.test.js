@@ -121,3 +121,66 @@ test('fast discovery runs independent query searches concurrently', async () => 
   });
   assert.ok(maxActive >= 2, `expected concurrent searches, got ${maxActive}`);
 });
+
+test('version number is allowed when exact model token exists in the same source', () => {
+  const content = {
+    slides: [{
+      title: 'Program keamanan baru OpenAI',
+      body: 'OpenAI memperkenalkan GPT-5.6-Cyber lewat program Daybreak dengan akses Blue dan Red.',
+      points: [],
+      claims: [{
+        field: 'slide:0:body',
+        text: 'OpenAI memperkenalkan GPT-5.6-Cyber lewat program Daybreak dengan akses Blue dan Red.',
+        sourceId: 'source-1',
+        evidence: 'OpenAI memperluas program keamanan siber Daybreak dengan dua tingkat akses, yaitu Blue dan Red.'
+      }]
+    }]
+  };
+  const sources = [{
+    title: 'OpenAI launches GPT-5.6-Cyber for Daybreak',
+    text: 'OpenAI memperkenalkan GPT-5.6-Cyber. Program keamanan siber Daybreak memiliki dua tingkat akses, Blue dan Red.'
+  }];
+  assert.deepEqual(finalizer.numericGroundingErrors(content, sources), []);
+});
+
+test('invented numeric shorthand remains rejected when absent from evidence and source', () => {
+  const content = {
+    slides: [{
+      title: 'Bantuan AI harian',
+      body: 'Bantuan 24/7 tersedia lewat AI.',
+      points: [],
+      claims: [{
+        field: 'slide:0:body',
+        text: 'Bantuan 24/7 tersedia lewat AI.',
+        sourceId: 'source-1',
+        evidence: 'Get everyday help from Google AI.'
+      }]
+    }]
+  };
+  const sources = [{ title: 'Google AI help', text: 'Get everyday help from Google AI.' }];
+  assert.equal(finalizer.numericGroundingErrors(content, sources).length, 2);
+});
+
+test('title and body may share product name when body adds substantive facts', () => {
+  const content = {
+    slides: [{
+      title: 'iQOO Neo 11 resmi meluncur',
+      body: 'iQOO Neo 11 membawa layar AMOLED baru, chipset flagship, dan baterai berkapasitas besar.',
+      points: []
+    }]
+  };
+  const errors = ['slide:0:body: copy mengulang title.'];
+  assert.deepEqual(finalizer.filterFalsePositiveDuplicateErrors(errors, content), []);
+});
+
+test('near-identical title and body are still rejected as duplicate', () => {
+  const content = {
+    slides: [{
+      title: 'iQOO Neo 11 resmi meluncur',
+      body: 'iQOO Neo 11 resmi meluncur hari ini.',
+      points: []
+    }]
+  };
+  const errors = ['slide:0:body: copy mengulang title.'];
+  assert.deepEqual(finalizer.filterFalsePositiveDuplicateErrors(errors, content), errors);
+});
