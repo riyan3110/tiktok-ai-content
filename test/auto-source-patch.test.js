@@ -18,7 +18,8 @@ const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourcePlanFinalizer',
   '../src/services/autoSourceStrictFinalizer',
   '../src/services/autoSourceComposer',
-  '../src/services/autoSourceSimpleComposer'
+  '../src/services/autoSourceSimpleComposer',
+  '../src/services/autoSourceVisualFit'
 ];
 
 function clearAutoSourceCaches() {
@@ -58,6 +59,7 @@ test('simple Auto Source loader does not install legacy strict/plan validator st
   const dependencies = autoSourcePatch.loadAutoSourceDependencies();
   assert.ok(dependencies.autoSourceDiscovery);
   assert.ok(dependencies.autoSourceSimpleComposer);
+  assert.ok(dependencies.autoSourceVisualFit);
   assert.equal('autoSourceComposer' in dependencies, false);
   assert.equal('autoSourcePlanFinalizer' in dependencies, false);
   assert.equal(require.cache[require.resolve('../src/services/autoSourceQualityLayer')], undefined);
