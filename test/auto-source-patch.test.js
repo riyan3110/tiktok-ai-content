@@ -15,6 +15,7 @@ const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourceExpandedDiscovery',
   '../src/services/autoSourceScopedDiscovery',
   '../src/services/autoSourceTopicIdentity',
+  '../src/services/autoSourceMultiEntityTopic',
   '../src/services/autoSourceQualityLayer',
   '../src/services/autoSourceRuntimeGuard',
   '../src/services/autoSourcePlanFinalizer',
@@ -23,6 +24,8 @@ const AUTO_SOURCE_MODULES = [
   '../src/services/autoSourceSimpleComposer',
   '../src/services/autoSourceResearchComposer',
   '../src/services/autoSourceTopicLockedComposer',
+  '../src/services/autoSourceMultiEntityComposer',
+  '../src/services/autoSourceRoutingComposer',
   '../src/services/autoSourceVisualFit'
 ];
 
@@ -58,7 +61,7 @@ test('automatic AI topic mode without URLs is not hijacked by manual auto source
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
 });
 
-test('topic-locked research loader does not install legacy strict/plan validator stack', () => {
+test('scoped Auto Source loader does not install legacy strict/plan validator stack', () => {
   clearAutoSourceCaches();
   const dependencies = autoSourcePatch.loadAutoSourceDependencies();
   assert.ok(dependencies.autoSourceDiscovery);

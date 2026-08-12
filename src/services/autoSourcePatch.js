@@ -26,7 +26,7 @@ function loadAutoSourceDependencies() {
     defaultContent: require('./content'),
     defaultSourceFetcher: require('./sourceFetcher'),
     autoSourceDiscovery: require('./autoSourceScopedDiscovery'),
-    autoSourceComposer: require('./autoSourceTopicLockedComposer'),
+    autoSourceComposer: require('./autoSourceRoutingComposer'),
     autoSourceVisualFit: require('./autoSourceVisualFit')
   };
 }
