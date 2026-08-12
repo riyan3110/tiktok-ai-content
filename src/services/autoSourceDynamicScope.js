@@ -101,9 +101,6 @@ function eventLockRequired(plan = {}) {
 function requiredContextMatches(plan = {}) {
   const contexts = plan.contextTerms || [];
   if (!contexts.length) return 0;
-  // AI-planned context terms are usually language/wording alternatives. The
-  // deterministic fallback emits literal pieces of the user's phrase, so two
-  // pieces are required when available to avoid matching a generic word alone.
   if (plan.planner === 'fallback') return Math.min(2, contexts.length);
   return 1;
 }
@@ -180,9 +177,6 @@ function evidenceInScope(topic = '', evidence = '', source = {}, plan = {}) {
   if (eventLockRequired(plan)) {
     if (!eventAlignedSource(plan, source)) return false;
     if (eventLockSatisfied(plan, text)) return true;
-    // If the article headline itself is locked to the requested event, allow
-    // supporting lines that still mention the requested subject or event
-    // context. scopeSource() separately limits this to the event neighborhood.
     if (eventLockSatisfied(plan, source?.title || '')) {
       if (subjectMatches.length) return true;
       if (contextHits(plan, text).length) return true;
@@ -224,8 +218,6 @@ function scopeEventSource(topic = '', source = {}, plan = {}) {
   const titleLocked = eventLockSatisfied(plan, source?.title || '');
 
   if (titleLocked) {
-    // A headline that contains both the requested action and context is a strong
-    // story anchor. Keep the opening core, then any later direct event anchors.
     for (let index = 0; index < Math.min(4, rows.length); index += 1) keepIndexes.add(index);
   }
 
@@ -234,9 +226,8 @@ function scopeEventSource(topic = '', source = {}, plan = {}) {
     const contextual = titleLocked && (subjectHits(plan, sentence).length || contextHits(plan, sentence).length);
     if (!direct && !contextual) return;
     keepIndexes.add(index);
-    for (const nearby of [index - 2, index - 1, index + 1, index + 2]) {
-      if (nearby >= 0 && nearby < rows.length) keepIndexes.add(nearby);
-    }
+    const next = rows[index + 1];
+    if (next && (continuationSentence(next) || contextHits(plan, next).length)) keepIndexes.add(index + 1);
   });
 
   const kept = rows.filter((sentence, index) => keepIndexes.has(index) && !identity.relativeTimeMetadata(sentence));
