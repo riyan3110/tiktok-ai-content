@@ -26,7 +26,7 @@ function normalizeFactSections(result, format = '') {
 }
 
 function continuationFact(value = '') {
-  return /^(?:it|this|that|these|those|the\s+(?:option|feature|service|system|model|company|product|tool)|ini|itu|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini)\b/i.test(clean(value));
+  return /^(?:it|this|that|these|those|the\s+(?:option|feature|service|system|model|company|product|tool|reset|control)|ini|itu|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini|reset\s+ini)\b/i.test(clean(value));
 }
 
 function factRelevant(topic = '', fact = '', plan = {}, previousKept = false) {
