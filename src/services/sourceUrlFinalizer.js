@@ -22,6 +22,9 @@ const TOPIC_STOP = new Set([
   'yang','dan','atau','dari','untuk','dengan','pada','dalam','adalah','ini','itu','sebagai','oleh','akan','bisa','dapat','telah','sudah','lebih','juga',
   'cara','ubah','terbaru','baru','update','fakta','tips','tutorial','edukasi','pendidikan','teknologi','artificial','intelligence'
 ]);
+const CONTEXT_STOP = new Set([
+  ...TOPIC_STOP, 'ai','indonesia','perusahaan','orang','tahun','persen','sumber','survei','data','menurut','menyebut','mengatakan','menilai','disebut'
+]);
 const DANGLING_END = new Set([
   'yang','dan','atau','di','ke','dari','dengan','oleh','pada','untuk','sebagai','secara','adalah','merupakan','berada','memiliki','menjadi','termasuk','maupun','karena','agar','jika','bila','saat','ketika','dalam'
 ]);
@@ -73,7 +76,13 @@ function targetSections(generated, format, facts, sources = [], topic = '') {
 }
 
 function topicTerms(value) {
-  return [...new Set(normalize(value).split(' ').filter(token => (token.length >= 3 || token === 'ai') && !TOPIC_STOP.has(token)))];
+  const tokens = [...new Set(normalize(value).split(' ').filter(token => (token.length >= 3 || token === 'ai') && !TOPIC_STOP.has(token)))];
+  const specific = tokens.filter(token => token !== 'ai');
+  return specific.length ? specific : tokens;
+}
+
+function contextTerms(value) {
+  return new Set(normalize(value).split(' ').filter(token => token.length >= 4 && !CONTEXT_STOP.has(token)));
 }
 
 function overlapScore(left, right) {
@@ -82,6 +91,14 @@ function overlapScore(left, right) {
   let score = 0;
   for (const token of a) if (b.has(token)) score += 1;
   return score;
+}
+
+function continuityScore(left, right) {
+  const a = contextTerms(left);
+  const b = contextTerms(right);
+  let shared = 0;
+  for (const token of a) if (b.has(token)) shared += 1;
+  return shared;
 }
 
 function endsDangling(value) {
@@ -97,9 +114,19 @@ function cleanEvidence(value) {
   return text;
 }
 
-// Rank independently inside each URL, then keep only a local context window
-// around strong topic/title matches. This keeps all supplied sourceIds while
-// excluding far-away related/recommended blocks from the eligible fact bank.
+function scoredFacts(entries, wanted) {
+  return entries.map((entry, index) => {
+    const tokenSet = new Set(normalize(entry.evidence).split(' ').filter(Boolean));
+    const overlap = wanted.filter(term => tokenSet.has(term)).length;
+    return { entry, index, overlap };
+  });
+}
+
+// Keep the contiguous main-topic segment of every supplied URL. Direct topic
+// matches are anchors. Nearby context is admitted only when it has lexical
+// continuity with an accepted fact; once continuity breaks, unrelated related-
+// article/recommendation blocks cannot enter merely because the same page also
+// contains generic words such as "AI" or "Indonesia".
 function relevantSourceFacts(sources, facts, topic) {
   const bySource = new Map();
   for (const fact of facts) {
@@ -115,48 +142,40 @@ function relevantSourceFacts(sources, facts, topic) {
     const sourceId = `source-${sourceIndex + 1}`;
     const entries = bySource.get(sourceId) || [];
     if (!entries.length) continue;
-    const wanted = topicTerms(`${topic} ${source?.title || ''}`);
-    if (!wanted.length) {
-      selected.push(...entries.slice(0, 18));
+
+    let wanted = topicTerms(topic);
+    let scored = scoredFacts(entries, wanted);
+    let anchors = scored.filter(item => item.overlap > 0);
+    if (!anchors.length) {
+      wanted = topicTerms(source?.title || '');
+      scored = scoredFacts(entries, wanted);
+      anchors = scored.filter(item => item.overlap > 0);
+    }
+
+    // If neither manual topic nor article title has a lexical anchor, keep a
+    // bounded early article block so a supplemental URL is still represented.
+    if (!anchors.length) {
+      selected.push(...entries.slice(0, 12));
       continue;
     }
 
-    const scored = entries.map((entry, index) => {
-      const tokenSet = new Set(normalize(entry.evidence).split(' ').filter(Boolean));
-      const overlap = wanted.filter(term => tokenSet.has(term)).length;
-      return { entry, index, overlap };
-    });
-    const threshold = wanted.length >= 3 ? 2 : 1;
-    let anchors = scored.filter(item => item.overlap >= threshold)
-      .sort((a, b) => b.overlap - a.overlap || a.index - b.index)
-      .slice(0, 10);
-    if (!anchors.length) {
-      const max = Math.max(...scored.map(item => item.overlap));
-      if (max > 0) anchors = scored.filter(item => item.overlap === max).slice(0, 6);
-    }
-
-    if (!anchors.length) {
-      selected.push(...entries.slice(0, 14));
-      continue;
-    }
-
-    const keepIndexes = new Set();
-    for (const anchor of anchors) {
-      for (let offset = -2; offset <= 2; offset += 1) {
-        const index = anchor.index + offset;
-        if (index >= 0 && index < entries.length) keepIndexes.add(index);
+    const accepted = new Set(anchors.map(item => item.index));
+    // Two bounded continuity expansions are enough to keep explanatory context
+    // without walking through a whole page into recommendation sections.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const add = [];
+      for (let index = 0; index < entries.length; index += 1) {
+        if (accepted.has(index)) continue;
+        const neighbors = [index - 1, index + 1].filter(value => accepted.has(value));
+        if (!neighbors.length) continue;
+        if (neighbors.some(value => continuityScore(entries[index].evidence, entries[value].evidence) > 0)) add.push(index);
       }
+      if (!add.length) break;
+      add.forEach(index => accepted.add(index));
     }
-    const orderedIndexes = [...keepIndexes].sort((a, b) => a - b);
-    const local = orderedIndexes.map(index => entries[index]).filter(Boolean);
-    const seen = new Set();
-    const pool = local.filter(entry => {
-      const key = `${entry.sourceId}::${normalize(entry.evidence)}`;
-      if (!normalize(entry.evidence) || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(0, 28);
-    selected.push(...(pool.length ? pool : entries.slice(0, 14)));
+
+    const pool = [...accepted].sort((a, b) => a - b).map(index => entries[index]).filter(Boolean).slice(0, 28);
+    selected.push(...pool);
   }
   return selected.length ? selected : facts.map(fact => ({ ...fact, evidence: cleanEvidence(fact?.evidence) })).filter(fact => fact.evidence);
 }
