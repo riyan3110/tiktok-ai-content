@@ -3,9 +3,20 @@ const config = require('../config');
 const sourceFilter = require('./sourceFilter');
 const manualSourceDedupe = require('./manualSourceDedupe');
 const manualSourceFallback = require('./manualSourceFallback');
-const { sourceFacts, requestedListicleCount, sourceRichness, expandEvidenceForBody } = manualSourceFallback;
+const {
+  sourceFacts,
+  requestedListicleCount,
+  sourceRichness,
+  expandEvidenceForBody,
+  compactPoint,
+  naturalTitleFromEvidence,
+  isLowValueEvidence
+} = manualSourceFallback;
 
+// Keep the legacy exported ceiling for compatibility, but Pakai URL now only
+// performs one final rewrite pass. Any failure then falls back to source text.
 const MAX_FINALIZE_ATTEMPTS = 3;
+const FAST_FINALIZE_ATTEMPTS = 1;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/\s+/g, ' ');
 const visibleCount = slide => [slide?.title, slide?.body, ...(Array.isArray(slide?.points) ? slide.points : [])]
@@ -212,37 +223,151 @@ function localLayoutErrors(content) {
   return errors;
 }
 
+function rawSeedFact(source, sourceIndex) {
+  const sourceId = `source-${sourceIndex + 1}`;
+  const text = String(source?.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const sentences = text.split(/(?<=[.!?])\s+/).map(value => value.trim()).filter(Boolean);
+  const sentence = sentences.find(value => words(value).length >= 3 && !isLowValueEvidence(value));
+  const evidence = sentence || words(text).slice(0, 24).join(' ');
+  if (!evidence || words(evidence).length < 3) return null;
+  return { sourceId, evidence };
+}
+
+function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '', format = 'Fakta singkat' } = {}) {
+  const cleanFacts = sourceFacts(sources);
+  const perSource = sources.map((source, index) => {
+    const sourceId = `source-${index + 1}`;
+    const facts = cleanFacts.filter(fact => fact.sourceId === sourceId);
+    if (facts.length) return facts;
+    const raw = rawSeedFact(source, index);
+    return raw ? [raw] : [];
+  });
+  if (perSource.some(queue => !queue.length)) return null;
+
+  const allFacts = [];
+  const maxDepth = Math.max(...perSource.map(queue => queue.length));
+  for (let depth = 0; depth < maxDepth; depth += 1) {
+    for (const queue of perSource) if (queue[depth]) allFacts.push(queue[depth]);
+  }
+  if (!allFacts.length) return null;
+
+  const resolvedTopic = String(topic || generated?.topic || sources?.[0]?.title || 'Ringkasan sumber').trim();
+  const sections = targetSections(generated, format, allFacts, sources, resolvedTopic);
+  const slideCount = Math.max(4, Math.min(5, sections.length || 4));
+  const used = new Set();
+  const selected = [];
+  for (const fact of allFacts) {
+    const key = `${fact.sourceId}::${normalize(fact.evidence)}`;
+    if (used.has(key)) continue;
+    used.add(key);
+    selected.push(fact);
+    if (selected.length >= slideCount) break;
+  }
+  while (selected.length < slideCount) selected.push(allFacts[selected.length % allFacts.length]);
+
+  const slides = selected.map((fact, slideIndex) => {
+    const sourceIndex = Number(String(fact.sourceId).match(/^source-(\d+)$/)?.[1]) - 1;
+    const source = sources[sourceIndex] || {};
+    const bodyEvidence = expandEvidenceForBody(source.text, fact.evidence, 6, 24) || fact.evidence;
+    const body = words(bodyEvidence).slice(0, 24).join(' ').trim();
+    const title = naturalTitleFromEvidence(fact.evidence) || words(fact.evidence).slice(0, 8).join(' ');
+    return {
+      section: sections[slideIndex] || defaultSections(format, slideCount)[slideIndex],
+      title: words(title).slice(0, 12).join(' '),
+      body,
+      points: [],
+      claims: [
+        { field: `slide:${slideIndex}:title`, text: words(title).slice(0, 12).join(' '), sourceId: fact.sourceId, evidence: bodyEvidence },
+        { field: `slide:${slideIndex}:body`, text: body, sourceId: fact.sourceId, evidence: bodyEvidence }
+      ]
+    };
+  });
+
+  const covered = new Set(slides.flatMap(slide => slide.claims.map(claim => claim.sourceId)));
+  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+    const sourceId = `source-${sourceIndex + 1}`;
+    if (covered.has(sourceId)) continue;
+    const fact = perSource[sourceIndex][0];
+    let point = compactPoint(fact.evidence);
+    if (!point) point = words(fact.evidence).slice(0, 7).join(' ');
+    if (words(point).length < 3) continue;
+    const slide = slides.find(item => item.points.length < 3);
+    if (!slide) return null;
+    const slideIndex = slides.indexOf(slide);
+    const pointIndex = slide.points.length;
+    slide.points.push(point);
+    slide.claims.push({ field: `slide:${slideIndex}:point:${pointIndex}`, text: point, sourceId, evidence: fact.evidence });
+    covered.add(sourceId);
+  }
+
+  const result = syncTop({
+    ...generated,
+    topic: resolvedTopic,
+    effectiveContentFormat: generated?.effectiveContentFormat || format,
+    verificationStatus: 'source_based',
+    unsupportedClaims: [],
+    slides,
+    __urlSourceFallback: true
+  });
+  const safetyErrors = [
+    ...manualSourceFallback.sourceCoverageErrors(result, sources),
+    ...numericGroundingErrors(result),
+    ...localLayoutErrors(result)
+  ];
+  return safetyErrors.length ? null : result;
+}
+
+function buildUrlSourceFallback({ generated = {}, sources = [], topic = '', format = 'Fakta singkat' } = {}) {
+  try {
+    const deterministic = manualSourceFallback.buildDeterministicSourceFallback({
+      generated,
+      sources,
+      topic,
+      requestedFormat: format
+    });
+    const candidate = syncTop({ ...deterministic, verificationStatus: 'source_based', __urlSourceFallback: true });
+    const safetyErrors = [
+      ...manualSourceFallback.sourceCoverageErrors(candidate, sources),
+      ...numericGroundingErrors(candidate),
+      ...localLayoutErrors(candidate)
+    ];
+    if (!safetyErrors.length) return candidate;
+  } catch {}
+  return emergencySourceOnlyFallback({ generated, sources, topic, format });
+}
+
 async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', format = 'Fakta singkat', mode = 'manual', contentService, client } = {}) {
-  const facts = sourceFacts(sources);
-  if (!sources.length || !facts.length) throw Object.assign(new Error('Tidak ada fakta sumber yang dapat dipakai final AI rewrite.'), { status: 422 });
-  const missingSources = sources.map((_, index) => `source-${index + 1}`).filter(sourceId => !facts.some(fact => fact.sourceId === sourceId));
-  if (missingSources.length) throw Object.assign(new Error(`URL berikut tidak memiliki fakta yang dapat dipakai: ${missingSources.join(', ')}`), { status: 422 });
+  if (!sources.length) throw Object.assign(new Error('Tidak ada URL sumber yang dapat dipakai.'), { status: 422 });
+
+  const cleanedFacts = sourceFacts(sources);
+  const seedFacts = cleanedFacts.length
+    ? cleanedFacts
+    : sources.map((source, index) => rawSeedFact(source, index)).filter(Boolean);
+  if (!seedFacts.length) throw Object.assign(new Error('URL tidak menghasilkan teks sumber yang dapat dipakai.'), { status: 422 });
 
   const effectiveFormat = generated?.effectiveContentFormat || format || 'Fakta singkat';
   const resolvedTopic = String(topic || generated?.topic || sources?.[0]?.title || 'Ringkasan sumber').trim();
-  const sections = targetSections(generated, effectiveFormat, facts, sources, resolvedTopic);
+  const sections = targetSections(generated, effectiveFormat, seedFacts, sources, resolvedTopic);
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   let draft = { ...generated, topic: resolvedTopic };
   let lastErrors = [];
-  let bestValid = null;
-  let bestValidScore = -1;
 
-  for (let attempt = 0; attempt < MAX_FINALIZE_ATTEMPTS; attempt += 1) {
-    const attemptFeedback = lastErrors;
+  for (let attempt = 0; attempt < FAST_FINALIZE_ATTEMPTS; attempt += 1) {
     let response;
     try {
       response = await openai.chat.completions.create({
         model: config.aiModel,
         messages: [
           { role: 'system', content: 'Anda editor final carousel source-grounded. Semua URL wajib dipakai. Hasil harus natural seperti tulisan manusia: judul spesifik, body kalimat utuh, bullet fakta utuh. Metadata, headline terkait, fragment, dan fakta di luar evidence dilarang.' },
-          { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors }) }
+          { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts: seedFacts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors }) }
         ],
         response_format: { type: 'json_object' }
       });
       draft = syncTop({ ...draft, slides: parseSlides(response, sections), verificationStatus: 'source_based' });
     } catch (error) {
       lastErrors = [`PROVIDER_OUTPUT_INVALID: provider output invalid: ${error.message}`];
-      continue;
+      break;
     }
 
     const checked = sourceFilter.validateVerifiedContent(draft, { slides: draft.slides }, {
@@ -250,7 +375,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       format: effectiveFormat,
       manualTopic: mode === 'manual' ? resolvedTopic : '',
       sources,
-      autoSourceTopic: mode === 'ai'
+      autoSourceTopic: false
     });
     const deterministicErrors = [
       ...numericGroundingErrors(draft),
@@ -262,38 +387,30 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     if (deterministicErrors.length) {
       lastErrors = [...new Set(deterministicErrors)];
       draft = checked.content || draft;
-      continue;
+      break;
     }
 
     const semanticErrors = await sourceFilter.auditClaimSemantics(openai, checked.content, resolvedTopic, effectiveFormat);
     if (semanticErrors.length) {
       lastErrors = semanticErrors;
       draft = checked.content;
-      continue;
+      break;
     }
 
-    const candidate = syncTop(checked.content);
-    const score = qualityScore(candidate);
-    if (score > bestValidScore) {
-      bestValid = candidate;
-      bestValidScore = score;
-    }
-
-    const repairedHardFailure = attemptFeedback.some(error => /PROVIDER_OUTPUT_INVALID|NUMERIC_GROUNDING|Angka pada claim tidak didukung evidence/i.test(error));
-    if (repairedHardFailure) return candidate;
-
-    const goalErrors = contentShapeGoalErrors(candidate, facts);
-    if (!goalErrors.length) return candidate;
-    if (attempt < MAX_FINALIZE_ATTEMPTS - 1) {
-      lastErrors = goalErrors;
-      draft = candidate;
-      continue;
-    }
+    // Once the candidate is grounded, return immediately. Richness is a quality
+    // target, not a reason to make Pakai URL perform extra AI rewrite rounds.
+    return syncTop(checked.content);
   }
 
-  if (bestValid) return syncTop(bestValid);
+  const fallback = buildUrlSourceFallback({
+    generated: draft,
+    sources,
+    topic: resolvedTopic,
+    format: effectiveFormat
+  });
+  if (fallback) return fallback;
 
-  throw Object.assign(new Error(`Final AI rewrite semua URL belum lolos: ${lastErrors[0] || 'validasi sumber gagal'}`), {
+  throw Object.assign(new Error(`Final AI rewrite semua URL belum lolos: ${lastErrors[0] || 'URL tidak menyediakan teks yang dapat dipakai dengan aman'}`), {
     status: 422,
     validationErrors: lastErrors
   });
@@ -311,5 +428,8 @@ module.exports = {
   densityGoalErrors,
   qualityScore,
   densityScore,
+  buildUrlSourceFallback,
+  emergencySourceOnlyFallback,
+  FAST_FINALIZE_ATTEMPTS,
   MAX_FINALIZE_ATTEMPTS
 };
