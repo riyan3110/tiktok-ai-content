@@ -103,7 +103,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       format: effectiveFormat,
       manualTopic: resolvedTopic,
       sources,
-      autoSourceTopic: false
+      autoSourceTopic: true
     });
     const candidate = compactOverlongPoints(checked.content || draft);
     const deterministicErrors = [
