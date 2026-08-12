@@ -124,3 +124,41 @@ test('invalid bullet can be removed without destroying the body or whole carouse
   assert.equal(cleaned.slides[0].points.length, 0);
   assert.equal(cleaned.slides[0].body, slides[0].body);
 });
+
+test('production simple flow uses only writer plus fact-checker and returns grounded content', async () => {
+  const packets = simple.buildSlidePackets(sources, 'Aplikasi Gemini', 'Fakta singkat');
+  const slides = packets.map((packet, index) => {
+    const body = packet.evidence[0];
+    return {
+      title: `Fakta Gemini ${index + 1}`,
+      body,
+      points: [],
+      claims: [{ field: `slide:${index}:body`, text: body, sourceId: packet.primarySourceId, evidence: body }]
+    };
+  });
+  let calls = 0;
+  const client = {
+    chat: {
+      completions: {
+        create: async () => {
+          calls += 1;
+          return { choices: [{ message: { content: { slides } } }] };
+        }
+      }
+    }
+  };
+
+  const result = await simple.compose({
+    options: { requestedTopic: 'Aplikasi Gemini', contentFormat: 'Fakta singkat' },
+    sources,
+    discovery: { searchedAt: '2026-08-13T00:00:00.000Z', queries: ['Aplikasi Gemini terbaru'], providers: ['test'] },
+    client
+  });
+
+  assert.equal(calls, 2, 'writer + fact-checker only');
+  assert.equal(result.verificationStatus, 'source_based');
+  assert.equal(result.sourceMode, 'auto');
+  assert.equal(result.slides.length, 4);
+  assert.ok(result.slides.every(slide => slide.points.length === 0));
+  assert.deepEqual(simple.factualErrors(result, packets, sources), []);
+});
