@@ -126,20 +126,23 @@ test('provider output kosong langsung memakai source-only fallback tanpa retry p
   await withoutSemanticProvider(t);
   const valid = candidate();
   const client = clientWith({ choices: [{ message: { content: '' } }] });
-  await assert.rejects(() => finalizer.rewriteAllSourcesWithAi({
+  const result = await finalizer.rewriteAllSourcesWithAi({
     generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  }), error => error.status === 422 || error.validationErrors);
+  });
   assert.equal(client.calls, 1);
+  assert.equal(result.__urlSourceFallback, true);
+  assert.equal(result.verificationStatus, 'source_based');
 });
 
-test('malformed JSON tidak diulang berkali-kali', async t => {
+test('malformed JSON tidak diulang berkali-kali dan turun ke fallback', async t => {
   await withoutSemanticProvider(t);
   const valid = candidate();
   const client = clientWith({ choices: [{ message: { content: '```json\n{"slides": [ broken\n```' } }] });
-  await assert.rejects(() => finalizer.rewriteAllSourcesWithAi({
+  const result = await finalizer.rewriteAllSourcesWithAi({
     generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  }), error => error.status === 422 || error.validationErrors);
+  });
   assert.equal(client.calls, 1);
+  assert.equal(result.__urlSourceFallback, true);
 });
 
 test('numeric mismatch seperti 10 ribuan mendapat satu correction pass lalu fallback source-backed bila tetap salah', async t => {
@@ -148,7 +151,7 @@ test('numeric mismatch seperti 10 ribuan mendapat satu correction pass lalu fall
   const bad = {
     ...base,
     topic: 'AI Ubah Cara Mahasiswa Belajar',
-    slides: base.slides.map((slide, index) => ({ ...slide, claims: slide.claims.map(claim => ({ ...claim })) }))
+    slides: base.slides.map(slide => ({ ...slide, claims: slide.claims.map(claim => ({ ...claim })) }))
   };
   bad.slides[0].body = '10 ribuan mahasiswa hadir dalam perhelatan kampus tersebut.';
   bad.slides[0].claims[0] = {
@@ -178,10 +181,11 @@ test('semantic rejection hanya mendapat satu correction pass sebelum fallback', 
   t.after(() => { sourceFilter.auditClaimSemantics = original; });
   const valid = candidate();
   const client = clientWith(responseFor(valid));
-  await assert.rejects(() => finalizer.rewriteAllSourcesWithAi({
+  const result = await finalizer.rewriteAllSourcesWithAi({
     generated: valid, sources: englishSource(), topic: 'Atlas Device', format: 'Fakta singkat', client
-  }), error => error.status === 422 || error.validationErrors);
+  });
   assert.equal(client.calls, 2);
+  assert.equal(result.__urlSourceFallback, true);
 });
 
 test('manual URL relevance bank membuang drift Smart PAI dari halaman topik mahasiswa', () => {
@@ -194,10 +198,10 @@ test('manual URL relevance bank membuang drift Smart PAI dari halaman topik maha
   assert.ok(relevant.length >= 4);
 });
 
-test('source-only body candidates menolak potongan kutipan patah seperti screenshot', () => {
+test('source-only candidate menolak potongan kutipan patah seperti screenshot', () => {
   const source = driftedSindonewsLikeSource()[0];
   const candidates = finalizer.sourceDisplayCandidates(source.text);
-  assert.equal(candidates.some(text => /^tersedia/i.test(text)), false);
+  assert.equal(candidates.some(text => /^Tersedia/i.test(text)), false);
   assert.equal(candidates.some(text => /AI mulai mengubah cara mahasiswa belajar/i.test(text)), true);
 });
 
