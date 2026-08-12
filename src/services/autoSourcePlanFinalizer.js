@@ -182,7 +182,7 @@ function informationDensityErrors(content = {}) {
       const count = words(point).length;
       if (count < 2 || count > 10) errors.push(`AUTO_SOURCE_INFO_DENSITY: slide:${slideIndex}:point:${pointIndex}: bullet harus 2-10 kata agar natural.`);
     });
-    if (totalWords < 12) errors.push(`AUTO_SOURCE_INFO_DENSITY: slide:${slideIndex}: isi terlalu tipis; perkaya body atau tambahkan fakta unik.`);
+    if (bodyCount < 10 && totalWords < 12) errors.push(`AUTO_SOURCE_INFO_DENSITY: slide:${slideIndex}: isi terlalu tipis; perkaya body atau tambahkan fakta unik.`);
   }
   return [...new Set(errors)];
 }
