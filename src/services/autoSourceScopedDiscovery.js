@@ -67,6 +67,7 @@ function softSourceScore(topic = '', source = {}, plan = {}) {
   const text = String(source?.text || '').slice(0, 12000);
   const combined = `${title} ${text}`;
   const subjects = plan.subjects || [];
+  const contexts = plan.contextTerms || [];
   const subjectHits = dynamicScope.subjectHits(plan, combined).length;
   const actionHits = dynamicScope.actionHits(plan, combined).length;
   const contextHits = dynamicScope.contextHits(plan, combined).length;
@@ -77,7 +78,8 @@ function softSourceScore(topic = '', source = {}, plan = {}) {
   // instead of requiring them in one exact sentence/pair.
   if (dynamicScope.eventLockRequired(plan)) {
     if (subjects.length && !subjectHits) return -1;
-    if (!actionHits || !contextHits) return -1;
+    if (!actionHits) return -1;
+    if (contexts.length && !contextHits) return -1;
   } else if (subjects.length && !subjectHits) {
     return -1;
   } else if (!subjects.length && (plan.eventTerms || []).length && !eventHits) {
@@ -142,7 +144,7 @@ async function discover(options = {}) {
 
   // FAIL-SOFT: never turn a valid search into a 422 merely because the strict
   // wording matcher could not place action/context in the same sentence. The
-  // relaxed fallback still requires subject + action + context for event topics.
+  // relaxed fallback still requires the same subject/event ingredients.
   if (!baseSources.length) {
     baseSources = softRelevantSources(topic, result.sources || [], plan);
     if (baseSources.length) scopeMode = 'soft-relevant';
