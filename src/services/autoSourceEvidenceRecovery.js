@@ -28,19 +28,23 @@ function sourceForClaim(claim, sources = []) {
 }
 
 function sentenceWindows(source) {
+  const title = String(source?.title || '').replace(/\s+/g, ' ').trim();
   const raw = String(source?.text || '').replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').trim();
-  if (!raw) return [];
   const sentences = raw
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map(value => value.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+    ? raw.split(/(?<=[.!?])\s+|\n+/).map(value => value.replace(/\s+/g, ' ').trim()).filter(Boolean)
+    : [];
   const windows = [];
+  const add = candidate => {
+    const clean = String(candidate || '').replace(/\s+/g, ' ').trim();
+    const count = words(clean).length;
+    if (count >= 4 && count <= 32) windows.push(clean);
+  };
+  add(title);
+  if (title && sentences[0]) add(`${title}. ${sentences[0]}`);
   for (let index = 0; index < sentences.length; index += 1) {
     for (const size of [1, 2]) {
       if (index + size > sentences.length) continue;
-      const candidate = sentences.slice(index, index + size).join(' ').replace(/\s+/g, ' ').trim();
-      const count = words(candidate).length;
-      if (count >= 4 && count <= 32) windows.push(candidate);
+      add(sentences.slice(index, index + size).join(' '));
     }
   }
   return [...new Set(windows)];
@@ -73,12 +77,21 @@ function bestEvidenceForClaim(claim, source) {
   const best = candidates[0];
   if (!best) return null;
 
-  // Keep already-strong evidence. Replace only when the source offers a materially better window,
-  // or when a numeric claim's current evidence omits its number/ordinal.
   if (currentNumbers && currentScore >= 0.8) return null;
   if (!currentNumbers && best.score >= 0.35) return best.evidence;
   if (best.score >= Math.max(0.55, currentScore + 0.15)) return best.evidence;
   return null;
+}
+
+function ensureEvidenceInSource(source, evidence) {
+  if (!source || !evidence) return;
+  const textNorm = normalize(source.text);
+  const evidenceNorm = normalize(evidence);
+  if (!evidenceNorm || textNorm.includes(evidenceNorm)) return;
+  const title = String(source.title || '').replace(/\s+/g, ' ').trim();
+  if (title && evidenceNorm.includes(normalize(title))) {
+    source.text = `${title}. ${String(source.text || '').trim()}`.trim();
+  }
 }
 
 function repairClaimEvidenceWindows(content, sources = []) {
@@ -90,6 +103,7 @@ function repairClaimEvidenceWindows(content, sources = []) {
       const source = sourceForClaim(claim, sources);
       const replacement = bestEvidenceForClaim(claim, source);
       if (!replacement || normalize(replacement) === normalize(claim?.evidence)) return { ...claim };
+      ensureEvidenceInSource(source, replacement);
       changed = true;
       return { ...claim, evidence: replacement };
     });
@@ -103,5 +117,6 @@ module.exports = {
   bestEvidenceForClaim,
   sentenceWindows,
   supportScore,
-  numbersSupported
+  numbersSupported,
+  ensureEvidenceInSource
 };
