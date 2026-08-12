@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const config = require('../config');
 const sourceFilter = require('./sourceFilter');
+const urlSemanticRepair = require('./sourceUrlSemanticRepair');
 const manualSourceDedupe = require('./manualSourceDedupe');
 const manualSourceFallback = require('./manualSourceFallback');
 const {
@@ -12,9 +13,9 @@ const {
 } = manualSourceFallback;
 
 // PAKAI URL ONLY.
-// Keep the historical public constant for contract compatibility, while the
-// production path intentionally uses at most two AI calls: one compose + one
-// clean rebuild. No deterministic raw-copy fallback is returned to users.
+// Keep the historical public constant for contract compatibility. Full-carousel
+// generation remains bounded to two passes; semantic failures are repaired with
+// a compact field-only correction instead of rebuilding every valid slide.
 const MAX_FINALIZE_ATTEMPTS = 3;
 const FAST_FINALIZE_ATTEMPTS = 2;
 const URL_SAFE_WIDTH = 740;
@@ -371,7 +372,7 @@ function finalizerPrompt({ generated, sources, facts, format, topic, errors, rec
   const sourceGroups = groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
   const plan = buildFactPlan(sources, facts, sections.length);
-  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${densityInstruction(facts, sections.length)}\nBODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN BODY FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nFACT PLAN UNIK PER SLIDE (panduan evidence; jangan mengulang evidence canonical):\n${JSON.stringify(plan)}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta visible pada body atau bullet final.\n- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, lokasi dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.\n- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN. Evidence dari bagian halaman lain dianggap tidak valid meskipun URL-nya sama.\n- Bahasa Indonesia harus natural, utuh, dan enak dibaca; jangan menyalin potongan kutipan, anak kalimat, atau attribution seperti “katanya/ujarnya”.\n- Judul harus natural dan spesifik terhadap isi slide. Judul DILARANG hanya berupa nama section seperti “Pembuka”, “Fakta Utama”, “Konteks”, atau “Kesimpulan”. Jangan memakai pola berulang “<topik>: Fakta Utama / Konteks / Kesimpulan”.\n- Judul boleh berupa pertanyaan natural seperti “Apa itu Muse Code?” atau label ringkas seperti “Kemampuan Muse Code”. Jangan membuat semua judul berupa pertanyaan. Untuk judul label/netral, jangan membuat claim title yang tidak perlu.\n- BODY 10–20 kata, satu kalimat utuh, maksimal 4 baris.\n- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n- Setiap BODY dan BULLET WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama. Judul hanya perlu claim title jika memang memuat pernyataan faktual independen; judul struktural/ringkasan tidak perlu claim.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika tidak perlu, hilangkan angkanya; jangan menebak pengganti.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun antar-slide.\n- Jangan mengulang fakta yang sama dengan wording berbeda.\n- Judul maksimal 10 kata dan 3 baris. Jangan memotong copy di renderer.\n- Jika jumlah fakta bersih memang tidak cukup untuk 3 bullet di semua slide, gunakan sebanyak mungkin fakta unik yang benar-benar didukung; jangan filler dan jangan mengarang.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis bila evidence menyatakan tindakan itu. Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan tersebut.\n${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${densityInstruction(facts, sections.length)}\nBODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN BODY FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nFACT PLAN UNIK PER SLIDE (panduan evidence; jangan mengulang evidence canonical):\n${JSON.stringify(plan)}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta visible pada body atau bullet final.\n- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, lokasi dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.\n- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN. Evidence dari bagian halaman lain dianggap tidak valid meskipun URL-nya sama.\n- Bahasa Indonesia harus natural, utuh, dan enak dibaca; jangan menyalin potongan kutipan, anak kalimat, atau attribution seperti “katanya/ujarnya”.\n- DILARANG menambahkan tujuan, sebab-akibat, manfaat, aplikasi, risiko, strategi, implikasi, rekomendasi, atau outcome yang tidak dinyatakan eksplisit oleh evidence.\n- Judul harus natural dan spesifik terhadap isi slide. Judul DILARANG hanya berupa nama section seperti “Pembuka”, “Fakta Utama”, “Konteks”, atau “Kesimpulan”. Jangan memakai pola berulang “<topik>: Fakta Utama / Konteks / Kesimpulan”.\n- Judul boleh berupa pertanyaan natural seperti “Apa itu Muse Code?” atau label ringkas seperti “Kemampuan Muse Code”. Jangan membuat semua judul berupa pertanyaan. Untuk judul label/netral, jangan membuat claim title yang tidak perlu.\n- BODY 10–20 kata, satu kalimat utuh, maksimal 4 baris.\n- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n- Setiap BODY dan BULLET WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama. Judul hanya perlu claim title jika memang memuat pernyataan faktual independen; judul struktural/ringkasan tidak perlu claim.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika tidak perlu, hilangkan angkanya; jangan menebak pengganti.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun antar-slide.\n- Jangan mengulang fakta yang sama dengan wording berbeda.\n- Judul maksimal 10 kata dan 3 baris. Jangan memotong copy di renderer.\n- Jika jumlah fakta bersih memang tidak cukup untuk 3 bullet di semua slide, gunakan sebanyak mungkin fakta unik yang benar-benar didukung; jangan filler dan jangan mengarang.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis bila evidence menyatakan tindakan itu. Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan tersebut.\n${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function responseJson(response) {
@@ -741,8 +742,21 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
         if (!bodyCriticalErrors(validated.errors).length && !validated.errors.length) {
           const semantic = await auditUrlSemantics(openai, validated.content, resolvedTopic, effectiveFormat);
           if (!semantic.errors.length) return syncTop(semantic.content);
-          lastErrors = semantic.errors;
-          draft = semantic.content;
+          const targeted = await urlSemanticRepair.recoverSemanticFailures({
+            openai,
+            model: config.aiModel,
+            content: semantic.content,
+            errors: semantic.errors,
+            topic: resolvedTopic,
+            format: effectiveFormat,
+            validate: candidate => validateCandidate(candidate, candidate, {
+              contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: false
+            }),
+            audit: candidate => auditUrlSemantics(openai, candidate, resolvedTopic, effectiveFormat)
+          });
+          if (targeted.changed && !targeted.errors.length) return syncTop(targeted.content);
+          lastErrors = targeted.errors?.length ? targeted.errors : semantic.errors;
+          draft = targeted.content || semantic.content;
         } else {
           lastErrors = validated.errors;
         }
@@ -752,8 +766,21 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
 
     const semantic = await auditUrlSemantics(openai, validated.content, resolvedTopic, effectiveFormat);
     if (semantic.errors.length) {
-      lastErrors = semantic.errors;
-      draft = semantic.content;
+      const targeted = await urlSemanticRepair.recoverSemanticFailures({
+        openai,
+        model: config.aiModel,
+        content: semantic.content,
+        errors: semantic.errors,
+        topic: resolvedTopic,
+        format: effectiveFormat,
+        validate: candidate => validateCandidate(candidate, candidate, {
+          contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: true
+        }),
+        audit: candidate => auditUrlSemantics(openai, candidate, resolvedTopic, effectiveFormat)
+      });
+      if (targeted.changed && !targeted.errors.length) return syncTop(targeted.content);
+      lastErrors = targeted.errors?.length ? targeted.errors : semantic.errors;
+      draft = targeted.content || semantic.content;
       if (attempt < FAST_FINALIZE_ATTEMPTS - 1) continue;
       break;
     }
