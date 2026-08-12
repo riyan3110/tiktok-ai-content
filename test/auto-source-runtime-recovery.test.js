@@ -67,6 +67,18 @@ test('expanded discovery builds named-entity and English relationship queries fo
   assert.ok(queries.some(query => /partners with/i.test(query)), queries.join(' | '));
 });
 
+test('bilingual relevance keeps global English sources relevant to Indonesian broad topics', () => {
+  const variants = discovery.relevanceVariants('Potensi manfaat AI terhadap iklim');
+  assert.ok(variants.some(value => /climate/i.test(value)), variants.join(' | '));
+  assert.ok(discovery.relevanceAcross(variants, 'AI climate benefits are being studied by researchers') >= 0.5);
+});
+
+test('expanded discovery raises candidate, fetch, and publisher diversity limits', () => {
+  assert.equal(discovery.MAX_CANDIDATES, 32);
+  assert.equal(discovery.MAX_FETCH_CANDIDATES, 20);
+  assert.equal(discovery.MAX_SELECTED, 4);
+});
+
 test('freshness boost prefers recent published candidates', () => {
   const now = Date.parse('2026-08-13T00:00:00Z');
   const recent = discovery.freshnessBoost('2026-08-12T10:00:00Z', now);
