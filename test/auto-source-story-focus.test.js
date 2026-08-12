@@ -58,6 +58,15 @@ test('requested event is ranked ahead of subject-only background', () => {
   );
 });
 
+test('research selector receives atomic focused facts instead of editorial noise', () => {
+  const focused = [focus.focusSource(topic, source, plan)];
+  const selected = research.selectDistinctFacts(focused, topic, 4);
+  assert.equal(selected.length, 4);
+  assert.match(selected[0].evidence, /revenue|estimate|beat/i);
+  assert.ok(selected.every(item => !/10 best stocks|stocks to buy/i.test(item.evidence)));
+  assert.ok(selected.every(item => !(/sixfold/i.test(item.evidence) && /582\.3/i.test(item.evidence))));
+});
+
 test('stock-pick language is not universally banned when the user explicitly asks for market content', () => {
   const marketPlan = { ...plan, marketIntent: true };
   assert.equal(
