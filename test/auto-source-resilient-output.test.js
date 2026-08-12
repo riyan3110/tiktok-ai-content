@@ -22,10 +22,10 @@ function slide(body, points = ['Fakta berbeda pertama', 'Fakta berbeda kedua', '
 }
 
 test('body 9 atau 21 kata tidak lagi menggagalkan carousel bila masih dalam hard layout 8-24', () => {
-  const nineWords = 'Produk baru ini membawa fitur utama untuk pengguna secara bertahap.';
-  const twentyOneWords = 'Produk baru ini membawa sejumlah kemampuan utama untuk pengguna dan diperkenalkan secara bertahap melalui pembaruan yang dijelaskan sumber resmi tersebut.';
-  assert.equal(nineWords.split(/\s+/).length, 10);
-  assert.ok(twentyOneWords.split(/\s+/).length >= 21 && twentyOneWords.split(/\s+/).length <= 24);
+  const nineWords = 'Produk baru membawa fitur utama untuk pengguna secara bertahap.';
+  const twentyOneWords = 'Produk baru ini membawa sejumlah kemampuan utama untuk pengguna dan diperkenalkan secara bertahap melalui pembaruan yang dijelaskan oleh sumber resmi tersebut.';
+  assert.equal(nineWords.split(/\s+/).length, 9);
+  assert.equal(twentyOneWords.split(/\s+/).length, 21);
   assert.deepEqual(finalizer.relaxedDensityErrors({ slides: [slide(nineWords)] }, facts()), []);
   assert.deepEqual(finalizer.relaxedDensityErrors({ slides: [slide(twentyOneWords)] }, facts()), []);
 });
