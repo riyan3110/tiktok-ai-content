@@ -32,7 +32,7 @@ function richFacts(count = 16) {
   }));
 }
 
-test('prompt final AI memakai semua URL dan tetap menargetkan konten kaya tanpa menambah retry', () => {
+test('prompt final AI memaksa semua URL, body panjang, dan 3 bullet untuk source kaya', () => {
   const input = sources();
   const facts = richFacts();
   const prompt = finalizerPrompt({
@@ -48,11 +48,10 @@ test('prompt final AI memakai semua URL dan tetap menargetkan konten kaya tanpa 
   for (const source of input) assert.match(prompt, new RegExp(source.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(prompt, /SETIAP sourceId yang tercantum WAJIB/i);
   assert.match(prompt, /BODY FACT BANK/i);
-  assert.match(prompt, /maksimal 24 kata/i);
+  assert.match(prompt, /BODY WAJIB minimal 10 kata/i);
   assert.match(prompt, /3 bullet fakta/i);
-  assert.match(prompt, /evidence canonical/i);
-  assert.match(prompt, /lebih dari 10\.000.*lebih dari 10 ribu/i);
-  assert.equal(MAX_FINALIZE_ATTEMPTS, 1);
+  assert.match(prompt, /JANGAN memakai evidence canonical yang sama dua kali/i);
+  assert.equal(MAX_FINALIZE_ATTEMPTS, 3);
 });
 
 test('body fact bank hanya memberi evidence panjang yang benar-benar berasal dari source', () => {
