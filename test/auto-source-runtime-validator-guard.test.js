@@ -84,7 +84,7 @@ test('numeric blocker remains when same source does not support the claimed perc
   });
   const sources = [{
     title: 'Bluesky menghadapi perubahan pengguna',
-    text: 'Laporan menyebut 52 akun contoh, tetapi tidak menyatakan penurunan sebesar 52 persen.'
+    text: 'Laporan menyebut 52 akun contoh dan membahas perubahan pengguna tanpa menyatakan persentase penurunan.'
   }];
   const error = 'AUTO_SOURCE_NUMERIC: slide:0:claim:0 angka/ordinal "52%" tidak didukung evidence/sumber yang sama.';
   assert.deepEqual(guard.filterRuntimeErrors([error], content, sources), [error]);
