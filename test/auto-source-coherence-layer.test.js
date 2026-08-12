@@ -72,7 +72,7 @@ test('topic evidence gate rejects body or bullet evidence outside the scoped fac
   assert.match(errors[0], /AUTO_SOURCE_CONTEXT/);
 });
 
-test('rich topic bank forces body plus exactly three bullets per slide', () => {
+test('rich per-source capacity forces body plus exactly three bullets per slide', () => {
   const content = {
     slides: Array.from({ length: 4 }, () => ({ body: 'Body faktual yang cukup panjang untuk contoh pengujian ini.', points: ['Fakta satu', 'Fakta dua'] }))
   };
@@ -80,7 +80,31 @@ test('rich topic bank forces body plus exactly three bullets per slide', () => {
     ...factsFor('source-1', 'Satu', 8),
     ...factsFor('source-2', 'Dua', 8)
   ];
-  const errors = layer.forcedDensityErrors(content, facts);
+  const profile = layer.coherentDensityProfile(facts, 4);
+  assert.equal(profile.richEnoughForThree, true);
+  assert.equal(profile.targetPoints, 3);
+  const errors = layer.capacityDensityErrors(content, facts);
   assert.equal(errors.length, 4);
   assert.ok(errors.every(error => /tepat 3 bullet/.test(error)));
+});
+
+test('total facts do not force impossible three-bullet slides when per-source capacity is insufficient', () => {
+  const facts = [
+    ...factsFor('source-1', 'Satu', 5),
+    ...factsFor('source-2', 'Dua', 5),
+    ...factsFor('source-3', 'Tiga', 6)
+  ];
+  assert.equal(facts.length, 16, 'total bank looks rich enough for four body+3-bullet slides');
+  assert.equal(layer.slideCapacityForPoints(facts, 3), 3, 'but only three dense slides fit without mixing sources');
+  const profile = layer.coherentDensityProfile(facts, 4);
+  assert.equal(profile.richEnoughForThree, false);
+  assert.equal(profile.targetPoints, 2, 'maximum safe density is body + two bullets per slide');
+
+  const content = {
+    slides: Array.from({ length: 4 }, () => ({
+      body: 'Body faktual cukup panjang dan tetap menjelaskan satu subtopik secara utuh.',
+      points: ['Fakta pendek pertama', 'Fakta pendek kedua']
+    }))
+  };
+  assert.deepEqual(layer.capacityDensityErrors(content, facts), []);
 });
