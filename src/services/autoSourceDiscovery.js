@@ -1,4 +1,5 @@
 const defaultSourceFetcher = require('./sourceFetcher');
+const { sourceFacts } = require('./manualSourceFallback');
 
 const CACHE_TTL_MS = 45 * 60 * 1000;
 const MAX_CANDIDATES = 18;
@@ -106,10 +107,11 @@ function candidateScore(topic, candidate) {
   const descriptionScore = relevanceScore(topic, candidate.description) * 2.5;
   return titleScore + descriptionScore + hostQuality(candidate.url, topic) + providerBoost(candidate.provider);
 }
-function fetchedScore(topic, source, candidate) {
+function fetchedScore(topic, source, candidate, factCount = 0) {
   const titleRelevance = relevanceScore(topic, source.title || '');
   const bodyRelevance = relevanceScore(topic, String(source.text || '').slice(0, 5000));
-  return candidateScore(topic, candidate) + titleRelevance * 5 + bodyRelevance * 8;
+  const richnessBoost = Math.min(12, factCount) * 0.25;
+  return candidateScore(topic, candidate) + titleRelevance * 5 + bodyRelevance * 8 + richnessBoost;
 }
 function searchQueries(topic, category = '') {
   const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
@@ -315,8 +317,10 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
     const titleRelevance = relevanceScore(cleanTopic, source.title || '');
     const searchRelevance = Math.max(relevanceScore(cleanTopic, candidate.title), relevanceScore(cleanTopic, candidate.description));
     if (relevance < minimumRelevance && titleRelevance < minimumRelevance && searchRelevance < minimumRelevance) continue;
-    const score = fetchedScore(cleanTopic, source, candidate);
-    fetched.push({ ...source, discovery: { provider: candidate.provider, query: candidate.query, score, relevance: Math.max(relevance, titleRelevance, searchRelevance) } });
+    const factCount = sourceFacts([source]).length;
+    if (factCount < 3) continue;
+    const score = fetchedScore(cleanTopic, source, candidate, factCount);
+    fetched.push({ ...source, discovery: { provider: candidate.provider, query: candidate.query, score, relevance: Math.max(relevance, titleRelevance, searchRelevance), factCount } });
   }
   fetched.sort((a, b) => b.discovery.score - a.discovery.score);
   const selected = [];
@@ -338,7 +342,7 @@ async function discover({ topic, category = '', searchImpl = searchWeb, sourceFe
     usedHosts.add(host);
     if (selected.length >= MAX_SELECTED) break;
   }
-  if (!selected.length) throw Object.assign(new Error('Sumber ditemukan, tetapi belum ada artikel yang cukup relevan dan dapat dibaca setelah pencarian diperluas.'), { status: 422, code: 'AUTO_SOURCE_FETCH_EMPTY' });
+  if (!selected.length) throw Object.assign(new Error('Sumber ditemukan, tetapi belum ada artikel yang cukup relevan, kaya fakta, dan dapat dibaca setelah pencarian diperluas.'), { status: 422, code: 'AUTO_SOURCE_FETCH_EMPTY' });
 
   const bundle = {
     topic: cleanTopic,
