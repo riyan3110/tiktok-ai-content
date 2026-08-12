@@ -8,6 +8,7 @@ process.env.AI_MODEL ||= 'test-model';
 
 const finalizer = require('../src/services/autoSourceFinalizer');
 const sourceFilter = require('../src/services/sourceFilter');
+const autoSourceValidation = require('../src/services/autoSourceValidation');
 
 test('nearby source sentence is added to evidence before strict numeric verification', () => {
   const sourceText = 'OpenAI memperkenalkan GPT-5.6-Cyber untuk program Daybreak. OpenAI memperluas program keamanan siber Daybreak dengan dua tingkat akses, yaitu Blue dan Red.';
@@ -67,4 +68,81 @@ test('separated product model number in source title survives strict source veri
   assert.equal(checked.errors.some(error => /Angka pada claim tidak didukung evidence/i.test(error)), false);
   assert.equal(checked.errors.some(error => /Evidence tidak ditemukan/i.test(error)), false);
   assert.equal(checked.errors.some(error => /fakta terverifikasi dari sumber/i.test(error)), false);
+});
+
+test('dense 8-word body is accepted when bullets already provide enough context', () => {
+  const content = {
+    slides: [
+      { title: 'Pembuka', body: 'Pembuka yang cukup panjang untuk konteks awal carousel.', points: [] },
+      {
+        title: 'Robot menjaga keseimbangan',
+        body: 'Robot humanoid memakai sensor untuk menjaga keseimbangan tubuh.',
+        points: ['Aktuator menggerakkan sendi tubuh', 'Sensor membaca perubahan posisi']
+      }
+    ]
+  };
+  const errors = [
+    'slide:1:layout: body harus 10–24 kata agar cukup menjelaskan konteks.',
+    'AUTO_SOURCE_RICHNESS: slide 2 body terlalu tipis (8 kata).'
+  ];
+  assert.deepEqual(autoSourceValidation.filterFalsePositives(errors, content), []);
+});
+
+test('thin body is still rejected when it is genuinely too short', () => {
+  const content = {
+    slides: [
+      { title: 'Pembuka', body: 'Pembuka yang cukup panjang untuk konteks awal carousel.', points: [] },
+      {
+        title: 'Robot menjaga keseimbangan',
+        body: 'Robot humanoid memakai sensor menjaga keseimbangan tubuh.',
+        points: ['Aktuator menggerakkan sendi tubuh', 'Sensor membaca perubahan posisi']
+      }
+    ]
+  };
+  const errors = ['slide:1:layout: body harus 10–24 kata agar cukup menjelaskan konteks.'];
+  assert.deepEqual(autoSourceValidation.filterFalsePositives(errors, content), errors);
+});
+
+test('same canonical evidence may support different facts across auto-source slides', () => {
+  const evidence = 'Meta menguji model baru untuk pembuatan gambar dan menambahkan kontrol baru bagi editor kreatif.';
+  const content = {
+    slides: [
+      {
+        title: 'Eksperimen model Meta',
+        body: 'Meta menguji model baru untuk pembuatan gambar.',
+        points: [],
+        claims: [{ field: 'slide:0:body', text: 'Meta menguji model baru untuk pembuatan gambar.', sourceId: 'source-1', evidence }]
+      },
+      {
+        title: 'Kontrol editor bertambah',
+        body: 'Model tersebut menambahkan kontrol baru untuk editor kreatif.',
+        points: [],
+        claims: [{ field: 'slide:1:body', text: 'Model tersebut menambahkan kontrol baru untuk editor kreatif.', sourceId: 'source-1', evidence }]
+      }
+    ]
+  };
+  const errors = ['slide:1:duplicate: fakta canonical mengulang slide sebelumnya.'];
+  assert.deepEqual(autoSourceValidation.filterFalsePositives(errors, content), []);
+});
+
+test('same canonical evidence is still rejected for genuinely repeated fact copy', () => {
+  const evidence = 'Meta menguji model baru untuk pembuatan gambar dan menambahkan kontrol baru bagi editor kreatif.';
+  const content = {
+    slides: [
+      {
+        title: 'Eksperimen model Meta',
+        body: 'Meta menguji model baru untuk pembuatan gambar.',
+        points: [],
+        claims: [{ field: 'slide:0:body', text: 'Meta menguji model baru untuk pembuatan gambar.', sourceId: 'source-1', evidence }]
+      },
+      {
+        title: 'Model gambar Meta',
+        body: 'Meta menguji model gambar baru untuk pengguna.',
+        points: [],
+        claims: [{ field: 'slide:1:body', text: 'Meta menguji model gambar baru untuk pengguna.', sourceId: 'source-1', evidence }]
+      }
+    ]
+  };
+  const errors = ['slide:1:duplicate: fakta canonical mengulang slide sebelumnya.'];
+  assert.deepEqual(autoSourceValidation.filterFalsePositives(errors, content), errors);
 });
