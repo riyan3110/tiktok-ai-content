@@ -4,6 +4,7 @@ const dynamicScope = require('./autoSourceDynamicScope');
 const topicPlanner = require('./autoSourceDynamicTopicPlan');
 const storyFocus = require('./autoSourceStoryFocus');
 const simple = require('./autoSourceSimpleComposer');
+const indonesianOutput = require('./autoSourceIndonesianOutput');
 
 // TANPA URL / AUTO SOURCE ONLY.
 // One production path for every free-form topic:
@@ -132,6 +133,7 @@ function prepareSources(topic = '', sources = [], plan = {}) {
 
 async function compose(args = {}) {
   const topic = String(args?.options?.requestedTopic || args?.discovery?.topic || '').trim();
+  const format = args?.options?.contentFormat || 'Fakta singkat';
   const plan = args?.discovery?.topicPlan || topicPlanner.fallbackPlan(topic);
   const usableSources = prepareSources(topic, args.sources || [], plan);
 
@@ -151,7 +153,14 @@ async function compose(args = {}) {
   };
 
   const result = await simple.compose(scopedArgs);
-  return normalizeFactSections(result, args?.options?.contentFormat || 'Fakta singkat');
+  const languageSafe = await indonesianOutput.ensureIndonesian({
+    result,
+    topic,
+    format,
+    sources: usableSources,
+    client: args.client
+  });
+  return normalizeFactSections(languageSafe, format);
 }
 
 module.exports = {
