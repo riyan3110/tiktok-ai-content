@@ -1,5 +1,6 @@
 const defaultContent = require('./content');
-const defaultSourceUrlFinalizer = require('./sourceUrlFinalizer');
+const defaultAutoSourceFinalizer = require('./autoSourceFinalizer');
+const { sourceFacts } = require('./manualSourceFallback');
 
 const NUMBER_WORDS = new Map([
   ['nol','0'],['zero','0'],['satu','1'],['one','1'],['pertama','1'],['first','1'],
@@ -57,11 +58,12 @@ function genericCopyErrors(content) {
   });
   return errors;
 }
-function validationErrors(contentService, generated, options, sources) {
+function validationErrors(contentService, generated, options, sources, finalizer = defaultAutoSourceFinalizer) {
   const errors = [];
   if (contentService.validateContent) errors.push(...contentService.validateContent(generated, { format: options.contentFormat, manualTopic: options.requestedTopic }));
   if (contentService.validateSourceGrounding) errors.push(...contentService.validateSourceGrounding(generated, options.sourceContext, sources));
   errors.push(...numericGroundingErrors(generated), ...genericCopyErrors(generated));
+  if (finalizer?.richnessErrors) errors.push(...finalizer.richnessErrors(generated, sourceFacts(sources)));
   return [...new Set(errors)];
 }
 
@@ -93,7 +95,7 @@ function recoverySeed(topic, format = 'Fakta singkat') {
   };
 }
 
-async function compose({ content = defaultContent, previousTopics = [], options = {}, sources = [], discovery = null, finalizer = defaultSourceUrlFinalizer } = {}) {
+async function compose({ content = defaultContent, previousTopics = [], options = {}, sources = [], discovery = null, finalizer = defaultAutoSourceFinalizer } = {}) {
   if (!sources.length) throw Object.assign(new Error('Tidak ada sumber otomatis yang dapat dipakai.'), { status: 422 });
   const topic = String(options.requestedTopic || discovery?.topic || sources[0]?.title || 'Topik sumber').trim();
   let generated;
@@ -111,7 +113,7 @@ async function compose({ content = defaultContent, previousTopics = [], options 
     generated = recoverySeed(topic, options.contentFormat);
   }
 
-  let errors = initialFailure ? [`INITIAL_GENERATION: ${initialFailure.message}`] : validationErrors(content, generated, options, sources);
+  let errors = initialFailure ? [`INITIAL_GENERATION: ${initialFailure.message}`] : validationErrors(content, generated, options, sources, finalizer);
   const needsRecovery = Boolean(errors.length || generated?.verificationStatus === 'needs_review' || genericCopyErrors(generated).length);
   if (needsRecovery) {
     generated = await finalizer.rewriteAllSourcesWithAi({
@@ -119,10 +121,9 @@ async function compose({ content = defaultContent, previousTopics = [], options 
       sources,
       topic,
       format: options.contentFormat || 'Fakta singkat',
-      mode: 'manual',
       contentService: content
     });
-    errors = validationErrors(content, generated, options, sources);
+    errors = validationErrors(content, generated, options, sources, finalizer);
   }
 
   if (errors.length) throw Object.assign(new Error(`Konten dari sumber otomatis belum lolos validasi: ${errors[0].replace(/^SOURCE_GROUNDING:\s*/, '')}`), { status: 422, validationErrors: errors });
