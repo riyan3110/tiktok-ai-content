@@ -73,6 +73,38 @@ test('bilingual relevance keeps global English sources relevant to Indonesian br
   assert.ok(discovery.relevanceAcross(variants, 'AI climate benefits are being studied by researchers') >= 0.5);
 });
 
+test('discover accepts a readable English article found from an Indonesian broad topic', async () => {
+  discovery.clearCache();
+  const url = 'https://research.example.com/ai-climate-benefits';
+  const searchImpl = async () => [{
+    title: 'AI climate benefits are being studied by researchers',
+    url,
+    description: 'Research examines potential benefits of artificial intelligence for climate forecasting.',
+    publishedAt: '2026-08-12T12:00:00Z',
+    provider: 'test-search'
+  }];
+  const sourceFetcher = {
+    fetchSources: async urls => [{
+      url: urls[0],
+      finalUrl: urls[0],
+      title: 'AI climate benefits are being studied by researchers',
+      text: 'Researchers report that AI can improve climate forecasting in selected experiments. AI systems can process large weather datasets for forecasting research. Scientists use machine learning to analyse climate observations from multiple sources. The study also describes limits and uncertainty in current forecasting models.',
+      fetchedAt: '2026-08-12T12:30:00Z'
+    }],
+    validateUrl: async raw => new URL(raw)
+  };
+  const bundle = await discovery.discover({
+    topic: 'Potensi manfaat AI terhadap iklim',
+    category: 'Edukasi teknologi',
+    searchImpl,
+    sourceFetcher,
+    now: () => Date.parse('2026-08-13T00:00:00Z')
+  });
+  assert.equal(bundle.sources.length, 1);
+  assert.equal(bundle.sources[0].finalUrl, url);
+  assert.ok(bundle.queries.some(query => /climate/i.test(query)));
+});
+
 test('expanded discovery raises candidate, fetch, and publisher diversity limits', () => {
   assert.equal(discovery.MAX_CANDIDATES, 32);
   assert.equal(discovery.MAX_FETCH_CANDIDATES, 20);
