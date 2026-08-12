@@ -47,12 +47,29 @@ function factRelevant(topic = '', fact = '', plan = {}, previousKept = false) {
   return true;
 }
 
+function titleAnchorsTopic(topic = '', source = {}, plan = {}) {
+  if (identity.hasSpecificIdentity(topic) || multi.hasMultiEntityTopic(topic)) return false;
+  const title = clean(source?.title || '');
+  if (!title) return false;
+  if (dynamicScope.eventLockRequired(plan)) return dynamicScope.eventLockSatisfied(plan, title);
+  if ((plan.subjects || []).length) return dynamicScope.subjectHits(plan, title).length > 0;
+  if ((plan.eventTerms || []).length) return dynamicScope.eventHits(plan, title).length > 0;
+  return false;
+}
+
 function readableFacts(topic = '', source = {}, plan = {}) {
   const raw = storyFocus.atomicFacts(source?.text || '').map(clean).filter(Boolean);
   const out = [];
+  const anchoredLead = titleAnchorsTopic(topic, source, plan);
   let previousKept = false;
-  for (const fact of raw) {
-    const keep = factRelevant(topic, fact, plan, previousKept);
+  for (let index = 0; index < raw.length; index += 1) {
+    const fact = raw[index];
+    let keep = factRelevant(topic, fact, plan, previousKept);
+    // Some publishers omit the subject from the body after stating it in a very
+    // clear headline. Keep only the first four clean lead facts in that case.
+    if (!keep && anchoredLead && index < 4
+      && !storyFocus.editorialNoise(fact, plan)
+      && !storyFocus.marketSnapshot(fact, plan)) keep = true;
     if (keep) out.push(fact);
     previousKept = keep;
   }
@@ -141,6 +158,7 @@ module.exports = {
   normalizeFactSections,
   continuationFact,
   factRelevant,
+  titleAnchorsTopic,
   readableFacts,
   eventNeighborhoodSource,
   factCount,
