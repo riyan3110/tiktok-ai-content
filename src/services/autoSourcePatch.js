@@ -30,7 +30,7 @@ function loadAutoSourceDependencies() {
     defaultSourceFetcher: require('./sourceFetcher'),
     autoSourceDiscovery: require('./autoSourceExpandedDiscovery'),
     autoSourceComposer: require('./autoSourceComposer'),
-    autoSourceResilientFinalizer: require('./autoSourceResilientFinalizer')
+    autoSourcePlanFinalizer: require('./autoSourcePlanFinalizer')
   };
 }
 
@@ -57,7 +57,7 @@ function install() {
       defaultSourceFetcher,
       autoSourceDiscovery,
       autoSourceComposer,
-      autoSourceResilientFinalizer
+      autoSourcePlanFinalizer
     } = loadAutoSourceDependencies();
     const sourceFetcher = args.sourceFetcher || defaultSourceFetcher;
     const discovery = await autoSourceDiscovery.discover({
@@ -77,13 +77,16 @@ function install() {
       repairManualSourceRoles: async ({ options, sources: activeSources }) => {
         // AUTO SOURCE ONLY: every source selected by discovery remains active.
         // Do not silently degrade multi-source synthesis to one source.
+        // The plan-first finalizer assigns one primary source per slide before
+        // writing so density/coherence are satisfied during composition instead
+        // of repeatedly failing at the final validator.
         return autoSourceComposer.compose({
           content: wrappedContent,
           previousTopics: (options?.recentContents || []).map(item => item?.topic).filter(Boolean),
           options: { ...options, fastAutoSource: true },
           sources: activeSources,
           discovery: { ...discovery, sources: activeSources },
-          finalizer: autoSourceResilientFinalizer
+          finalizer: autoSourcePlanFinalizer
         });
       }
     };
