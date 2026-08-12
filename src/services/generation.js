@@ -7,6 +7,7 @@ const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
 const defaultManualSourceRoleGuard = require('./manualSourceRoleGuard');
 const defaultSourceUrlFinalizer = require('./sourceUrlFinalizer');
+const sourceSafetyPatch = require('./sourceSafetyPatch');
 const manualSourceFallback = require('./manualSourceFallback');
 const { buildDeterministicSourceFallback } = manualSourceFallback;
 
@@ -171,6 +172,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
         // a wrapped content service + its own manualSourceRoleGuard override.
         const explicitPakaiUrl = content === defaultContent && !manualSourceRoleGuard;
         if (explicitPakaiUrl) {
+          sourceSafetyPatch.sanitizeSourcesForManualTopic(sources, basis);
           const seed = manualSourceSeed(basis, contentFormat);
           generated = await aiThenDeterministicFallback({
             generated: seed,
