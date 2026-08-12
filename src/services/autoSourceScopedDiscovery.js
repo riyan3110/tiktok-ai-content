@@ -1,17 +1,19 @@
 const expanded = require('./autoSourceExpandedDiscovery');
 const identity = require('./autoSourceTopicIdentity');
 const multi = require('./autoSourceMultiEntityTopic');
-const topicScope = require('./autoSourceTopicScope');
+const topicPlanner = require('./autoSourceDynamicTopicPlan');
+const dynamicScope = require('./autoSourceDynamicScope');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// Every discovered article must first be strongly inside the requested topic.
-// Versioned and multi-entity topics then receive their stricter existing gates.
+// The topic is interpreted fresh for every request. Search starts with the exact
+// user text; only when those results are weak do we try one dynamically planned
+// alternate query. No catalog of known/trending topics is required.
 
 function sourceUrl(source = {}) {
   return String(source?.finalUrl || source?.url || '').trim();
 }
 
-function uniqueSources(sources = [], limit = 6) {
+function uniqueSources(sources = [], limit = 8) {
   const seen = new Set();
   const out = [];
   for (const source of sources) {
@@ -31,10 +33,56 @@ function entityCoverage(sources = [], entities = []) {
   ]));
 }
 
+function distinctAlternateQuery(topic, plan = {}) {
+  const normalize = value => String(value || '').toLocaleLowerCase('id-ID').replace(/\s+/g, ' ').trim();
+  const original = normalize(topic);
+  return (plan.searchQueries || []).find(query => {
+    const value = normalize(query);
+    return value && value !== original && value !== `${original} terbaru` && value !== `${original} latest`;
+  }) || '';
+}
+
+function mergeBundle(base, extra) {
+  if (!extra) return base;
+  return {
+    ...base,
+    sources: uniqueSources([...(base?.sources || []), ...(extra.sources || [])]),
+    queries: [...new Set([...(base?.queries || []), ...(extra.queries || [])])],
+    providers: [...new Set([...(base?.providers || []), ...(extra.providers || [])])],
+    publishers: [...new Set([...(base?.publishers || []), ...(extra.publishers || [])])]
+  };
+}
+
+async function safeDiscover(options, topic) {
+  try {
+    return await expanded.discover({ ...options, topic });
+  } catch (error) {
+    return { topic, sources: [], queries: [], providers: [], publishers: [], discoveryError: error.message };
+  }
+}
+
 async function discover(options = {}) {
-  const result = await expanded.discover(options);
-  const topic = String(options.topic || result?.topic || '').trim();
-  const baseSources = (result.sources || []).filter(source => topicScope.sourceInScope(topic, source));
+  const topic = String(options.topic || '').trim().replace(/\s+/g, ' ');
+  if (!topic) throw Object.assign(new Error('Topik wajib diisi untuk pencarian sumber otomatis.'), { status: 400 });
+
+  const plan = await topicPlanner.createPlan(topic, { client: options.topicPlannerClient });
+  let result = await safeDiscover(options, topic);
+  let baseSources = uniqueSources(result.sources || []).filter(source =>
+    dynamicScope.sourceInScope(topic, source, plan)
+  );
+
+  // Keep the normal path cheap/fast. Only broaden dynamically when the exact
+  // user query did not yield enough strong articles for a four-slide carousel.
+  if (baseSources.length < 3) {
+    const alternate = distinctAlternateQuery(topic, plan);
+    if (alternate) {
+      const extra = await safeDiscover(options, alternate);
+      result = mergeBundle(result, extra);
+      baseSources = uniqueSources(result.sources || []).filter(source =>
+        dynamicScope.sourceInScope(topic, source, plan)
+      );
+    }
+  }
 
   if (identity.hasSpecificIdentity(topic)) {
     const sources = baseSources.filter(source =>
@@ -48,21 +96,24 @@ async function discover(options = {}) {
     }
     return {
       ...result,
+      topic,
+      topicPlan: plan,
       sources,
-      publishers: sources.map(source => source?.discovery?.publisher).filter(Boolean)
+      publishers: [...new Set(sources.map(source => source?.discovery?.publisher).filter(Boolean))]
     };
   }
 
   if (!multi.hasMultiEntityTopic(topic)) {
     if (!baseSources.length) {
-      throw Object.assign(new Error('Sumber terbaru ditemukan, tetapi tidak ada artikel yang cukup kuat membahas inti topik.'), {
+      throw Object.assign(new Error('Sumber terbaru ditemukan, tetapi tidak ada artikel yang benar-benar membahas inti topik yang kamu masukkan.'), {
         status: 422,
-        code: 'AUTO_SOURCE_TOPIC_SCOPE_EMPTY'
+        code: 'AUTO_SOURCE_DYNAMIC_SCOPE_EMPTY'
       });
     }
     return {
       ...result,
       topic,
+      topicPlan: plan,
       sources: baseSources,
       publishers: [...new Set(baseSources.map(source => source?.discovery?.publisher).filter(Boolean))]
     };
@@ -101,6 +152,7 @@ async function discover(options = {}) {
   return {
     ...result,
     topic,
+    topicPlan: plan,
     sources: uniqueSources(sources),
     queries: [...new Set([...(result.queries || []), ...extraQueries])],
     providers: [...new Set([...(result.providers || []), ...extraProviders])],
@@ -111,5 +163,7 @@ async function discover(options = {}) {
 module.exports = {
   discover,
   uniqueSources,
-  entityCoverage
+  entityCoverage,
+  distinctAlternateQuery,
+  mergeBundle
 };
