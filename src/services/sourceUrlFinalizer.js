@@ -31,6 +31,7 @@ const DANGLING_END = new Set([
 const BAD_BULLET_START = /^(?:hingga|bahkan|namun|sementara|sedangkan|dan|atau|untuk|dengan|karena|katanya|ujarnya|jelasnya|tuturnya|ungkapnya|ia\b|dia\b|mereka\b|di sisi lain\b)/i;
 const BYLINE_PREFIX = /^(?:jakarta|bandung|surabaya|semarang|yogyakarta|medan|makassar|denpasar|beijing|london|new york|san francisco)\s*:\s*/i;
 const ATTRIBUTION_FRAGMENT = /["”']\s*,?\s*(?:kata|ujar|jelas|tutur|ungkap|menurut)\b/i;
+const SECTION_ONLY_TITLE = /^(?:pembuka|hook|fakta utama|penjelasan|konteks|kesimpulan|penutup|masalah|solusi|hasil|hasil\/penutup|before|after|perubahan|item\s+\d+|langkah\s+\d+|tips\s+\d+)$/i;
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '').trim().toLocaleLowerCase('id-ID').replace(/[^a-z0-9%\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const visibleCount = slide => [slide?.title, slide?.body, ...(Array.isArray(slide?.points) ? slide.points : [])]
@@ -370,7 +371,7 @@ function finalizerPrompt({ generated, sources, facts, format, topic, errors, rec
   const sourceGroups = groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
   const plan = buildFactPlan(sources, facts, sections.length);
-  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${densityInstruction(facts, sections.length)}\nBODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN BODY FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nFACT PLAN UNIK PER SLIDE (panduan evidence; jangan mengulang evidence canonical):\n${JSON.stringify(plan)}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta visible pada body atau bullet final.\n- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, lokasi dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.\n- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN. Evidence dari bagian halaman lain dianggap tidak valid meskipun URL-nya sama.\n- Bahasa Indonesia harus natural, utuh, dan enak dibaca; jangan menyalin potongan kutipan, anak kalimat, atau attribution seperti “katanya/ujarnya”.\n- Judul harus natural dan spesifik terhadap isi slide. Jangan memakai pola berulang “<topik>: Fakta Utama / Konteks / Kesimpulan”. Jangan membuat semua judul berupa pertanyaan.\n- BODY 10–20 kata, satu kalimat utuh, maksimal 4 baris.\n- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n- Setiap BODY dan BULLET WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama. Judul faktual juga wajib punya claim title.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika tidak perlu, hilangkan angkanya; jangan menebak pengganti.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun antar-slide.\n- Jangan mengulang fakta yang sama dengan wording berbeda.\n- Judul maksimal 10 kata dan 3 baris. Jangan memotong copy di renderer.\n- Jika jumlah fakta bersih memang tidak cukup untuk 3 bullet di semua slide, gunakan sebanyak mungkin fakta unik yang benar-benar didukung; jangan filler dan jangan mengarang.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis bila evidence menyatakan tindakan itu. Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan tersebut.\n${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:title","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${densityInstruction(facts, sections.length)}\nBODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN BODY FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nFACT PLAN UNIK PER SLIDE (panduan evidence; jangan mengulang evidence canonical):\n${JSON.stringify(plan)}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta visible pada body atau bullet final.\n- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, lokasi dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.\n- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN. Evidence dari bagian halaman lain dianggap tidak valid meskipun URL-nya sama.\n- Bahasa Indonesia harus natural, utuh, dan enak dibaca; jangan menyalin potongan kutipan, anak kalimat, atau attribution seperti “katanya/ujarnya”.\n- Judul harus natural dan spesifik terhadap isi slide. Judul DILARANG hanya berupa nama section seperti “Pembuka”, “Fakta Utama”, “Konteks”, atau “Kesimpulan”. Jangan memakai pola berulang “<topik>: Fakta Utama / Konteks / Kesimpulan”.\n- Judul boleh berupa pertanyaan natural seperti “Apa itu Muse Code?” atau label ringkas seperti “Kemampuan Muse Code”. Jangan membuat semua judul berupa pertanyaan. Untuk judul label/netral, jangan membuat claim title yang tidak perlu.\n- BODY 10–20 kata, satu kalimat utuh, maksimal 4 baris.\n- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n- Setiap BODY dan BULLET WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama. Judul hanya perlu claim title jika memang memuat pernyataan faktual independen; judul struktural/ringkasan tidak perlu claim.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika tidak perlu, hilangkan angkanya; jangan menebak pengganti.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun antar-slide.\n- Jangan mengulang fakta yang sama dengan wording berbeda.\n- Judul maksimal 10 kata dan 3 baris. Jangan memotong copy di renderer.\n- Jika jumlah fakta bersih memang tidak cukup untuk 3 bullet di semua slide, gunakan sebanyak mungkin fakta unik yang benar-benar didukung; jangan filler dan jangan mengarang.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis bila evidence menyatakan tindakan itu. Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan tersebut.\n${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function responseJson(response) {
@@ -452,6 +453,7 @@ function localLayoutErrors(content) {
     const title = String(slide?.title || '').trim();
     const titleCount = words(title).length;
     if (!titleCount || titleCount > 10) errors.push(`slide:${slideIndex}:title: title harus 1–10 kata.`);
+    if (SECTION_ONLY_TITLE.test(title) || normalize(title) === normalize(slide?.section)) errors.push(`slide:${slideIndex}:title:natural: judul tidak boleh hanya nama section.`);
     const bodyCount = words(slide?.body).length;
     if (bodyCount < 8 || bodyCount > 20) errors.push(`slide:${slideIndex}:body: body harus 8–20 kata untuk Pakai URL.`);
     if (BYLINE_PREFIX.test(String(slide?.body || ''))) errors.push(`slide:${slideIndex}:body:natural: dateline/lokasi berita tidak boleh menjadi awal body.`);
@@ -520,6 +522,47 @@ function repairProblematicTitles(content, errors) {
     return { ...slide, title: repaired.title, claims };
   });
   return { content: syncTop({ ...content, slides }), changed: true };
+}
+
+function isTitleSemanticError(error) {
+  return /SEMANTIC_SUPPORT:\s+slide:\d+:title\b/i.test(String(error || ''));
+}
+
+function blockingSemanticErrors(errors = []) {
+  return errors.filter(error => !isTitleSemanticError(error));
+}
+
+// A URL title is presentation copy summarising an already-grounded slide. If the
+// semantic auditor dislikes only that summary, rebuild the title from the body
+// that passed grounding and remove the redundant title claim. Body and bullets
+// remain fully semantic-audited and can still block publication.
+function repairSemanticTitleErrors(content, semanticErrors = []) {
+  const indexes = titleErrorIndexes(semanticErrors.filter(isTitleSemanticError));
+  if (!indexes.size || !content?.slides) return { content, changed: false };
+  const slides = content.slides.map((slide, index) => {
+    if (!indexes.has(index)) return slide;
+    const body = String(slide?.body || '').trim();
+    let title = naturalTitleFromEvidence(body);
+    title = String(title || '').replace(/\?+$/g, '').replace(/[,:;.!?]+$/g, '').trim();
+    if (!title || SECTION_ONLY_TITLE.test(title) || normalize(title) === normalize(slide?.section)) {
+      title = words(body).slice(0, 7).join(' ').replace(/[,:;.!?]+$/g, '').trim();
+    }
+    if (!title) title = `Sorotan ${index + 1}`;
+    const claims = (slide?.claims || []).filter(claim => String(claim?.field || '') !== `slide:${index}:title`);
+    return { ...slide, title, claims };
+  });
+  return { content: syncTop({ ...content, slides }), changed: true };
+}
+
+async function auditUrlSemantics(openai, content, topic, format) {
+  const errors = await sourceFilter.auditClaimSemantics(openai, content, topic, format);
+  const repaired = repairSemanticTitleErrors(content, errors);
+  return {
+    content: repaired.content,
+    errors: blockingSemanticErrors(errors),
+    titleErrors: errors.filter(isTitleSemanticError),
+    changed: repaired.changed
+  };
 }
 
 function repeatedTemplateTitleErrors(content, topic) {
@@ -696,9 +739,10 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
           contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: false
         });
         if (!bodyCriticalErrors(validated.errors).length && !validated.errors.length) {
-          const semantic = await sourceFilter.auditClaimSemantics(openai, validated.content, resolvedTopic, effectiveFormat);
-          if (!semantic.length) return syncTop(validated.content);
-          lastErrors = semantic;
+          const semantic = await auditUrlSemantics(openai, validated.content, resolvedTopic, effectiveFormat);
+          if (!semantic.errors.length) return syncTop(semantic.content);
+          lastErrors = semantic.errors;
+          draft = semantic.content;
         } else {
           lastErrors = validated.errors;
         }
@@ -706,14 +750,14 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       break;
     }
 
-    const semanticErrors = await sourceFilter.auditClaimSemantics(openai, validated.content, resolvedTopic, effectiveFormat);
-    if (semanticErrors.length) {
-      lastErrors = semanticErrors;
-      draft = validated.content;
+    const semantic = await auditUrlSemantics(openai, validated.content, resolvedTopic, effectiveFormat);
+    if (semantic.errors.length) {
+      lastErrors = semantic.errors;
+      draft = semantic.content;
       if (attempt < FAST_FINALIZE_ATTEMPTS - 1) continue;
       break;
     }
-    return syncTop(validated.content);
+    return syncTop(semantic.content);
   }
 
   throw Object.assign(new Error(`Final Pakai URL belum dapat dibentuk secara faktual dan natural: ${lastErrors[0] || 'provider tidak menghasilkan carousel valid dari fact bank'}`), {
@@ -740,6 +784,9 @@ module.exports = {
   urlVisualFitErrors,
   sourceDisplayCandidates,
   repairProblematicTitles,
+  repairSemanticTitleErrors,
+  blockingSemanticErrors,
+  auditUrlSemantics,
   structuralTitle,
   urlDensityErrors,
   evidenceBankErrors,
