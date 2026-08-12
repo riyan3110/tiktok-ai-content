@@ -93,7 +93,10 @@ test('topic evidence gate rejects body or bullet evidence outside the scoped fac
 
 test('rich per-source capacity forces body plus exactly three bullets per slide', () => {
   const content = {
-    slides: Array.from({ length: 4 }, () => ({ body: 'Body faktual yang cukup panjang untuk contoh pengujian ini.', points: ['Fakta satu', 'Fakta dua'] }))
+    slides: Array.from({ length: 4 }, () => ({
+      body: 'Body faktual yang cukup panjang untuk menjelaskan konteks pengujian secara lengkap di sini.',
+      points: ['Fakta satu', 'Fakta dua']
+    }))
   };
   const facts = [
     ...factsFor('source-1', 'Satu', 8),
