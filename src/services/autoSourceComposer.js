@@ -49,11 +49,35 @@ function genericCopyErrors(content) {
   });
   return errors;
 }
+
+// AUTO SOURCE / TANPA URL ONLY.
+// The resilient/strict finalizer has its own duplicate contract. Before the
+// final composer handoff, normalize any overlong bullet with the existing
+// deterministic Auto Source helper so the generic save validator cannot
+// reintroduce an already-recoverable >7-word point error.
+function prepareFinalAutoSourceOutput(generated) {
+  return defaultAutoSourceFinalizer.compactOverlongPoints(generated);
+}
+
 function validationErrors(contentService, generated, options, sources, finalizer = defaultAutoSourceFinalizer) {
+  generated = prepareFinalAutoSourceOutput(generated);
   let errors = [];
-  if (contentService.validateContent) errors.push(...contentService.validateContent(generated, { format: options.contentFormat, manualTopic: options.requestedTopic }));
+
+  // Keep generic structural/layout validation, but disable its legacy
+  // duplicateSlideCopy gate for Auto Source. Auto Source already runs the
+  // dedicated semantic-aware duplicate contract below and in its finalizer.
+  if (contentService.validateContent) errors.push(...contentService.validateContent(generated, {
+    format: options.contentFormat,
+    manualTopic: options.requestedTopic,
+    validateCopy: false
+  }));
   if (contentService.validateSourceGrounding) errors.push(...contentService.validateSourceGrounding(generated, options.sourceContext, sources));
-  errors.push(...numericGroundingErrors(generated, sources), ...genericCopyErrors(generated));
+
+  errors.push(
+    ...numericGroundingErrors(generated, sources),
+    ...genericCopyErrors(generated),
+    ...autoSourceValidation.autoSourceStructureErrors(generated)
+  );
   if (finalizer?.richnessErrors) errors.push(...finalizer.richnessErrors(generated, sourceFacts(sources)));
   if (finalizer?.filterFalsePositiveMetadataErrors) errors = finalizer.filterFalsePositiveMetadataErrors(errors, generated);
   errors = autoSourceValidation.filterFalsePositives(errors, generated);
@@ -103,6 +127,7 @@ async function compose({ content = defaultContent, previousTopics = [], options 
       format: options.contentFormat || 'Fakta singkat',
       contentService: content
     });
+    generated = prepareFinalAutoSourceOutput(generated);
     errors = validationErrors(content, generated, options, sources, finalizer);
   } else {
     let initialFailure = null;
@@ -129,6 +154,7 @@ async function compose({ content = defaultContent, previousTopics = [], options 
         format: options.contentFormat || 'Fakta singkat',
         contentService: content
       });
+      generated = prepareFinalAutoSourceOutput(generated);
       errors = validationErrors(content, generated, options, sources, finalizer);
     }
   }
@@ -145,4 +171,12 @@ async function compose({ content = defaultContent, previousTopics = [], options 
   return generated;
 }
 
-module.exports = { compose, numericConcepts, numericGroundingErrors, genericCopyErrors, recoverySeed, validationErrors };
+module.exports = {
+  compose,
+  numericConcepts,
+  numericGroundingErrors,
+  genericCopyErrors,
+  recoverySeed,
+  validationErrors,
+  prepareFinalAutoSourceOutput
+};
