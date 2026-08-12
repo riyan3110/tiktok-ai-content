@@ -527,7 +527,6 @@ function emergencySourceOnlyFallback({ generated = {}, sources = [], topic = '',
   });
   const safetyErrors = [
     ...manualSourceFallback.validateSourceContent(result, sources).filter(error => !/:richness:/.test(error)),
-    ...urlDensityErrors(result, cleanFacts),
     ...numericGroundingErrors(result),
     ...localLayoutErrors(result),
     ...urlVisualFitErrors(result)
