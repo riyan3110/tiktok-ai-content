@@ -93,7 +93,7 @@ function prompt({ topic, format, context, errors = [], previousSlides = [] }) {
     ? 'SETIAP slide wajib tepat 3 bullet fakta berbeda.'
     : `SETIAP slide wajib tepat ${pointCount} bullet fakta berbeda sesuai kapasitas evidence sumbernya.`;
 
-  return `AUTO SOURCE PLAN-FIRST FINAL — TANPA URL SAJA.\n\nTOPIK USER: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nERROR ATTEMPT SEBELUMNYA: ${JSON.stringify(errors)}\nDRAFT SEBELUMNYA: ${JSON.stringify(previousSlides)}\n\nPLAN FINAL PER SLIDE:\n${JSON.stringify(context.slides)}\n\nATURAN WAJIB — PLAN MENGALAHKAN SEMUA DRAFT LAMA:\n- Bangun ulang SEMUA slide dari PLAN FINAL PER SLIDE. Jangan mempertahankan field draft yang bertentangan dengan plan.\n- SATU SLIDE = SATU primarySourceId = SATU subtopik. Body, seluruh bullet, dan title faktual pada slide itu WAJIB memakai primarySourceId yang sama.\n- Gunakan HANYA evidence yang tercantum pada slide tersebut. Dilarang mengambil evidence dari slide/source lain dan dilarang memakai pengetahuan luar.\n- Semua primarySourceId yang muncul pada PLAN wajib benar-benar menyumbang copy visible final.\n- Judul 3-10 kata, natural, spesifik, tidak boleh hanya PEMBUKA/FAKTA UTAMA/KONTEKS/KESIMPULAN, dan tidak boleh mengulang judul slide lain.\n- Body target 10-20 kata, hard range 8-24 kata, satu kalimat utuh, faktual, natural Bahasa Indonesia.\n- ${pointRule}\n- Bullet target 3-7 kata, utuh, natural, dan masing-masing menambah fakta berbeda. Jika perlu 8-10 kata agar fakta tetap utuh, pilih keutuhan fakta daripada memotong makna.\n- Untuk body dan SETIAP bullet, sertakan satu claim dengan field yang tepat, claim.text SAMA PERSIS dengan copy visible, sourceId = primarySourceId slide, dan evidence VERBATIM dari daftar evidence slide itu.\n- Jika title menyatakan fakta substantif, sertakan claim title dengan sourceId yang sama dan evidence yang benar-benar mendukung title. Jika title hanya heading editorial netral, claim title boleh tidak ada.\n- Jangan membuat body berupa pertanyaan pada format Fakta singkat. Slide tengah wajib membawa fakta terverifikasi, bukan pengantar/pendapat/filler.\n- Jangan menggabungkan dua evidence menjadi klaim baru yang tidak dinyatakan salah satunya.\n- Jangan menambah sebab-akibat, manfaat, tujuan, strategi, implikasi, rekomendasi, kepastian, angka, persentase, ordinal, lokasi, versi, tanggal, atau outcome yang tidak dinyatakan evidence pilihan.\n- Pertahankan angka/persentase/versi/waktu persis secara makna. 5,89 persen boleh diparafrasekan sebagai 5,89%, tetapi jangan mengubah nilainya.\n- Jangan mengulang evidence/fakta jika masih ada evidence berbeda pada slide yang sama.\n- Jangan memakai related article, metadata, byline, tanggal publikasi, cookie/privacy, atau headline lain.\n- Hasil harus padat seperti pola editorial: judul -> body fakta inti -> bullet detail pendukung.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `AUTO SOURCE PLAN-FIRST FINAL — TANPA URL SAJA.\n\nTOPIK USER: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nERROR ATTEMPT SEBELUMNYA: ${JSON.stringify(errors)}\nDRAFT SEBELUMNYA: ${JSON.stringify(previousSlides)}\n\nPLAN FINAL PER SLIDE:\n${JSON.stringify(context.slides)}\n\nATURAN WAJIB — PLAN MENGALAHKAN SEMUA DRAFT LAMA:\n- Bangun ulang SEMUA slide dari PLAN FINAL PER SLIDE. Jangan mempertahankan field draft yang bertentangan dengan plan.\n- SATU SLIDE = SATU primarySourceId = SATU subtopik. Body, seluruh bullet, dan title faktual pada slide itu WAJIB memakai primarySourceId yang sama.\n- Gunakan HANYA evidence yang tercantum pada slide tersebut. Dilarang mengambil evidence dari slide/source lain dan dilarang memakai pengetahuan luar.\n- Semua primarySourceId yang muncul pada PLAN wajib benar-benar menyumbang copy visible final.\n- Judul 3-10 kata, natural, spesifik, tidak boleh hanya PEMBUKA/FAKTA UTAMA/KONTEKS/KESIMPULAN, dan tidak boleh mengulang judul slide lain.\n- Body target 10-20 kata, hard range 8-24 kata, satu kalimat utuh, faktual, natural Bahasa Indonesia.\n- ${pointRule}\n- Bullet target 3-7 kata, utuh, natural, dan masing-masing menambah fakta berbeda. Jika perlu 8-10 kata agar fakta tetap utuh, pilih keutuhan fakta daripada memotong makna.\n- Untuk body dan SETIAP bullet, sertakan satu claim dengan field yang tepat, claim.text SAMA PERSIS dengan copy visible, sourceId = primarySourceId slide, dan evidence VERBATIM dari daftar evidence slide itu.\n- Jika title menyatakan fakta substantif, sertakan claim title dengan sourceId yang sama dan evidence yang benar-benar mendukung title. Jika title hanya heading editorial netral, claim title boleh tidak ada.\n- Jangan membuat body berupa pertanyaan pada format Fakta singkat. Slide tengah wajib membawa fakta terverifikasi, bukan pengantar/pendapat/filler.\n- Jangan menggabungkan dua evidence menjadi klaim baru yang tidak dinyatakan salah satunya.\n- Jangan menambah sebab-akibat, manfaat, tujuan, strategi, implikasi, rekomendasi, kepastian, angka, persentase, ordinal, lokasi, versi, tanggal, atau outcome yang tidak dinyatakan evidence pilihan.\n- Pertahankan angka/persentase/versi/waktu persis secara makna. 5,89 persen boleh diparafrasekan sebagai 5,89%, tetapi jangan mengubah nilainya.\n- Gunakan evidence berbeda untuk body dan tiap bullet selama PLAN menyediakan fakta berbeda.\n- Jangan memakai related article, metadata, byline, tanggal publikasi, cookie/privacy, atau headline lain.\n- Hasil harus padat seperti pola editorial: judul -> body fakta inti -> bullet detail pendukung.\n\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function normalizeSections(slides = [], sections = []) {
@@ -114,16 +114,37 @@ function planOwnershipErrors(content = {}, context = {}) {
       continue;
     }
     const expected = planSlide.primarySourceId;
+    const allowedEvidence = new Set((planSlide.evidence || []).map(normalize).filter(Boolean));
     const claims = (slide.claims || []).filter(claim => /^slide:\d+:(?:title|body|point:\d+)$/.test(String(claim?.field || '')));
     const substantive = claims.filter(claim => !String(claim?.field || '').endsWith(':title'));
     if (!substantive.length) errors.push(`AUTO_SOURCE_PLAN: slide:${planSlide.slideIndex}: belum memiliki claim substantif.`);
+
+    const usedEvidence = new Set();
     for (const claim of claims) {
+      const field = String(claim?.field || '');
       if (String(claim?.sourceId || '') !== expected) {
-        errors.push(`AUTO_SOURCE_PLAN: ${claim.field}: wajib ${expected}, bukan ${claim?.sourceId || 'tanpa sourceId'}.`);
+        errors.push(`AUTO_SOURCE_PLAN: ${field}: wajib ${expected}, bukan ${claim?.sourceId || 'tanpa sourceId'}.`);
+      }
+      const evidenceKey = normalize(claim?.evidence);
+      if (evidenceKey && !allowedEvidence.has(evidenceKey)) {
+        errors.push(`AUTO_SOURCE_PLAN: ${field}: evidence harus berasal dari paket evidence slide ${planSlide.slideIndex + 1}.`);
+      }
+      if (!field.endsWith(':title') && evidenceKey) {
+        if (usedEvidence.has(evidenceKey) && allowedEvidence.size >= substantive.length) {
+          errors.push(`AUTO_SOURCE_PLAN: ${field}: gunakan evidence berbeda untuk body/bullet slide ${planSlide.slideIndex + 1}.`);
+        }
+        usedEvidence.add(evidenceKey);
       }
     }
   }
   return errors;
+}
+
+// Plan-first already validates density against the relevant per-source fact plan.
+// Do not let autoSourceComposer re-derive a second, contradictory density target
+// from every raw sentence in the fetched articles after the finalizer has passed.
+function postHandoffRichnessErrors() {
+  return [];
 }
 
 async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', format = 'Fakta singkat', contentService, client } = {}) {
@@ -136,8 +157,6 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
   const sections = sourceUrlFinalizer.targetSections(generated, effectiveFormat, facts, sources, resolvedTopic);
   const context = planContext({ sources, facts, sections });
   if (context.slides.length !== sections.length || context.slides.some(slide => !slide.primarySourceId || !slide.evidence.length)) {
-    // Discovery should already have filtered weak sources. Keep this explicit so
-    // the composer never invents filler merely to satisfy density.
     throw Object.assign(new Error('Auto Source belum memiliki evidence per-source yang cukup untuk membentuk semua slide.'), { status: 422 });
   }
 
@@ -211,7 +230,7 @@ module.exports = {
   planContext,
   planOwnershipErrors,
   prompt,
-  richnessErrors: qualityLayer.capacityDensityErrors,
+  richnessErrors: postHandoffRichnessErrors,
   filterFalsePositiveMetadataErrors: resilient.filterFalsePositiveMetadataErrors,
   MAX_PLAN_ATTEMPTS
 };
