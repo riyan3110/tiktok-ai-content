@@ -13,6 +13,8 @@ const indonesianOutput = require('./autoSourceIndonesianOutput');
 // into an empty generation merely because wording differs from the user query.
 
 const VISIBLE_EDITORIAL_HYPE = /\b(?:(?:pembaruan|perubahan|transformasi)\s+(?:besar(?:-besaran)?|fundamental)|secara\s+fundamental\s+(?:mengubah|mengubah\s+pengalaman)|membayangkan\s+ulang\s+(?:cara|pengalaman)|visi\s+(?:navigasi\s+)?digital\s+baru|era\s+baru\s+(?:navigasi|digital)|reimag(?:e|ines|ined|ining)\s+(?:navigation|the\s+experience)|fundamentally\s+(?:changes?|reshapes?|reimagines?))\b/i;
+const REQUIRED_DISTINCT_FACTS = 4;
+const NEAR_DUPLICATE_SIMILARITY = 0.64;
 
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -154,29 +156,72 @@ function keepOnlyReadableFacts(topic = '', source = {}, plan = {}) {
   };
 }
 
+function isSearchSnippet(source = {}) {
+  return source?.discovery?.evidenceMode === 'search-snippet';
+}
+
+function distinctFactRows(topic = '', sources = [], count = REQUIRED_DISTINCT_FACTS) {
+  const candidates = simple.buildFactCandidates(sources, topic);
+  const selected = [];
+  for (const candidate of candidates) {
+    const duplicate = selected.some(existing => {
+      if (simple.sameFactContext(existing.evidence, candidate.evidence, topic)) return true;
+      const similarity = Math.max(
+        simple.semanticSimilarity(existing.evidence, candidate.evidence, topic),
+        simple.semanticSimilarity(existing.evidence, candidate.evidence)
+      );
+      return similarity >= NEAR_DUPLICATE_SIMILARITY;
+    });
+    if (duplicate) continue;
+    selected.push(candidate);
+    if (selected.length >= count) break;
+  }
+  return selected;
+}
+
+function distinctFactCount(topic = '', sources = [], count = REQUIRED_DISTINCT_FACTS) {
+  return distinctFactRows(topic, sources, count).length;
+}
+
+function preparedVariant(topic = '', sources = [], plan = {}) {
+  return sources
+    .map(source => keepOnlyReadableFacts(topic, source, plan))
+    .filter(source => clean(source?.text));
+}
+
 function prepareSources(topic = '', sources = [], plan = {}) {
   const scoped = dynamicScope.scopeSources(topic, sources, plan);
   const focused = storyFocus.focusSources(topic, scoped, plan);
 
-  const prepared = sources.map((original, index) => {
+  const focusedPrepared = sources.map((original, index) => {
     const current = focused[index] || { ...original, text: '' };
     const fallback = eventNeighborhoodSource(topic, original, plan);
     const currentCount = factCount(topic, current, plan);
     const fallbackCount = factCount(topic, fallback, plan);
-    // Prefer tightly focused text when it still contains enough material.
-    // Otherwise keep the relevant factual neighborhood from the same article.
     return currentCount >= 4 ? current : fallbackCount > currentCount ? fallback : current;
   }).map(source => keepOnlyReadableFacts(topic, source, plan)).filter(source => clean(source?.text));
 
-  const totalFacts = prepared.reduce((sum, source) => sum + factCount(topic, source, plan), 0);
-  if (totalFacts >= 4) return prepared;
+  // Search snippets are a rescue mechanism, not a diversity quota. If readable
+  // full articles already contain four substantively different facts, keep the
+  // weaker snippet supplements out of the writer entirely.
+  const fullArticleFocused = focusedPrepared.filter(source => !isSearchSnippet(source));
+  if (distinctFactCount(topic, fullArticleFocused) >= REQUIRED_DISTINCT_FACTS) {
+    return fullArticleFocused;
+  }
 
-  // Last factual rescue: widen only within the same discovery-approved articles.
-  // Relevance gates above still reject other stories/market side-notes.
-  return sources
-    .map(source => eventNeighborhoodSource(topic, source, plan, 14))
-    .map(source => keepOnlyReadableFacts(topic, source, plan))
-    .filter(source => clean(source?.text));
+  if (distinctFactCount(topic, focusedPrepared) >= REQUIRED_DISTINCT_FACTS) {
+    return focusedPrepared;
+  }
+
+  // If focused text was too narrow, widen only inside the same discovery-approved
+  // articles and keep every sentence behind the existing factRelevant gate.
+  const fullArticleWide = preparedVariant(topic, sources.filter(source => !isSearchSnippet(source)), plan);
+  if (distinctFactCount(topic, fullArticleWide) >= REQUIRED_DISTINCT_FACTS) {
+    return fullArticleWide;
+  }
+
+  const allWide = preparedVariant(topic, sources, plan);
+  return allWide;
 }
 
 async function compose(args = {}) {
@@ -189,6 +234,15 @@ async function compose(args = {}) {
     throw Object.assign(new Error('Auto Source tidak menemukan teks artikel yang dapat dipakai setelah sumber dibaca.'), {
       status: 422,
       code: 'AUTO_SOURCE_READABLE_FACTS_EMPTY'
+    });
+  }
+
+  const uniqueFacts = distinctFactRows(topic, usableSources, REQUIRED_DISTINCT_FACTS);
+  if (uniqueFacts.length < REQUIRED_DISTINCT_FACTS) {
+    throw Object.assign(new Error(`Auto Source baru menemukan ${uniqueFacts.length} fakta yang benar-benar berbeda; sumber perlu dicari lagi sebelum menulis 4 slide.`), {
+      status: 422,
+      code: 'AUTO_SOURCE_DISTINCT_FACTS_EMPTY',
+      distinctFactCount: uniqueFacts.length
     });
   }
 
@@ -223,6 +277,12 @@ module.exports = {
   eventNeighborhoodSource,
   factCount,
   keepOnlyReadableFacts,
+  isSearchSnippet,
+  distinctFactRows,
+  distinctFactCount,
+  preparedVariant,
   prepareSources,
-  visibleEditorialHype
+  visibleEditorialHype,
+  REQUIRED_DISTINCT_FACTS,
+  NEAR_DUPLICATE_SIMILARITY
 };
