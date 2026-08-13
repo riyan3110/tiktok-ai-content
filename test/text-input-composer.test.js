@@ -82,3 +82,22 @@ test('ordinary summaries use four slides and very long text can use five', () =>
   assert.equal(composer.targetSlideCount(source), 4);
   assert.equal(composer.targetSlideCount(Array.from({ length: 230 }, (_, index) => `kata${index}`).join(' ')), 5);
 });
+
+test('section labels cannot be reused as large slide titles', () => {
+  const examples = [
+    [1, 'Fakta Utama'],
+    [2, 'Detail Penting'],
+    [3, 'Kesimpulan']
+  ];
+
+  for (const [index, title] of examples) {
+    const value = sample();
+    value.slides[index].title = title;
+    assert.ok(
+      composer.validateResult(value, source).errors.some(error => /judul besar harus spesifik/i.test(error)),
+      `${title} should be rejected as a large title`
+    );
+  }
+
+  assert.equal(composer.genericSlideTitle('Ultrafast hingga 14x lebih cepat'), false);
+});
