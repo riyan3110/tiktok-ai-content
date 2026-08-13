@@ -163,7 +163,11 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
     }
     const candidate = applyVisibleRepair(current, translated);
     const finalized = simple.finalizeVisibleCopy(candidate, packets, sources);
-    const blocking = finalized.errors.filter(error => !/:point:\d+:/.test(error));
+    // A literal-evidence fallback can be translated faithfully even when the
+    // language-agnostic editorial heuristic still sees a repeated angle or
+    // misses a cross-language detail alias. Unsupported numbers, broken claim
+    // metadata, empty copy, and other factual errors remain blocking.
+    const blocking = simple.unsafeBlockingErrors(finalized.errors);
     if (blocking.length) continue;
     current = syncVisibleTop({ ...current, slides: finalized.candidate.slides });
   }

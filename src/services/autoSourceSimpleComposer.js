@@ -709,6 +709,38 @@ function deriveSafeTitle(slide = {}) {
   return fallback ? fallback.charAt(0).toLocaleUpperCase('id-ID') + fallback.slice(1) : (title || 'Fakta utama');
 }
 
+function groundedEvidenceCandidate(packets = []) {
+  return {
+    slides: packets.map((packet, slideIndex) => {
+      const body = cleanEvidence(packet?.mainEvidence);
+      return {
+        section: packet?.section,
+        title: deriveSafeTitle({ body }),
+        body,
+        points: [],
+        claims: body ? [{
+          field: `slide:${slideIndex}:body`,
+          text: body,
+          sourceId: packet?.primarySourceId,
+          evidence: body
+        }] : []
+      };
+    })
+  };
+}
+
+function strictBlockingErrors(errors = []) {
+  return errors.filter(error => !/:point:\d+:/.test(error));
+}
+
+function editorialOnlyError(error = '') {
+  return /(?:detail pembeda mainEvidence tidak masuk ke copy visible|konteks\/fakta mengulang)/i.test(String(error || ''));
+}
+
+function unsafeBlockingErrors(errors = []) {
+  return strictBlockingErrors(errors).filter(error => !editorialOnlyError(error));
+}
+
 function finalizeVisibleCopy(candidate, packets, sources) {
   let result = {
     ...candidate,
@@ -809,21 +841,40 @@ async function compose({ options = {}, sources = [], discovery = null, client } 
     finalized = finalizeVisibleCopy({ slides: mergedSlides }, packets, sources);
   }
 
-  let blocking = finalized.errors.filter(error => !/:point:\d+:/.test(error));
+  let blocking = strictBlockingErrors(finalized.errors);
   if (blocking.length) {
     try {
+      // Give the last editor a clean, source-literal seed instead of asking it
+      // to repair an already flattened/repeated draft. This makes the rescue
+      // useful for arbitrary topics and keeps every slide tied to its packet.
+      const groundedSeed = groundedEvidenceCandidate(packets);
       const rescueRaw = await callJson(
         openai,
         'Anda editor recovery terakhir. Perbaiki hanya masalah cek fakta yang disebut, pertahankan empat fakta berbeda, dan jangan menambah pengetahuan luar.',
-        checkerPrompt({ topic, format, packets, candidate: finalized.candidate, errors: blocking })
+        checkerPrompt({ topic, format, packets, candidate: groundedSeed, errors: blocking })
       );
       const rescued = finalizeVisibleCopy(normalizeCandidate(rescueRaw, packets), packets, sources);
-      const rescuedBlocking = rescued.errors.filter(error => !/:point:\d+:/.test(error));
+      const rescuedBlocking = strictBlockingErrors(rescued.errors);
       if (rescuedBlocking.length < blocking.length) {
         finalized = rescued;
         blocking = rescuedBlocking;
       }
     } catch {}
+  }
+
+  // The AI writer must never turn a valid free-form topic into a user-facing
+  // validation error merely because it flattened a distinguishing detail or
+  // repeated an angle after the final editor pass. Rebuild from the four
+  // already-selected source sentences instead. This candidate is conservative:
+  // each visible body is literal evidence from its own source and contains no
+  // generated bullet. The Indonesian-output layer translates it afterwards.
+  if (blocking.length) {
+    const grounded = finalizeVisibleCopy(groundedEvidenceCandidate(packets), packets, sources);
+    const unsafe = unsafeBlockingErrors(grounded.errors);
+    if (!unsafe.length) {
+      finalized = grounded;
+      blocking = [];
+    }
   }
 
   if (blocking.length) {
@@ -849,6 +900,10 @@ module.exports = {
   evidenceLiteralInSource,
   repairClaimMetadata,
   dropInvalidPoints,
+  groundedEvidenceCandidate,
+  strictBlockingErrors,
+  editorialOnlyError,
+  unsafeBlockingErrors,
   finalizeVisibleCopy,
   similarity,
   semanticSimilarity,
