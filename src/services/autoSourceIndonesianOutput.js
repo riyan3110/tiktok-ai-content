@@ -3,9 +3,10 @@ const config = require('../config');
 const simple = require('./autoSourceSimpleComposer');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// The source/evidence may be any language. Only user-visible copy must be
-// natural Indonesian. This guard runs after the normal simple writer + checker
-// and only calls the model when visible English copy actually leaked through.
+// The source/evidence may be any language. User-visible copy must stay natural
+// Indonesian, source-faithful, and preserve the source's timing/certainty.
+// This guard runs after the normal simple writer + checker. Pakai URL never
+// loads this module.
 
 const ENGLISH_MARKERS = new Set([
   'the','and','or','to','of','in','on','for','with','from','is','are','was','were','will','can','could','has','have','had',
@@ -20,8 +21,17 @@ const INDONESIAN_MARKERS = new Set([
   'konten','tanda','air','jawaban','model','perusahaan','langsung','tanpa','selama','periode','lama','baru','menguji','dirilis'
 ]);
 
+const BODY_REPAIR_TARGET_MIN_WORDS = 14;
+const FUTURE_OR_ROLLOUT = /\b(?:will\s+(?:be\s+)?(?:available|launch|roll\s+out|expand)|coming\s+(?:to|soon)|plans?\s+to\s+(?:launch|expand|roll\s+out)|rolling\s+out|expanding\s+to|set\s+to\s+(?:launch|expand)|akan|bakal|segera|bertahap|digulirkan|diperluas|mulai\s+(?:digulirkan|diluncurkan|tersedia)|dalam\s+proses\s+(?:peluncuran|perluasan))\b/i;
+const COMPLETED_ROLLOUT = /\b(?:(?:telah|sudah)\s+(?:resmi\s+)?(?:dirilis|diluncurkan|tersedia|hadir|digulirkan|diperluas)|(?:has|have)\s+(?:already\s+)?(?:been\s+)?(?:released|launched|rolled\s+out|expanded|made\s+available))\b/i;
+const VISIBLE_HYPE = /\b(?:(?:lompatan|terobosan)\s+besar|game[- ]?changer|revolusioner|pembaruan\s+besar(?:-besaran)?|perubahan\s+fundamental|transformasi\s+besar|secara\s+fundamental\s+(?:mengubah|membentuk\s+ulang)|membayangkan\s+ulang\s+(?:cara|pengalaman)|visi\s+(?:navigasi\s+)?digital\s+baru|era\s+baru\s+(?:navigasi|digital)|mengubah\s+(?:sepenuhnya\s+|total\s+)?cara\s+(?:kita|orang|pengguna)|masa\s+depan\s+(?:sudah\s+)?(?:tiba|dimulai)|fundamentally\s+(?:changes?|reshapes?|reimagines?)|reimag(?:e|ines|ined|ining)\s+(?:navigation|the\s+experience))\b/i;
+
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function words(value) {
+  return clean(value).split(/\s+/).filter(Boolean);
 }
 
 function tokenList(value) {
@@ -63,13 +73,59 @@ function needsIndonesianRepair(result = {}) {
   return visibleValues(result).some(likelyEnglishVisible);
 }
 
-function repairPrompt({ topic, format, result }) {
+function rolloutOverstatement(copy = '', evidence = '') {
+  const visible = clean(copy);
+  const source = clean(evidence);
+  if (!visible || !source) return false;
+  return FUTURE_OR_ROLLOUT.test(source)
+    && !COMPLETED_ROLLOUT.test(source)
+    && COMPLETED_ROLLOUT.test(visible);
+}
+
+function bodyNeedsDensityRepair(body = '', packet = {}) {
+  const evidenceWords = words(packet?.mainEvidence).length;
+  if (!evidenceWords) return false;
+  const desired = Math.min(BODY_REPAIR_TARGET_MIN_WORDS, evidenceWords);
+  return words(body).length < desired;
+}
+
+function visibleHype(value = '') {
+  return VISIBLE_HYPE.test(clean(value));
+}
+
+function needsQualityRepair(result = {}, packets = []) {
+  const slides = Array.isArray(result?.slides) ? result.slides : [];
+  return packets.some((packet, slideIndex) => {
+    const slide = slides[slideIndex] || {};
+    const body = clean(slide?.body);
+    const title = clean(slide?.title);
+    if (!body) return true;
+    if (bodyNeedsDensityRepair(body, packet)) return true;
+    if (visibleHype(title) || visibleHype(body)) return true;
+    if (rolloutOverstatement(body, packet?.mainEvidence)) return true;
+    if (!simple.mainEvidenceCovered(body, packet)) return true;
+    return false;
+  });
+}
+
+function needsVisibleRepair(result = {}, packets = []) {
+  return needsIndonesianRepair(result) || needsQualityRepair(result, packets);
+}
+
+function repairPrompt({ topic, format, result, packets = [] }) {
   const visible = (result?.slides || []).map(slide => ({
     title: clean(slide?.title),
     body: clean(slide?.body),
     points: (slide?.points || []).map(clean)
   }));
-  return `PERBAIKI BAHASA COPY VISIBLE AUTO SOURCE.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nCOPY SAAT INI:\n${JSON.stringify(visible)}\n\nTUGAS:\nUbah SEMUA title, body, dan bullet yang masih berbahasa Inggris menjadi Bahasa Indonesia yang natural dan ringkas.\n\nATURAN KERAS:\n- Jangan mengubah fakta, angka, persentase, tanggal, nama perusahaan, nama produk, nama model, versi, atau tingkat kepastian.\n- Jangan menambah atau menghapus konteks berita. Ini HANYA repair bahasa.\n- Nama resmi/brand/istilah teknis seperti Anthropic, Claude, API, GPU, EVM, watermark boleh tetap asli bila natural, tetapi kalimat di sekelilingnya wajib Bahasa Indonesia.\n- Pertahankan jumlah slide tepat 4.\n- Pertahankan jumlah dan urutan bullet pada tiap slide; jika tidak ada bullet, tetap kosong.\n- Body tetap padat dan natural. Jangan menyalin kalimat sumber Inggris mentah.\n- Jangan sertakan evidence atau claim; metadata fakta akan dipertahankan oleh sistem.\n\nKembalikan HANYA JSON:\n{"slides":[{"title":"...","body":"...","points":["..."]}]}`;
+  const evidence = packets.map(packet => ({
+    slideIndex: packet?.slideIndex,
+    section: packet?.section,
+    sourceTitle: packet?.sourceTitle,
+    publishedAt: packet?.publishedAt,
+    mainEvidence: clean(packet?.mainEvidence)
+  }));
+  return `EDITOR COPY VISIBLE AUTO SOURCE — TANPA URL.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nCOPY SAAT INI:\n${JSON.stringify(visible)}\n\nFAKTA SUMBER PER SLIDE:\n${JSON.stringify(evidence)}\n\nTUGAS:\nPerbaiki HANYA copy yang masih kurang pas. Pertahankan bagian yang sudah benar. Semua title, body, dan bullet final harus Bahasa Indonesia natural serta setia pada mainEvidence slide masing-masing.\n\nATURAN KERAS:\n- Slide N hanya boleh menjelaskan mainEvidence slide N. Jangan memindahkan atau mencampur fakta dari slide lain.\n- Jangan mengubah fakta, angka, persentase, tanggal, nama perusahaan, nama produk, nama model, versi, lokasi, atau tingkat kepastian.\n- WAJIB mempertahankan status waktu/ketersediaan. Jika sumber berkata akan, coming, expanding, rolling out, bertahap, atau diperluas, JANGAN mengubahnya menjadi telah/sudah dirilis, tersedia, atau selesai diluncurkan.\n- Jangan menambah sebab-akibat, manfaat, tujuan, strategi, implikasi, atau klaim yang tidak tertulis pada mainEvidence.\n- Hilangkan wording editorial/hype seperti “pembaruan besar-besaran”, “secara fundamental mengubah”, “visi digital baru”, “era baru”, “revolusioner”, atau klaim sejenis jika itu bukan fakta konkret. Ganti dengan detail faktual dari mainEvidence, bukan filler.\n- Body target 14-20 kata bila mainEvidence cukup panjang. Utamakan satu fakta konkret + detail pembeda yang benar; jangan memanjangkan dengan kalimat umum.\n- Judul harus berupa label/sudut editorial 3-8 kata, berbeda dari body dan berbeda antar-slide. Judul tidak boleh menambah fakta baru.\n- Bullet 0-3 dan TIDAK wajib. Pertahankan jumlah/urutan bullet yang ada; bila bullet yang ada tidak dapat dibuktikan mainEvidence, kosongkan teks bullet itu daripada mengarang.\n- Nama resmi/brand/istilah teknis seperti Google Maps, Ask Maps, Gemini, Gmail, API, GPU, EVM boleh tetap asli bila natural.\n- Pertahankan jumlah slide tepat 4.\n- Jangan sertakan evidence atau claim; metadata fakta akan dipertahankan oleh sistem.\n\nKembalikan HANYA JSON:\n{"slides":[{"title":"...","body":"...","points":["..."]}]}`;
 }
 
 function parseJsonResponse(response) {
@@ -135,7 +191,7 @@ async function callRepair(openai, prompt) {
     messages: [
       {
         role: 'system',
-        content: 'Anda editor Bahasa Indonesia. Tugas Anda hanya menerjemahkan/parafrase copy visible ke Bahasa Indonesia tanpa mengubah fakta.'
+        content: 'Anda editor Bahasa Indonesia dan fact-checker copy visible. Perbaiki hanya bagian yang perlu, selalu tunduk pada mainEvidence setiap slide, dan jangan mengubah tingkat kepastian sumber.'
       },
       { role: 'user', content: prompt }
     ],
@@ -145,30 +201,29 @@ async function callRepair(openai, prompt) {
 }
 
 async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', sources = [], client } = {}) {
-  if (!needsIndonesianRepair(result)) return result;
-
   const packets = simple.buildSlidePackets(sources, topic, format);
   if (packets.length !== simple.SLIDE_COUNT) return result;
+  if (!needsVisibleRepair(result, packets)) return result;
+
   const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
   let current = result;
 
-  // Normally this loop runs once. A second pass is only a fail-safe when the
-  // provider ignored the first language-only repair instruction.
-  for (let attempt = 0; attempt < 2 && needsIndonesianRepair(current); attempt += 1) {
+  // Normally one pass is enough. The second pass is only a fail-safe when the
+  // provider leaves English, hype, thin copy, or a rollout-status overstatement.
+  for (let attempt = 0; attempt < 2 && needsVisibleRepair(current, packets); attempt += 1) {
     let translated;
     try {
-      translated = await callRepair(openai, repairPrompt({ topic, format, result: current }));
+      translated = await callRepair(openai, repairPrompt({ topic, format, result: current, packets }));
     } catch {
       break;
     }
     const candidate = applyVisibleRepair(current, translated);
     const finalized = simple.finalizeVisibleCopy(candidate, packets, sources);
-    // A literal-evidence fallback can be translated faithfully even when the
-    // language-agnostic editorial heuristic still sees a repeated angle or
-    // misses a cross-language detail alias. Unsupported numbers, broken claim
-    // metadata, empty copy, and other factual errors remain blocking.
+    // Editorial quality problems should trigger another repair, not a user-facing
+    // rejection. Unsupported numbers, broken claim metadata, empty copy, and
+    // other factual errors remain blocking.
     const blocking = simple.unsafeBlockingErrors(finalized.errors, packets);
-    if (blocking.length) continue;
+    if (blocking.length || needsQualityRepair(finalized.candidate, packets)) continue;
     current = syncVisibleTop({ ...current, slides: finalized.candidate.slides });
   }
 
@@ -180,6 +235,11 @@ module.exports = {
   likelyEnglishVisible,
   visibleValues,
   needsIndonesianRepair,
+  rolloutOverstatement,
+  bodyNeedsDensityRepair,
+  visibleHype,
+  needsQualityRepair,
+  needsVisibleRepair,
   repairPrompt,
   applyVisibleRepair,
   syncVisibleTop,
