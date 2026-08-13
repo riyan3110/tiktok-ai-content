@@ -106,9 +106,6 @@ function readableFacts(topic = '', source = {}, plan = {}) {
   for (let index = 0; index < raw.length; index += 1) {
     const fact = raw[index];
     let keep = factRelevant(topic, fact, plan, previousKept, source);
-    // If the headline already anchors the topic, only a true pronoun/reference
-    // continuation may borrow that headline context. Independent lead sentences
-    // still need to match the topic themselves so market/roundup side-notes stay out.
     if (!keep && anchoredLead && index < 4 && continuationFact(fact)
       && !storyFocus.editorialNoise(fact, plan)
       && !visibleEditorialHype(fact, plan)
@@ -160,19 +157,20 @@ function isSearchSnippet(source = {}) {
   return source?.discovery?.evidenceMode === 'search-snippet';
 }
 
+function nearDuplicateEvidence(topic = '', left = '', right = '') {
+  if (simple.sameFactContext(left, right, topic)) return true;
+  const similarity = Math.max(
+    simple.semanticSimilarity(left, right, topic),
+    simple.semanticSimilarity(left, right)
+  );
+  return similarity >= NEAR_DUPLICATE_SIMILARITY;
+}
+
 function distinctFactRows(topic = '', sources = [], count = REQUIRED_DISTINCT_FACTS) {
   const candidates = simple.buildFactCandidates(sources, topic);
   const selected = [];
   for (const candidate of candidates) {
-    const duplicate = selected.some(existing => {
-      if (simple.sameFactContext(existing.evidence, candidate.evidence, topic)) return true;
-      const similarity = Math.max(
-        simple.semanticSimilarity(existing.evidence, candidate.evidence, topic),
-        simple.semanticSimilarity(existing.evidence, candidate.evidence)
-      );
-      return similarity >= NEAR_DUPLICATE_SIMILARITY;
-    });
-    if (duplicate) continue;
+    if (selected.some(existing => nearDuplicateEvidence(topic, existing.evidence, candidate.evidence))) continue;
     selected.push(candidate);
     if (selected.length >= count) break;
   }
@@ -187,6 +185,29 @@ function preparedVariant(topic = '', sources = [], plan = {}) {
   return sources
     .map(source => keepOnlyReadableFacts(topic, source, plan))
     .filter(source => clean(source?.text));
+}
+
+function pruneNearDuplicateFacts(topic = '', sources = [], plan = {}) {
+  const accepted = [];
+  const pruned = [];
+  for (const source of sources) {
+    const kept = [];
+    for (const fact of readableFacts(topic, source, plan)) {
+      if (accepted.some(existing => nearDuplicateEvidence(topic, existing, fact))) continue;
+      accepted.push(fact);
+      kept.push(fact);
+    }
+    if (!kept.length) continue;
+    pruned.push({
+      ...source,
+      text: kept.map(fact => /[.!?]$/.test(fact) ? fact : `${fact}.`).join(' '),
+      autoSourceEvidenceFirst: {
+        ...(source.autoSourceEvidenceFirst || {}),
+        keptDistinctFacts: kept.length
+      }
+    });
+  }
+  return pruned;
 }
 
 function prepareSources(topic = '', sources = [], plan = {}) {
@@ -220,23 +241,27 @@ function prepareSources(topic = '', sources = [], plan = {}) {
     return fullArticleWide;
   }
 
-  const allWide = preparedVariant(topic, sources, plan);
-  return allWide;
+  return preparedVariant(topic, sources, plan);
 }
 
 async function compose(args = {}) {
   const topic = String(args?.options?.requestedTopic || args?.discovery?.topic || '').trim();
   const format = args?.options?.contentFormat || 'Fakta singkat';
   const plan = args?.discovery?.topicPlan || topicPlanner.fallbackPlan(topic);
-  const usableSources = prepareSources(topic, args.sources || [], plan);
+  const prepared = prepareSources(topic, args.sources || [], plan);
 
-  if (!usableSources.length) {
+  if (!prepared.length) {
     throw Object.assign(new Error('Auto Source tidak menemukan teks artikel yang dapat dipakai setelah sumber dibaca.'), {
       status: 422,
       code: 'AUTO_SOURCE_READABLE_FACTS_EMPTY'
     });
   }
 
+  // Remove repeated evidence before simple.compose ever sees it. The old simple
+  // fallback may fill a missing fourth slot by recycling an earlier candidate;
+  // that path is now unreachable in production because we require four unique
+  // evidence rows first and feed only de-duplicated facts to the writer.
+  const usableSources = pruneNearDuplicateFacts(topic, prepared, plan);
   const uniqueFacts = distinctFactRows(topic, usableSources, REQUIRED_DISTINCT_FACTS);
   if (uniqueFacts.length < REQUIRED_DISTINCT_FACTS) {
     throw Object.assign(new Error(`Auto Source baru menemukan ${uniqueFacts.length} fakta yang benar-benar berbeda; sumber perlu dicari lagi sebelum menulis 4 slide.`), {
@@ -278,9 +303,11 @@ module.exports = {
   factCount,
   keepOnlyReadableFacts,
   isSearchSnippet,
+  nearDuplicateEvidence,
   distinctFactRows,
   distinctFactCount,
   preparedVariant,
+  pruneNearDuplicateFacts,
   prepareSources,
   visibleEditorialHype,
   REQUIRED_DISTINCT_FACTS,
