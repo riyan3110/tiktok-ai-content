@@ -11,7 +11,7 @@ function sample() {
     caption: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Perubahan membantu proses identifikasi tanpa mengubah tampilan teks bagi pengguna. Penerapannya dilakukan secara bertahap sesuai dukungan model. Carousel hanya merangkum informasi dari teks input tanpa menambahkan klaim baru dari luar bahan yang ditempel.',
     hashtags: ['#AI', '#Teknologi', '#ModelAI'],
     slides: [
-      { section: 'HOOK', title: 'Hal Baru Mulai Disiapkan', body: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Tujuannya membantu proses identifikasi sambil mempertahankan tampilan teks yang dibaca pengguna sekarang.', points: [] },
+      { section: 'HOOK', title: 'Hal Baru Mulai Disiapkan', body: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Fitur ini membantu identifikasi tanpa mengubah tampilan teks pengguna.', points: [] },
       { section: 'FAKTA UTAMA', title: 'Fokus pada Dukungan Model', body: 'Penerapan mengikuti dukungan model yang tersedia secara bertahap.', points: ['Tampilan teks tetap sama', 'Identifikasi menjadi lebih terbantu'] },
       { section: 'DETAIL', title: 'Dampak bagi Pengguna', body: 'Pengguna tetap membaca teks dengan tampilan yang sama.', points: ['Perubahan tidak mengubah tampilan', 'Penerapan dilakukan secara bertahap'] },
       { section: 'PENUTUP', title: 'Garis Besarnya', body: 'Perubahan berfokus pada identifikasi dan tampilan teks, dengan penerapan yang tetap mengikuti dukungan model secara bertahap.', points: [] }
