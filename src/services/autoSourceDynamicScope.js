@@ -78,8 +78,40 @@ function actionTermPresent(term = '', value = '') {
     .some(token => lightIndonesianStem(token) === wanted);
 }
 
+function conservativeNamedSubjectVariant(subject = '', value = '') {
+  const rawSubject = clean(subject);
+  // Fuzzy matching is only a safety net when the AI topic planner falls back.
+  // Keep it deliberately narrow: one title-cased word, no version/number, same
+  // length, and only one substitution or one adjacent transposition. This lets
+  // an obvious query typo match the correctly-spelled name in a source without
+  // broadening ordinary keywords or silently changing product identities.
+  if (!/^[A-Z][A-Za-z]{4,}$/.test(rawSubject)) return false;
+  const wanted = rawSubject.toLowerCase();
+  const candidates = clean(value).match(/[A-Za-z][A-Za-z-]*/g) || [];
+
+  return candidates.some(candidate => {
+    if (!/^[A-Z]/.test(candidate) || candidate.length !== wanted.length) return false;
+    const actual = candidate.toLowerCase();
+    const differences = [];
+    for (let index = 0; index < wanted.length; index += 1) {
+      if (wanted[index] !== actual[index]) differences.push(index);
+      if (differences.length > 2) return false;
+    }
+    if (differences.length === 1) return true;
+    if (differences.length !== 2) return false;
+    const [first, second] = differences;
+    return second === first + 1
+      && wanted[first] === actual[second]
+      && wanted[second] === actual[first];
+  });
+}
+
+function subjectPresent(subject = '', value = '') {
+  return phrasePresent(subject, value) || conservativeNamedSubjectVariant(subject, value);
+}
+
 function subjectHits(plan = {}, value = '') {
-  return (plan.subjects || []).filter(subject => phrasePresent(subject, value));
+  return (plan.subjects || []).filter(subject => subjectPresent(subject, value));
 }
 
 function eventHits(plan = {}, value = '') {
@@ -333,6 +365,8 @@ module.exports = {
   normalize,
   looseNormalize,
   phrasePresent,
+  conservativeNamedSubjectVariant,
+  subjectPresent,
   termPresent,
   actionTermPresent,
   subjectHits,

@@ -44,6 +44,46 @@ test('runtime planner understands a never-before-seen trending product without c
   assert.equal(plan.marketIntent, false);
 });
 
+test('runtime planner preserves the raw topic while using a high-confidence name correction for search', async () => {
+  const topic = 'Cloude menerapkan watermark';
+  let request;
+  const client = {
+    chat: {
+      completions: {
+        create: async options => {
+          request = options;
+          return {
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  canonicalTopic: 'Claude menerapkan watermark',
+                  subjects: ['Claude'],
+                  eventTerms: ['adds watermark', 'menerapkan watermark'],
+                  actionTerms: ['menerapkan', 'adds'],
+                  contextTerms: ['watermark'],
+                  searchQueries: ['Claude menerapkan watermark', 'Claude adds watermark latest'],
+                  marketIntent: false,
+                  relation: 'event'
+                })
+              }
+            }]
+          };
+        }
+      }
+    }
+  };
+
+  const plan = await planner.createPlan(topic, { client });
+
+  assert.equal(plan.rawTopic, topic);
+  assert.equal(plan.canonicalTopic, 'Claude menerapkan watermark');
+  assert.deepEqual(plan.subjects, ['Claude']);
+  assert.equal(plan.searchQueries[0], topic);
+  assert.ok(plan.searchQueries.some(query => query.includes('Claude adds watermark')));
+  assert.match(request.messages[1].content, /typo yang sangat jelas/i);
+  assert.match(request.messages[1].content, /jika ambigu, pertahankan input asli/i);
+});
+
 test('fallback planner also preserves unknown names and version strings', () => {
   const plan = planner.fallbackPlan('AetherNova meluncurkan NovaKite ZX-9');
   assert.ok(plan.subjects.some(subject => /AetherNova/i.test(subject)));
@@ -83,6 +123,90 @@ test('dynamic scope keeps novel-topic facts and rejects unrelated side notes', (
   const narrowed = scope.scopeSource(topic, source, plan);
   assert.match(narrowed.text, /NovaKite ZX-9/);
   assert.doesNotMatch(narrowed.text, /Bitcoin/);
+});
+
+test('fallback scope tolerates one obvious entity typo but does not collapse it into another name', () => {
+  const topic = 'Cloude menerapkan watermark';
+  const plan = {
+    subjects: ['Cloude'],
+    eventTerms: ['menerapkan watermark', 'adds watermark'],
+    actionTerms: ['menerapkan', 'adds'],
+    contextTerms: ['watermark'],
+    marketIntent: false,
+    relation: 'event',
+    planner: 'fallback'
+  };
+  const correctedSource = {
+    title: 'Claude adds a watermark to generated files',
+    text: 'Claude adds a visible watermark to generated files so recipients can identify their origin.'
+  };
+  const differentSource = {
+    title: 'Cloud platform adds a watermark to generated files',
+    text: 'A cloud storage platform adds a watermark to generated files.'
+  };
+
+  assert.equal(scope.sourceInScope(topic, correctedSource, plan), true);
+  assert.equal(scope.sourceInScope(topic, differentSource, plan), false);
+  assert.equal(scope.conservativeNamedSubjectVariant('Cluade', correctedSource.title), true);
+  assert.equal(scope.conservativeNamedSubjectVariant('Claude 4', correctedSource.title), false);
+});
+
+test('expanded discovery actually searches the corrected entity query for a typoed free-form topic', async () => {
+  expanded.clearCache();
+  const topic = 'Cloude menerapkan watermark';
+  const correctedQuery = 'Claude adds watermark latest';
+  const plan = {
+    rawTopic: topic,
+    canonicalTopic: 'Claude menerapkan watermark',
+    subjects: ['Claude'],
+    eventTerms: ['adds watermark', 'menerapkan watermark'],
+    actionTerms: ['menerapkan', 'adds'],
+    contextTerms: ['watermark'],
+    searchQueries: [topic, correctedQuery],
+    marketIntent: false,
+    relation: 'event',
+    planner: 'ai'
+  };
+  const queries = [];
+  const source = {
+    url: 'https://news.example/claude-watermark',
+    finalUrl: 'https://news.example/claude-watermark',
+    title: 'Claude adds watermark to generated files',
+    text: [
+      'Claude adds a watermark to files generated through its tools.',
+      'The watermark helps recipients identify the origin of generated material.',
+      'The mark is attached when an eligible file is created.',
+      'The change gives publishers an additional origin signal.',
+      'Recipients can inspect the mark when reviewing the generated file.',
+      'The rollout applies to supported output from Claude tools.'
+    ].join(' ')
+  };
+  const sourceFetcher = {
+    validateUrl: async raw => new URL(raw),
+    fetchSources: async () => [source]
+  };
+
+  const result = await expanded.discover({
+    topic,
+    topicPlan: plan,
+    searchImpl: async query => {
+      queries.push(query);
+      if (query !== correctedQuery) return [];
+      return [{
+        title: source.title,
+        url: source.url,
+        description: 'Claude adds a watermark that identifies the origin of generated files.',
+        provider: 'test',
+        publishedAt: '2026-08-13T00:00:00.000Z'
+      }];
+    },
+    sourceFetcher,
+    now: () => Date.parse('2026-08-13T00:00:00.000Z')
+  });
+
+  assert.ok(queries.includes(correctedQuery));
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].finalUrl, source.finalUrl);
 });
 
 test('scoped discovery broadens with a runtime-generated query only when exact topic is weak', async () => {
