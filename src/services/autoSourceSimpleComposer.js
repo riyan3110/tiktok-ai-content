@@ -1,7 +1,6 @@
 const OpenAI = require('openai');
 const config = require('../config');
 const sourceFilter = require('./sourceFilter');
-const { sourceFacts } = require('./manualSourceFallback');
 const storyFocus = require('./autoSourceStoryFocus');
 
 // TANPA URL / AUTO SOURCE ONLY.
@@ -12,6 +11,7 @@ const MAX_POINTS = 3;
 const MAX_FACTS_PER_SOURCE = 8;
 const STRICT_FACT_SIMILARITY = 0.58;
 const RELAXED_FACT_SIMILARITY = 0.76;
+const CRITICAL_FACT_ANGLES = new Set(['timing', 'availability', 'scope', 'language', 'regulation', 'choice']);
 
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '')
@@ -27,7 +27,7 @@ const STOPWORDS = new Set([
 ]);
 
 const QUESTION_START = /^(?:faq\s*[:.-]?\s*)?(?:apa(?:kah)?|siapa|kapan|mengapa|kenapa|bagaimana|bisakah|dapatkah|benarkah|what|who|when|why|how)\b/i;
-const ANNOUNCEMENT = /\b(?:announce(?:d|s|ment|ments|ing)?|plan(?:ned|s|ning)?|start(?:ed|s|ing)?|begin(?:s|ning)?|introduc(?:e|ed|es|ing)|launch(?:ed|es|ing)?|roll(?:ed|s|ing)?\s+out|add(?:ed|s|ing)?|embed(?:ded|s|ding)?|insert(?:ed|s|ing)?|apply|applies|applied|applying|mengumumkan|diumumkan|berencana|rencana|akan\s+mulai|mulai|memperkenalkan|diperkenalkan|meluncurkan|diluncurkan|menambahkan|ditambahkan|menyisipkan|disisipkan|menerapkan|diterapkan)\b|\b(?:memberi(?:kan)?|diberi(?:kan)?)\s+(?:watermark|tanda\s+air)\b/i;
+const ANNOUNCEMENT = /\b(?:announce(?:d|s|ment|ments|ing)?|plan(?:ned|s|ning)?|start(?:ed|s|ing)?|begin(?:s|ning)?|introduc(?:e|ed|es|ing)|launch(?:ed|es|ing)?|roll(?:ed|s|ing)?\s+out|add(?:ed|s|ing)?|embed(?:ded|s|ding)?|insert(?:ed|s|ing)?|apply|applies|applied|applying|mengumumkan|diumumkan|berencana|rencana|akan\s+mulai|mulai|memperkenalkan|diperkenalkan|menghadirkan|dihadirkan|hadirkan|meluncurkan|diluncurkan|menambahkan|ditambahkan|menyisipkan|disisipkan|menerapkan|diterapkan)\b|\b(?:memberi(?:kan)?|diberi(?:kan)?)\s+(?:watermark|tanda\s+air)\b/i;
 const DANGLING_END = new Set([
   'yang','dan','atau','dengan','untuk','dari','di','ke','pada','dalam','oleh','sebagai','karena','agar','jika','bila','saat','ketika',
   'bahwa','namun','tetapi','serta','hingga','hanya','menurut','menunjukkan','menyatakan','mengatakan','menjelaskan','mencakup','termasuk',
@@ -41,6 +41,7 @@ const SEMANTIC_ALIASES = new Map([
   ['plans','announce'],['planned','announce'],['planning','announce'],['rencana','announce'],['berencana','announce'],
   ['started','start'],['starts','start'],['starting','start'],['mulai','start'],
   ['introduced','introduce'],['introduces','introduce'],['memperkenalkan','introduce'],['diperkenalkan','introduce'],
+  ['menghadirkan','introduce'],['dihadirkan','introduce'],['hadirkan','introduce'],
   ['launched','release'],['launches','release'],['released','release'],['releases','release'],['meluncurkan','release'],['diluncurkan','release'],['dirilis','release'],
   ['add','apply'],['adds','apply'],['added','apply'],['adding','apply'],['embed','apply'],['embedded','apply'],['embedding','apply'],['embeds','apply'],
   ['insert','apply'],['inserted','apply'],['inserts','apply'],['inserting','apply'],['include','apply'],['including','apply'],
@@ -170,6 +171,11 @@ function mainEvidenceCovered(copy, packet = {}) {
   const visibleAngles = new Set(factAngles(visible, packet?.topic || '').filter(angle => angle !== 'announcement'));
   if (!evidenceAngles.some(angle => visibleAngles.has(angle))) return false;
 
+  // Timing, availability, scope, language, regulation, and user choice change
+  // the meaning of a claim. They may not be flattened merely because another
+  // softer angle (for example "personalization") is still mentioned.
+  if (evidenceAngles.some(angle => CRITICAL_FACT_ANGLES.has(angle) && !visibleAngles.has(angle))) return false;
+
   if (evidenceAngles.includes('timing')) {
     const visibleNumbers = new Set(canonicalNumbers(visible));
     if (canonicalNumbers(evidence).some(number => !visibleNumbers.has(number))) return false;
@@ -186,13 +192,17 @@ function factAngles(value, topic = '') {
   const angles = new Set();
   if (ANNOUNCEMENT.test(value)) angles.add('announcement');
   if (explicitMonthAnchors(value).length
-    || /(?:\b(?:before|after|since|until|launch|rollout|progress|existing|future|coming|sebelum|setelah|sejak|hingga|peluncuran|bertahap|model\s+lama|model\s+baru)\b|\b\d{4}\b)/i.test(text)) angles.add('timing');
+    || /(?:\b(?:before|after|since|until|launch|rollout|rolling\s+out|progress|existing|future|coming|sebelum|setelah|sejak|hingga|peluncuran|bertahap|model\s+lama|model\s+baru)\b|\b\d{4}\b)/i.test(text)) angles.add('timing');
   if (tokens.has('persist') || tokens.has('copy') || tokens.has('paste') || tokens.has('edit')
     || /\b(?:surviv(?:e|es|ed|ing)|resize|follows?|bertahan|menetap|disalin|salin|tempel|diedit|ubah\s+ringan)\b/i.test(text)) angles.add('durability');
   if (/\b(?:invisible|machinereadable|machine\s+readable|metadata|provenance|c2pa|pixels?|model\s+level|tak\s+terlihat|tidak\s+terlihat|tingkat\s+model)\b/i.test(text)) angles.add('mechanism');
-  if (/\b(?:global|globally|across|deployments?|aws|google\s+cloud|microsoft\s+foundry|regions?|platforms?|products?|worldwide|secara\s+global|lintas|wilayah|platform|produk)\b/i.test(text)) angles.add('scope');
+  if (/\b(?:global|globally|across|deployments?|aws|google\s+cloud|microsoft\s+foundry|regions?|countries?|platforms?|products?|worldwide|indonesia|secara\s+global|lintas|wilayah|negara|platform|produk)\b/i.test(text)) angles.add('scope');
   if (tokens.has('comply') || tokens.has('eu') || /\b(?:law|laws|act|regulation|regulations|rules|legal|undang-undang|aturan|regulasi|kepatuhan)\b/i.test(text)) angles.add('regulation');
   if (tokens.has('detect') || /\b(?:identify|identifying|verify|verification|prove|proof|clues?|mendeteksi|mengidentifikasi|memverifikasi|membuktikan|petunjuk)\b/i.test(text)) angles.add('detection');
+  if (/\b(?:available|availability|accessible|accessed|launch(?:ed|es|ing)|rolling\s+out|rollout|tersedia|ketersediaan|hadir|hadirkan|menghadirkan|dihadirkan|diluncurkan|digulirkan|dapat\s+diakses|bisa\s+diakses|mulai\s+tersedia)\b/i.test(text)) angles.add('availability');
+  if (/\b(?:languages?|english|indonesian|bahasa\s+(?:indonesia|inggris|lokal)|dukungan\s+bahasa)\b/i.test(text)) angles.add('language');
+  if (/\b(?:personal\s+intelligence|personalized|personalised|personalization|personalisation|preferences?|reservations?|gmail|calendar|personalisasi|dipersonalisasi|preferensi|reservasi)\b/i.test(text)) angles.add('personalization');
+  if (/\b(?:choose|chooses|chosen|decide|decides|optional|opt(?:ed)?[ -]?in|opt(?:ed)?[ -]?out|off\s+by\s+default|permission|consent|in\s+control|pilih|memilih|dipilih|opsional|izin|persetujuan|kendali|kontrol|nonaktif\s+secara\s+default)\b/i.test(text)) angles.add('choice');
   return [...angles];
 }
 
@@ -208,8 +218,20 @@ function sameFactContext(left, right, topic = '') {
   if (normalize(left) === normalize(right)) return true;
   if (genericAnnouncement(left, topic) && genericAnnouncement(right, topic)) return true;
   const score = Math.max(semanticSimilarity(left, right, topic), semanticSimilarity(left, right));
+  const bothAnnouncements = ANNOUNCEMENT.test(left) && ANNOUNCEMENT.test(right);
+  if (bothAnnouncements) {
+    const leftAngles = new Set(factAngles(left, topic).filter(angle => CRITICAL_FACT_ANGLES.has(angle)));
+    const rightAngles = new Set(factAngles(right, topic).filter(angle => CRITICAL_FACT_ANGLES.has(angle)));
+    const distinctCriticalDetail = [...leftAngles].some(angle => !rightAngles.has(angle))
+      || [...rightAngles].some(angle => !leftAngles.has(angle));
+    const leftNumbers = new Set(canonicalNumbers(left));
+    const rightNumbers = new Set(canonicalNumbers(right));
+    const distinctNumber = [...leftNumbers].some(number => !rightNumbers.has(number))
+      || [...rightNumbers].some(number => !leftNumbers.has(number));
+    if (distinctCriticalDetail || distinctNumber) return false;
+  }
   if (score >= 0.68) return true;
-  return ANNOUNCEMENT.test(left) && ANNOUNCEMENT.test(right) && score >= 0.3;
+  return bothAnnouncements && score >= 0.3;
 }
 
 function sectionsForFormat(format = 'Fakta singkat') {
@@ -236,14 +258,20 @@ function sourceForId(sources, sourceId) {
 
 function collectFactGroups(sources = [], topic = '') {
   const ranked = sourceFilter.extractFactBank(sources, topic);
-  const fallback = sourceFacts(sources);
+  const plan = { rawTopic: topic, canonicalTopic: topic, marketIntent: false };
+  // Keep whole article sentences as the fallback fact bank. The generic manual
+  // source fallback intentionally chunks long prose, but those chunks can end in
+  // the middle of a claim and are unsafe for visible Auto Source carousel copy.
+  const fallback = sources.flatMap((source, index) => storyFocus.atomicFacts(source?.text || '', plan).map(evidence => ({
+    sourceId: sourceIdForIndex(index),
+    evidence
+  })));
   const groups = new Map(sources.map((_, index) => [sourceIdForIndex(index), []]));
   const seen = new Map([...groups.keys()].map(id => [id, new Set()]));
 
   for (const fact of [...ranked, ...fallback]) {
     const sourceId = String(fact?.sourceId || '').trim();
     const evidence = cleanEvidence(fact?.evidence);
-    const plan = { rawTopic: topic, canonicalTopic: topic, marketIntent: false };
     if (!groups.has(sourceId)
       || !evidence
       || questionOnlyEvidence(evidence)
@@ -270,6 +298,7 @@ function buildFactCandidates(sources = [], topic = '') {
       const source = sourceForId(sources, sourceId) || {};
       const detail = semanticTokens(value, topic).length;
       const distinctive = distinctiveEvidenceTokens(value, topic).length;
+      const evidenceWeight = source?.discovery?.evidenceMode === 'search-snippet' ? -0.45 : 0.25;
       rows.push({
         sourceId,
         evidence: value,
@@ -279,6 +308,7 @@ function buildFactCandidates(sources = [], topic = '') {
         score: Math.max(0, 8 - depth * 0.45 - order * 0.015)
           + Math.min(detail, 12) * 0.04
           + Math.min(distinctive, 8) * 0.08
+          + evidenceWeight
           + (genericAnnouncement(value, topic) ? -0.25 : ANNOUNCEMENT.test(value) ? 0.05 : 0)
       });
       order += 1;
@@ -599,6 +629,9 @@ function factualErrors(candidate, packets, sources) {
     if (storyFocus.audienceReactionNoise(slide.title, plan)) {
       errors.push(`slide:${slideIndex}:title memakai komentar/reaksi audiens sebagai fakta berita.`);
     }
+    if (storyFocus.marketingActivationNoise(slide.title, plan)) {
+      errors.push(`slide:${slideIndex}:title memakai aktivasi pemasaran yang bukan inti topik.`);
+    }
     if (questionOnlyEvidence(slide.body)) errors.push(`slide:${slideIndex}:body berupa FAQ/pertanyaan tanpa jawaban.`);
     if (endsWithDanglingFragment(slide.body)) errors.push(`slide:${slideIndex}:body terpotong atau berakhir pada kata gantung.`);
     if (storyFocus.sourceArtifactNoise(slide.body, plan)) {
@@ -609,6 +642,9 @@ function factualErrors(candidate, packets, sources) {
     }
     if (storyFocus.audienceReactionNoise(slide.body, plan)) {
       errors.push(`slide:${slideIndex}:body memakai komentar/reaksi audiens sebagai fakta berita.`);
+    }
+    if (storyFocus.marketingActivationNoise(slide.body, plan)) {
+      errors.push(`slide:${slideIndex}:body memakai aktivasi pemasaran yang bukan inti topik.`);
     }
     const visibleSlideCopy = [slide.title, slide.body, ...(slide.points || [])].filter(Boolean).join(' ');
     if (!mainEvidenceCovered(visibleSlideCopy, packet)) {
@@ -677,7 +713,8 @@ function buildCaption(slides = [], fallback = '', topic = '') {
     if (!body
       || questionOnlyEvidence(body)
       || endsWithDanglingFragment(body)
-      || storyFocus.audienceReactionNoise(body, plan)) continue;
+      || storyFocus.audienceReactionNoise(body, plan)
+      || storyFocus.marketingActivationNoise(body, plan)) continue;
     if (selected.some(existing => sameFactContext(existing, body, topic))) continue;
     selected.push(body);
     if (selected.length >= 2) break;
