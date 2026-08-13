@@ -22,8 +22,4 @@ async function createSlides(id, content) {
   return base.createSlides(id, prepareTextInputContent(content));
 }
 
-function buildSlideLayouts(content) {
-  return base.buildSlideLayouts(prepareTextInputContent(content));
-}
-
-module.exports = { ...base, createSlides, buildSlideLayouts, prepareTextInputContent };
+module.exports = { ...base, createSlides, prepareTextInputContent };
