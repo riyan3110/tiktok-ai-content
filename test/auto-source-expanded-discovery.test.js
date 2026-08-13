@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const discovery = require('../src/services/autoSourceExpandedDiscovery');
+const routing = require('../src/services/autoSourceRoutingComposer');
+const simple = require('../src/services/autoSourceSimpleComposer');
 
 function article(url, title) {
   return {
@@ -107,8 +109,89 @@ test('interpreted search queries keep the correct English article for a compress
   });
 
   assert.ok(queries.includes(englishQuery));
+  assert.ok(queries.some(query => /^ChatGPT deep research$/i.test(query)));
+  assert.ok(queries.some(query => /^ChatGPT thinking mode$/i.test(query)));
   assert.equal(result.sources.length, 1);
   assert.equal(result.sources[0].finalUrl, source.finalUrl);
+});
+
+test('relevant search snippets rescue a topic when every full article reader fails', async () => {
+  discovery.clearCache();
+  const topic = 'Kenali waktu ChatGPT riset pemikiran';
+  const plan = {
+    canonicalTopic: 'Kapan memakai ChatGPT untuk riset mendalam atau mode berpikir',
+    subjects: ['ChatGPT'],
+    eventTerms: ['deep research versus thinking mode', 'riset mendalam atau mode berpikir'],
+    actionTerms: [],
+    contextTerms: ['deep research', 'thinking mode'],
+    searchQueries: [topic, 'ChatGPT when to use deep research versus thinking mode'],
+    marketIntent: false,
+    relation: 'general',
+    planner: 'ai'
+  };
+  const candidates = [
+    {
+      title: 'ChatGPT Plus, Pro, and Go subscription prices explained',
+      url: 'https://wrong.example/chatgpt-prices',
+      description: 'ChatGPT subscription tiers have different prices, while Deep Research and Thinking mode appear in the feature list.',
+      provider: 'test',
+      publishedAt: '2026-08-13T00:00:00.000Z'
+    },
+    {
+      title: 'When ChatGPT Deep Research is the right choice',
+      url: 'https://research.example/when-to-use-deep-research',
+      description: 'ChatGPT Deep Research searches multiple sources and produces a cited report for complex questions.',
+      provider: 'test',
+      publishedAt: '2026-08-13T00:00:00.000Z'
+    },
+    {
+      title: 'What ChatGPT Thinking mode does for complex prompts',
+      url: 'https://thinking.example/chatgpt-thinking-mode',
+      description: 'ChatGPT Thinking mode reasons through a difficult prompt without creating a multi-source research report.',
+      provider: 'test',
+      publishedAt: '2026-08-12T00:00:00.000Z'
+    },
+    {
+      title: 'ChatGPT Deep Research reports include source citations',
+      url: 'https://citations.example/deep-research-sources',
+      description: 'ChatGPT Deep Research lets readers inspect citations attached to findings in the completed report.',
+      provider: 'test',
+      publishedAt: '2026-08-11T00:00:00.000Z'
+    },
+    {
+      title: 'ChatGPT Thinking mode focuses on reasoning before answering',
+      url: 'https://reasoning.example/thinking-before-answering',
+      description: 'ChatGPT Thinking mode spends more effort reasoning before it returns an answer to the user.',
+      provider: 'test',
+      publishedAt: '2026-08-10T00:00:00.000Z'
+    }
+  ];
+  const sourceFetcher = {
+    validateUrl: async raw => new URL(raw),
+    fetchSources: async () => { throw new Error('Isi artikel utama terlalu pendek untuk digunakan'); }
+  };
+  const fetchImpl = async () => new Response(JSON.stringify({ data: { content: 'too short' } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+
+  const result = await discovery.discover({
+    topic,
+    topicPlan: plan,
+    searchImpl: async () => candidates,
+    sourceFetcher,
+    fetchImpl,
+    now: () => Date.parse('2026-08-13T00:00:00.000Z')
+  });
+
+  assert.equal(result.evidenceMode, 'search-snippet-fallback');
+  assert.ok(result.sources.length >= 2);
+  assert.ok(result.sources.every(source => source.discovery.evidenceMode === 'search-snippet'));
+  assert.ok(!result.sources.some(source => source.finalUrl === candidates[0].url), 'pricing story must stay rejected');
+  assert.ok(discovery.evidenceFactCount(result.sources) >= 4);
+
+  const prepared = routing.prepareSources(topic, result.sources, plan);
+  assert.equal(simple.buildSlidePackets(prepared, topic, 'Fakta singkat').length, 4);
 });
 
 test('expanded discovery rejects misleading fetched pages and selects different publishers', async () => {

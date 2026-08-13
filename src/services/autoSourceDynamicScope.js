@@ -155,6 +155,7 @@ function sourceInScope(topic = '', source = {}, plan = {}) {
   const subjects = plan.subjects || [];
   const subjectMatches = subjectHits(plan, combined);
   const eventMatches = eventHits(plan, combined);
+  const contextMatches = contextHits(plan, combined);
 
   if (subjects.length) {
     if (subjectMatches.length < requiredSubjectMatches(plan)) return false;
@@ -163,12 +164,20 @@ function sourceInScope(topic = '', source = {}, plan = {}) {
     if (plan.planner === 'ai') {
       const contexts = plan.contextTerms || [];
       const events = plan.eventTerms || [];
-      if (contexts.length && !contextHits(plan, combined).length) return false;
+      if (contexts.length && !contextMatches.length) return false;
       if ((contexts.length || events.length)
         && !contextHits(plan, headlineLead).length
         && !eventHits(plan, headlineLead).length) return false;
     }
-    if ((plan.eventTerms || []).length >= 2 && !eventMatches.length) return false;
+    if ((plan.eventTerms || []).length >= 2 && !eventMatches.length) {
+      // A comparison can be grounded by independent articles about each side.
+      // Each source still needs one interpreted context, so another story about
+      // the same brand (for example pricing) cannot pass this exception.
+      const complementaryComparison = contextMatches.length > 0
+        && (['comparison', 'multi'].includes(plan.relation)
+          || contextHits(plan, source?.title || '').length > 0);
+      if (!complementaryComparison) return false;
+    }
     return true;
   }
 
