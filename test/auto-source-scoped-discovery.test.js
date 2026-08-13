@@ -5,18 +5,24 @@ const expanded = require('../src/services/autoSourceExpandedDiscovery');
 const scoped = require('../src/services/autoSourceScopedDiscovery');
 
 const relevant = {
-  title: 'SpaceXAI launches Grok 4.6',
-  text: 'SpaceXAI launched Grok 4.6 for long-running AI agents and complex tasks.',
+  title: 'SpaceXAI memperkenalkan Grok 4.6',
+  text: 'SpaceXAI memperkenalkan Grok 4.6 untuk agen AI yang berjalan lama dan tugas kompleks.',
+  url: 'https://relevant.test/grok-4-6',
+  finalUrl: 'https://relevant.test/grok-4-6',
   discovery: { publisher: 'relevant.test' }
 };
 const sibling = {
   title: 'Grok 4.5 launch recap',
   text: 'Grok 4.5 launched in July and focuses on coding and knowledge work.',
+  url: 'https://sibling.test/grok-4-5',
+  finalUrl: 'https://sibling.test/grok-4-5',
   discovery: { publisher: 'sibling.test' }
 };
 const unrelated = {
   title: 'Google updates headphones',
   text: 'Google refreshed an older headphone product with new controls and battery improvements.',
+  url: 'https://unrelated.test/headphones',
+  finalUrl: 'https://unrelated.test/headphones',
   discovery: { publisher: 'unrelated.test' }
 };
 
@@ -41,9 +47,23 @@ test('versioned topic keeps only fetched articles that contain the exact model/v
 
 test('generic topic does not activate exact version or multi-entity lock', async () => {
   const original = expanded.discover;
+  const industrial = {
+    title: 'Robot humanoid mulai digunakan di pabrik',
+    text: 'Robot humanoid menangani tugas material berulang di lingkungan industri.',
+    url: 'https://robot.test/industrial',
+    finalUrl: 'https://robot.test/industrial',
+    discovery: { publisher: 'robot.test' }
+  };
+  const research = {
+    title: 'Riset robot humanoid mengembangkan sistem keseimbangan',
+    text: 'Robot humanoid memakai sensor dan kontrol gerak untuk menjaga keseimbangan.',
+    url: 'https://research.test/humanoid',
+    finalUrl: 'https://research.test/humanoid',
+    discovery: { publisher: 'research.test' }
+  };
   expanded.discover = async () => ({
     topic: 'Robot humanoid',
-    sources: [relevant, unrelated]
+    sources: [industrial, research]
   });
   try {
     const result = await scoped.discover({ topic: 'Robot humanoid' });

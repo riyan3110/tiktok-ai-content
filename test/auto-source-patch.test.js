@@ -113,3 +113,51 @@ test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async (
     generation.generateAndSave = realGenerateAndSave;
   }
 });
+
+test('production manual Tanpa URL enables topic interpretation before discovery', async () => {
+  autoSourcePatch.resetForTests();
+  clearAutoSourceCaches();
+  const realGenerateAndSave = generation.generateAndSave;
+  const scopedDiscovery = require('../src/services/autoSourceScopedDiscovery');
+  const realDiscover = scopedDiscovery.discover;
+  let receivedDiscovery = null;
+  let receivedGeneration = null;
+
+  scopedDiscovery.discover = async options => {
+    receivedDiscovery = options;
+    return {
+      topic: options.topic,
+      queries: [options.topic],
+      providers: ['test'],
+      sources: [{
+        title: 'Topik terbaru yang sesuai',
+        text: 'Sumber memuat fakta yang sesuai topik dan cukup panjang untuk proses penulisan carousel.',
+        url: 'https://example.test/relevant',
+        finalUrl: 'https://example.test/relevant'
+      }]
+    };
+  };
+  generation.generateAndSave = async options => {
+    receivedGeneration = options;
+    return 201;
+  };
+
+  try {
+    const wrapped = autoSourcePatch.install();
+    const result = await wrapped({
+      mode: 'manual',
+      useSources: false,
+      sourceUrls: [],
+      requestedTopic: 'Topik berita bebas terbaru'
+    });
+
+    assert.equal(result, 201);
+    assert.equal(receivedDiscovery.interpretTopic, true);
+    assert.equal(receivedDiscovery.topic, 'Topik berita bebas terbaru');
+    assert.equal(receivedGeneration.useSources, true);
+  } finally {
+    autoSourcePatch.resetForTests();
+    generation.generateAndSave = realGenerateAndSave;
+    scopedDiscovery.discover = realDiscover;
+  }
+});

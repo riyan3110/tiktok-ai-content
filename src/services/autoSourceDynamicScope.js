@@ -140,6 +140,7 @@ function requiredSubjectMatches(plan = {}) {
 
 function sourceInScope(topic = '', source = {}, plan = {}) {
   const combined = `${source?.title || ''} ${String(source?.text || '').slice(0, 12000)}`;
+  const headlineLead = `${source?.title || ''} ${sentences(source?.text || '').slice(0, 4).join(' ')}`;
   const specific = identity.hasSpecificIdentity(topic);
   const multiTopic = multi.hasMultiEntityTopic(topic);
 
@@ -157,11 +158,24 @@ function sourceInScope(topic = '', source = {}, plan = {}) {
 
   if (subjects.length) {
     if (subjectMatches.length < requiredSubjectMatches(plan)) return false;
+    // Once the AI has separated the subject from its distinguishing context,
+    // brand-name overlap alone must not admit another story about that product.
+    if (plan.planner === 'ai') {
+      const contexts = plan.contextTerms || [];
+      const events = plan.eventTerms || [];
+      if (contexts.length && !contextHits(plan, combined).length) return false;
+      if ((contexts.length || events.length)
+        && !contextHits(plan, headlineLead).length
+        && !eventHits(plan, headlineLead).length) return false;
+    }
     if ((plan.eventTerms || []).length >= 2 && !eventMatches.length) return false;
     return true;
   }
 
   if ((plan.eventTerms || []).length) return eventMatches.length >= Math.min(2, plan.eventTerms.length);
+  if ((plan.contextTerms || []).length) {
+    return contextHits(plan, combined).length >= requiredContextMatches(plan);
+  }
   return true;
 }
 

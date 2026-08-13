@@ -46,6 +46,71 @@ test('Indonesian broad topics gain generic English anchors for global sources', 
   }), true);
 });
 
+test('interpreted search queries keep the correct English article for a compressed Indonesian topic', async () => {
+  discovery.clearCache();
+  const topic = 'Kenali waktu ChatGPT riset pemikiran';
+  const englishQuery = 'ChatGPT when to use deep research versus thinking mode';
+  const plan = {
+    canonicalTopic: 'Kapan memakai ChatGPT untuk riset mendalam atau mode berpikir',
+    subjects: ['ChatGPT'],
+    eventTerms: ['deep research versus thinking mode', 'riset mendalam atau mode berpikir'],
+    actionTerms: [],
+    contextTerms: ['deep research', 'thinking mode'],
+    searchQueries: [topic, englishQuery],
+    marketIntent: false,
+    relation: 'comparison',
+    planner: 'ai'
+  };
+  const source = {
+    url: 'https://openai.example/deep-research-thinking',
+    finalUrl: 'https://openai.example/deep-research-thinking',
+    title: 'When to use ChatGPT deep research versus Thinking mode',
+    text: [
+      'Deep research is designed for multi-step questions that require synthesis across multiple sources.',
+      'Thinking mode reasons through a complex prompt without creating a sourced research report.',
+      'Standard chat is faster when a user only needs a quick lookup.',
+      'Deep research gives users control over which public sources are included.',
+      'A deep research task can take longer while ChatGPT reads and compares sources.',
+      'The finished research report includes citations so users can inspect the supporting material.'
+    ].join(' ')
+  };
+  const queries = [];
+  const searchImpl = async query => {
+    queries.push(query);
+    return [{
+      title: source.title,
+      url: source.url,
+      description: 'Guidance on choosing ChatGPT deep research or Thinking mode.',
+      provider: 'test',
+      publishedAt: '2026-08-12T00:00:00.000Z'
+    }];
+  };
+  const sourceFetcher = {
+    validateUrl: async raw => new URL(raw),
+    fetchSources: async () => [source]
+  };
+
+  assert.equal(discovery.fetchedContentRelevant(topic, source), false, 'raw word overlap alone cannot bridge this topic');
+  assert.equal(discovery.fetchedContentRelevant(topic, source, plan), true, 'the interpreted English intent must bridge it');
+  assert.equal(discovery.fetchedContentRelevant(topic, {
+    title: 'ChatGPT plans and subscription prices',
+    text: 'ChatGPT offers several subscription plans at different prices.'
+  }, { ...plan, subjects: [], eventTerms: [], actionTerms: [], contextTerms: [] }), false,
+  'an empty interpretation must fall back to topic matching instead of admitting any article');
+
+  const result = await discovery.discover({
+    topic,
+    topicPlan: plan,
+    searchImpl,
+    sourceFetcher,
+    now: () => Date.parse('2026-08-13T00:00:00.000Z')
+  });
+
+  assert.ok(queries.includes(englishQuery));
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].finalUrl, source.finalUrl);
+});
+
 test('expanded discovery rejects misleading fetched pages and selects different publishers', async () => {
   discovery.clearCache();
   const candidates = [
