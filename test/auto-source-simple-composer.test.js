@@ -399,3 +399,94 @@ test('failed detail gate gets one targeted editor rescue instead of returning me
   assert.deepEqual(simple.factualErrors(result, packets, noisyClaudeSources), []);
   assert.ok(result.slides.every(slide => !/akan menerapkan watermark pada konten yang dibuat/i.test(slide.body)));
 });
+
+test('persistent missing-detail draft falls back to literal source evidence instead of 422', async () => {
+  const topic = 'Cloude menerapkan watermark';
+  const packets = simple.buildSlidePackets(noisyClaudeSources, topic, 'Fakta singkat');
+  const flattened = packets.map((packet, index) => {
+    const body = 'Anthropic akan menerapkan watermark pada konten yang dibuat Claude.';
+    return {
+      title: 'Claude menerapkan watermark',
+      body,
+      points: [],
+      claims: [{ field: `slide:${index}:body`, text: body, sourceId: packet.primarySourceId, evidence: packet.mainEvidence }]
+    };
+  });
+  let calls = 0;
+  const client = {
+    chat: {
+      completions: {
+        create: async () => {
+          calls += 1;
+          return { choices: [{ message: { content: { slides: flattened } } }] };
+        }
+      }
+    }
+  };
+
+  const result = await simple.compose({
+    options: { requestedTopic: topic, contentFormat: 'Fakta singkat' },
+    sources: noisyClaudeSources,
+    discovery: { topic, sources: noisyClaudeSources },
+    client
+  });
+
+  assert.equal(calls, 3, 'writer + checker + one editor rescue before deterministic fallback');
+  assert.deepEqual(result.slides.map(slide => slide.body), packets.map(packet => packet.mainEvidence));
+  assert.deepEqual(simple.unsafeBlockingErrors(simple.factualErrors(result, packets, noisyClaudeSources)), []);
+  assert.doesNotMatch(result.caption, /Watermark Remover|one user wrote/i);
+});
+
+test('persistent repeated draft is rebuilt from distinct Ask Maps evidence instead of 422', async () => {
+  const topic = 'Google hadirkan fitur Ask Maps';
+  const askMapsSources = [
+    {
+      title: 'Google launches Ask Maps for conversational place discovery',
+      url: 'https://one.test/ask-maps',
+      text: [
+        'Google introduced Ask Maps so people can ask conversational questions about places.',
+        'Ask Maps combines place details with information from user reviews.',
+        'The feature is rolling out first to eligible users in the United States.'
+      ].join(' ')
+    },
+    {
+      title: 'Ask Maps answers complex questions about destinations',
+      url: 'https://two.test/ask-maps',
+      text: [
+        'Ask Maps can compare several nearby places from one natural-language request.',
+        'Google Maps shows the supporting place information with the generated response.',
+        'Users can continue the conversation with a follow-up question.'
+      ].join(' ')
+    }
+  ];
+  const packets = simple.buildSlidePackets(askMapsSources, topic, 'Fakta singkat');
+  assert.equal(packets.length, 4);
+  const repeated = packets.map((packet, index) => {
+    const body = 'Ask Maps membantu pengguna bertanya tentang tempat di Google Maps.';
+    return {
+      title: 'Google menghadirkan Ask Maps',
+      body,
+      points: [],
+      claims: [{ field: `slide:${index}:body`, text: body, sourceId: packet.primarySourceId, evidence: packet.mainEvidence }]
+    };
+  });
+  const client = {
+    chat: {
+      completions: {
+        create: async () => ({ choices: [{ message: { content: { slides: repeated } } }] })
+      }
+    }
+  };
+
+  const result = await simple.compose({
+    options: { requestedTopic: topic, contentFormat: 'Fakta singkat' },
+    sources: askMapsSources,
+    discovery: { topic, sources: askMapsSources },
+    client
+  });
+
+  assert.deepEqual(result.slides.map(slide => slide.body), packets.map(packet => packet.mainEvidence));
+  assert.equal(new Set(result.slides.map(slide => slide.body)).size, 4);
+  assert.deepEqual(simple.unsafeBlockingErrors(simple.factualErrors(result, packets, askMapsSources)), []);
+  assert.equal(result.caption.split('. ').length >= 2, true);
+});
