@@ -3,94 +3,59 @@ const assert = require('node:assert/strict');
 const composer = require('../src/services/textInputComposer');
 const images = require('../src/services/images');
 
-const source = 'Perusahaan AI menjelaskan fitur baru yang akan diterapkan pada model yang didukung. Fitur tersebut menjaga tampilan teks tetap sama dan membantu proses identifikasi. Penerapannya dilakukan secara bertahap sesuai dukungan model. Perusahaan menekankan bahwa perubahan ini berfokus pada proses identifikasi tanpa mengubah tampilan yang dibaca pengguna.';
+const source = 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Perubahan membantu proses identifikasi tanpa mengubah tampilan teks bagi pengguna. Penerapan dilakukan secara bertahap sesuai dukungan model. Informasi tersebut menjadi dasar seluruh carousel.';
 
 function sample() {
   return {
-    topic: 'Fitur Baru untuk Model AI',
-    caption: 'Perusahaan AI menjelaskan fitur baru untuk model yang didukung. Perubahan ini ditujukan untuk membantu proses identifikasi tanpa mengubah tampilan teks yang dibaca pengguna. Penerapannya dilakukan secara bertahap sesuai dukungan model, sehingga isi carousel tetap mengikuti ringkasan yang ditempel pengguna dan tidak menambahkan informasi dari luar teks.',
+    topic: 'Perubahan untuk Model AI',
+    caption: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Perubahan membantu proses identifikasi tanpa mengubah tampilan teks bagi pengguna. Penerapan dilakukan secara bertahap sesuai dukungan model. Carousel hanya merangkum informasi dari teks input tanpa menambahkan klaim baru dari luar bahan yang ditempel.',
     hashtags: ['#AI', '#Teknologi', '#ModelAI'],
     slides: [
-      {
-        section: 'HOOK',
-        title: 'Perubahan Baru untuk Model AI',
-        body: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Tujuannya membantu proses identifikasi sambil menjaga tampilan teks tetap sama bagi pengguna.',
-        points: []
-      },
-      {
-        section: 'FAKTA UTAMA',
-        title: 'Fokus pada Model Didukung',
-        body: 'Penerapan mengikuti dukungan model yang tersedia secara bertahap.',
-        points: ['Tampilan teks tetap sama', 'Membantu proses identifikasi']
-      },
-      {
-        section: 'DETAIL',
-        title: 'Pengguna Tetap Melihat Teks',
-        body: 'Pengguna tetap melihat teks dengan tampilan yang sama.',
-        points: ['Identifikasi tetap terbantu', 'Penerapan dilakukan bertahap']
-      },
-      {
-        section: 'PENUTUP',
-        title: 'Inti Perubahannya',
-        body: 'Perubahan ini membantu identifikasi tanpa mengubah tampilan teks, sementara penerapannya mengikuti dukungan model secara bertahap sesuai penjelasan perusahaan.',
-        points: []
-      }
+      { section: 'HOOK', title: 'Hal Baru Mulai Disiapkan', body: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Tujuannya membantu proses identifikasi sambil mempertahankan tampilan teks yang dibaca pengguna.', points: [] },
+      { section: 'FAKTA UTAMA', title: 'Fokus pada Dukungan Model', body: 'Penerapan mengikuti dukungan model yang tersedia secara bertahap.', points: ['Tampilan teks tetap sama', 'Identifikasi menjadi lebih terbantu'] },
+      { section: 'DETAIL', title: 'Dampak bagi Pengguna', body: 'Pengguna tetap membaca teks dengan tampilan yang sama.', points: ['Perubahan tidak mengubah tampilan', 'Penerapan dilakukan secara bertahap'] },
+      { section: 'PENUTUP', title: 'Garis Besarnya', body: 'Perubahan berfokus pada identifikasi dan tampilan teks, dengan penerapan yang tetap mengikuti dukungan model secara bertahap.', points: [] }
     ]
   };
 }
 
-test('required four-slide structure is accepted and renderer keeps four slides', () => {
+test('four slides pass composer and stay four in renderer', () => {
   const value = sample();
   const checked = composer.validateResult(value, source);
   assert.deepEqual(checked.errors, []);
-  assert.equal(checked.slides.length, 4);
-  const content = {
-    ...composer.buildContent(value, checked.slides),
-    contentCategory: 'Edukasi teknologi',
-    contentFormat: 'Listicle'
-  };
-  const layouts = images.buildSlideLayouts(content);
-  assert.equal(layouts.length, 4);
+  const content = { ...composer.buildContent(value, checked.slides), contentCategory: 'Edukasi teknologi', contentFormat: 'Listicle' };
+  assert.equal(images.buildSlideLayouts(content).length, 4);
 });
 
-test('slide one stays dense but inside renderer body limit', () => {
+test('seven slides are reduced to four while keeping hook and closing', () => {
   const value = sample();
-  value.slides[0].body = 'Fitur baru segera hadir.';
-  assert.ok(composer.validateResult(value, source).errors.some(error => /slide 1 harus padat/i.test(error)));
-});
-
-test('seven model slides are deterministically reduced to requested four without inventing copy', () => {
-  const value = sample();
-  value.slides = [
-    value.slides[0],
-    value.slides[1],
-    value.slides[2],
-    { section: 'DETAIL', title: 'Tambahan Satu', body: 'Penerapan tetap mengikuti dukungan model yang tersedia secara bertahap.', points: [] },
-    { section: 'DETAIL', title: 'Tambahan Dua', body: 'Tampilan teks tetap sama bagi pengguna selama perubahan diterapkan.', points: [] },
-    { section: 'DETAIL', title: 'Tambahan Tiga', body: 'Proses identifikasi tetap menjadi bagian utama dari perubahan tersebut.', points: [] },
-    value.slides[3]
-  ];
-  const shaped = composer.shapeSlides(value.slides, 4);
+  const extra = { section: 'DETAIL', title: 'Konteks Tambahan', body: 'Informasi tambahan tetap berasal dari teks input yang sama.', points: [] };
+  const shaped = composer.shapeSlides([value.slides[0], value.slides[1], value.slides[2], extra, extra, extra, value.slides[3]], 4);
   assert.equal(shaped.length, 4);
   assert.equal(shaped[0].section, 'HOOK');
   assert.equal(shaped.at(-1).section, 'PENUTUP');
 });
 
-test('semantic repetition inside one slide is rejected before renderer', () => {
+test('short hook body is rejected', () => {
+  const value = sample();
+  value.slides[0].body = 'Perubahan baru segera hadir.';
+  assert.ok(composer.validateResult(value, source).errors.some(error => /slide 1 harus padat/i.test(error)));
+});
+
+test('same idea inside one slide is rejected', () => {
   const value = sample();
   value.slides[1].title = 'Tampilan Teks Tetap Sama';
   value.slides[1].points[0] = 'Tampilan teks tetap sama';
   assert.ok(composer.validateResult(value, source).errors.some(error => /informasi yang berbeda/i.test(error)));
 });
 
-test('numbers not present in input are rejected', () => {
+test('new numbers are rejected', () => {
   const value = sample();
-  value.slides[1].body = 'Penerapan fitur difokuskan pada 99 model yang memang sudah didukung.';
+  value.slides[1].body = 'Penerapan difokuskan pada 99 model yang sudah didukung.';
   assert.ok(composer.validateResult(value, source).errors.some(error => /angka baru/i.test(error)));
 });
 
-test('long pasted text opts into five slides while ordinary summaries stay at four', () => {
+test('ordinary summaries use four slides and very long text can use five', () => {
   assert.equal(composer.targetSlideCount(source), 4);
-  const longSource = Array.from({ length: 230 }, (_, index) => `kata${index}`).join(' ');
-  assert.equal(composer.targetSlideCount(longSource), 5);
+  assert.equal(composer.targetSlideCount(Array.from({ length: 230 }, (_, index) => `kata${index}`).join(' ')), 5);
 });
