@@ -8,7 +8,7 @@ const source = 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Pe
 function sample() {
   return {
     topic: 'Perubahan untuk Model AI',
-    caption: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Perubahan membantu proses identifikasi tanpa mengubah tampilan teks bagi pengguna. Penerapannya dilakukan secara bertahap sesuai dukungan model. Carousel hanya merangkum informasi dari teks input tanpa menambahkan klaim baru dari luar bahan yang ditempel.',
+    caption: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Perubahan ini membantu proses identifikasi tanpa mengubah tampilan teks, sementara penerapannya dilakukan secara bertahap sesuai dukungan model yang tersedia.',
     hashtags: ['#AI', '#Teknologi', '#ModelAI'],
     slides: [
       { section: 'HOOK', title: 'Hal Baru Mulai Disiapkan', body: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Fitur ini membantu identifikasi tanpa mengubah tampilan teks pengguna.', points: [] },
@@ -25,6 +25,29 @@ test('four slides pass composer and stay four in renderer', () => {
   assert.deepEqual(checked.errors, []);
   const content = { ...composer.buildContent(value, checked.slides), contentCategory: 'Edukasi teknologi', contentFormat: 'Listicle' };
   assert.equal(images.buildSlideLayouts(content).length, 4);
+});
+
+test('caption is kept short enough to leave room for hashtags', () => {
+  const value = sample();
+  assert.equal(value.caption.split(/\s+/).length, 27);
+  assert.deepEqual(composer.validateResult(value, source).errors, []);
+
+  value.caption = Array.from({ length: 41 }, () => 'kata').join(' ');
+  assert.ok(composer.validateResult(value, source).errors.some(error => /caption harus ringkas 25–40 kata/i.test(error)));
+});
+
+test('generate from text requires three to five hashtags', () => {
+  const value = sample();
+  value.hashtags = ['#AI', '#Teknologi'];
+  assert.ok(composer.validateResult(value, source).errors.some(error => /hashtag harus 3–5 item/i.test(error)));
+
+  assert.deepEqual(composer.normalizeHashtags(['AI', '#Teknologi', ' #ModelAI ', '#AI']), ['#AI', '#Teknologi', '#ModelAI']);
+});
+
+test('ungrounded editorial modifiers are rejected', () => {
+  const value = sample();
+  value.slides[3].body = 'Perubahan membantu identifikasi secara efektif tanpa mengubah tampilan teks, sementara penerapan tetap mengikuti dukungan model yang tersedia.';
+  assert.ok(composer.validateResult(value, source).errors.some(error => /kata penjelas baru.*efektif/i.test(error)));
 });
 
 test('seven slides are reduced to four while keeping hook and closing', () => {
