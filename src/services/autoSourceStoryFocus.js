@@ -15,6 +15,16 @@ const AUDIENCE_ACTOR = /(?:\b(?:a|an|one|another|some)\s+(?:user|reader|commente
 const AUDIENCE_REACTION = /\b(?:wrote|posted|commented|joked|quipped|reacted|complained|praised|asked|tweeted|replied|tulis|menulis|mengunggah|berkomentar|bercanda|menanggapi|mengeluh|memuji|bertanya|membalas|ujar)\b/i;
 const FIRST_PERSON_REACTION = /\b(?:i\s+(?:can(?:no|')?t\s+wait|hope|wish|love|hate|want)|we\s+(?:can(?:no|')?t\s+wait|hope|wish|love|hate|want)|(?:aku|saya|kami)\s+(?:tidak\s+sabar|berharap|ingin|suka|benci)|semoga)\b/i;
 const REACTION_TOPIC = /\b(?:reaksi|tanggapan|komentar|respons\s+(?:pengguna|publik)|opini\s+publik|sentimen|user\s+reactions?|public\s+response|what\s+users\s+say)\b/i;
+const RELATED_NAVIGATION = /(?:\b(?:baca|read)\s+(?:juga|also)\b|\b(?:artikel|berita|stories?|articles?)\s+(?:terkait|lainnya|lain|related|recommended)\b|\b(?:recommended|rekomendasi|selengkapnya|load\s+more|most\s+read|terpopuler)\b)/i;
+const READ_TIME_METADATA = /(?:\b(?:waktu|durasi)\s+baca\b|\breading\s+time\b|\b\d+\s*(?:menit|minutes?)\s+(?:baca|read)\b)/i;
+const EMBEDDED_CARD_TIMESTAMP = /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}[:.]\d{2}\b/;
+const SITE_CHANNEL_METADATA = /\b(?:antara\s+(?:news|tekno)\s*){2,}|\bantara\s+(?:news|tekno)\b.{0,48}\b(?:waktu\s+baca|reading\s+time)\b/i;
+const SOCIAL_CHROME = /^(?:bagikan|share|salin\s+tautan|copy\s+link|simpan|save|komentar|comments?|tayangan|views?)\b/i;
+const MEDIA_CREDIT = /(?:\b(?:antara|reuters|associated\s+press|ap|afp|getty(?:\s+images)?)\s*\/\s*(?:ho[-\s]?)?[a-z0-9._-]+|\b(?:photo|foto)\s+(?:by|oleh)\b|©)/i;
+const CAPTION_START = /^(?:ilustrasi|foto|gambar|image|photo)\b/i;
+const CAPTION_FACT_VERB = /\b(?:menunjukkan|memperlihatkan|mengungkapkan|merekam|shows?|depicts?|reveals?|records?)\b/i;
+const BYLINE_METADATA = /^(?:oleh|ditulis\s+oleh|disunting\s+oleh|penulis|reporter|editor|kontributor|author|written\s+by|edited\s+by)\b/i;
+const UNSUPPORTED_HYPE = /\b(?:(?:lompatan|terobosan)\s+besar|game[- ]?changer|revolusioner|mengubah\s+(?:sepenuhnya\s+|total\s+)?cara\s+(?:kita|orang|pengguna)|masa\s+depan\s+(?:sudah\s+)?(?:tiba|dimulai))\b/i;
 
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -51,6 +61,46 @@ function requestedText(plan = {}) {
   return clean(`${plan.rawTopic || ''} ${plan.canonicalTopic || ''}`);
 }
 
+function cleanArticleFact(value = '') {
+  let text = clean(value);
+  if (!text) return '';
+
+  // Keep the actual article sentence while removing datelines and image-credit
+  // prefixes that some reader proxies concatenate into the first paragraph.
+  text = text.replace(/^[A-ZÀ-Ý][\p{L} .'-]{1,45}\s*\((?:ANTARA|REUTERS|AP|AFP)\)\s*[-–—:]\s*/iu, '');
+  text = text.replace(/^\s*(?:\(?\s*)?(?:ANTARA|REUTERS|AP|AFP)(?:\s*\/\s*(?:HO[-\s]?)?[A-Za-z0-9._-]+)+\)?\s*[-–—:]?\s*/i, '');
+  text = text.replace(/\s+(?:ANTARA\s+(?:News|Tekno)\s*)+(?:waktu\s+baca.*)?$/i, '');
+  if (/^ANTARA\s+(?:News|Tekno)[.!]?$/i.test(text)) return '';
+  return clean(text);
+}
+
+function sourceArtifactNoise(value = '', plan = {}) {
+  const raw = clean(value);
+  const text = cleanArticleFact(raw);
+  if (!text) return true;
+  if (RELATED_NAVIGATION.test(text) || READ_TIME_METADATA.test(text) || SITE_CHANNEL_METADATA.test(text)) return true;
+  if (EMBEDDED_CARD_TIMESTAMP.test(text)) return true;
+  if (SOCIAL_CHROME.test(text) || BYLINE_METADATA.test(text)) return true;
+  if (MEDIA_CREDIT.test(text) && words(text).length <= 18) return true;
+  if (CAPTION_START.test(text) && !CAPTION_FACT_VERB.test(text)) return true;
+
+  // A bare publication timestamp is page chrome. Dates expressed as prose
+  // (for example "pada 12 Agustus") remain available as real story facts.
+  if (/^(?:senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu),?\s+\d{1,2}\b/i.test(text)
+    && /\b\d{1,2}[:.]\d{2}\s*(?:wib|wita|wit|gmt|utc)\b/i.test(text)
+    && words(text).length <= 14) return true;
+
+  const requested = requestedText(plan);
+  if (/^(?:advertisement|iklan)$/i.test(text) && !/\b(?:advertisement|iklan)\b/i.test(requested)) return true;
+  return false;
+}
+
+function unsupportedHype(value = '', evidence = '') {
+  const copy = clean(value);
+  if (!copy || !UNSUPPORTED_HYPE.test(copy)) return false;
+  return !UNSUPPORTED_HYPE.test(clean(evidence));
+}
+
 function audienceReactionNoise(value = '', plan = {}) {
   const text = clean(value);
   if (!text || REACTION_TOPIC.test(requestedText(plan))) return false;
@@ -62,9 +112,10 @@ function audienceReactionNoise(value = '', plan = {}) {
 }
 
 function editorialNoise(value = '', plan = {}) {
-  const text = clean(value);
+  const text = cleanArticleFact(value);
   if (!text) return true;
   const requested = requestedText(plan);
+  if (sourceArtifactNoise(text, plan)) return true;
   if (audienceReactionNoise(text, plan)) return true;
   if (HARD_PROMO.test(text) && !HARD_PROMO.test(requested)) return true;
   if (!plan.marketIntent && STOCK_PICK_EDITORIAL.test(text) && !STOCK_PICK_EDITORIAL.test(requested)) return true;
@@ -104,8 +155,11 @@ function splitCompoundSentence(sentence = '') {
   return usable.length >= 2 ? usable : [source];
 }
 
-function atomicFacts(text = '') {
-  return sentenceRows(text).flatMap(splitCompoundSentence);
+function atomicFacts(text = '', plan = {}) {
+  return sentenceRows(text)
+    .flatMap(splitCompoundSentence)
+    .map(cleanArticleFact)
+    .filter(value => value && !sourceArtifactNoise(value, plan));
 }
 
 function focusScore(topic = '', evidence = '', source = {}, plan = {}) {
@@ -133,7 +187,7 @@ function focusScore(topic = '', evidence = '', source = {}, plan = {}) {
 }
 
 function focusSource(topic = '', source = {}, plan = {}, maxFacts = 14) {
-  const originalFacts = atomicFacts(source?.text || '');
+  const originalFacts = atomicFacts(source?.text || '', plan);
   const facts = originalFacts
     .map((evidence, order) => ({
       evidence,
@@ -165,6 +219,9 @@ module.exports = {
   storyEventTerms,
   eventHits,
   requestedText,
+  cleanArticleFact,
+  sourceArtifactNoise,
+  unsupportedHype,
   audienceReactionNoise,
   editorialNoise,
   marketSnapshot,

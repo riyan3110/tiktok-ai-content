@@ -2,6 +2,7 @@ const defaultSourceFetcher = require('./sourceFetcher');
 const baseDiscovery = require('./autoSourceDiscovery');
 const fastDiscovery = require('./autoSourceFastDiscovery');
 const dynamicScope = require('./autoSourceDynamicScope');
+const storyFocus = require('./autoSourceStoryFocus');
 const { sourceFacts } = require('./manualSourceFallback');
 
 // TANPA URL / AUTO SOURCE ONLY.
@@ -383,8 +384,16 @@ function snippetEvidenceText(candidate = {}) {
   return description;
 }
 
+function evidenceFacts(sources = []) {
+  const cleaned = (sources || []).map(source => ({
+    ...source,
+    text: storyFocus.atomicFacts(source?.text || '').join(' ')
+  }));
+  return sourceFacts(cleaned);
+}
+
 function evidenceFactCount(sources = []) {
-  return sourceFacts(sources).length;
+  return evidenceFacts(sources).length;
 }
 
 function snippetEvidenceSource(candidate = {}, topic = '', plan = null, nowMs = Date.now()) {
@@ -563,7 +572,7 @@ async function discover({
   const fetchedRows = await mapLimit(ranked.slice(0, MAX_FETCH_CANDIDATES), FETCH_CONCURRENCY, async candidate => {
     const source = await baseDiscovery.fetchCandidate(candidate, { sourceFetcher, fetchImpl });
     if (!source || !fetchedContentRelevant(cleanTopic, source, topicPlan)) return null;
-    const facts = sourceFacts([source]);
+    const facts = evidenceFacts([source]);
     if (facts.length < MIN_FACTS_PER_SOURCE) return null;
     const titleRelevance = plannedRelevance(cleanTopic, source.title || '', topicPlan);
     const bodyRelevance = plannedRelevance(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 9000)}`, topicPlan);
@@ -663,6 +672,7 @@ module.exports = {
   snippetEvidenceText,
   snippetEvidenceSource,
   selectSnippetSources,
+  evidenceFacts,
   evidenceFactCount,
   clearCache,
   CACHE_TTL_MS,
