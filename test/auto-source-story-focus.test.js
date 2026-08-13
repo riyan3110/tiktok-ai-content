@@ -9,6 +9,7 @@ process.env.AI_MODEL ||= 'test-model';
 const focus = require('../src/services/autoSourceStoryFocus');
 const routing = require('../src/services/autoSourceRoutingComposer');
 const research = require('../src/services/autoSourceResearchComposer');
+const simple = require('../src/services/autoSourceSimpleComposer');
 
 const topic = 'Nebius melampaui perkiraan';
 const plan = {
@@ -75,10 +76,20 @@ test('stock-pick language is not universally banned when the user explicitly ask
   );
 });
 
-test('production generic route gives research composer focused story facts and avoids fake conclusion label', async () => {
-  const original = research.compose;
+test('audience reactions stay available when the requested topic explicitly asks for them', () => {
+  const reaction = '“I cannot wait for the update,” one user wrote.';
+  assert.equal(focus.audienceReactionNoise(reaction, plan), true);
+  assert.equal(focus.audienceReactionNoise(reaction, {
+    ...plan,
+    rawTopic: 'Reaksi pengguna terhadap pembaruan Claude',
+    canonicalTopic: 'Reaksi pengguna terhadap pembaruan Claude'
+  }), false);
+});
+
+test('production generic route gives simple composer focused story facts and avoids fake conclusion label', async () => {
+  const original = simple.compose;
   let received = null;
-  research.compose = async args => {
+  simple.compose = async args => {
     received = args;
     return {
       topic,
@@ -103,6 +114,6 @@ test('production generic route gives research composer focused story facts and a
     assert.match(received.sources[0].text, /beat|revenue/i);
     assert.equal(result.slides[3].section, 'FAKTA LANJUTAN');
   } finally {
-    research.compose = original;
+    simple.compose = original;
   }
 });

@@ -11,6 +11,10 @@ const LEGAL_DISCLAIMER = /(?:\b(?:disclaimer|penafian)\b|\b(?:tidak|tak)\s+berta
 const MARKET_SNAPSHOT = /\b(?:stock|stocks|shares?|saham|share\s+price|harga\s+saham)\b/i;
 const MARKET_MOVE = /\b(?:rose|fell|jumped|surged|slid|gained|dropped|rallied|naik|turun|melonjak|anjlok|menguat|melemah)\b/i;
 const RELATIVE_METADATA = /\b\d+\s*(?:menit|jam|hari|minggu|bulan|minute|minutes|hour|hours|day|days|week|weeks|month|months)\s*(?:lalu|ago)\b/i;
+const AUDIENCE_ACTOR = /(?:\b(?:a|an|one|another|some)\s+(?:user|reader|commenter|customer|viewer)\b|\b(?:user|users|reader|readers|commenter|commenters|customer|customers|viewer|viewers|pengguna|pembaca|komentator|pelanggan|penonton|warganet|netizen)\b)/i;
+const AUDIENCE_REACTION = /\b(?:wrote|posted|commented|joked|quipped|reacted|complained|praised|asked|tweeted|replied|tulis|menulis|mengunggah|berkomentar|bercanda|menanggapi|mengeluh|memuji|bertanya|membalas|ujar)\b/i;
+const FIRST_PERSON_REACTION = /\b(?:i\s+(?:can(?:no|')?t\s+wait|hope|wish|love|hate|want)|we\s+(?:can(?:no|')?t\s+wait|hope|wish|love|hate|want)|(?:aku|saya|kami)\s+(?:tidak\s+sabar|berharap|ingin|suka|benci)|semoga)\b/i;
+const REACTION_TOPIC = /\b(?:reaksi|tanggapan|komentar|respons\s+(?:pengguna|publik)|opini\s+publik|sentimen|user\s+reactions?|public\s+response|what\s+users\s+say)\b/i;
 
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -47,10 +51,21 @@ function requestedText(plan = {}) {
   return clean(`${plan.rawTopic || ''} ${plan.canonicalTopic || ''}`);
 }
 
+function audienceReactionNoise(value = '', plan = {}) {
+  const text = clean(value);
+  if (!text || REACTION_TOPIC.test(requestedText(plan))) return false;
+  const attributedReaction = AUDIENCE_ACTOR.test(text) && AUDIENCE_REACTION.test(text);
+  const firstPersonAudienceQuote = AUDIENCE_ACTOR.test(text)
+    && FIRST_PERSON_REACTION.test(text)
+    && /["'“”‘’]/.test(text);
+  return attributedReaction || firstPersonAudienceQuote;
+}
+
 function editorialNoise(value = '', plan = {}) {
   const text = clean(value);
   if (!text) return true;
   const requested = requestedText(plan);
+  if (audienceReactionNoise(text, plan)) return true;
   if (HARD_PROMO.test(text) && !HARD_PROMO.test(requested)) return true;
   if (!plan.marketIntent && STOCK_PICK_EDITORIAL.test(text) && !STOCK_PICK_EDITORIAL.test(requested)) return true;
   if (LEGAL_DISCLAIMER.test(text) && !LEGAL_DISCLAIMER.test(requested)) return true;
@@ -150,6 +165,7 @@ module.exports = {
   storyEventTerms,
   eventHits,
   requestedText,
+  audienceReactionNoise,
   editorialNoise,
   marketSnapshot,
   sentenceRows,

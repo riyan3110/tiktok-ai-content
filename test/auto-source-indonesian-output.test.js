@@ -49,15 +49,15 @@ test('language-only repair keeps factual evidence metadata and produces Indonesi
 
   const translations = [
     'Perusahaan AI Siapkan Tanda Air Tak Terlihat',
-    'Tanda Air Disisipkan ke Jawaban Model',
-    'Teks Tetap Terlihat Normal',
-    'Dukungan Model Lama Akan Ditambahkan'
+    'Sistem Membantu Identifikasi Teks AI',
+    'Pengguna Tetap Bisa Memakai Model',
+    'Teks Tetap Terlihat Normal'
   ];
   const bodies = [
     'Perusahaan AI berencana menambahkan tanda air tak terlihat pada teks dari model yang didukung.',
-    'Model yang didukung akan menyisipkan tanda air langsung ke dalam jawaban yang dihasilkan.',
-    'Tanda air dirancang tetap berada dalam teks tanpa mengubah kata yang terlihat.',
-    'Perusahaan juga menyiapkan dukungan penandaan untuk model lama selama masa transisi.'
+    'Sistem penandaan ditujukan untuk mengidentifikasi teks yang dihasilkan oleh AI.',
+    'Pengguna tetap dapat memakai model yang didukung selama peluncuran sistem watermark.',
+    'Tanda air dirancang tetap berada dalam teks tanpa mengubah kata yang terlihat.'
   ];
 
   let calls = 0;
