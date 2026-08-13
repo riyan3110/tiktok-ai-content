@@ -21,8 +21,8 @@ test('exact or embedded repeated copy is still rejected', () => {
   }), true);
 
   assert.equal(composer.duplicateSlideCopy({
-    title: 'Penerapan Dilakukan Bertahap',
-    body: 'Penerapan dilakukan bertahap sesuai dukungan model yang tersedia.',
+    title: 'Penerapan Dilakukan Secara Bertahap',
+    body: 'Penerapan dilakukan secara bertahap sesuai dukungan model yang tersedia.',
     points: []
   }), true);
 });
