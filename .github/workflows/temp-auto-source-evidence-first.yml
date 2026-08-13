@@ -1,0 +1,19 @@
+name: temp-auto-source-evidence-first
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: node --test test/auto-source-evidence-first-regression.test.js test/auto-source-patch.test.js test/auto-source-scope-fidelity-regression.test.js test/auto-source-simple-composer.test.js
