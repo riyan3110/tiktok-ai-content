@@ -27,7 +27,23 @@ function normalizeFactSections(result, format = '') {
 }
 
 function continuationFact(value = '') {
-  return /^(?:it|this|that|these|those|according\s+to\s+the\s+company|the\s+(?:option|feature|service|system|model|company|product|tool|reset|control|mechanism|technology|capability|policy|initiative|watermark|mark|signal)|ini|itu|menurut\s+perusahaan|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini|reset\s+ini|mekanisme\s+ini|teknologi\s+ini|kebijakan\s+ini)\b/i.test(clean(value));
+  return /^(?:it|this|that|these|those|its|their|users?|people|according\s+to\s+the\s+company|the\s+(?:option|feature|service|system|model|company|product|tool|reset|control|mechanism|technology|capability|policy|initiative|watermark|mark|signal)|ini|itu|mereka|pengguna|orang|menurut\s+perusahaan|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini|reset\s+ini|mekanisme\s+ini|teknologi\s+ini|kebijakan\s+ini)\b/i.test(clean(value));
+}
+
+function storySubjectAnchored(plan = {}, value = '') {
+  const subjects = plan.subjects || [];
+  const hits = dynamicScope.subjectHits(plan, value);
+  if (!subjects.length) return true;
+  const specific = subjects.filter(subject => dynamicScope.looseNormalize(subject).split(' ').filter(Boolean).length >= 2);
+  if (!specific.length) return hits.length > 0;
+  const hitKeys = new Set(hits.map(dynamicScope.looseNormalize));
+  return specific.some(subject => hitKeys.has(dynamicScope.looseNormalize(subject)));
+}
+
+function hasSpecificStorySubject(plan = {}) {
+  return (plan.subjects || []).some(subject =>
+    dynamicScope.looseNormalize(subject).split(' ').filter(Boolean).length >= 2
+  );
 }
 
 function factRelevant(topic = '', fact = '', plan = {}, previousKept = false, source = {}) {
@@ -38,11 +54,18 @@ function factRelevant(topic = '', fact = '', plan = {}, previousKept = false, so
   if (multi.hasMultiEntityTopic(topic)) return multi.matchedEntities(topic, fact).length > 0;
 
   if (dynamicScope.eventLockRequired(plan)) {
+    if (!dynamicScope.eventAlignedSource(plan, source)) return false;
     const eventRelated = dynamicScope.eventLockSatisfied(plan, fact)
       || dynamicScope.actionHits(plan, fact).length > 0
       || dynamicScope.contextHits(plan, fact).length > 0
       || dynamicScope.eventHits(plan, fact).length > 0;
-    return (dynamicScope.evidenceSubjectAnchored(plan, fact) && eventRelated)
+    if (hasSpecificStorySubject(plan)) {
+      return storySubjectAnchored(plan, fact)
+        || (previousKept
+          && continuationFact(fact)
+          && !dynamicScope.introducesForeignNamedActor(plan, source, fact));
+    }
+    return (storySubjectAnchored(plan, fact) && eventRelated)
       || (previousKept && eventRelated && !dynamicScope.introducesForeignNamedActor(plan, source, fact));
   }
 
@@ -62,7 +85,7 @@ function titleAnchorsTopic(topic = '', source = {}, plan = {}) {
 }
 
 function readableFacts(topic = '', source = {}, plan = {}) {
-  const raw = storyFocus.atomicFacts(source?.text || '').map(clean).filter(Boolean);
+  const raw = storyFocus.atomicFacts(source?.text || '', plan).map(clean).filter(Boolean);
   const out = [];
   const anchoredLead = titleAnchorsTopic(topic, source, plan);
   let previousKept = false;
@@ -86,7 +109,7 @@ function eventNeighborhoodSource(topic = '', source = {}, plan = {}, maxFacts = 
   if (!facts.length) return { ...source, text: '' };
 
   let selected = facts.slice(0, maxFacts);
-  if (dynamicScope.eventLockRequired(plan)) {
+  if (dynamicScope.eventLockRequired(plan) && facts.length > maxFacts) {
     let anchor = facts.findIndex(fact => dynamicScope.eventLockSatisfied(plan, fact));
     if (anchor < 0) anchor = facts.findIndex(fact =>
       dynamicScope.actionHits(plan, fact).length > 0 || dynamicScope.contextHits(plan, fact).length > 0
@@ -170,6 +193,8 @@ module.exports = {
   compose,
   normalizeFactSections,
   continuationFact,
+  storySubjectAnchored,
+  hasSpecificStorySubject,
   factRelevant,
   titleAnchorsTopic,
   readableFacts,

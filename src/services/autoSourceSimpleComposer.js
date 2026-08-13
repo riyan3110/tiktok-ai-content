@@ -102,7 +102,7 @@ function similarity(left, right) {
 }
 
 function cleanEvidence(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return storyFocus.cleanArticleFact(value);
 }
 
 function questionOnlyEvidence(value) {
@@ -209,7 +209,7 @@ function sameFactContext(left, right, topic = '') {
   if (genericAnnouncement(left, topic) && genericAnnouncement(right, topic)) return true;
   const score = Math.max(semanticSimilarity(left, right, topic), semanticSimilarity(left, right));
   if (score >= 0.68) return true;
-  return ANNOUNCEMENT.test(left) && ANNOUNCEMENT.test(right) && score >= 0.42;
+  return ANNOUNCEMENT.test(left) && ANNOUNCEMENT.test(right) && score >= 0.3;
 }
 
 function sectionsForFormat(format = 'Fakta singkat') {
@@ -242,12 +242,13 @@ function collectFactGroups(sources = [], topic = '') {
 
   for (const fact of [...ranked, ...fallback]) {
     const sourceId = String(fact?.sourceId || '').trim();
-    const evidence = String(fact?.evidence || '').replace(/\s+/g, ' ').trim();
+    const evidence = cleanEvidence(fact?.evidence);
     const plan = { rawTopic: topic, canonicalTopic: topic, marketIntent: false };
     if (!groups.has(sourceId)
       || !evidence
       || questionOnlyEvidence(evidence)
       || endsWithDanglingFragment(evidence)
+      || storyFocus.sourceArtifactNoise(evidence, plan)
       || storyFocus.editorialNoise(evidence, plan)) continue;
     const key = normalize(evidence);
     if (!key || seen.get(sourceId).has(key) || groups.get(sourceId).length >= MAX_FACTS_PER_SOURCE) continue;
@@ -586,14 +587,27 @@ function factualErrors(candidate, packets, sources) {
   candidate.slides.forEach((slide, slideIndex) => {
     const packet = packets[slideIndex];
     if (!packet) { errors.push(`slide:${slideIndex}: paket fakta tidak tersedia.`); return; }
+    const plan = { rawTopic: packet?.topic, canonicalTopic: packet?.topic, marketIntent: false };
     if (!String(slide.title || '').trim()) errors.push(`slide:${slideIndex}:title kosong.`);
     if (!String(slide.body || '').trim()) errors.push(`slide:${slideIndex}:body kosong.`);
-    if (storyFocus.audienceReactionNoise(slide.title, { rawTopic: packet?.topic, canonicalTopic: packet?.topic })) {
+    if (storyFocus.sourceArtifactNoise(slide.title, plan)) {
+      errors.push(`slide:${slideIndex}:title mengandung metadata atau kartu artikel terkait.`);
+    }
+    if (storyFocus.unsupportedHype(slide.title, packet?.mainEvidence)) {
+      errors.push(`slide:${slideIndex}:title memakai klaim promosi yang tidak didukung sumber.`);
+    }
+    if (storyFocus.audienceReactionNoise(slide.title, plan)) {
       errors.push(`slide:${slideIndex}:title memakai komentar/reaksi audiens sebagai fakta berita.`);
     }
     if (questionOnlyEvidence(slide.body)) errors.push(`slide:${slideIndex}:body berupa FAQ/pertanyaan tanpa jawaban.`);
     if (endsWithDanglingFragment(slide.body)) errors.push(`slide:${slideIndex}:body terpotong atau berakhir pada kata gantung.`);
-    if (storyFocus.audienceReactionNoise(slide.body, { rawTopic: packet?.topic, canonicalTopic: packet?.topic })) {
+    if (storyFocus.sourceArtifactNoise(slide.body, plan)) {
+      errors.push(`slide:${slideIndex}:body mengandung metadata atau kartu artikel terkait.`);
+    }
+    if (storyFocus.unsupportedHype(slide.body, packet?.mainEvidence)) {
+      errors.push(`slide:${slideIndex}:body memakai klaim promosi yang tidak didukung sumber.`);
+    }
+    if (storyFocus.audienceReactionNoise(slide.body, plan)) {
       errors.push(`slide:${slideIndex}:body memakai komentar/reaksi audiens sebagai fakta berita.`);
     }
     const visibleSlideCopy = [slide.title, slide.body, ...(slide.points || [])].filter(Boolean).join(' ');
@@ -624,7 +638,15 @@ function factualErrors(candidate, packets, sources) {
       ...(slide.points || []).map((value, pointIndex) => ({ field: `slide:${slideIndex}:point:${pointIndex}`, value }))
     ].filter(item => item.value);
     for (const item of substantive) {
-      if (storyFocus.audienceReactionNoise(item.value, { rawTopic: packet?.topic, canonicalTopic: packet?.topic })) {
+      if (storyFocus.sourceArtifactNoise(item.value, plan)) {
+        errors.push(`${item.field}: metadata atau kartu artikel terkait tidak boleh menjadi fakta.`);
+        continue;
+      }
+      if (storyFocus.unsupportedHype(item.value, packet?.mainEvidence)) {
+        errors.push(`${item.field}: klaim promosi tidak didukung evidence.`);
+        continue;
+      }
+      if (storyFocus.audienceReactionNoise(item.value, plan)) {
         errors.push(`${item.field}: komentar/reaksi audiens tidak boleh dijadikan fakta berita.`);
         continue;
       }
