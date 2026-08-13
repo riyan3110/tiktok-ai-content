@@ -108,6 +108,25 @@ function needsQualityRepair(result = {}, packets = []) {
   });
 }
 
+// After a translation/editor pass, do not reject good Indonesian copy merely
+// because the language-agnostic semantic matcher cannot align Indonesian with
+// English evidence. Keep only the checks that are safe to evaluate directly on
+// visible copy plus the source's timing/certainty.
+function needsPostRepairRetry(result = {}, packets = []) {
+  if (needsIndonesianRepair(result)) return true;
+  const slides = Array.isArray(result?.slides) ? result.slides : [];
+  return packets.some((packet, slideIndex) => {
+    const slide = slides[slideIndex] || {};
+    const body = clean(slide?.body);
+    const title = clean(slide?.title);
+    if (!body) return true;
+    if (bodyNeedsDensityRepair(body, packet)) return true;
+    if (visibleHype(title) || visibleHype(body)) return true;
+    if (rolloutOverstatement(body, packet?.mainEvidence)) return true;
+    return false;
+  });
+}
+
 function needsVisibleRepair(result = {}, packets = []) {
   return needsIndonesianRepair(result) || needsQualityRepair(result, packets);
 }
@@ -219,11 +238,11 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
     }
     const candidate = applyVisibleRepair(current, translated);
     const finalized = simple.finalizeVisibleCopy(candidate, packets, sources);
-    // Editorial quality problems should trigger another repair, not a user-facing
-    // rejection. Unsupported numbers, broken claim metadata, empty copy, and
-    // other factual errors remain blocking.
+    // Unsupported numbers, broken claim metadata, empty copy, and other
+    // factual errors remain blocking. Cross-language semantic mismatch alone
+    // must not throw away a valid Indonesian repair and expose English evidence.
     const blocking = simple.unsafeBlockingErrors(finalized.errors, packets);
-    if (blocking.length || needsQualityRepair(finalized.candidate, packets)) continue;
+    if (blocking.length || needsPostRepairRetry(finalized.candidate, packets)) continue;
     current = syncVisibleTop({ ...current, slides: finalized.candidate.slides });
   }
 
@@ -239,6 +258,7 @@ module.exports = {
   bodyNeedsDensityRepair,
   visibleHype,
   needsQualityRepair,
+  needsPostRepairRetry,
   needsVisibleRepair,
   repairPrompt,
   applyVisibleRepair,
