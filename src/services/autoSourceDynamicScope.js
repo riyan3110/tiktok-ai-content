@@ -168,26 +168,71 @@ function eventContextAnchored(plan = {}, value = '') {
   return eventLockSatisfied(plan, value);
 }
 
+function evidenceSubjectAnchored(plan = {}, value = '') {
+  const subjects = plan.subjects || [];
+  // The headline/lead must identify the complete requested subject. Once that
+  // story is locked, an individual sentence may naturally name only the actor
+  // or only the product. Requiring every subject in every sentence would drop
+  // valid follow-up facts from otherwise correctly scoped articles.
+  return !subjects.length || subjectHits(plan, value).length > 0;
+}
+
+const NAMED_ACTOR_NOISE = new Set([
+  'ai', 'api', 'us', 'eu', 'however', 'meanwhile', 'another', 'some', 'many',
+  'according', 'the', 'this', 'that', 'these', 'those', 'it', 'users', 'people',
+  'customers', 'developers', 'researchers', 'lawmakers', 'recipients', 'publishers'
+]);
+const NAME_PREPOSITIONS = new Set(['by', 'from', 'with', 'at', 'called', 'named']);
+
+function strongNamedActorTokens(value = '') {
+  const tokens = clean(value).match(/[A-Za-z][A-Za-z0-9.-]*/g) || [];
+  const out = new Set();
+  tokens.forEach((token, index) => {
+    const key = looseNormalize(token);
+    if (!key || NAMED_ACTOR_NOISE.has(key)) return;
+    const internalCapital = /[a-z][A-Z]/.test(token);
+    const acronym = /^[A-Z][A-Z0-9.-]{1,}$/.test(token);
+    const sentenceActor = index === 0 && /^[A-Z][a-z][A-Za-z0-9.-]{2,}$/.test(token);
+    const namedAfterPreposition = NAME_PREPOSITIONS.has(looseNormalize(tokens[index - 1] || ''))
+      && /^[A-Z][a-z][A-Za-z0-9.-]{2,}$/.test(token);
+    if (internalCapital || acronym || sentenceActor || namedAfterPreposition) out.add(key);
+  });
+  return [...out];
+}
+
+function introducesForeignNamedActor(plan = {}, source = {}, value = '') {
+  if (evidenceSubjectAnchored(plan, value)) return false;
+  const allowed = new Set([
+    ...strongNamedActorTokens(source?.title || ''),
+    ...(plan.subjects || []).flatMap(subject => strongNamedActorTokens(subject))
+  ]);
+  return strongNamedActorTokens(value).some(actor => !allowed.has(actor));
+}
+
 function sentences(text = '') {
   return clean(text).split(/(?<=[.!?])\s+/).map(clean).filter(Boolean);
+}
+
+function subjectAlignedSource(plan = {}, source = {}) {
+  const subjects = plan.subjects || [];
+  if (!subjects.length) return true;
+  const title = clean(source?.title || '');
+  const rows = sentences(source?.text || '');
+  const headlineLead = `${title} ${rows.slice(0, 2).join(' ')}`.trim();
+  return subjectHits(plan, headlineLead).length >= requiredSubjectMatches(plan);
 }
 
 function eventAlignedSource(plan = {}, source = {}) {
   if (!eventLockRequired(plan)) return eventHits(plan, `${source?.title || ''} ${source?.text || ''}`).length > 0;
   const title = clean(source?.title || '');
-  if (eventLockSatisfied(plan, title)) return true;
   const rows = sentences(source?.text || '');
-  // Headlines and their dek often express the same event with a different verb.
-  // Subject + required distinguishing context in the headline/lead remains a strict story lock;
-  // it does not admit another article merely because the brand is mentioned.
+  // A search result can contain the requested name far below the article in a
+  // related-story widget. Lock event sources only from the headline/dek/lead,
+  // where both the requested subject and event context must occur. This keeps a
+  // DeepMind watermark story from becoming a Claude story merely because a
+  // Claude headline is linked near the bottom of the page.
   const headlineLead = `${title} ${rows.slice(0, 2).join(' ')}`.trim();
-  if (eventContextAnchored(plan, headlineLead)) return true;
-  for (let index = 0; index < rows.length; index += 1) {
-    if (eventLockSatisfied(plan, rows[index])) return true;
-    const pair = `${rows[index]} ${rows[index + 1] || ''}`.trim();
-    if (rows[index + 1] && eventLockSatisfied(plan, pair)) return true;
-  }
-  return false;
+  return eventContextAnchored(plan, headlineLead);
 }
 
 function requiredSubjectMatches(plan = {}) {
@@ -265,13 +310,14 @@ function evidenceInScope(topic = '', evidence = '', source = {}, plan = {}) {
 
   if (eventLockRequired(plan)) {
     if (!eventAlignedSource(plan, source)) return false;
-    if (eventLockSatisfied(plan, text)) return true;
-    if (eventLockSatisfied(plan, source?.title || '')) {
-      if (specific || entityMatches.length) return true;
-      if (subjectMatches.length) return true;
-      if (contextHits(plan, text).length) return true;
-    }
-    return false;
+    const eventRelated = eventLockSatisfied(plan, text)
+      || actionHits(plan, text).length > 0
+      || contextHits(plan, text).length > 0
+      || eventMatches.length > 0;
+    // Event words alone are not evidence about the requested subject. This is
+    // the sentence-level guard that removes comparison paragraphs about other
+    // companies, products, hearings, or older watermark systems.
+    return evidenceSubjectAnchored(plan, text) && eventRelated;
   }
 
   if (specific || entityMatches.length) return true;
@@ -299,32 +345,36 @@ function evidenceScore(topic = '', evidence = '', source = {}, plan = {}) {
 }
 
 function continuationSentence(value = '') {
-  return /^(?:it|this|that|these|those|the\s+(?:company|model|feature|service|tool|app|application|system)|ia|ini|itu|fitur\s+ini|model\s+ini|perusahaan\s+ini|layanan\s+ini|sistem\s+ini|produk\s+ini)\b/i.test(clean(value));
+  return /^(?:it|this|that|these|those|according\s+to\s+the\s+company|the\s+(?:company|model|feature|service|tool|app|application|system|mechanism|technology|capability|policy|initiative|watermark|mark|signal)|ia|ini|itu|menurut\s+perusahaan|fitur\s+ini|model\s+ini|perusahaan\s+ini|layanan\s+ini|sistem\s+ini|produk\s+ini|mekanisme\s+ini|teknologi\s+ini|kebijakan\s+ini)\b/i.test(clean(value));
 }
 
 function scopeEventSource(topic = '', source = {}, plan = {}) {
   if (!sourceInScope(topic, source, plan)) return { ...source, text: '' };
   const rows = sentences(source?.text || '');
   const keepIndexes = new Set();
-  const titleLocked = eventLockSatisfied(plan, source?.title || '');
-  const leadLocked = eventContextAnchored(plan, `${source?.title || ''} ${rows.slice(0, 2).join(' ')}`);
-
-  if (titleLocked) {
-    // The opening core is usually the dek/lead of the requested story. Keep it,
-    // but do not let later paragraphs survive merely because they repeat the
-    // company/product name; later rows still need event context.
-    for (let index = 0; index < Math.min(4, rows.length); index += 1) keepIndexes.add(index);
-  } else if (leadLocked) {
-    for (let index = 0; index < Math.min(2, rows.length); index += 1) keepIndexes.add(index);
-  }
+  let previousKept = false;
 
   rows.forEach((sentence, index) => {
-    const direct = eventLockSatisfied(plan, sentence);
-    const contextual = titleLocked && contextHits(plan, sentence).length > 0;
-    if (!direct && !contextual) return;
-    keepIndexes.add(index);
-    const next = rows[index + 1];
-    if (next && (continuationSentence(next) || contextHits(plan, next).length)) keepIndexes.add(index + 1);
+    const eventRelated = eventLockSatisfied(plan, sentence)
+      || actionHits(plan, sentence).length > 0
+      || contextHits(plan, sentence).length > 0
+      || eventHits(plan, sentence).length > 0;
+    const direct = evidenceSubjectAnchored(plan, sentence) && eventRelated;
+    const continuation = previousKept && continuationSentence(sentence);
+    const contextualContinuation = previousKept
+      && eventRelated
+      && !introducesForeignNamedActor(plan, source, sentence);
+    const next = rows[index + 1] || '';
+    const subjectThenContinuation = evidenceSubjectAnchored(plan, sentence)
+      && continuationSentence(next)
+      && (eventLockSatisfied(plan, next)
+        || actionHits(plan, next).length > 0
+        || contextHits(plan, next).length > 0
+        || eventHits(plan, next).length > 0);
+
+    if (direct || continuation || contextualContinuation || subjectThenContinuation) keepIndexes.add(index);
+    if (subjectThenContinuation) keepIndexes.add(index + 1);
+    previousKept = keepIndexes.has(index);
   });
 
   const kept = rows.filter((sentence, index) => keepIndexes.has(index) && !identity.relativeTimeMetadata(sentence));
@@ -410,6 +460,10 @@ module.exports = {
   requiredContextMatches,
   eventLockSatisfied,
   eventContextAnchored,
+  evidenceSubjectAnchored,
+  strongNamedActorTokens,
+  introducesForeignNamedActor,
+  subjectAlignedSource,
   eventAlignedSource,
   requiredSubjectMatches,
   sourceInScope,

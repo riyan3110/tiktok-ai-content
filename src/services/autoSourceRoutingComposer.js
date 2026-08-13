@@ -27,10 +27,10 @@ function normalizeFactSections(result, format = '') {
 }
 
 function continuationFact(value = '') {
-  return /^(?:it|this|that|these|those|the\s+(?:option|feature|service|system|model|company|product|tool|reset|control)|ini|itu|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini|reset\s+ini)\b/i.test(clean(value));
+  return /^(?:it|this|that|these|those|according\s+to\s+the\s+company|the\s+(?:option|feature|service|system|model|company|product|tool|reset|control|mechanism|technology|capability|policy|initiative|watermark|mark|signal)|ini|itu|menurut\s+perusahaan|fitur\s+ini|opsi\s+ini|layanan\s+ini|sistem\s+ini|model\s+ini|produk\s+ini|reset\s+ini|mekanisme\s+ini|teknologi\s+ini|kebijakan\s+ini)\b/i.test(clean(value));
 }
 
-function factRelevant(topic = '', fact = '', plan = {}, previousKept = false) {
+function factRelevant(topic = '', fact = '', plan = {}, previousKept = false, source = {}) {
   if (!fact || storyFocus.editorialNoise(fact, plan) || storyFocus.marketSnapshot(fact, plan)) return false;
   if (previousKept && continuationFact(fact)) return true;
 
@@ -38,9 +38,12 @@ function factRelevant(topic = '', fact = '', plan = {}, previousKept = false) {
   if (multi.hasMultiEntityTopic(topic)) return multi.matchedEntities(topic, fact).length > 0;
 
   if (dynamicScope.eventLockRequired(plan)) {
-    return dynamicScope.eventLockSatisfied(plan, fact)
+    const eventRelated = dynamicScope.eventLockSatisfied(plan, fact)
       || dynamicScope.actionHits(plan, fact).length > 0
-      || dynamicScope.contextHits(plan, fact).length > 0;
+      || dynamicScope.contextHits(plan, fact).length > 0
+      || dynamicScope.eventHits(plan, fact).length > 0;
+    return (dynamicScope.evidenceSubjectAnchored(plan, fact) && eventRelated)
+      || (previousKept && eventRelated && !dynamicScope.introducesForeignNamedActor(plan, source, fact));
   }
 
   if ((plan.subjects || []).length) return dynamicScope.subjectHits(plan, fact).length > 0;
@@ -65,7 +68,7 @@ function readableFacts(topic = '', source = {}, plan = {}) {
   let previousKept = false;
   for (let index = 0; index < raw.length; index += 1) {
     const fact = raw[index];
-    let keep = factRelevant(topic, fact, plan, previousKept);
+    let keep = factRelevant(topic, fact, plan, previousKept, source);
     // If the headline already anchors the topic, only a true pronoun/reference
     // continuation may borrow that headline context. Independent lead sentences
     // still need to match the topic themselves so market/roundup side-notes stay out.

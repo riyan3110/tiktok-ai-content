@@ -84,9 +84,10 @@ function softSourceScore(topic = '', source = {}, plan = {}) {
   if (identity.hasSpecificIdentity(topic) && !identity.identityMatches(topic, combined)) return -1;
 
   // Event-shaped topics still need the same event ingredients. The relaxed
-  // fallback merely allows those ingredients to appear across the article
-  // instead of requiring them in one exact sentence/pair.
+  // fallback may relax sentence wording, but it may not move the requested
+  // subject from the headline/lead to an unrelated link later in the page.
   if (dynamicScope.eventLockRequired(plan)) {
+    if (!dynamicScope.subjectAlignedSource(plan, source)) return -1;
     if (subjects.length && !subjectHits) return -1;
     if (!actionHits) return -1;
     if (contexts.length && !contextHits) return -1;
