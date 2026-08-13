@@ -8,6 +8,7 @@ process.env.AI_MODEL ||= 'test-model';
 
 const routing = require('../src/services/autoSourceRoutingComposer');
 const patch = require('../src/services/autoSourcePatch');
+const visibleGuard = require('../src/services/autoSourceIndonesianOutput');
 
 function source(title, text, url, evidenceMode) {
   return {
@@ -155,4 +156,25 @@ test('fact expansion plan remains generic and current without any topic whitelis
   assert.ok(plan.searchQueries.some(query => /details/i.test(query)));
   assert.ok(plan.searchQueries.some(query => /official announcement/i.test(query)));
   assert.equal(plan.evidenceIntent, 'distinct-facts');
+});
+
+test('on-device or local evidence cannot be inflated into an offline claim', () => {
+  const evidence = 'The model is designed to run smaller agentic tasks on personal devices using a single graphics card.';
+  assert.equal(visibleGuard.offlineOverstatement('Model ini berjalan di perangkat tanpa internet.', evidence), true);
+  assert.equal(visibleGuard.offlineOverstatement('Model ini berjalan secara lokal di perangkat pengguna.', evidence), false);
+});
+
+test('explicit offline evidence still allows an offline visible claim', () => {
+  const evidence = 'The model can run offline without an internet connection after installation.';
+  assert.equal(visibleGuard.offlineOverstatement('Model ini dapat berjalan offline tanpa koneksi internet.', evidence), false);
+});
+
+test('supported-model wording cannot be inflated into every-text coverage', () => {
+  const evidence = 'Supported models will embed an imperceptible watermark into generated text.';
+  assert.equal(visibleGuard.scopeOverstatement('Watermark disematkan pada setiap teks yang dihasilkan model.', evidence), true);
+});
+
+test('explicit universal output wording still allows universal visible coverage', () => {
+  const evidence = 'The system marks all generated text from supported models.';
+  assert.equal(visibleGuard.scopeOverstatement('Sistem menandai semua teks yang dihasilkan model yang didukung.', evidence), false);
 });
