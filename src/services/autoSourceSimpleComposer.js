@@ -9,6 +9,8 @@ const { sourceFacts } = require('./manualSourceFallback');
 const SLIDE_COUNT = 4;
 const MAX_POINTS = 3;
 const MAX_FACTS_PER_SOURCE = 8;
+const STRICT_FACT_SIMILARITY = 0.58;
+const RELAXED_FACT_SIMILARITY = 0.76;
 
 const words = value => String(value || '').trim().split(/\s+/).filter(Boolean);
 const normalize = value => String(value || '')
@@ -23,6 +25,32 @@ const STOPWORDS = new Set([
   'from','is','are','was','were','will','can','could','has','have','had','a','an'
 ]);
 
+const QUESTION_START = /^(?:faq\s*[:.-]?\s*)?(?:apa(?:kah)?|siapa|kapan|mengapa|kenapa|bagaimana|bisakah|dapatkah|benarkah|what|who|when|why|how)\b/i;
+const ANNOUNCEMENT = /\b(?:announce(?:d|s|ment|ments|ing)?|plan(?:ned|s|ning)?|start(?:ed|s|ing)?|begin(?:s|ning)?|introduc(?:e|ed|es|ing)|launch(?:ed|es|ing)?|roll(?:ed|s|ing)?\s+out|mengumumkan|diumumkan|berencana|rencana|akan\s+mulai|mulai|memperkenalkan|diperkenalkan|meluncurkan|diluncurkan)\b/i;
+const DANGLING_END = new Set([
+  'yang','dan','atau','dengan','untuk','dari','di','ke','pada','dalam','oleh','sebagai','karena','agar','jika','bila','saat','ketika',
+  'bahwa','namun','tetapi','serta','hingga','hanya','menurut','menunjukkan','menyatakan','mengatakan','menjelaskan','mencakup','termasuk',
+  'that','which','who','and','or','with','for','from','to','in','on','by','because','if','when','while','although','including','shows','showed',
+  'says','said','states','stated','explains','explained','according'
+]);
+
+const SEMANTIC_ALIASES = new Map([
+  ['announced','announce'],['announces','announce'],['announcement','announce'],['mengumumkan','announce'],['diumumkan','announce'],
+  ['plans','announce'],['planned','announce'],['planning','announce'],['rencana','announce'],['berencana','announce'],
+  ['started','start'],['starts','start'],['starting','start'],['mulai','start'],
+  ['introduced','introduce'],['introduces','introduce'],['memperkenalkan','introduce'],['diperkenalkan','introduce'],
+  ['launched','release'],['launches','release'],['released','release'],['releases','release'],['meluncurkan','release'],['diluncurkan','release'],['dirilis','release'],
+  ['embed','apply'],['embedded','apply'],['embedding','apply'],['insert','apply'],['inserting','apply'],['include','apply'],['including','apply'],
+  ['incorporate','apply'],['incorporating','apply'],['menyisipkan','apply'],['menambahkan','apply'],['menerapkan','apply'],['menanamkan','apply'],['memasukkan','apply'],
+  ['mark','watermark'],['marks','watermark'],['marked','watermark'],['marking','watermark'],['watermarks','watermark'],['watermarking','watermark'],
+  ['menandai','watermark'],['ditandai','watermark'],['penandaan','watermark'],
+  ['generated','generate'],['generates','generate'],['generating','generate'],['dihasilkan','generate'],['menghasilkan','generate'],
+  ['contents','content'],['konten','content'],['texts','text'],['teks','text'],['images','image'],['gambar','image'],
+  ['models','model'],['produk','product'],['products','product'],['services','service'],['layanan','service'],
+  ['available','availability'],['tersedia','availability'],['ketersediaan','availability'],
+  ['detecting','detect'],['detected','detect'],['detection','detect'],['mendeteksi','detect'],['terdeteksi','detect'],['deteksi','detect']
+]);
+
 function meaningfulTokens(value) {
   return [...new Set(normalize(value).split(' ').filter(token => token && !STOPWORDS.has(token) && (token.length > 2 || token === 'ai')))];
 }
@@ -33,6 +61,54 @@ function similarity(left, right) {
   if (!a.length || !b.length) return 0;
   const shared = a.filter(token => b.includes(token)).length;
   return shared / Math.min(a.length, b.length);
+}
+
+function cleanEvidence(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function questionOnlyEvidence(value) {
+  const text = cleanEvidence(value);
+  if (!text) return false;
+  return /\?\s*$/.test(text) || /^(?:faq|faqs|frequently\s+asked\s+questions?)\b/i.test(text) || QUESTION_START.test(text);
+}
+
+function endsWithDanglingFragment(value) {
+  const raw = cleanEvidence(value);
+  if (!raw || /[,;:\-–—]\s*$/.test(raw)) return true;
+  const last = normalize(raw).split(' ').filter(Boolean).at(-1);
+  return Boolean(last && DANGLING_END.has(last));
+}
+
+function semanticBase(value) {
+  return normalize(value)
+    .replace(/\b(?:tanda\s+air)\b/g, ' watermark ')
+    .replace(/\b(?:tak|tidak)\s+terlihat\b/g, ' invisible ')
+    .replace(/\bmachine\s+readable\b/g, ' machinereadable ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function semanticTokens(value, topic = '') {
+  const topicTokens = new Set(semanticBase(topic).split(' ').map(token => SEMANTIC_ALIASES.get(token) || token).filter(Boolean));
+  return [...new Set(semanticBase(value).split(' ').map(token => SEMANTIC_ALIASES.get(token) || token).filter(token =>
+    token && !STOPWORDS.has(token) && !topicTokens.has(token) && (token.length > 2 || token === 'ai' || /^\d/.test(token))
+  ))];
+}
+
+function semanticSimilarity(left, right, topic = '') {
+  const a = semanticTokens(left, topic);
+  const b = semanticTokens(right, topic);
+  if (!a.length || !b.length) return 0;
+  const shared = a.filter(token => b.includes(token)).length;
+  return shared / Math.min(a.length, b.length);
+}
+
+function sameFactContext(left, right, topic = '') {
+  if (normalize(left) === normalize(right)) return true;
+  const score = Math.max(semanticSimilarity(left, right, topic), semanticSimilarity(left, right));
+  if (score >= 0.68) return true;
+  return ANNOUNCEMENT.test(left) && ANNOUNCEMENT.test(right) && score >= 0.42;
 }
 
 function sectionsForFormat(format = 'Fakta singkat') {
@@ -66,7 +142,7 @@ function collectFactGroups(sources = [], topic = '') {
   for (const fact of [...ranked, ...fallback]) {
     const sourceId = String(fact?.sourceId || '').trim();
     const evidence = String(fact?.evidence || '').replace(/\s+/g, ' ').trim();
-    if (!groups.has(sourceId) || !evidence) continue;
+    if (!groups.has(sourceId) || !evidence || questionOnlyEvidence(evidence) || endsWithDanglingFragment(evidence)) continue;
     const key = normalize(evidence);
     if (!key || seen.get(sourceId).has(key) || groups.get(sourceId).length >= MAX_FACTS_PER_SOURCE) continue;
     seen.get(sourceId).add(key);
@@ -75,58 +151,105 @@ function collectFactGroups(sources = [], topic = '') {
   return groups;
 }
 
-function buildSlidePackets(sources = [], topic = '', format = 'Fakta singkat') {
+function buildFactCandidates(sources = [], topic = '') {
   const groups = collectFactGroups(sources, topic);
-  const sourceIds = [...groups.entries()].filter(([, evidence]) => evidence.length).map(([sourceId]) => sourceId);
-  if (!sourceIds.length) return [];
-
-  const owners = sourceIds.slice(0, SLIDE_COUNT);
-  const useCount = new Map(sourceIds.map(id => [id, owners.filter(owner => owner === id).length]));
-  while (owners.length < SLIDE_COUNT) {
-    const ranked = [...sourceIds].sort((a, b) => {
-      const aUses = useCount.get(a) || 0;
-      const bUses = useCount.get(b) || 0;
-      const aCapacity = groups.get(a).length / (aUses + 1);
-      const bCapacity = groups.get(b).length / (bUses + 1);
-      return bCapacity - aCapacity || aUses - bUses;
-    });
-    const owner = ranked[0] || sourceIds[owners.length % sourceIds.length];
-    owners.push(owner);
-    useCount.set(owner, (useCount.get(owner) || 0) + 1);
-  }
-
-  const sections = sectionsForFormat(format);
-  const slideIndexesBySource = new Map(sourceIds.map(id => [id, []]));
-  owners.forEach((owner, slideIndex) => slideIndexesBySource.get(owner)?.push(slideIndex));
-  const packets = new Array(SLIDE_COUNT);
-
-  for (const sourceId of sourceIds) {
-    const slideIndexes = slideIndexesBySource.get(sourceId) || [];
-    const evidence = groups.get(sourceId) || [];
-    const chunkSize = Math.max(1, Math.ceil(evidence.length / Math.max(1, slideIndexes.length)));
-    slideIndexes.forEach((slideIndex, localIndex) => {
-      let chunk = evidence.slice(localIndex * chunkSize, (localIndex + 1) * chunkSize).slice(0, 6);
-      if (!chunk.length) chunk = evidence.slice(0, Math.min(3, evidence.length));
+  const rows = [];
+  const maxDepth = Math.max(0, ...[...groups.values()].map(evidence => evidence.length));
+  let order = 0;
+  for (let depth = 0; depth < maxDepth; depth += 1) {
+    for (const [sourceId, evidence] of groups.entries()) {
+      const value = evidence[depth];
+      if (!value) continue;
       const source = sourceForId(sources, sourceId) || {};
-      packets[slideIndex] = {
-        slideIndex,
-        section: sections[slideIndex],
-        primarySourceId: sourceId,
-        sourceTitle: String(source.title || '').replace(/\s+/g, ' ').trim(),
+      const detail = semanticTokens(value, topic).length;
+      rows.push({
+        sourceId,
+        evidence: value,
+        sourceTitle: cleanEvidence(source.title),
         publishedAt: source.publishedAt || source.discovery?.publishedAt || null,
-        evidence: chunk
-      };
-    });
+        order,
+        score: Math.max(0, 8 - depth * 0.45 - order * 0.015) + Math.min(detail, 12) * 0.04 + (ANNOUNCEMENT.test(value) ? 0.35 : 0)
+      });
+      order += 1;
+    }
   }
-  return packets.filter(Boolean);
+  return rows.sort((a, b) => b.score - a.score || a.order - b.order);
+}
+
+function selectDistinctFacts(sources = [], topic = '', count = SLIDE_COUNT) {
+  const candidates = buildFactCandidates(sources, topic);
+  if (!candidates.length) return [];
+  const selected = [];
+  const sourceUses = new Map();
+  const overview = candidates.find(candidate => ANNOUNCEMENT.test(candidate.evidence));
+  const first = overview || candidates[0];
+  selected.push(first);
+  sourceUses.set(first.sourceId, 1);
+
+  for (const threshold of [STRICT_FACT_SIMILARITY, RELAXED_FACT_SIMILARITY, 0.88]) {
+    while (selected.length < count) {
+      let best = null;
+      for (const candidate of candidates) {
+        if (selected.includes(candidate)) continue;
+        if (selected.some(existing => sameFactContext(existing.evidence, candidate.evidence, topic))) continue;
+        const maxSimilarity = Math.max(0, ...selected.map(existing => semanticSimilarity(existing.evidence, candidate.evidence, topic)));
+        if (maxSimilarity >= threshold) continue;
+        const uses = sourceUses.get(candidate.sourceId) || 0;
+        const adjusted = candidate.score + (uses === 0 ? 0.55 : 0) - uses * 0.12 + (1 - maxSimilarity) * 0.3;
+        if (!best || adjusted > best.adjusted) best = { candidate, adjusted };
+      }
+      if (!best) break;
+      selected.push(best.candidate);
+      sourceUses.set(best.candidate.sourceId, (sourceUses.get(best.candidate.sourceId) || 0) + 1);
+    }
+    if (selected.length >= count) break;
+  }
+
+  // Search-snippet fallback can legitimately expose fewer than four unique
+  // sentences even though the topic itself is valid. Keep the universal topic
+  // acceptance contract by filling only after every strict diversity pass has
+  // been exhausted. Rich articles never enter this branch.
+  if (selected.length < count) {
+    const remaining = candidates
+      .filter(candidate => !selected.includes(candidate))
+      .map(candidate => ({
+        candidate,
+        similarity: Math.max(0, ...selected.map(existing => semanticSimilarity(existing.evidence, candidate.evidence, topic)))
+      }))
+      .sort((a, b) => a.similarity - b.similarity || b.candidate.score - a.candidate.score);
+    for (const row of remaining) {
+      if (selected.length >= count) break;
+      selected.push({ ...row.candidate, sparseFallback: true });
+    }
+  }
+  for (let index = 0; selected.length < count && candidates.length; index += 1) {
+    selected.push({ ...candidates[index % candidates.length], sparseFallback: true });
+  }
+  return selected.slice(0, count);
+}
+
+function buildSlidePackets(sources = [], topic = '', format = 'Fakta singkat') {
+  const selected = selectDistinctFacts(sources, topic, SLIDE_COUNT);
+  const sections = sectionsForFormat(format);
+  return selected.map((fact, slideIndex) => ({
+    slideIndex,
+    section: sections[slideIndex],
+    primarySourceId: fact.sourceId,
+    sourceTitle: fact.sourceTitle,
+    publishedAt: fact.publishedAt,
+    topic,
+    mainEvidence: fact.evidence,
+    sparseFallback: fact.sparseFallback === true,
+    evidence: [fact.evidence]
+  }));
 }
 
 function writerPrompt({ topic, format, packets }) {
-  return `AUTO SOURCE SEDERHANA — TANPA URL.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nPAKET FAKTA PER SLIDE:\n${JSON.stringify(packets)}\n\nTUGAS:\nTulis carousel Bahasa Indonesia 4 slide langsung dari paket fakta di atas.\n\nATURAN:\n- Satu slide hanya membahas satu subtopik dari satu primarySourceId milik slide tersebut. Jangan mencampur konteks artikel lain.\n- Gunakan hanya evidence yang ada pada paket slide. Jangan memakai pengetahuan luar.\n- Judul harus natural, spesifik, ringkas, dan Bahasa Indonesia; nama produk, model, perusahaan, singkatan, atau istilah teknis boleh tetap dalam bentuk aslinya.\n- Body harus padat dan informatif, biasanya sekitar 10-24 kata. Jangan membuat body filler atau pertanyaan kosong.\n- Bullet TIDAK wajib. Gunakan 0-3 bullet hanya jika ada fakta tambahan yang benar-benar berbeda dari judul/body.\n- Jangan mengulang ide/konteks yang sama di body, bullet, atau slide lain.\n- Jangan menambahkan sebab-akibat, manfaat, tujuan, strategi, implikasi, angka, versi, tanggal, lokasi, atau kepastian yang tidak dinyatakan evidence.\n- Untuk body dan setiap bullet, WAJIB sertakan claim dengan field yang tepat, text sama persis dengan copy visible, sourceId sama dengan primarySourceId slide, dan evidence VERBATIM dari paket slide.\n- Title tidak perlu claim jika hanya merangkum body secara editorial. Title tidak boleh menambahkan fakta baru yang tidak ada di body/evidence.\n- Semua sumber yang sudah mendapat paket slide wajib benar-benar menyumbang isi.\n\nKembalikan HANYA JSON:\n{"slides":[{"title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `AUTO SOURCE SEDERHANA — TANPA URL.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nEMPAT FAKTA UNIK PER SLIDE:\n${JSON.stringify(packets)}\n\nTUGAS:\nTulis carousel Bahasa Indonesia 4 slide langsung dari fakta unik di atas.\n\nATURAN:\n- Slide N WAJIB menjelaskan mainEvidence slide N. Jangan menggantinya dengan headline umum atau fakta slide lain.\n- Empat mainEvidence sudah dideduplikasi lintas sumber. Pertahankan empat sudut berbeda; jangan mengulang pengumuman yang sama dengan wording lain.\n- Gunakan hanya evidence yang ada pada paket slide. Jangan memakai pengetahuan luar.\n- Jangan menjadikan heading FAQ atau kalimat pertanyaan sebagai isi fakta. Body wajib pernyataan lengkap yang menjawab pembaca.\n- Judul harus natural, spesifik, ringkas, dan Bahasa Indonesia; nama produk, model, perusahaan, singkatan, atau istilah teknis boleh tetap dalam bentuk aslinya.\n- Body harus padat dan informatif, biasanya sekitar 10-24 kata. Jangan membuat body filler atau pertanyaan kosong.\n- Bullet TIDAK wajib. Gunakan 0-3 bullet hanya jika mainEvidence memuat detail tambahan yang benar-benar berbeda dari judul/body. Setiap bullet harus utuh dan dapat dipahami sendiri.\n- Jangan mengulang ide/konteks yang sama di body, bullet, atau slide lain.\n- Jangan menambahkan sebab-akibat, manfaat, tujuan, strategi, implikasi, angka, versi, tanggal, lokasi, atau kepastian yang tidak dinyatakan evidence.\n- Untuk body dan setiap bullet, WAJIB sertakan claim dengan field yang tepat, text sama persis dengan copy visible, sourceId sama dengan primarySourceId slide, dan evidence VERBATIM dari paket slide.\n- Title tidak perlu claim jika hanya merangkum body secara editorial. Title tidak boleh menambahkan fakta baru yang tidak ada di body/evidence.\n\nKembalikan HANYA JSON:\n{"slides":[{"title":"...","body":"...","points":["..."],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function checkerPrompt({ topic, format, packets, candidate }) {
-  return `FACT CHECK + EDITOR FINAL AUTO SOURCE.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nPAKET FAKTA TERPERCAYA:\n${JSON.stringify(packets)}\n\nDRAFT:\n${JSON.stringify(candidate?.slides || [])}\n\nPERIKSA DAN PERBAIKI LANGSUNG:\n- Setiap body/bullet harus benar-benar dibuktikan satu evidence pada paket slide yang sama.\n- Jika satu body salah/terlalu luas, tulis ulang secara konservatif dari evidence slide itu.\n- Jika satu bullet salah, meragukan, atau mengulang konteks, perbaiki atau HAPUS bullet tersebut. Jangan menggagalkan seluruh carousel.\n- Jangan memaksa jumlah bullet; 0-3 bullet boleh.\n- Jangan mencampur primarySourceId antar-slide.\n- Jangan menambah fakta baru. Pertahankan angka, persentase, model, versi, nama, tanggal, lokasi, modalitas, dan ketidakpastian sesuai evidence.\n- Judul harus natural Bahasa Indonesia, tetapi nama produk/model/istilah teknis boleh tetap asli. Judul hanya merangkum isi slide dan tidak boleh menambah klaim baru.\n- Untuk body dan bullet final, claim.text harus sama persis dengan copy; sourceId harus primarySourceId slide; evidence harus VERBATIM dari paket slide.\n- Hasil akhir harus padat, natural, tidak double context, dan tetap 4 slide.\n\nKembalikan HANYA JSON final dengan schema yang sama: {"slides":[...]}`;
+  return `FACT CHECK + EDITOR FINAL AUTO SOURCE.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nPAKET FAKTA TERPERCAYA:\n${JSON.stringify(packets)}\n\nDRAFT:\n${JSON.stringify(candidate?.slides || [])}\n\nPERIKSA DAN PERBAIKI LANGSUNG:\n- Slide N harus tetap menjelaskan mainEvidence slide N; jangan mengubah semua slide menjadi pengumuman umum yang sama.\n- Setiap body/bullet harus benar-benar dibuktikan satu evidence pada paket slide yang sama.\n- Jika satu body salah/terlalu luas, tulis ulang secara konservatif dari evidence slide itu. Body harus berupa pernyataan lengkap, bukan FAQ/pertanyaan.\n- Jika satu bullet salah, meragukan, terpotong, bergantung pada lanjutan kalimat, atau mengulang konteks, perbaiki atau HAPUS bullet tersebut. Jangan menggagalkan seluruh carousel.\n- Jangan memaksa jumlah bullet; 0-3 bullet boleh.\n- Jangan mencampur primarySourceId antar-slide.\n- Jangan menambah fakta baru. Pertahankan angka, persentase, model, versi, nama, tanggal, lokasi, modalitas, dan ketidakpastian sesuai evidence.\n- Judul harus natural Bahasa Indonesia, tetapi nama produk/model/istilah teknis boleh tetap asli. Judul hanya merangkum isi slide dan tidak boleh menambah klaim baru.\n- Untuk body dan bullet final, claim.text harus sama persis dengan copy; sourceId harus primarySourceId slide; evidence harus VERBATIM dari paket slide.\n- Hasil akhir harus padat, natural, tidak double context, dan tetap 4 slide.\n\nKembalikan HANYA JSON final dengan schema yang sama: {"slides":[...]}`;
 }
 
 function parseJsonResponse(response) {
@@ -153,7 +276,7 @@ function cleanupSlide(slide = {}, slideIndex = 0, packet = {}) {
   const pointMap = new Map();
   for (const [oldIndex, raw] of (Array.isArray(slide.points) ? slide.points : []).entries()) {
     const point = String(raw || '').replace(/\s+/g, ' ').trim();
-    if (!point || keptPoints.length >= MAX_POINTS) continue;
+    if (!point || keptPoints.length >= MAX_POINTS || questionOnlyEvidence(point) || endsWithDanglingFragment(point)) continue;
     if (similarity(point, body) >= 0.88 || similarity(point, title) >= 0.92) continue;
     if (keptPoints.some(existing => similarity(existing, point) >= 0.88)) continue;
     pointMap.set(oldIndex, keptPoints.length);
@@ -289,6 +412,8 @@ function factualErrors(candidate, packets, sources) {
     if (!packet) { errors.push(`slide:${slideIndex}: paket fakta tidak tersedia.`); return; }
     if (!String(slide.title || '').trim()) errors.push(`slide:${slideIndex}:title kosong.`);
     if (!String(slide.body || '').trim()) errors.push(`slide:${slideIndex}:body kosong.`);
+    if (questionOnlyEvidence(slide.body)) errors.push(`slide:${slideIndex}:body berupa FAQ/pertanyaan tanpa jawaban.`);
+    if (endsWithDanglingFragment(slide.body)) errors.push(`slide:${slideIndex}:body terpotong atau berakhir pada kata gantung.`);
     if ((slide.points || []).length > MAX_POINTS) errors.push(`slide:${slideIndex}: terlalu banyak bullet.`);
 
     const map = claimMap(slide);
@@ -308,16 +433,41 @@ function factualErrors(candidate, packets, sources) {
       if (!numbersSupported(copy, claim.evidence)) errors.push(`${field}: angka/persentase tidak didukung evidence.`);
     }
 
-    const substantive = [slide.body, ...(slide.points || [])].filter(Boolean);
-    for (const value of substantive) {
-      if (previousFacts.some(previous => similarity(previous, value) >= 0.9)) {
-        errors.push(`slide:${slideIndex}: konteks/fakta mengulang slide sebelumnya.`);
+    const substantive = [
+      { field: `slide:${slideIndex}:body`, value: slide.body },
+      ...(slide.points || []).map((value, pointIndex) => ({ field: `slide:${slideIndex}:point:${pointIndex}`, value }))
+    ].filter(item => item.value);
+    for (const item of substantive) {
+      const duplicate = previousFacts.find(previous => sameFactContext(previous.value, item.value, packet?.topic || ''));
+      if (duplicate) {
+        errors.push(item.field.includes(':point:')
+          ? `${item.field}: konteks/fakta mengulang copy sebelumnya.`
+          : `slide:${slideIndex}: konteks/fakta mengulang slide sebelumnya.`);
         break;
       }
-      previousFacts.push(value);
+      previousFacts.push({ ...item, slideIndex });
     }
   });
   return [...new Set(errors)];
+}
+
+function sentence(value) {
+  const text = cleanEvidence(value).replace(/[\s,;:]+$/g, '').trim();
+  if (!text) return '';
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+function buildCaption(slides = [], fallback = '', topic = '') {
+  const selected = [];
+  for (const slide of slides) {
+    const body = cleanEvidence(slide?.body);
+    if (!body || questionOnlyEvidence(body) || endsWithDanglingFragment(body)) continue;
+    if (selected.some(existing => sameFactContext(existing, body, topic))) continue;
+    selected.push(body);
+    if (selected.length >= 2) break;
+  }
+  if (!selected.length && cleanEvidence(fallback)) selected.push(cleanEvidence(fallback));
+  return selected.map(sentence).filter(Boolean).join(' ');
 }
 
 function invalidPointCoordinates(errors = []) {
@@ -384,7 +534,7 @@ function syncTop(candidate, topic, format, discovery) {
     topic,
     hook: String(first.title || topic).trim(),
     body: String(middle.body || first.body || topic).trim(),
-    caption: String(middle.body || first.body || topic).trim(),
+    caption: buildCaption(slides, middle.body || first.body || topic, topic),
     hashtags: [],
     cta: String(last.title || 'Ringkasan').trim(),
     trendKeywordsUsed: [],
@@ -477,6 +627,8 @@ module.exports = {
   compose,
   sectionsForFormat,
   collectFactGroups,
+  buildFactCandidates,
+  selectDistinctFacts,
   buildSlidePackets,
   normalizeCandidate,
   factualErrors,
@@ -486,6 +638,13 @@ module.exports = {
   dropInvalidPoints,
   finalizeVisibleCopy,
   similarity,
+  semanticSimilarity,
+  sameFactContext,
+  questionOnlyEvidence,
+  endsWithDanglingFragment,
+  buildCaption,
   SLIDE_COUNT,
-  MAX_POINTS
+  MAX_POINTS,
+  STRICT_FACT_SIMILARITY,
+  RELAXED_FACT_SIMILARITY
 };

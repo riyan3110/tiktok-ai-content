@@ -3,6 +3,8 @@
 // It only removes trailing detail so existing evidence remains a conservative
 // superset of the visible claim. Pakai URL never loads this module.
 
+const simple = require('./autoSourceSimpleComposer');
+
 const BODY_MAX_WORDS = 16;
 const BODY_MAX_CHARS = 140;
 const POINT_MAX_WORDS = 7;
@@ -11,7 +13,10 @@ const TITLE_MAX_WORDS = 10;
 const TITLE_MAX_CHARS = 96;
 
 const DANGLING = new Set([
-  'yang','dan','atau','dengan','untuk','dari','di','ke','pada','dalam','oleh','sebagai','karena','agar','jika','bila','saat','ketika','namun','tetapi','serta','hingga'
+  'yang','dan','atau','dengan','untuk','dari','di','ke','pada','dalam','oleh','sebagai','karena','agar','jika','bila','saat','ketika','namun','tetapi','serta','hingga',
+  'bahwa','hanya','menurut','menunjukkan','menyatakan','mengatakan','menjelaskan','mencakup','termasuk',
+  'that','which','who','and','or','with','for','from','to','in','on','by','because','if','when','while','although','including','shows','showed',
+  'says','said','states','stated','explains','explained','according'
 ]);
 
 function words(value) {
@@ -34,6 +39,18 @@ function trimDangling(tokens, minimum = 3) {
     out.pop();
   }
   return out;
+}
+
+function endsWithDangling(value) {
+  const text = clean(value);
+  if (!text || /[,;:\-–—]\s*$/.test(text)) return true;
+  const last = String(words(text).at(-1) || '').toLocaleLowerCase('id-ID').replace(/[^a-z0-9%]/g, '');
+  return DANGLING.has(last);
+}
+
+function questionOnly(value) {
+  const text = clean(value);
+  return /\?\s*$/.test(text) || /^(?:faq|faqs|frequently\s+asked\s+questions?)\b/i.test(text);
 }
 
 function within(value, maxWords, maxChars) {
@@ -72,7 +89,7 @@ function compactCopy(value, { maxWords, maxChars, minimum = 3, sentence = false 
   return candidate;
 }
 
-function syncClaims(slide, slideIndex) {
+function syncClaims(slide, slideIndex, keptPointIndexes = []) {
   const byField = new Map((Array.isArray(slide?.claims) ? slide.claims : []).map(claim => [String(claim?.field || '').trim(), claim]));
   const claims = [];
   const bodyField = `slide:${slideIndex}:body`;
@@ -81,7 +98,8 @@ function syncClaims(slide, slideIndex) {
 
   (slide.points || []).forEach((point, pointIndex) => {
     const field = `slide:${slideIndex}:point:${pointIndex}`;
-    const claim = byField.get(field);
+    const oldIndex = keptPointIndexes[pointIndex] ?? pointIndex;
+    const claim = byField.get(`slide:${slideIndex}:point:${oldIndex}`);
     if (point && claim) claims.push({ ...claim, field, text: point });
   });
   return claims;
@@ -99,17 +117,28 @@ function fitSlide(slide = {}, slideIndex = 0) {
     minimum: 7,
     sentence: true
   });
-  const points = (Array.isArray(slide.points) ? slide.points : [])
+  const fittedPoints = (Array.isArray(slide.points) ? slide.points : [])
     .slice(0, 3)
-    .map(point => compactCopy(point, {
-      maxWords: POINT_MAX_WORDS,
-      maxChars: POINT_MAX_CHARS,
-      minimum: 2
-    }))
+    .map((point, oldIndex) => {
+      const original = clean(point);
+      if (!original || questionOnly(original) || endsWithDangling(original)) return null;
+      const compact = compactCopy(original, {
+        maxWords: POINT_MAX_WORDS,
+        maxChars: POINT_MAX_CHARS,
+        minimum: 2
+      });
+      if (!compact || questionOnly(compact) || endsWithDangling(compact)) return null;
+      const boundedPrefixWords = Math.min(words(original).length, POINT_MAX_WORDS);
+      if (!within(original, POINT_MAX_WORDS, POINT_MAX_CHARS)
+        && boundedPrefixWords - words(compact).length >= 2) return null;
+      return { value: compact, oldIndex };
+    })
     .filter(Boolean);
+  const points = fittedPoints.map(item => item.value);
+  const keptPointIndexes = fittedPoints.map(item => item.oldIndex);
 
   const fitted = { ...slide, title, body, points };
-  fitted.claims = syncClaims(fitted, slideIndex);
+  fitted.claims = syncClaims(fitted, slideIndex, keptPointIndexes);
   return fitted;
 }
 
@@ -124,7 +153,7 @@ function fitAutoSourceContent(content = {}) {
     slides,
     hook: clean(first.title || content.hook),
     body: clean(middle.body || first.body || content.body),
-    caption: clean(middle.body || first.body || content.caption),
+    caption: simple.buildCaption(slides, content.caption || middle.body || first.body, content.topic),
     cta: clean(last.title || content.cta)
   };
 }
@@ -133,6 +162,7 @@ module.exports = {
   fitAutoSourceContent,
   fitSlide,
   compactCopy,
+  endsWithDangling,
   within,
   BODY_MAX_WORDS,
   BODY_MAX_CHARS,

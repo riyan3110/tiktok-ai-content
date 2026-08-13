@@ -124,7 +124,7 @@ function syncVisibleTop(result = {}) {
     ...result,
     hook: clean(first?.title || result?.hook),
     body: clean(middle?.body || first?.body || result?.body),
-    caption: clean(middle?.body || first?.body || result?.caption),
+    caption: simple.buildCaption(slides, result?.caption || middle?.body || first?.body, result?.topic),
     cta: clean(last?.title || result?.cta || 'Ringkasan')
   };
 }
