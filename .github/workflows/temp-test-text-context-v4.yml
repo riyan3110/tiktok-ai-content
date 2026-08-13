@@ -1,0 +1,20 @@
+name: temp-test-text-context-v4
+on:
+  push:
+    branches: [test/text-context-final-polish-v4]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: node --test test/text-context-final-polish.test.js
+      - run: node --test test/text-input-composer.test.js
+      - run: node --test test/text-input-fresh-retry.test.js
+      - run: node --test test/auto-source-patch.test.js
+      - run: node --test test/background-state.test.js
