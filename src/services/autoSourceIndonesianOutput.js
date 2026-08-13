@@ -25,8 +25,10 @@ const BODY_REPAIR_TARGET_MIN_WORDS = 14;
 const FUTURE_OR_ROLLOUT = /\b(?:will\s+(?:be\s+)?(?:available|launch|roll\s+out|expand)|coming\s+(?:to|soon)|plans?\s+to\s+(?:launch|expand|roll\s+out)|(?:is|are)\s+(?:now\s+)?(?:launching|rolling\s+out|expanding)|rolling\s+out|expanding\s+to|set\s+to\s+(?:launch|expand)|akan|bakal|segera|bertahap|sedang\s+(?:diluncurkan|digulirkan|diperluas)|digulirkan|diperluas|mulai\s+(?:digulirkan|diluncurkan|tersedia)|dalam\s+proses\s+(?:peluncuran|perluasan))\b/i;
 const COMPLETED_ROLLOUT = /\b(?:(?:telah|sudah)\s+(?:resmi\s+)?(?:dirilis|diluncurkan|tersedia|hadir|digulirkan|diperluas)|(?:secara\s+)?resmi\s+(?:meluncurkan|merilis|menghadirkan)|(?:has|have)\s+(?:already\s+)?(?:been\s+)?(?:released|launched|rolled\s+out|expanded|made\s+available)|officially\s+(?:launched|released))\b/i;
 const VISIBLE_HYPE = /\b(?:(?:lompatan|terobosan)\s+besar|game[- ]?changer|revolusioner|pembaruan\s+besar(?:-besaran)?|perubahan\s+fundamental|transformasi\s+besar|secara\s+fundamental\s+(?:mengubah|membentuk\s+ulang)|membayangkan\s+ulang\s+(?:cara|pengalaman)|visi\s+(?:navigasi\s+)?digital\s+baru|era\s+baru\s+(?:navigasi|digital)|mengubah\s+(?:sepenuhnya\s+|total\s+)?cara\s+(?:kita|orang|pengguna)|masa\s+depan\s+(?:sudah\s+)?(?:tiba|dimulai)|fundamentally\s+(?:changes?|reshapes?|reimagines?)|reimag(?:e|ines|ined|ining)\s+(?:navigation|the\s+experience))\b/i;
-const UNIVERSAL_VISIBLE_SCOPE = /\b(?:(?:semua|seluruh)\s+(?:pengguna|user|lokasi|tempat|wilayah|negara)|di\s+semua\s+(?:lokasi|tempat|wilayah|negara)|semua\s+tempat\s+ask\s+maps\s+tersedia|everywhere|worldwide|globally|all\s+(?:users|locations|places|regions|countries))\b/i;
-const UNIVERSAL_EVIDENCE_SCOPE = /\b(?:(?:semua|seluruh)\s+(?:pengguna|user|lokasi|tempat|wilayah|negara)|di\s+semua\s+(?:lokasi|tempat|wilayah|negara)|everywhere(?:\s+ask\s+maps\s+is\s+available)?|worldwide|globally|all\s+(?:users|locations|places|regions|countries)|widely\s+available\s+to\s+all)\b/i;
+const UNIVERSAL_VISIBLE_SCOPE = /\b(?:(?:semua|seluruh)\s+(?:pengguna|user|lokasi|tempat|wilayah|negara)|di\s+semua\s+(?:lokasi|tempat|wilayah|negara)|(?:semua|seluruh|setiap)\s+(?:teks|konten|hasil|output|jawaban|respons|file|gambar)|semua\s+tempat\s+ask\s+maps\s+tersedia|(?:secara\s+)?global|everywhere|worldwide|globally|all\s+(?:(?:generated|ai[- ]generated)\s+)?(?:users|locations|places|regions|countries|text|content|outputs?|responses?|files?|images?)|(?:every|each)\s+(?:(?:generated|ai[- ]generated)\s+)?(?:text|content|output|response|file|image))\b/i;
+const UNIVERSAL_EVIDENCE_SCOPE = /\b(?:(?:semua|seluruh)\s+(?:pengguna|user|lokasi|tempat|wilayah|negara)|di\s+semua\s+(?:lokasi|tempat|wilayah|negara)|(?:semua|seluruh|setiap)\s+(?:teks|konten|hasil|output|jawaban|respons|file|gambar)|everywhere(?:\s+ask\s+maps\s+is\s+available)?|(?:secara\s+)?global|worldwide|globally|all\s+(?:(?:generated|ai[- ]generated)\s+)?(?:users|locations|places|regions|countries|text|content|outputs?|responses?|files?|images?)|(?:every|each)\s+(?:(?:generated|ai[- ]generated)\s+)?(?:text|content|output|response|file|image)|widely\s+available\s+to\s+all)\b/i;
+const OFFLINE_VISIBLE = /\b(?:offline|tanpa\s+(?:akses\s+)?internet|tanpa\s+koneksi\s+internet|tidak\s+(?:memerlukan|membutuhkan)\s+(?:koneksi\s+)?internet|tak\s+(?:memerlukan|membutuhkan)\s+(?:koneksi\s+)?internet|without\s+(?:an?\s+)?internet\s+connection|without\s+internet|no\s+internet\s+(?:connection|access))\b/i;
+const OFFLINE_EVIDENCE = /\b(?:offline|tanpa\s+(?:akses\s+)?internet|tanpa\s+koneksi\s+internet|tidak\s+(?:memerlukan|membutuhkan)\s+(?:koneksi\s+)?internet|tak\s+(?:memerlukan|membutuhkan)\s+(?:koneksi\s+)?internet|without\s+(?:an?\s+)?internet\s+connection|without\s+internet|no\s+internet\s+(?:connection|access)|without\s+network\s+access)\b/i;
 const POST_REPAIR_NO_EXTRA_ANGLES = new Set(['realtime', 'personalization', 'conversation', 'mechanism', 'durability', 'detection']);
 
 function clean(value) {
@@ -92,6 +94,13 @@ function scopeOverstatement(copy = '', evidence = '') {
   return !UNIVERSAL_EVIDENCE_SCOPE.test(source);
 }
 
+function offlineOverstatement(copy = '', evidence = '') {
+  const visible = clean(copy);
+  const source = clean(evidence);
+  if (!visible || !source || !OFFLINE_VISIBLE.test(visible)) return false;
+  return !OFFLINE_EVIDENCE.test(source);
+}
+
 function criticalAngleMismatch(copy = '', packet = {}) {
   const visible = clean(copy);
   const evidence = clean(packet?.mainEvidence);
@@ -117,7 +126,17 @@ function factualShapeNeedsRepair(value = '', packet = {}) {
   if (!clean(value)) return true;
   if (rolloutOverstatement(value, packet?.mainEvidence)) return true;
   if (scopeOverstatement(value, packet?.mainEvidence)) return true;
+  if (offlineOverstatement(value, packet?.mainEvidence)) return true;
   if (criticalAngleMismatch(value, packet)) return true;
+  return false;
+}
+
+function titleShapeNeedsRepair(value = '', packet = {}) {
+  const title = clean(value);
+  if (!title) return false;
+  if (rolloutOverstatement(title, packet?.mainEvidence)) return true;
+  if (scopeOverstatement(title, packet?.mainEvidence)) return true;
+  if (offlineOverstatement(title, packet?.mainEvidence)) return true;
   return false;
 }
 
@@ -130,17 +149,17 @@ function needsQualityRepair(result = {}, packets = []) {
     if (!body) return true;
     if (bodyNeedsDensityRepair(body, packet)) return true;
     if (visibleHype(title) || visibleHype(body)) return true;
+    if (titleShapeNeedsRepair(title, packet)) return true;
     if (factualShapeNeedsRepair(body, packet)) return true;
     if (!simple.mainEvidenceCovered(body, packet)) return true;
     return false;
   });
 }
 
-// After a translation/editor pass, do not reject good Indonesian copy merely
-// because the language-agnostic semantic matcher cannot align Indonesian with
-// English evidence. Keep deterministic checks that are safe cross-language:
-// rollout certainty, universal scope, and guarded feature angles that must not
-// be spliced into a slide whose mainEvidence does not contain them.
+// After a translation/editor pass, keep factual correctness as the hard gate.
+// Density may trigger the first repair, but it must NOT trigger another AI pass
+// after a factually safe repair; padding a correct short sentence creates filler
+// and increases the chance of unsupported claims.
 function needsPostRepairRetry(result = {}, packets = []) {
   if (needsIndonesianRepair(result)) return true;
   const slides = Array.isArray(result?.slides) ? result.slides : [];
@@ -149,8 +168,8 @@ function needsPostRepairRetry(result = {}, packets = []) {
     const body = clean(slide?.body);
     const title = clean(slide?.title);
     if (!body) return true;
-    if (bodyNeedsDensityRepair(body, packet)) return true;
     if (visibleHype(title) || visibleHype(body)) return true;
+    if (titleShapeNeedsRepair(title, packet)) return true;
     if (factualShapeNeedsRepair(body, packet)) return true;
     return false;
   });
@@ -173,7 +192,7 @@ function repairPrompt({ topic, format, result, packets = [] }) {
     publishedAt: packet?.publishedAt,
     mainEvidence: clean(packet?.mainEvidence)
   }));
-  return `EDITOR COPY VISIBLE AUTO SOURCE — TANPA URL.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nCOPY SAAT INI:\n${JSON.stringify(visible)}\n\nFAKTA SUMBER PER SLIDE:\n${JSON.stringify(evidence)}\n\nTUGAS:\nPerbaiki HANYA copy yang masih kurang pas. Pertahankan bagian yang sudah benar. Semua title, body, dan bullet final harus Bahasa Indonesia natural serta setia pada mainEvidence slide masing-masing.\n\nATURAN KERAS:\n- Slide N hanya boleh menjelaskan mainEvidence slide N. Jangan memindahkan atau mencampur fakta dari slide lain.\n- Jangan mengubah fakta, angka, persentase, tanggal, nama perusahaan, nama produk, nama model, versi, lokasi, atau tingkat kepastian.\n- WAJIB mempertahankan status waktu/ketersediaan. Jika sumber berkata akan, coming, expanding, rolling out, bertahap, atau diperluas, JANGAN mengubahnya menjadi telah/sudah dirilis, tersedia, resmi diluncurkan, atau selesai diluncurkan.\n- Cakupan WAJIB sama dengan mainEvidence. Jangan menulis “semua pengguna”, “semua lokasi”, “di seluruh wilayah”, “global”, atau “everywhere” kecuali mainEvidence secara eksplisit menyatakan cakupan universal tersebut.\n- Jangan menggabungkan dua kemampuan dari fakta berbeda. Contoh: real-time transit tidak boleh dimasukkan ke body Gmail/Personal Intelligence bila mainEvidence slide itu tidak menyebut real-time transit; begitu juga sebaliknya.\n- Jangan menambah sebab-akibat, manfaat, tujuan, strategi, implikasi, atau klaim yang tidak tertulis pada mainEvidence.\n- Hilangkan wording editorial/hype seperti “pembaruan besar-besaran”, “secara fundamental mengubah”, “visi digital baru”, “era baru”, “revolusioner”, atau klaim sejenis jika itu bukan fakta konkret. Ganti dengan detail faktual dari mainEvidence, bukan filler.\n- Body target 14-20 kata bila mainEvidence cukup panjang. Utamakan satu fakta konkret + detail pembeda yang benar; jangan memanjangkan dengan kalimat umum.\n- Judul harus berupa label/sudut editorial 3-8 kata, berbeda dari body dan berbeda antar-slide. Judul tidak boleh menambah fakta baru.\n- Bullet 0-3 dan TIDAK wajib. Pertahankan jumlah/urutan bullet yang ada; bila bullet yang ada tidak dapat dibuktikan mainEvidence, kosongkan teks bullet itu daripada mengarang.\n- Nama resmi/brand/istilah teknis seperti Google Maps, Ask Maps, Gemini, Gmail, API, GPU, EVM boleh tetap asli bila natural.\n- Pertahankan jumlah slide tepat 4.\n- Jangan sertakan evidence atau claim; metadata fakta akan dipertahankan oleh sistem.\n\nKembalikan HANYA JSON:\n{"slides":[{"title":"...","body":"...","points":["..."]}]}`;
+  return `EDITOR COPY VISIBLE AUTO SOURCE — TANPA URL.\n\nTOPIK: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nCOPY SAAT INI:\n${JSON.stringify(visible)}\n\nFAKTA SUMBER PER SLIDE:\n${JSON.stringify(evidence)}\n\nTUGAS:\nPerbaiki HANYA copy yang masih kurang pas. Pertahankan bagian yang sudah benar. Semua title, body, dan bullet final harus Bahasa Indonesia natural serta setia pada mainEvidence slide masing-masing.\n\nATURAN KERAS:\n- Slide N hanya boleh menjelaskan mainEvidence slide N. Jangan memindahkan atau mencampur fakta dari slide lain.\n- Jangan mengubah fakta, angka, persentase, tanggal, nama perusahaan, nama produk, nama model, versi, lokasi, atau tingkat kepastian.\n- WAJIB mempertahankan status waktu/ketersediaan. Jika sumber berkata akan, coming, expanding, rolling out, bertahap, atau diperluas, JANGAN mengubahnya menjadi telah/sudah dirilis, tersedia, resmi diluncurkan, atau selesai diluncurkan.\n- Cakupan WAJIB sama dengan mainEvidence. Jangan menulis “semua pengguna”, “semua lokasi”, “setiap teks/output”, “di seluruh wilayah”, “global”, atau “everywhere” kecuali mainEvidence secara eksplisit menyatakan cakupan universal tersebut.\n- Jangan menyimpulkan “offline”, “tanpa internet”, atau “tidak memerlukan koneksi internet” hanya karena mainEvidence menyebut local/on-device/personal device. Klaim offline hanya boleh bila mainEvidence mengatakannya secara eksplisit.\n- Jangan menggabungkan dua kemampuan dari fakta berbeda. Contoh: real-time transit tidak boleh dimasukkan ke body Gmail/Personal Intelligence bila mainEvidence slide itu tidak menyebut real-time transit; begitu juga sebaliknya.\n- Jangan menambah sebab-akibat, manfaat, tujuan, strategi, implikasi, atau klaim yang tidak tertulis pada mainEvidence.\n- Hilangkan wording editorial/hype seperti “pembaruan besar-besaran”, “secara fundamental mengubah”, “visi digital baru”, “era baru”, “revolusioner”, atau klaim sejenis jika itu bukan fakta konkret. Ganti dengan detail faktual dari mainEvidence, bukan filler.\n- Body target 14-20 kata bila mainEvidence cukup panjang. Utamakan satu fakta konkret + detail pembeda yang benar; jangan memanjangkan dengan kalimat umum. Jika evidence tidak cukup untuk mencapai target, tetap lebih pendek daripada menambah klaim baru.\n- Judul harus berupa label/sudut editorial 3-8 kata, berbeda dari body dan berbeda antar-slide. Judul tidak boleh menambah fakta baru.\n- Bullet 0-3 dan TIDAK wajib. Pertahankan jumlah/urutan bullet yang ada; bila bullet yang ada tidak dapat dibuktikan mainEvidence, kosongkan teks bullet itu daripada mengarang.\n- Nama resmi/brand/istilah teknis seperti Google Maps, Ask Maps, Gemini, Gmail, API, GPU, EVM boleh tetap asli bila natural.\n- Pertahankan jumlah slide tepat 4.\n- Jangan sertakan evidence atau claim; metadata fakta akan dipertahankan oleh sistem.\n\nKembalikan HANYA JSON:\n{"slides":[{"title":"...","body":"...","points":["..."]}]}`;
 }
 
 function parseJsonResponse(response) {
@@ -257,8 +276,8 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
   let current = result;
 
   // Normally one pass is enough. The second pass is only a fail-safe when the
-  // provider leaves English, hype, thin copy, a rollout-status overstatement,
-  // a widened scope, or a feature spliced in from another fact.
+  // provider leaves English, hype, a rollout-status overstatement, widened
+  // scope, unsupported offline wording, or a feature spliced from another fact.
   for (let attempt = 0; attempt < 2 && needsVisibleRepair(current, packets); attempt += 1) {
     let translated;
     try {
@@ -268,12 +287,10 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
     }
     const candidate = applyVisibleRepair(current, translated);
     const finalized = simple.finalizeVisibleCopy(candidate, packets, sources);
-    // Unsupported numbers, broken claim metadata, empty copy, and other
-    // factual errors remain blocking. Cross-language semantic mismatch alone
-    // must not throw away a valid Indonesian repair and expose English evidence.
     const blocking = simple.unsafeBlockingErrors(finalized.errors, packets);
     if (blocking.length || needsPostRepairRetry(finalized.candidate, packets)) continue;
     current = syncVisibleTop({ ...current, slides: finalized.candidate.slides });
+    break;
   }
 
   return current;
@@ -286,10 +303,12 @@ module.exports = {
   needsIndonesianRepair,
   rolloutOverstatement,
   scopeOverstatement,
+  offlineOverstatement,
   criticalAngleMismatch,
   bodyNeedsDensityRepair,
   visibleHype,
   factualShapeNeedsRepair,
+  titleShapeNeedsRepair,
   needsQualityRepair,
   needsPostRepairRetry,
   needsVisibleRepair,
