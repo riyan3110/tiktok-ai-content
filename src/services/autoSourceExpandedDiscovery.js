@@ -12,7 +12,9 @@ const FETCH_CONCURRENCY = 6;
 const MAX_CANDIDATES = 32;
 const MAX_FETCH_CANDIDATES = 20;
 const MAX_SELECTED = 4;
-const MIN_FACTS_PER_SOURCE = 5;
+const MIN_FACTS_PER_SOURCE = 1;
+const MIN_TOTAL_FACTS = 4;
+const MIN_SNIPPET_DESCRIPTION_WORDS = 8;
 const SEARCH_TIMEOUT_MS = 10_000;
 const cache = new Map();
 
@@ -211,9 +213,19 @@ function expandedQueries(topic, category = '', plan = null) {
   const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
   const english = englishAnchorQuery(cleanTopic);
   const base = baseDiscovery.searchQueries(cleanTopic, category);
+  const planQueries = Array.isArray(plan?.searchQueries) ? plan.searchQueries : [];
+  const subjects = Array.isArray(plan?.subjects) ? plan.subjects.join(' ') : '';
+  const contextQueries = [...new Set([
+    ...(Array.isArray(plan?.contextTerms) ? plan.contextTerms : []),
+    ...(Array.isArray(plan?.eventTerms) ? plan.eventTerms : [])
+  ].map(value => String(value || '').trim()).filter(Boolean))]
+    .slice(0, 3)
+    .map(context => `${subjects} ${context}`.trim());
   const values = [
     cleanTopic,
-    ...(Array.isArray(plan?.searchQueries) ? plan.searchQueries : []),
+    ...planQueries.slice(0, 3),
+    ...contextQueries,
+    ...planQueries.slice(3),
     ...base,
     english && normalized(english) !== normalized(cleanTopic) ? `${english} latest` : '',
     `${cleanTopic} terbaru`,
@@ -249,6 +261,96 @@ function publisherKey(raw) {
     const multiPartSuffix = new Set(['co.id', 'co.uk', 'com.au', 'com.sg', 'co.jp', 'co.kr']);
     return multiPartSuffix.has(lastTwo) ? parts.slice(-3).join('.') : lastTwo;
   } catch { return ''; }
+}
+
+function cleanSnippet(value) {
+  return String(value || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function snippetEvidenceText(candidate = {}) {
+  const description = cleanSnippet(candidate.description);
+  if (description.split(/\s+/).filter(Boolean).length < MIN_SNIPPET_DESCRIPTION_WORDS) return '';
+  // The title helps scope/ranking, but it is not treated as factual evidence:
+  // headlines may be questions or clickbait. Claims can quote only the snippet.
+  return description;
+}
+
+function evidenceFactCount(sources = []) {
+  return sourceFacts(sources).length;
+}
+
+function snippetEvidenceSource(candidate = {}, topic = '', plan = null, nowMs = Date.now()) {
+  const url = baseDiscovery.canonicalUrl(candidate.url);
+  const title = cleanSnippet(candidate.title);
+  const text = snippetEvidenceText(candidate);
+  if (!url || !title || !text) return null;
+
+  const source = {
+    url,
+    finalUrl: url,
+    title,
+    text,
+    publishedAt: candidate.publishedAt || null,
+    fetchedAt: new Date(nowMs).toISOString(),
+    autoSourceFallback: { mode: 'search-result-evidence' }
+  };
+  if (!fetchedContentRelevant(topic, source, plan)) return null;
+  if (planHasScope(plan) && !dynamicScope.sourceInScope(topic, source, plan)) return null;
+  if (planHasScope(plan)) {
+    const titleHasSubject = !(plan.subjects || []).length || dynamicScope.subjectHits(plan, title).length > 0;
+    const hasDistinguishingTerms = (plan.contextTerms || []).length || (plan.eventTerms || []).length;
+    const titleHasContext = !hasDistinguishingTerms
+      || dynamicScope.contextHits(plan, title).length > 0
+      || dynamicScope.eventHits(plan, title).length > 0;
+    if (!titleHasSubject || !titleHasContext) return null;
+  }
+
+  const factCount = evidenceFactCount([source]);
+  if (!factCount) return null;
+  const publisher = publisherKey(url);
+  if (!publisher) return null;
+
+  return {
+    ...source,
+    discovery: {
+      provider: candidate.provider,
+      query: candidate.query,
+      score: Number(candidate.searchScore || candidateScore(topic, candidate, nowMs, plan)),
+      relevance: plannedRelevance(topic, `${title} ${text}`, plan),
+      factCount,
+      publishedAt: candidate.publishedAt || null,
+      publisher,
+      evidenceMode: 'search-snippet'
+    }
+  };
+}
+
+function selectSnippetSources(ranked = [], topic = '', plan = null, nowMs = Date.now(), limit = MAX_SELECTED) {
+  const eligible = ranked.map(candidate => snippetEvidenceSource(candidate, topic, plan, nowMs)).filter(Boolean);
+  const selected = [];
+  const publishers = new Set();
+
+  // Prefer independent publishers first. Only reuse a publisher when the search
+  // returned too little evidence elsewhere and four distinct facts still need support.
+  for (const source of eligible) {
+    const publisher = source.discovery.publisher;
+    if (publishers.has(publisher)) continue;
+    selected.push(source);
+    publishers.add(publisher);
+    if (selected.length >= limit || (selected.length >= 2 && evidenceFactCount(selected) >= MIN_TOTAL_FACTS)) break;
+  }
+  if (evidenceFactCount(selected) < MIN_TOTAL_FACTS) {
+    for (const source of eligible) {
+      if (selected.some(current => current.finalUrl === source.finalUrl)) continue;
+      selected.push(source);
+      if (selected.length >= limit || evidenceFactCount(selected) >= MIN_TOTAL_FACTS) break;
+    }
+  }
+
+  return evidenceFactCount(selected) >= MIN_TOTAL_FACTS ? selected : [];
 }
 
 function candidateScore(topic, candidate, nowMs, plan = null) {
@@ -352,8 +454,8 @@ async function discover({
   });
 
   const fetched = fetchedRows.filter(Boolean).sort((a, b) => b.discovery.score - a.discovery.score);
-  const selected = [];
-  const publishers = new Set();
+  let selected = [];
+  let publishers = new Set();
   const bestScore = fetched[0]?.discovery?.score || 0;
 
   // Hard diversity preference: at most one selected article per publisher.
@@ -367,8 +469,30 @@ async function discover({
     publishers.add(publisher);
     if (selected.length >= MAX_SELECTED) break;
   }
+  if (evidenceFactCount(selected) < MIN_TOTAL_FACTS) {
+    for (const source of fetched) {
+      if (selected.includes(source)) continue;
+      selected.push(source);
+      const publisher = source.discovery?.publisher || publisherKey(source.finalUrl || source.url);
+      if (publisher) publishers.add(publisher);
+      if (selected.length >= MAX_SELECTED || evidenceFactCount(selected) >= MIN_TOTAL_FACTS) break;
+    }
+  }
 
-  if (!selected.length) {
+  // Some publishers block both the direct extractor and Jina Reader, or expose
+  // only a very short body. In Tanpa URL only, use the title/description returned
+  // by the search provider as conservative evidence instead of rejecting a valid
+  // free-form topic. The same runtime topic scope is applied before admission.
+  if (evidenceFactCount(selected) < MIN_TOTAL_FACTS) {
+    const snippets = selectSnippetSources(ranked, cleanTopic, topicPlan, nowMs);
+    if (snippets.length) {
+      selected = snippets;
+      publishers = new Set(snippets.map(source => source.discovery.publisher));
+      console.warn(`[AutoSource] artikel penuh tidak cukup terbaca; memakai ${snippets.length} cuplikan hasil pencarian yang lolos konteks.`);
+    }
+  }
+
+  if (!selected.length || evidenceFactCount(selected) < MIN_TOTAL_FACTS) {
     throw Object.assign(new Error('Sumber ditemukan, tetapi belum ada artikel yang cukup relevan, kaya fakta, dapat dibaca, dan layak dipakai.'), { status: 422, code: 'AUTO_SOURCE_FETCH_EMPTY' });
   }
 
@@ -378,6 +502,9 @@ async function discover({
     queries,
     providers: [...new Set(selected.map(source => source.discovery?.provider).filter(Boolean))],
     publishers: [...publishers],
+    evidenceMode: selected.every(source => source.discovery?.evidenceMode === 'search-snippet')
+      ? 'search-snippet-fallback'
+      : 'full-article',
     sources: selected
   };
   cache.set(cacheKey, { savedAt: nowMs, bundle: clone(bundle) });
@@ -400,6 +527,10 @@ module.exports = {
   plannedRelevance,
   englishAnchorQuery,
   fetchedContentRelevant,
+  snippetEvidenceText,
+  snippetEvidenceSource,
+  selectSnippetSources,
+  evidenceFactCount,
   clearCache,
   CACHE_TTL_MS,
   QUERY_CONCURRENCY,
@@ -407,5 +538,7 @@ module.exports = {
   MAX_CANDIDATES,
   MAX_FETCH_CANDIDATES,
   MAX_SELECTED,
-  MIN_FACTS_PER_SOURCE
+  MIN_FACTS_PER_SOURCE,
+  MIN_TOTAL_FACTS,
+  MIN_SNIPPET_DESCRIPTION_WORDS
 };
