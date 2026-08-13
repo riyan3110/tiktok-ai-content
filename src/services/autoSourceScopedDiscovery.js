@@ -54,9 +54,9 @@ function mergeBundle(base, extra) {
   };
 }
 
-async function safeDiscover(options, topic) {
+async function safeDiscover(options, topic, plan = null) {
   try {
-    return await expanded.discover({ ...options, topic });
+    return await expanded.discover({ ...options, topic, topicPlan: plan });
   } catch (error) {
     return { topic, sources: [], queries: [], providers: [], publishers: [], discoveryError: error.message };
   }
@@ -72,6 +72,12 @@ function softSourceScore(topic = '', source = {}, plan = {}) {
   const actionHits = dynamicScope.actionHits(plan, combined).length;
   const contextHits = dynamicScope.contextHits(plan, combined).length;
   const eventHits = dynamicScope.eventHits(plan, combined).length;
+
+  // For an interpreted non-event topic, the normal scope already allows terms
+  // to appear across the headline and lead. Do not relax it back to brand-only
+  // overlap, which is how unrelated ChatGPT pricing content previously leaked.
+  if (plan.planner === 'ai' && !dynamicScope.eventLockRequired(plan)
+    && !dynamicScope.sourceInScope(topic, source, plan)) return -1;
 
   // Version/model identity never becomes soft. Relax only the placement of event
   // wording inside an article, not which model/version the article is about.
@@ -118,8 +124,13 @@ async function discover(options = {}) {
   const topic = String(options.topic || '').trim().replace(/\s+/g, ' ');
   if (!topic) throw Object.assign(new Error('Topik wajib diisi untuk pencarian sumber otomatis.'), { status: 400 });
 
-  let plan = topicPlanner.fallbackPlan(topic);
-  let result = await safeDiscover(options, topic);
+  // Production Tanpa URL explicitly enables interpretation before search. Tests
+  // and direct low-level callers can still exercise the deterministic fallback.
+  const interpretFirst = options.interpretTopic === true || Boolean(options.topicPlannerClient) || Boolean(options.topicPlan);
+  let plan = options.topicPlan || (interpretFirst
+    ? await topicPlanner.createPlan(topic, { client: options.topicPlannerClient })
+    : topicPlanner.fallbackPlan(topic));
+  let result = await safeDiscover(options, topic, plan);
   let baseSources = uniqueSources(result.sources || []).filter(source =>
     dynamicScope.sourceInScope(topic, source, plan)
   );
@@ -128,22 +139,22 @@ async function discover(options = {}) {
   // If the literal Indonesian wording is too narrow, ask the configured model
   // once for a same-event alternate/global query. This remains a search rescue,
   // not another content-generation loop.
-  if (!baseSources.length) {
+  if (!baseSources.length && !interpretFirst) {
     plan = await topicPlanner.createPlan(topic, { client: options.topicPlannerClient });
     baseSources = uniqueSources(result.sources || []).filter(source =>
       dynamicScope.sourceInScope(topic, source, plan)
     );
     if (baseSources.length) scopeMode = 'strict-ai-plan';
+  }
 
-    const alternate = distinctAlternateQuery(topic, plan);
-    if (!baseSources.length && alternate) {
-      const extra = await safeDiscover(options, alternate);
-      result = mergeBundle(result, extra);
-      baseSources = uniqueSources(result.sources || []).filter(source =>
-        dynamicScope.sourceInScope(topic, source, plan)
-      );
-      if (baseSources.length) scopeMode = 'strict-alternate';
-    }
+  const alternate = distinctAlternateQuery(topic, plan);
+  if (!baseSources.length && alternate) {
+    const extra = await safeDiscover(options, alternate, plan);
+    result = mergeBundle(result, extra);
+    baseSources = uniqueSources(result.sources || []).filter(source =>
+      dynamicScope.sourceInScope(topic, source, plan)
+    );
+    if (baseSources.length) scopeMode = 'strict-alternate';
   }
 
   // FAIL-SOFT: never turn a valid search into a 422 merely because the strict
@@ -184,7 +195,7 @@ async function discover(options = {}) {
     for (const entity of entities) {
       if ((coverage.get(entity) || 0) > 0) continue;
       try {
-        const targeted = await expanded.discover({ ...options, topic: entity });
+        const targeted = await expanded.discover({ ...options, topic: entity, topicPlan: null });
         extraQueries.push(...(targeted.queries || []));
         extraProviders.push(...(targeted.providers || []));
         sources = uniqueSources([

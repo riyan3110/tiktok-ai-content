@@ -16,6 +16,10 @@ const SUBJECT_NOISE = new Set([
   'hadapi','menghadapi','prioritaskan','menambahkan','memperbarui','launch','launches','launched','introduce','introduces','introduced',
   'release','releases','released','announce','announces','announced','adds','updates','unveils','reveals'
 ]);
+const USER_INTENT_COMMANDS = new Set([
+  'kenali','mengenal','mengenali','ketahui','mengetahui','pahami','memahami','simak','lihat','cek','pelajari','mempelajari',
+  'bedakan','bandingkan','jelaskan','bahas','ulas','find','learn','know','understand','compare','explain','review'
+]);
 const ASPECT_WORDS = new Set([
   'sedang','tengah','telah','sudah','akan','bakal','kini','masih','mulai','kembali','baru','currently','now','still','already','will','plans','plan'
 ]);
@@ -76,6 +80,7 @@ function fallbackEventParts(topic = '', subjects = []) {
   for (const token of tokens) {
     const key = normalize(token);
     if (!key || subjectWords.has(key) || GLUE_WORDS.has(key) || ASPECT_WORDS.has(key)) continue;
+    if (USER_INTENT_COMMANDS.has(key)) continue;
     if (SUBJECT_NOISE.has(key) && !verbLike(token)) continue;
     candidates.push(token);
   }
@@ -97,6 +102,7 @@ function fallbackPlan(topic = '') {
     const key = normalize(token);
     return key && !GLUE_WORDS.has(key) && (key.length > 2 || /\d/.test(key) || /^[A-Z0-9]{2,}$/.test(token));
   });
+  const semanticTerms = contentTerms.filter(term => !USER_INTENT_COMMANDS.has(normalize(term)));
 
   const named = [];
   let buffer = [];
@@ -106,7 +112,7 @@ function fallbackPlan(topic = '') {
   };
   for (const token of tokens) {
     const key = normalize(token);
-    if (SUBJECT_NOISE.has(key) || GLUE_WORDS.has(key) || ASPECT_WORDS.has(key)) {
+    if (USER_INTENT_COMMANDS.has(key) || SUBJECT_NOISE.has(key) || GLUE_WORDS.has(key) || ASPECT_WORDS.has(key)) {
       flush();
       continue;
     }
@@ -119,16 +125,19 @@ function fallbackPlan(topic = '') {
   }
   flush();
 
-  const subjects = uniq(named.length ? named : contentTerms.filter(term => !SUBJECT_NOISE.has(normalize(term))).slice(0, 2), 4);
+  const subjects = uniq(named.length ? named : semanticTerms.filter(term => !SUBJECT_NOISE.has(normalize(term))).slice(0, 2), 4);
   const subjectTokens = new Set(subjects.flatMap(value => normalize(value).split(' ').filter(Boolean)));
-  const eventTerms = contentTerms.filter(term => !subjectTokens.has(normalize(term)) && !ASPECT_WORDS.has(normalize(term)));
+  const eventTerms = contentTerms.filter(term => {
+    const key = normalize(term);
+    return !subjectTokens.has(key) && !ASPECT_WORDS.has(key) && !USER_INTENT_COMMANDS.has(key);
+  });
   const eventParts = fallbackEventParts(cleanTopic, subjects);
 
   return {
     rawTopic: cleanTopic,
     canonicalTopic: cleanTopic,
     subjects,
-    eventTerms: uniq(eventTerms.length ? eventTerms : contentTerms, 8),
+    eventTerms: uniq(eventTerms.length ? eventTerms : semanticTerms, 8),
     actionTerms: eventParts.actionTerms,
     contextTerms: eventParts.contextTerms,
     searchQueries: uniq([
@@ -199,7 +208,7 @@ async function createPlan(topic = '', { client } = {}) {
         },
         {
           role: 'user',
-          content: `TOPIK USER: ${JSON.stringify(cleanTopic)}\n\nKembalikan HANYA JSON dengan schema:\n{"canonicalTopic":"...","subjects":["..."],"eventTerms":["..."],"actionTerms":["..."],"contextTerms":["..."],"searchQueries":["..."],"marketIntent":false,"relation":"single|multi|comparison|event|general"}\n\nAturan:\n- subjects = nama orang/perusahaan/produk/model/fitur/tempat/organisasi yang benar-benar tertulis atau jelas merupakan subjek literal topik. Jangan invent nama baru.\n- Pertahankan ejaan nama, nomor versi, singkatan, dan angka identitas persis.\n- actionTerms = aksi inti yang diminta user (contoh literal: menguji, meluncurkan, melampaui). Sertakan padanan Inggris sebagai ALTERNATIF bila membantu pencarian global, tetapi jangan menambah aksi baru. Jika topik tidak punya aksi/event spesifik, kembalikan [].\n- contextTerms = objek/konteks yang membedakan event itu dari berita lain tentang subjek yang sama. Padanan bahasa boleh menjadi item alternatif. Jika tidak ada konteks pembeda, kembalikan [].\n- eventTerms = frasa event yang berguna untuk pencarian; tetap satu event yang sama.\n- searchQueries maksimal 4, selalu relevan dengan topik yang sama. Minimal satu query mempertahankan nama subjek persis; boleh buat versi Inggris untuk aksi/konteks.\n- marketIntent true hanya bila user memang meminta saham/pasar/harga/trading.\n- Ini parser, bukan fact checker. Jangan menyimpulkan sesuatu yang tidak ada di topik.`
+          content: `TOPIK USER: ${JSON.stringify(cleanTopic)}\n\nKembalikan HANYA JSON dengan schema:\n{"canonicalTopic":"...","subjects":["..."],"eventTerms":["..."],"actionTerms":["..."],"contextTerms":["..."],"searchQueries":["..."],"marketIntent":false,"relation":"single|multi|comparison|event|general"}\n\nAturan:\n- Pahami topik sebagai judul singkat yang mungkin tidak baku. canonicalTopic harus memperjelas maksud yang sama tanpa mengarang peristiwa, produk, atau fakta baru.\n- Kata perintah pembaca seperti kenali, ketahui, pahami, simak, lihat, pelajari, compare, atau explain BUKAN subject dan BUKAN peristiwa berita.\n- subjects = nama orang/perusahaan/produk/model/fitur/tempat/organisasi yang benar-benar tertulis atau jelas merupakan subjek literal topik. Jangan invent nama baru.\n- Pertahankan ejaan nama, nomor versi, singkatan, dan angka identitas persis.\n- actionTerms = aksi inti yang diminta user (contoh literal: menguji, meluncurkan, melampaui). Sertakan padanan Inggris sebagai ALTERNATIF bila membantu pencarian global, tetapi jangan menambah aksi baru. Jika topik tidak punya aksi/event spesifik, kembalikan [].\n- contextTerms = konsep pembeda yang wajib ada agar artikel tentang subjek yang sama tetapi berita berbeda tidak lolos. Gunakan frasa spesifik; hindari kata generik tunggal jika dapat dibuat sebagai frasa. Sertakan padanan Indonesia/Inggris sebagai alternatif bila perlu.\n- eventTerms = frasa event atau hubungan antarkonsep yang spesifik dan berguna untuk memeriksa kecocokan artikel; tetap satu maksud yang sama.\n- searchQueries maksimal 4 dan memprioritaskan sumber terbaru. Minimal satu query mempertahankan nama subjek persis; buat query Indonesia dan/atau Inggris yang natural sesuai bahasa sumber yang mungkin tersedia.\n- Semua topik boleh diproses; jangan memakai whitelist kategori dan jangan menolak hanya karena topik belum dikenal.\n- marketIntent true hanya bila user memang meminta saham/pasar/harga/trading.\n- Ini parser, bukan fact checker. Jangan menyimpulkan sesuatu yang tidak ada di topik.`
         }
       ],
       response_format: { type: 'json_object' }
@@ -219,5 +228,6 @@ module.exports = {
   clean,
   normalize,
   uniq,
-  verbLike
+  verbLike,
+  USER_INTENT_COMMANDS
 };

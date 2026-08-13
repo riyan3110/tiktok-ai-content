@@ -48,6 +48,31 @@ test('generic discovery drops a search hit whose fetched article is off-topic', 
   } finally { expanded.discover = original; }
 });
 
+test('interpreted soft fallback never downgrades to a same-brand article with a different main story', () => {
+  const topic = 'Kenali waktu ChatGPT riset pemikiran';
+  const plan = {
+    canonicalTopic: 'Kapan memakai ChatGPT untuk riset mendalam atau mode berpikir',
+    subjects: ['ChatGPT'],
+    eventTerms: ['deep research versus thinking mode', 'riset mendalam atau mode berpikir'],
+    actionTerms: [],
+    contextTerms: ['deep research', 'thinking mode'],
+    searchQueries: [topic, 'ChatGPT when to use deep research versus thinking mode'],
+    marketIntent: false,
+    relation: 'comparison',
+    planner: 'ai'
+  };
+  const pricingArticle = {
+    title: 'Perbedaan ChatGPT Pro, Plus, dan Go: Kenali Fitur dan Harganya',
+    text: 'ChatGPT menawarkan beberapa paket. Harga paket berbeda. Paket Pro ditujukan untuk penggunaan intensif. Paket Plus memiliki fitur tambahan. Daftar fitur juga menyebut deep research dan Thinking mode.',
+    url: 'https://wrong.test/chatgpt-plans',
+    finalUrl: 'https://wrong.test/chatgpt-plans',
+    discovery: { publisher: 'wrong.test', score: 50 }
+  };
+
+  assert.equal(scoped.softSourceScore(topic, pricingArticle, plan), -1);
+  assert.deepEqual(scoped.softRelevantSources(topic, [pricingArticle], plan), []);
+});
+
 test('generic discovery can dynamically bridge Indonesian topic wording to English sources', async () => {
   const original = expanded.discover;
   const topic = 'Potensi manfaat AI terhadap iklim';

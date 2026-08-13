@@ -61,7 +61,10 @@ function install() {
     const discovery = await autoSourceDiscovery.discover({
       topic,
       category: args.category === 'Custom' ? args.customCategory : args.category,
-      sourceFetcher
+      sourceFetcher,
+      // Production Tanpa URL always understands the free-form topic before it
+      // searches. This flag is set only after the Pakai URL pass-through above.
+      interpretTopic: true
     });
     const sources = discovery.sources;
     const wrappedContent = contentWrapper(args.content || defaultContent);

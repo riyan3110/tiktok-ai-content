@@ -52,6 +52,17 @@ test('fallback planner also preserves unknown names and version strings', () => 
   assert.ok(plan.searchQueries[0].includes('NovaKite ZX-9'));
 });
 
+test('reader-facing commands are never mistaken for the news subject', () => {
+  const plan = planner.fallbackPlan('Kenali waktu ChatGPT riset pemikiran');
+  assert.deepEqual(plan.subjects, ['ChatGPT']);
+  assert.ok(!plan.eventTerms.some(term => /^kenali$/i.test(term)));
+  assert.ok(plan.contextTerms.some(term => /riset/i.test(term)));
+
+  const generic = planner.fallbackPlan('Pahami teknologi');
+  assert.ok(!generic.subjects.some(term => /^pahami$/i.test(term)));
+  assert.ok(!generic.eventTerms.some(term => /^pahami$/i.test(term)));
+});
+
 test('dynamic scope keeps novel-topic facts and rejects unrelated side notes', () => {
   const topic = 'AetherNova memperkenalkan NovaKite ZX-9 untuk pusat data';
   const plan = {
@@ -159,6 +170,64 @@ test('exact topic does not run another web search when fetched sources become st
     });
     assert.equal(calls, 1);
     assert.equal(result.sources.length, 3);
+  } finally {
+    expanded.discover = original;
+  }
+});
+
+test('production interpretation rejects a same-brand pricing article and retries the intended research query', async () => {
+  const original = expanded.discover;
+  const topic = 'Kenali waktu ChatGPT riset pemikiran';
+  const retryQuery = 'ChatGPT when to use deep research versus thinking mode';
+  const calls = [];
+  const wrong = {
+    title: 'Perbedaan ChatGPT Pro, Plus, dan Go: Kenali Fitur dan Harganya',
+    text: 'ChatGPT menawarkan beberapa paket berlangganan. Setiap paket memiliki harga berbeda. Paket Pro ditujukan untuk pekerjaan intensif. Paket Plus menawarkan fitur tambahan. Daftar paket juga menyebut deep research dan Thinking mode sebagai bagian dari fitur.',
+    url: 'https://wrong.test/chatgpt-plans',
+    finalUrl: 'https://wrong.test/chatgpt-plans',
+    discovery: { publisher: 'wrong.test', score: 30 }
+  };
+  const correct = {
+    title: 'When to use ChatGPT deep research versus Thinking mode',
+    text: 'Deep research is useful for multi-step questions that synthesize multiple sources. Thinking mode reasons through complex prompts without producing a sourced research report. Standard chat is faster for quick lookups. Deep research lets users choose sources. A research task can take longer to complete.',
+    url: 'https://right.test/chatgpt-research-thinking',
+    finalUrl: 'https://right.test/chatgpt-research-thinking',
+    discovery: { publisher: 'right.test', score: 20 }
+  };
+
+  expanded.discover = async ({ topic: query }) => {
+    calls.push(query);
+    const sources = query === topic ? [wrong] : [correct];
+    return {
+      topic: query,
+      queries: [query],
+      providers: ['test'],
+      publishers: sources.map(source => source.discovery.publisher),
+      sources
+    };
+  };
+
+  try {
+    const result = await scoped.discover({
+      topic,
+      interpretTopic: true,
+      topicPlannerClient: fakePlannerClient({
+        canonicalTopic: 'Kapan memakai ChatGPT untuk riset mendalam atau mode berpikir',
+        subjects: ['ChatGPT'],
+        eventTerms: ['deep research versus thinking mode', 'riset mendalam atau mode berpikir'],
+        actionTerms: [],
+        contextTerms: ['deep research', 'thinking mode'],
+        searchQueries: [topic, retryQuery],
+        marketIntent: false,
+        relation: 'comparison'
+      })
+    });
+
+    assert.deepEqual(calls, [topic, retryQuery]);
+    assert.equal(result.sources.length, 1);
+    assert.equal(result.sources[0].finalUrl, correct.finalUrl);
+    assert.ok(!result.sources.some(source => source.finalUrl === wrong.finalUrl));
+    assert.equal(result.scopeMode, 'strict-alternate');
   } finally {
     expanded.discover = original;
   }

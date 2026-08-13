@@ -1,6 +1,7 @@
 const defaultSourceFetcher = require('./sourceFetcher');
 const baseDiscovery = require('./autoSourceDiscovery');
 const fastDiscovery = require('./autoSourceFastDiscovery');
+const dynamicScope = require('./autoSourceDynamicScope');
 const { sourceFacts } = require('./manualSourceFallback');
 
 // TANPA URL / AUTO SOURCE ONLY.
@@ -83,6 +84,35 @@ function multilingualMinimum(topic) {
   if (count === 2) return 1;
   if (count === 3) return 0.66;
   return 0.5;
+}
+
+function relevanceTopics(topic, plan = null) {
+  const values = [
+    topic,
+    plan?.canonicalTopic,
+    ...(Array.isArray(plan?.searchQueries) ? plan.searchQueries : []),
+    [
+      ...(Array.isArray(plan?.subjects) ? plan.subjects : []),
+      ...(Array.isArray(plan?.eventTerms) ? plan.eventTerms : []),
+      ...(Array.isArray(plan?.contextTerms) ? plan.contextTerms : [])
+    ].join(' ')
+  ];
+  const seen = new Set();
+  return values.map(value => String(value || '').trim().replace(/\s+/g, ' ')).filter(value => {
+    const key = normalized(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function plannedRelevance(topic, value, plan = null) {
+  return Math.max(0, ...relevanceTopics(topic, plan).map(variant => multilingualRelevance(variant, value)));
+}
+
+function planHasScope(plan = null) {
+  return ['subjects', 'eventTerms', 'actionTerms', 'contextTerms']
+    .some(key => Array.isArray(plan?.[key]) && plan[key].length > 0);
 }
 
 function englishAnchorQuery(topic) {
@@ -177,11 +207,13 @@ async function expandedSearchWeb(query, options = {}) {
   });
 }
 
-function expandedQueries(topic, category = '') {
+function expandedQueries(topic, category = '', plan = null) {
   const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
   const english = englishAnchorQuery(cleanTopic);
   const base = baseDiscovery.searchQueries(cleanTopic, category);
   const values = [
+    cleanTopic,
+    ...(Array.isArray(plan?.searchQueries) ? plan.searchQueries : []),
     ...base,
     english && normalized(english) !== normalized(cleanTopic) ? `${english} latest` : '',
     `${cleanTopic} terbaru`,
@@ -189,7 +221,7 @@ function expandedQueries(topic, category = '') {
     `${cleanTopic} official`,
     `${cleanTopic} research report`
   ];
-  return [...new Set(values.map(value => value.trim()).filter(Boolean))].slice(0, 7);
+  return [...new Set(values.map(value => value.trim()).filter(Boolean))].slice(0, 8);
 }
 
 function freshnessScore(publishedAt, nowMs = Date.now()) {
@@ -219,31 +251,38 @@ function publisherKey(raw) {
   } catch { return ''; }
 }
 
-function candidateScore(topic, candidate, nowMs) {
-  const titleRelevance = multilingualRelevance(topic, candidate?.title || '');
-  const descriptionRelevance = multilingualRelevance(topic, candidate?.description || '');
+function candidateScore(topic, candidate, nowMs, plan = null) {
+  const titleRelevance = plannedRelevance(topic, candidate?.title || '', plan);
+  const descriptionRelevance = plannedRelevance(topic, candidate?.description || '', plan);
   return baseDiscovery.candidateScore(topic, candidate)
     + titleRelevance * 6
     + descriptionRelevance * 2.5
     + freshnessScore(candidate?.publishedAt, nowMs);
 }
 
-function fetchedScore(topic, source, candidate, factCount, nowMs) {
-  const titleRelevance = multilingualRelevance(topic, source?.title || '');
-  const bodyRelevance = multilingualRelevance(topic, `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`);
-  return candidateScore(topic, candidate, nowMs)
+function fetchedScore(topic, source, candidate, factCount, nowMs, plan = null) {
+  const titleRelevance = plannedRelevance(topic, source?.title || '', plan);
+  const bodyRelevance = plannedRelevance(topic, `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`, plan);
+  return candidateScore(topic, candidate, nowMs, plan)
     + titleRelevance * 6
     + bodyRelevance * 10
     + Math.min(16, factCount) * 0.3;
 }
 
-function fetchedContentRelevant(topic, source) {
-  const minimum = multilingualMinimum(topic);
-  const titleRelevance = multilingualRelevance(topic, source?.title || '');
-  const bodyRelevance = multilingualRelevance(topic, `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`);
+function fetchedContentRelevant(topic, source, plan = null) {
+  if (planHasScope(plan) && dynamicScope.sourceInScope(topic, source, plan)) return true;
+  const variants = relevanceTopics(topic, plan);
+  const combined = `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`;
   // Search-result snippets may be stale or misleading. The fetched article itself
-  // must satisfy the multilingual topic gate before it can become a selected source.
-  return Math.max(titleRelevance, bodyRelevance) >= minimum;
+  // must satisfy at least one complete interpreted query before selection. The
+  // stricter dynamic scope runs again after discovery against the original topic.
+  return variants.some(variant => {
+    const minimum = multilingualMinimum(variant);
+    return Math.max(
+      multilingualRelevance(variant, source?.title || ''),
+      multilingualRelevance(variant, combined)
+    ) >= minimum;
+  });
 }
 
 async function discover({
@@ -252,17 +291,19 @@ async function discover({
   searchImpl = expandedSearchWeb,
   sourceFetcher = defaultSourceFetcher,
   fetchImpl = fetch,
-  now = Date.now
+  now = Date.now,
+  topicPlan = null
 } = {}) {
   const cleanTopic = String(topic || '').trim().replace(/\s+/g, ' ');
   if (!cleanTopic) throw Object.assign(new Error('Topik wajib diisi untuk pencarian sumber otomatis.'), { status: 400 });
 
   const nowMs = now();
-  const cacheKey = `${cleanTopic.toLocaleLowerCase('id-ID')}|${String(category || '').toLocaleLowerCase('id-ID')}`;
+  const planKey = relevanceTopics(cleanTopic, topicPlan).map(normalized).join('|');
+  const cacheKey = `${cleanTopic.toLocaleLowerCase('id-ID')}|${String(category || '').toLocaleLowerCase('id-ID')}|${planKey}`;
   const cached = cache.get(cacheKey);
   if (cached && nowMs - cached.savedAt < CACHE_TTL_MS) return clone(cached.bundle);
 
-  const queries = expandedQueries(cleanTopic, category);
+  const queries = expandedQueries(cleanTopic, category, topicPlan);
   const groups = await mapLimit(queries, QUERY_CONCURRENCY, async query => {
     try {
       const rows = await searchImpl(query, { fetchImpl });
@@ -277,7 +318,7 @@ async function discover({
   groups.flat().forEach(candidate => {
     const url = baseDiscovery.canonicalUrl(candidate?.url);
     if (!url || !baseDiscovery.candidateAllowed(url)) return;
-    const value = { ...candidate, url, searchScore: candidateScore(cleanTopic, candidate, nowMs) };
+    const value = { ...candidate, url, searchScore: candidateScore(cleanTopic, candidate, nowMs, topicPlan) };
     if (!unique.has(url) || value.searchScore > unique.get(url).searchScore) unique.set(url, value);
   });
 
@@ -290,18 +331,18 @@ async function discover({
 
   const fetchedRows = await mapLimit(ranked.slice(0, MAX_FETCH_CANDIDATES), FETCH_CONCURRENCY, async candidate => {
     const source = await baseDiscovery.fetchCandidate(candidate, { sourceFetcher, fetchImpl });
-    if (!source || !fetchedContentRelevant(cleanTopic, source)) return null;
+    if (!source || !fetchedContentRelevant(cleanTopic, source, topicPlan)) return null;
     const facts = sourceFacts([source]);
     if (facts.length < MIN_FACTS_PER_SOURCE) return null;
-    const titleRelevance = multilingualRelevance(cleanTopic, source.title || '');
-    const bodyRelevance = multilingualRelevance(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 9000)}`);
+    const titleRelevance = plannedRelevance(cleanTopic, source.title || '', topicPlan);
+    const bodyRelevance = plannedRelevance(cleanTopic, `${source.title || ''} ${String(source.text || '').slice(0, 9000)}`, topicPlan);
     return {
       ...source,
       publishedAt: source.publishedAt || candidate.publishedAt || null,
       discovery: {
         provider: candidate.provider,
         query: candidate.query,
-        score: fetchedScore(cleanTopic, source, candidate, facts.length, nowMs),
+        score: fetchedScore(cleanTopic, source, candidate, facts.length, nowMs, topicPlan),
         relevance: Math.max(titleRelevance, bodyRelevance),
         factCount: facts.length,
         publishedAt: source.publishedAt || candidate.publishedAt || null,
@@ -355,6 +396,8 @@ module.exports = {
   anchorGroups,
   multilingualRelevance,
   multilingualMinimum,
+  relevanceTopics,
+  plannedRelevance,
   englishAnchorQuery,
   fetchedContentRelevant,
   clearCache,
