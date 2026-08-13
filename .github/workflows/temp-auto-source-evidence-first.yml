@@ -13,7 +13,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
       - run: npm run check
       - run: node --test test/auto-source-evidence-first-regression.test.js test/auto-source-patch.test.js test/auto-source-scope-fidelity-regression.test.js test/auto-source-simple-composer.test.js
