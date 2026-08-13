@@ -1,0 +1,60 @@
+name: temp-hook-title-only-clean
+
+on:
+  push:
+    branches: [agent/text-hook-title-only-clean]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Patch and verify
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/services/textInputComposer.js')
+          s = p.read_text()
+          replacements = [
+            ("    if (index === 0 || index === slides.length - 1) next.points = [];", "    if (index === 0) {\n      next.body = '';\n      next.points = [];\n    }\n    if (index === slides.length - 1) next.points = [];"),
+            ("    if (!slide.body) errors.push(`slide ${number}: body kosong`);\n    if (words(slide.title).length > 10) errors.push(`slide ${number}: judul maksimal 10 kata`);", "    const titleWords = words(slide.title).length;\n    if (index !== 0 && !slide.body) errors.push(`slide ${number}: body kosong`);\n    if (index === 0 && (titleWords < 7 || titleWords > 10)) {\n      errors.push(`slide 1: judul hook harus padat 7–10 kata; sekarang ${titleWords} kata`);\n    } else if (index !== 0 && titleWords > 10) {\n      errors.push(`slide ${number}: judul maksimal 10 kata`);\n    }"),
+            ("    const firstWords = words(first.body).length;\n    if (first.points.length) errors.push('slide 1 harus tanpa bullet');\n    if (firstWords < 16 || firstWords > 18) {\n      errors.push(`slide 1 harus padat tetapi tetap muat, target 16–18 kata; sekarang ${firstWords} kata`);\n    }", "    if (first.body) errors.push('slide 1 harus hanya judul tanpa body');\n    if (first.points.length) errors.push('slide 1 harus tanpa bullet');"),
+            ("- Slide 1 = HOOK. Judul kuat tetapi tidak clickbait berlebihan. Body 16–18 kata, tetap cukup padat dan memberi konteks. points wajib [].", "- Slide 1 = HOOK. HANYA judul besar 7–10 kata yang padat, jelas, dan menarik tanpa clickbait berlebihan. body wajib \"\" dan points wajib []."),
+            ('{\\"section\\":\\"HOOK\\",\\"title\\":\\"...\\",\\"body\\":\\"...\\",\\"points\\":[]}', '{\\"section\\":\\"HOOK\\",\\"title\\":\\"...\\",\\"body\\":\\"\\",\\"points\\":[]}'),
+            ("Pastikan slide 1 body 16–18 kata tanpa bullet; slide 2–3 body 8–14 kata", "Slide 1 WAJIB hanya judul hook 7–10 kata dengan body \"\" dan points []; slide 2–3 body 8–14 kata")
+          ]
+          for old, new in replacements:
+            assert old in s, old
+            s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          t = Path('test/text-input-composer.test.js')
+          x = t.read_text()
+          x = x.replace("{ section: 'HOOK', title: 'Hal Baru Mulai Disiapkan', body: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Fitur ini membantu identifikasi tanpa mengubah tampilan teks pengguna.', points: [] },", "{ section: 'HOOK', title: 'Perubahan Baru Mulai Disiapkan untuk Model AI', body: '', points: [] },")
+          x = x.replace("  assert.equal(images.buildSlideLayouts(content).length, 4);", "  const layouts = images.buildSlideLayouts(content);\n  assert.equal(layouts.length, 4);\n  assert.equal(layouts[0].isOnlyTitle, true);")
+          x = x.replace("test('short hook body is rejected', () => {\n  const value = sample();\n  value.slides[0].body = 'Perubahan baru segera hadir.';\n  assert.ok(composer.validateResult(value, source).errors.some(error => /slide 1 harus padat/i.test(error)));\n});", "test('hook is title-only and requires a dense title', () => {\n  const value = sample();\n  value.slides[0].body = 'Body dari provider harus dibuang sebelum validasi dan render.';\n  value.slides[0].points = ['Bullet juga harus dibuang'];\n  const checked = composer.validateResult(value, source);\n  assert.equal(checked.slides[0].body, '');\n  assert.deepEqual(checked.slides[0].points, []);\n  assert.equal(checked.errors.some(error => /slide 1.*body|slide 1.*bullet/i.test(error)), false);\n  value.slides[0].title = 'Perubahan Baru';\n  assert.ok(composer.validateResult(value, source).errors.some(error => /judul hook harus padat 7–10 kata/i.test(error)));\n});")
+          t.write_text(x)
+          PY
+          npm install --no-audit --no-fund
+          npm run check
+          node --test test/text-input-composer.test.js
+          node --test test/text-input-fresh-retry.test.js
+          node --test test/auto-source-patch.test.js
+          node --test test/background-state.test.js
+      - name: Commit clean result
+        run: |
+          git config user.name 'Riyan3w'
+          git config user.email '129081548+riyan3110@users.noreply.github.com'
+          git add src/services/textInputComposer.js test/text-input-composer.test.js
+          git rm .github/workflows/temp-hook-title-only-clean.yml
+          git commit -m 'Make Generate from Text hook title-only'
+          git push origin HEAD:agent/text-hook-title-only-clean
