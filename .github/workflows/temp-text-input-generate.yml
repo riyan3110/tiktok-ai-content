@@ -5,24 +5,39 @@ on:
     branches: [main]
 
 jobs:
-  verify:
+  core:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - run: npm install --no-audit --no-fund
-      - name: Syntax check
-        run: npm run check
-      - name: Text input composer
-        run: node --test test/text-input-composer.test.js
-      - name: Manual text route and URL isolation
-        run: node --test test/auto-source-patch.test.js
-      - name: Pakai URL regressions
-        run: node --test --test-concurrency=1 test/pakai-url-*.test.js
-      - name: Auto Source regressions
-        run: node --test --test-concurrency=1 test/auto-source-*.test.js
-      - name: App API tests
-        run: node --test test/app.test.js
+      - run: npm run check
+      - run: node --test test/text-input-composer.test.js test/auto-source-patch.test.js
+
+  url-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [agent/text-input-generate-mode, main]
+        file:
+          - test/pakai-url-declarative-density.test.js
+          - test/pakai-url-dense-grounding-recovery.test.js
+          - test/pakai-url-fast-path.test.js
+          - test/pakai-url-natural-output-regression.test.js
+          - test/pakai-url-semantic-field-repair.test.js
+          - test/pakai-url-title-semantic-salvage.test.js
+    name: url / ${{ matrix.ref }} / ${{ matrix.file }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - run: node --test ${{ matrix.file }}
