@@ -129,6 +129,9 @@ function editorialNoise(value = '', plan = {}) {
   if (!text) return true;
   const requested = requestedText(plan);
   if (sourceArtifactNoise(text, plan)) return true;
+  // Do not promote an article's own marketing superlative into a sourced fact.
+  // It remains usable only when the user explicitly asks about that claim.
+  if (unsupportedHype(text, requested)) return true;
   if (audienceReactionNoise(text, plan)) return true;
   if (marketingActivationNoise(text, plan)) return true;
   if (HARD_PROMO.test(text) && !HARD_PROMO.test(requested)) return true;

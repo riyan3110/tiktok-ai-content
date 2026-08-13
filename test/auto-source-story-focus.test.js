@@ -86,6 +86,18 @@ test('audience reactions stay available when the requested topic explicitly asks
   }), false);
 });
 
+test('promotional hype from an article is not selected as a factual slide', () => {
+  const hype = 'Menjadi lompatan besar dalam cara kita menemukan lokasi.';
+  assert.equal(focus.editorialNoise(hype, {
+    rawTopic: 'Google menghadirkan Ask Maps',
+    canonicalTopic: 'Google menghadirkan Ask Maps'
+  }), true);
+  assert.equal(focus.editorialNoise(hype, {
+    rawTopic: 'Benarkah Ask Maps menjadi lompatan besar?',
+    canonicalTopic: 'Ask Maps menjadi lompatan besar'
+  }), false);
+});
+
 test('production generic route gives simple composer focused story facts and avoids fake conclusion label', async () => {
   const original = simple.compose;
   let received = null;

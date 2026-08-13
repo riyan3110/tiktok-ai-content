@@ -5,8 +5,8 @@
 
 const simple = require('./autoSourceSimpleComposer');
 
-const BODY_MAX_WORDS = 16;
-const BODY_MAX_CHARS = 140;
+const BODY_MAX_WORDS = 20;
+const BODY_MAX_CHARS = 170;
 const POINT_MAX_WORDS = 7;
 const POINT_MAX_CHARS = 82;
 const TITLE_MAX_WORDS = 10;
@@ -114,7 +114,7 @@ function fitSlide(slide = {}, slideIndex = 0) {
   const body = compactCopy(slide.body, {
     maxWords: BODY_MAX_WORDS,
     maxChars: BODY_MAX_CHARS,
-    minimum: 7,
+    minimum: 10,
     sentence: true
   });
   const fittedPoints = (Array.isArray(slide.points) ? slide.points : [])
