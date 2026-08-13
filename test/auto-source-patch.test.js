@@ -69,6 +69,8 @@ test('scoped Auto Source loader does not install legacy strict/plan validator st
   clearAutoSourceCaches();
   const dependencies = autoSourcePatch.loadAutoSourceDependencies();
   assert.ok(dependencies.autoSourceDiscovery);
+  assert.ok(dependencies.expandedDiscovery);
+  assert.ok(dependencies.topicPlanner);
   assert.ok(dependencies.autoSourceComposer);
   assert.ok(dependencies.autoSourceVisualFit);
   assert.equal('autoSourcePlanFinalizer' in dependencies, false);
@@ -160,4 +162,122 @@ test('production manual Tanpa URL enables topic interpretation before discovery'
     generation.generateAndSave = realGenerateAndSave;
     scopedDiscovery.discover = realDiscover;
   }
+});
+
+test('current-topic recovery keeps subject and context but relaxes only literal action wording', () => {
+  const planner = { verbLike: value => ['menerapkan', 'meluncurkan'].includes(String(value).toLowerCase()) };
+  const plan = autoSourcePatch.makeCurrentTopicRecoveryPlan('Produk menerapkan penanda konten', {
+    canonicalTopic: 'Produk menerapkan penanda konten',
+    subjects: ['Produk'],
+    actionTerms: ['menerapkan'],
+    contextTerms: ['penanda konten', 'watermark'],
+    eventTerms: ['menerapkan', 'watermark'],
+    searchQueries: ['Produk menerapkan penanda konten'],
+    relation: 'event',
+    planner: 'ai'
+  }, planner);
+
+  assert.deepEqual(plan.subjects, ['Produk']);
+  assert.deepEqual(plan.actionTerms, []);
+  assert.ok(plan.contextTerms.includes('watermark'));
+  assert.ok(plan.searchQueries.some(query => /latest news/i.test(query)));
+  assert.ok(plan.searchQueries.some(query => /terbaru/i.test(query)));
+  assert.equal(plan.planner, 'ai');
+});
+
+test('recoverable no-URL discovery failure retries fresh runtime topic through expanded discovery', async () => {
+  const calls = [];
+  const primaryError = Object.assign(new Error('current source too strict'), {
+    status: 422,
+    code: 'AUTO_SOURCE_RELEVANT_SOURCE_EMPTY'
+  });
+  const autoSourceDiscovery = {
+    discover: async options => {
+      calls.push(['primary', options]);
+      throw primaryError;
+    }
+  };
+  const topicPlanner = {
+    verbLike: value => String(value).toLowerCase() === 'menerapkan',
+    createPlan: async topic => ({
+      rawTopic: topic,
+      canonicalTopic: 'Produk menerapkan watermark',
+      subjects: ['Produk'],
+      actionTerms: ['menerapkan'],
+      contextTerms: ['watermark'],
+      eventTerms: ['menerapkan', 'watermark'],
+      searchQueries: ['Produk watermark latest'],
+      relation: 'event',
+      planner: 'ai'
+    })
+  };
+  const expandedDiscovery = {
+    discover: async options => {
+      calls.push(['recovery', options]);
+      assert.deepEqual(options.topicPlan.subjects, ['Produk']);
+      assert.deepEqual(options.topicPlan.actionTerms, []);
+      assert.ok(options.topicPlan.contextTerms.includes('watermark'));
+      assert.ok(options.topicPlan.searchQueries.some(query => /latest/i.test(query)));
+      return {
+        topic: options.topic,
+        queries: options.topicPlan.searchQueries,
+        providers: ['fresh-news-test'],
+        sources: [{
+          title: 'Current article about the requested product and watermark',
+          text: 'The current source says the product plans to add a watermark to generated content.',
+          url: 'https://example.test/current',
+          finalUrl: 'https://example.test/current'
+        }]
+      };
+    }
+  };
+
+  const result = await autoSourcePatch.discoverCurrentSources({
+    topic: 'Produk menerapkan watermark',
+    category: 'Edukasi teknologi',
+    sourceFetcher: {},
+    autoSourceDiscovery,
+    expandedDiscovery,
+    topicPlanner
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(result.scopeMode, 'current-topic-recovery');
+  assert.equal(result.recoveryFrom, 'AUTO_SOURCE_RELEVANT_SOURCE_EMPTY');
+  assert.equal(result.sources[0].finalUrl, 'https://example.test/current');
+});
+
+test('successful normal no-URL discovery never invokes the recovery path', async () => {
+  let plannerCalls = 0;
+  let recoveryCalls = 0;
+  const expected = {
+    topic: 'Topik apa pun',
+    sources: [{ finalUrl: 'https://example.test/normal' }]
+  };
+  const result = await autoSourcePatch.discoverCurrentSources({
+    topic: 'Topik apa pun',
+    autoSourceDiscovery: { discover: async () => expected },
+    expandedDiscovery: { discover: async () => { recoveryCalls += 1; return null; } },
+    topicPlanner: { createPlan: async () => { plannerCalls += 1; return {}; } }
+  });
+
+  assert.strictEqual(result, expected);
+  assert.equal(plannerCalls, 0);
+  assert.equal(recoveryCalls, 0);
+});
+
+test('non-recoverable discovery error is not broadened or retried', async () => {
+  let plannerCalls = 0;
+  let recoveryCalls = 0;
+  const failure = Object.assign(new Error('provider auth failed'), { status: 401 });
+
+  await assert.rejects(() => autoSourcePatch.discoverCurrentSources({
+    topic: 'Topik apa pun',
+    autoSourceDiscovery: { discover: async () => { throw failure; } },
+    expandedDiscovery: { discover: async () => { recoveryCalls += 1; return null; } },
+    topicPlanner: { createPlan: async () => { plannerCalls += 1; return {}; } }
+  }), error => error === failure);
+
+  assert.equal(plannerCalls, 0);
+  assert.equal(recoveryCalls, 0);
 });
