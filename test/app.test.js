@@ -15,6 +15,16 @@ function setup(overrides = {}) {
 }
 test('generate menyimpan struktur konten dan tiga slide', async () => { const { app } = setup(); const r = await request(app).post('/generate').send({ topicSource: 'ai' }).expect(200); assert.equal(r.body.topic, 'Storyboard AI'); assert.equal(r.body.topic_source, 'ai'); assert.equal(r.body.slides.length, 3); assert.deepEqual(r.body.hashtags, ['#AIAds']); });
 test('topik manual wajib dipakai dan disimpan bersama sumber serta input asli', async () => { const { app } = setup(); const r = await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: '  Tutorial   sepatu AI  ' }).expect(200); assert.equal(r.body.topic, 'Tutorial sepatu AI'); assert.equal(r.body.requested_topic, 'Tutorial sepatu AI'); assert.equal(r.body.topic_source, 'manual'); });
+test('topik manual yang sama dapat dibuat ulang sebagai konten baru', async () => {
+  const { app, db } = setup();
+  const payload = { topicSource: 'manual', requestedTopic: 'Cloude menerapkan watermark' };
+  const first = await request(app).post('/generate').send(payload).expect(200);
+  const repeated = await request(app).post('/generate').send(payload).expect(200);
+
+  assert.notEqual(repeated.body.id, first.body.id);
+  assert.equal(repeated.body.topic, payload.requestedTopic);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM contents WHERE requested_topic=?').get(payload.requestedTopic).count, 2);
+});
 test('topik manual kosong ditolak', async () => { const { app } = setup(); await request(app).post('/generate').send({ topicSource: 'manual', requestedTopic: ' ' }).expect(400); });
 
 test('useSources manual tanpa URL menghasilkan 400 dan proses lama tetap tanpa sumber', async () => {

@@ -166,18 +166,20 @@ test('mode trending tetap melakukan retry anti-duplikat saat similarity tinggi',
   db.close();
 });
 
-test('exact duplicate topic manual tetap ditolak sebelum memanggil AI', async () => {
+test('exact duplicate topic manual tetap dibuat sebagai konten baru', async () => {
   const db = createDatabase(':memory:');
   insertTopic(db, 'Meta');
   let calls = 0;
-  await assert.rejects(generateAndSave({
+  const id = await generateAndSave({
     db,
     mode: 'manual',
     requestedTopic: ' meta ',
     content: { generateContent: async () => { calls += 1; return generatedContent('Meta'); } },
     images: fakeImages
-  }), error => error.status === 409);
-  assert.equal(calls, 0);
+  });
+  assert.equal(calls, 1);
+  assert.equal(db.prepare('SELECT topic_source FROM contents WHERE id=?').get(id).topic_source, 'manual');
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM contents WHERE topic='Meta'").get().count, 2);
   db.close();
 });
 
