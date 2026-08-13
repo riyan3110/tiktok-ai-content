@@ -19,6 +19,7 @@ const BOTTOM_SAFE_AREA = SAFE_AREA.bottom;
 const CONTENT_BOTTOM = HEIGHT - BOTTOM_SAFE_AREA;
 const OVERFLOW_TOLERANCE = 8;
 const WATERMARK_Y = 270;
+const TEXT_INPUT_HOOK_Y = 680;
 
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 
@@ -200,8 +201,9 @@ function frame(inner, number, total, watermark, background = {}) {
   return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${WIDTH}" height="${HEIGHT}" fill="${color}"/>${image}${watermarkElement(watermark, textColor)}${themedInner}<text x="${WIDTH - SAFE_AREA.right}" y="${LABEL_Y}" fill="${textColor}" font-family="Arial,sans-serif" font-size="28" font-weight="700" text-anchor="end">${number}/${total}</text></svg>`;
 }
 
-function buildStructuredLayout(slide, index, total, format = '') {
-  const tutorial = /tutorial/i.test(format) || /LANGKAH/i.test(slide.section);
+function buildStructuredLayout(slide, index, total, format = '', options = {}) {
+  const textInputOnly = options.textInputOnly === true;
+  const tutorial = !textInputOnly && (/tutorial/i.test(format) || /LANGKAH/i.test(slide.section));
   const titleFit = slide.title ? autoFitText(slide.title, { maxWidth: SAFE_WIDTH, maxHeight: 250, maxLines: 3, startSize: 76, minSize: 46, lineHeight: 1.08 }) : null;
   const bodyFit = slide.body ? autoFitText(slide.body, { maxWidth: SAFE_WIDTH, maxHeight: 220, maxLines: 4, startSize: 42, minSize: 34, lineHeight: 1.24 }) : null;
   if (slide.title && !titleFit) throw new Error('Judul tidak muat dalam maksimal tiga baris.');
@@ -211,7 +213,7 @@ function buildStructuredLayout(slide, index, total, format = '') {
     pointSize--;
     pointSpacing = Math.max(12, pointSpacing - 1);
     points = slide.points.slice(0, 3).map((point, pointIndex) => {
-      const clean = String(point).replace(/^[-•*\d.)\s]+/, '').trim();
+      const clean = String(point).replace(textInputOnly ? /^(?:[-•*]\s*|\d+[.)]\s+)/ : /^[-•*\d.)\s]+/, '').trim();
       const prefix = tutorial ? `${pointIndex + 1}.` : '•';
       return { text: `${prefix} ${clean}`, lines: wrapText(`${prefix} ${clean}`, SAFE_WIDTH, pointSize, false) };
     });
@@ -222,7 +224,8 @@ function buildStructuredLayout(slide, index, total, format = '') {
     type: 'structured', title: slide.section || `SLIDE ${index + 1}`,
     content: { title: slide.title, body: slide.body, points },
     fit: { kind: height < 320 ? 'short' : height < 560 ? 'medium' : 'long', height, lineCount, titleFit, bodyFit, pointSize, pointSpacing, lines: [] },
-    isOnlyTitle: Boolean(slide.title && !slide.body && !points.length), total
+    isOnlyTitle: Boolean(slide.title && !slide.body && !points.length),
+    textInputHook: Boolean(textInputOnly && index === 0 && slide.title && !slide.body && !points.length), total
   };
 }
 
@@ -250,12 +253,12 @@ function repairStructuredSlides(input) {
   return repaired;
 }
 
-function fitStructuredSlides(input, format = '') {
+function fitStructuredSlides(input, format = '', options = {}) {
   const normalized = normalizeSlides(input);
   const canKeepOriginal = normalized.every((slide, index) => {
     if (slide.points.length > 3) return false;
     try {
-      return validateVisualLayout(buildStructuredLayout(slide, index, normalized.length, format));
+      return validateVisualLayout(buildStructuredLayout(slide, index, normalized.length, format, options));
     } catch {
       return false;
     }
@@ -265,8 +268,12 @@ function fitStructuredSlides(input, format = '') {
 
 function buildSlideLayouts(content) {
   if (Array.isArray(content.slides)) {
+    // Generate dari Teks has its own fixed carousel structure. Keep its hook
+    // and bullets independent from the UI format selector without changing URL mode.
+    const textInputOnly = content.verificationStatus === 'text_input_only';
+    const layoutOptions = { textInputOnly };
     // Do not summarize or bulletize copy that already fits the native canvas.
-    const slides = fitStructuredSlides(content.slides, content.contentFormat);
+    const slides = fitStructuredSlides(content.slides, content.contentFormat, layoutOptions);
     // Source-filtered copy has already passed its own evidence-aware validation.
     // The renderer should only enforce structural/layout limits here; rerunning
     // the generic duplicate-copy gate can falsely reject valid source-backed
@@ -274,7 +281,7 @@ function buildSlideLayouts(content) {
     const sourceVerified = ['source_based', 'needs_review'].includes(content.verificationStatus);
     const errors = validateContentSlides(slides, { format: content.contentFormat, validateCopy: !sourceVerified });
     if (errors.length) throw Object.assign(new Error(`Tahap layout: ${errors.join(' ')}`), { status: 422 });
-    return validateCarouselLayouts(slides.map((slide, index) => buildStructuredLayout(slide, index, slides.length, content.contentFormat)));
+    return validateCarouselLayouts(slides.map((slide, index) => buildStructuredLayout(slide, index, slides.length, content.contentFormat, layoutOptions)));
   }
   const format = content.contentFormat || 'Tutorial langkah';
   const kind = contentKind(content.contentCategory, format);
@@ -457,7 +464,9 @@ function renderLayout(layout, number, total, watermark, background) {
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
   const startY = contentY(layout.fit);
   if (layout.type === 'structured') {
-    let y = layout.isOnlyTitle ? Math.round(Math.max(CONTENT_TOP, (CONTENT_TOP + CONTENT_BOTTOM - layout.fit.height) / 2)) : startY;
+    let y = layout.isOnlyTitle
+      ? (layout.textInputHook ? TEXT_INPUT_HOOK_Y : Math.round(Math.max(CONTENT_TOP, (CONTENT_TOP + CONTENT_BOTTOM - layout.fit.height) / 2)))
+      : startY;
     const parts = [];
     if (layout.fit.titleFit) {
       parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.1, weight: 700 }));
