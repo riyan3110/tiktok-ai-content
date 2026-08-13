@@ -130,11 +130,10 @@ function needsQualityRepair(result = {}, packets = []) {
     const slide = slides[slideIndex] || {};
     const body = clean(slide?.body);
     const title = clean(slide?.title);
-    const substantive = [body, ...(Array.isArray(slide?.points) ? slide.points.map(clean) : [])].filter(Boolean);
     if (!body) return true;
     if (bodyNeedsDensityRepair(body, packet)) return true;
     if (visibleHype(title) || visibleHype(body)) return true;
-    if (substantive.some(value => factualShapeNeedsRepair(value, packet))) return true;
+    if (factualShapeNeedsRepair(body, packet)) return true;
     if (!simple.mainEvidenceCovered(body, packet)) return true;
     return false;
   });
@@ -152,11 +151,10 @@ function needsPostRepairRetry(result = {}, packets = []) {
     const slide = slides[slideIndex] || {};
     const body = clean(slide?.body);
     const title = clean(slide?.title);
-    const substantive = [body, ...(Array.isArray(slide?.points) ? slide.points.map(clean) : [])].filter(Boolean);
     if (!body) return true;
     if (bodyNeedsDensityRepair(body, packet)) return true;
     if (visibleHype(title) || visibleHype(body)) return true;
-    if (substantive.some(value => factualShapeNeedsRepair(value, packet))) return true;
+    if (factualShapeNeedsRepair(body, packet)) return true;
     return false;
   });
 }
