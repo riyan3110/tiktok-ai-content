@@ -17,6 +17,8 @@ const FIRST_PERSON_REACTION = /\b(?:i\s+(?:can(?:no|')?t\s+wait|hope|wish|love|h
 const REACTION_TOPIC = /\b(?:reaksi|tanggapan|komentar|respons\s+(?:pengguna|publik)|opini\s+publik|sentimen|user\s+reactions?|public\s+response|what\s+users\s+say)\b/i;
 const MARKETING_ACTIVATION = /\b(?:campaign|campaigning|kampanye|mengampanyekan|dikampanyekan|promosi|promotional|marketing\s+activation|brand\s+activation|celebrat(?:e|es|ed|ing|ion)|merayakan|dirayakan|menyambut\s+perayaan)\b/i;
 const MARKETING_TOPIC = /\b(?:campaign|kampanye|promosi|marketing|brand\s+activation|celebrat(?:e|es|ed|ing|ion)|merayakan|perayaan|hari\s+(?:kemerdekaan|nasional|raya))\b/i;
+const SIDE_PROGRAM_ACTIVATION = /(?:\b(?:program|initiative|inisiatif)\s+(?:ini\s+)?(?:mengajak|mendorong|mengundang|merayakan|mempromosikan|mengampanyekan|invites?|encourages?|celebrates?|promotes?)\b|\b(?:jelajah\s+nusantara|kuliner\s+legendaris)\b)/i;
+const PROGRAM_TOPIC = /\b(?:program|initiative|inisiatif|jelajah\s+nusantara|kuliner\s+legendaris)\b/i;
 const RELATED_NAVIGATION = /(?:\b(?:baca|read)\s+(?:juga|also)\b|\b(?:artikel|berita|stories?|articles?)\s+(?:terkait|lainnya|lain|related|recommended)\b|\b(?:recommended|rekomendasi|selengkapnya|load\s+more|most\s+read|terpopuler)\b)/i;
 const READ_TIME_METADATA = /(?:\b(?:waktu|durasi)\s+baca\b|\breading\s+time\b|\b\d+\s*(?:menit|minutes?)\s+(?:baca|read)\b)/i;
 const EMBEDDED_CARD_TIMESTAMP = /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}[:.]\d{2}\b/;
@@ -115,8 +117,11 @@ function audienceReactionNoise(value = '', plan = {}) {
 
 function marketingActivationNoise(value = '', plan = {}) {
   const text = clean(value);
-  if (!text || !MARKETING_ACTIVATION.test(text)) return false;
-  return !MARKETING_TOPIC.test(requestedText(plan));
+  if (!text) return false;
+  const requested = requestedText(plan);
+  if (MARKETING_ACTIVATION.test(text)) return !MARKETING_TOPIC.test(requested);
+  if (SIDE_PROGRAM_ACTIVATION.test(text)) return !PROGRAM_TOPIC.test(requested) && !MARKETING_TOPIC.test(requested);
+  return false;
 }
 
 function editorialNoise(value = '', plan = {}) {
