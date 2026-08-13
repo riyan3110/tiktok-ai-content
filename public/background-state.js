@@ -32,15 +32,13 @@
   if (typeof document === 'undefined') return;
   const originalField = document.querySelector('#manual-topic-field');
   const originalInput = originalField?.querySelector('#manual-topic');
+  const manualRadio = document.querySelector('input[name="topic-source"][value="manual"]');
   const withoutRadio = document.querySelector('input[name="source-mode"][value="without"]');
   const withRadio = document.querySelector('input[name="source-mode"][value="with"]');
-  if (!originalField || !originalInput || !withoutRadio || !withRadio) return;
+  if (!originalField || !originalInput || !manualRadio || !withoutRadio || !withRadio) return;
 
   const withoutLabel = withoutRadio.closest('label')?.querySelector('span');
-  if (withoutLabel) withoutLabel.textContent = 'Generate dari Teks';
   const legend = document.querySelector('#source-mode-wrap legend');
-  if (legend) legend.textContent = 'Mode Konten';
-
   const textField = document.createElement('label');
   textField.id = 'text-generate-field';
   textField.className = 'hidden';
@@ -49,7 +47,10 @@
   const textInput = textField.querySelector('textarea');
 
   const sync = () => {
-    const textMode = withoutRadio.checked;
+    const manualMode = manualRadio.checked;
+    const textMode = manualMode && withoutRadio.checked;
+    if (withoutLabel) withoutLabel.textContent = manualMode ? 'Generate dari Teks' : 'Tanpa URL';
+    if (legend) legend.textContent = manualMode ? 'Mode Konten' : 'Sumber URL';
     originalField.classList.toggle('hidden', textMode);
     textField.classList.toggle('hidden', !textMode);
     if (textMode) {
@@ -61,6 +62,6 @@
     }
   };
 
-  document.querySelectorAll('input[name="source-mode"]').forEach(input => input.addEventListener('change', sync));
+  document.querySelectorAll('input[name="source-mode"],input[name="topic-source"]').forEach(input => input.addEventListener('change', sync));
   sync();
 })();
