@@ -194,6 +194,60 @@ test('relevant search snippets rescue a topic when every full article reader fai
   assert.equal(simple.buildSlidePackets(prepared, topic, 'Fakta singkat').length, 4);
 });
 
+test('subjectless event rescue finds current news when a typoed name and different verb wording block literal search', async () => {
+  discovery.clearCache();
+  const topic = 'Cloude menerapkan watermark';
+  const plan = {
+    rawTopic: topic,
+    canonicalTopic: topic,
+    subjects: ['Cloude'],
+    eventTerms: ['menerapkan watermark'],
+    actionTerms: ['menerapkan'],
+    contextTerms: ['watermark'],
+    searchQueries: [topic],
+    marketIntent: false,
+    relation: 'event',
+    planner: 'fallback'
+  };
+  const rescueQuery = 'menerapkan watermark latest';
+  const candidates = ['alpha','beta','gamma','delta'].map((publisher, index) => ({
+    title: `Anthropic announces watermark policy update ${index + 1}`,
+    url: `https://${publisher}.example/ai-watermark`,
+    description: `Claude will watermark generated content under the newly announced policy detail number ${index + 1}.`,
+    provider: 'test',
+    publishedAt: '2026-08-13T00:00:00.000Z'
+  }));
+  const queries = [];
+  const sourceFetcher = {
+    validateUrl: async raw => new URL(raw),
+    fetchSources: async () => { throw new Error('publisher blocks article extraction'); }
+  };
+  const fetchImpl = async () => new Response(JSON.stringify({ data: { content: 'too short' } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+
+  const result = await discovery.discover({
+    topic,
+    topicPlan: plan,
+    searchImpl: async query => {
+      queries.push(query);
+      return query === rescueQuery ? candidates : [];
+    },
+    sourceFetcher,
+    fetchImpl,
+    now: () => Date.parse('2026-08-13T00:00:00.000Z')
+  });
+
+  assert.ok(discovery.subjectlessEventQueries(plan).includes(rescueQuery));
+  assert.ok(queries.includes(rescueQuery));
+  assert.equal(result.evidenceMode, 'search-snippet-fallback');
+  assert.equal(result.sources.length, 4);
+  assert.ok(result.sources.every(source => /Claude will watermark/.test(source.text)));
+  const prepared = routing.prepareSources(topic, result.sources, plan);
+  assert.equal(simple.buildSlidePackets(prepared, topic, 'Fakta singkat').length, 4);
+});
+
 test('expanded discovery rejects misleading fetched pages and selects different publishers', async () => {
   discovery.clearCache();
   const candidates = [

@@ -151,6 +151,35 @@ test('fallback scope tolerates one obvious entity typo but does not collapse it 
   assert.equal(scope.conservativeNamedSubjectVariant('Claude 4', correctedSource.title), false);
 });
 
+test('event scope accepts equivalent headline wording when subject and distinguishing context anchor the lead', () => {
+  const topic = 'Cloude menerapkan watermark';
+  const plan = {
+    subjects: ['Cloude'],
+    eventTerms: ['menerapkan watermark'],
+    actionTerms: ['menerapkan'],
+    contextTerms: ['watermark'],
+    marketIntent: false,
+    relation: 'event',
+    planner: 'fallback'
+  };
+  const source = {
+    title: 'Anthropic says its AI models will watermark generated text',
+    text: 'The new policy means Claude will watermark generated text worldwide. The watermark is machine-readable.'
+  };
+  const unrelated = {
+    title: 'A cloud platform will watermark uploaded images',
+    text: 'The cloud service adds a visible watermark to photos.'
+  };
+
+  assert.equal(scope.actionHits(plan, source.text).length, 0, 'wording does not contain the literal Indonesian action');
+  assert.equal(scope.contextTermUsedAsEnglishVerb('watermark', source.text), true);
+  assert.equal(scope.eventLockSatisfied(plan, source.text), true);
+  assert.equal(scope.eventContextAnchored(plan, `${source.title} ${source.text}`), true);
+  assert.equal(scope.sourceInScope(topic, source, plan), true);
+  assert.match(scope.scopeSource(topic, source, plan).text, /Claude will watermark/);
+  assert.equal(scope.sourceInScope(topic, unrelated, plan), false);
+});
+
 test('expanded discovery actually searches the corrected entity query for a typoed free-form topic', async () => {
   expanded.clearCache();
   const topic = 'Cloude menerapkan watermark';
