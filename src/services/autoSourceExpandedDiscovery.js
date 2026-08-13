@@ -126,6 +126,28 @@ function englishAnchorQuery(topic) {
   }).join(' ').trim();
 }
 
+function subjectlessEventQueries(plan = null) {
+  if (!dynamicScope.eventLockRequired(plan || {})) return [];
+  const actions = [...new Set((plan.actionTerms || []).map(value => String(value || '').trim()).filter(Boolean))].slice(0, 3);
+  const contexts = [...new Set((plan.contextTerms || []).map(value => String(value || '').trim()).filter(Boolean))].slice(0, 3);
+  const subjects = plan.subjects || [];
+  const combinations = [];
+
+  for (const action of actions) {
+    for (const context of contexts) {
+      if (normalized(action) === normalized(context)) continue;
+      combinations.push(`${action} ${context} latest`);
+    }
+  }
+  for (const term of plan.eventTerms || []) {
+    const value = String(term || '').trim();
+    if (value.split(/\s+/).length < 2) continue;
+    if (subjects.some(subject => dynamicScope.phrasePresent(subject, value))) continue;
+    combinations.push(`${value} latest`);
+  }
+  return [...new Set(combinations.map(value => value.replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 3);
+}
+
 async function mapLimit(items, limit, worker) {
   const values = Array.from(items || []);
   const results = new Array(values.length);
@@ -214,6 +236,7 @@ function expandedQueries(topic, category = '', plan = null) {
   const english = englishAnchorQuery(cleanTopic);
   const base = baseDiscovery.searchQueries(cleanTopic, category);
   const planQueries = Array.isArray(plan?.searchQueries) ? plan.searchQueries : [];
+  const eventRescueQueries = subjectlessEventQueries(plan);
   const subjects = Array.isArray(plan?.subjects) ? plan.subjects.join(' ') : '';
   const contextQueries = [...new Set([
     ...(Array.isArray(plan?.contextTerms) ? plan.contextTerms : []),
@@ -224,6 +247,7 @@ function expandedQueries(topic, category = '', plan = null) {
   const values = [
     cleanTopic,
     ...planQueries.slice(0, 3),
+    ...eventRescueQueries,
     ...contextQueries,
     ...planQueries.slice(3),
     ...base,
@@ -300,12 +324,13 @@ function snippetEvidenceSource(candidate = {}, topic = '', plan = null, nowMs = 
   if (!fetchedContentRelevant(topic, source, plan)) return null;
   if (planHasScope(plan) && !dynamicScope.sourceInScope(topic, source, plan)) return null;
   if (planHasScope(plan)) {
-    const titleHasSubject = !(plan.subjects || []).length || dynamicScope.subjectHits(plan, title).length > 0;
+    const headlineLead = `${title} ${text}`;
+    const leadHasSubject = !(plan.subjects || []).length || dynamicScope.subjectHits(plan, headlineLead).length > 0;
     const hasDistinguishingTerms = (plan.contextTerms || []).length || (plan.eventTerms || []).length;
-    const titleHasContext = !hasDistinguishingTerms
-      || dynamicScope.contextHits(plan, title).length > 0
-      || dynamicScope.eventHits(plan, title).length > 0;
-    if (!titleHasSubject || !titleHasContext) return null;
+    const leadHasContext = !hasDistinguishingTerms
+      || dynamicScope.contextHits(plan, headlineLead).length > 0
+      || dynamicScope.eventHits(plan, headlineLead).length > 0;
+    if (!leadHasSubject || !leadHasContext) return null;
   }
 
   const factCount = evidenceFactCount([source]);
@@ -526,6 +551,7 @@ module.exports = {
   relevanceTopics,
   plannedRelevance,
   englishAnchorQuery,
+  subjectlessEventQueries,
   fetchedContentRelevant,
   snippetEvidenceText,
   snippetEvidenceSource,

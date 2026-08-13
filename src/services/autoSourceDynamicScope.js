@@ -78,6 +78,19 @@ function actionTermPresent(term = '', value = '') {
     .some(token => lightIndonesianStem(token) === wanted);
 }
 
+function contextTermUsedAsEnglishVerb(term = '', value = '') {
+  const words = termWords(term);
+  if (words.length !== 1 || !/^[a-z]{5,}$/i.test(words[0])) return false;
+  const base = words[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const forms = `(?:${base}|${base}s|${base}es|${base}ed|${base}ing)`;
+  const modal = new RegExp(`\\b(?:will|would|can|could|may|might|must|should|to|do|does|did)\\s+(?:[a-z]+\\s+){0,2}${forms}\\b`, 'i');
+  return modal.test(clean(value));
+}
+
+function contextActionHits(plan = {}, value = '') {
+  return (plan.contextTerms || []).filter(term => contextTermUsedAsEnglishVerb(term, value));
+}
+
 function conservativeNamedSubjectVariant(subject = '', value = '') {
   const rawSubject = clean(subject);
   // Fuzzy matching is only a safety net when the AI topic planner falls back.
@@ -139,10 +152,20 @@ function requiredContextMatches(plan = {}) {
 
 function eventLockSatisfied(plan = {}, value = '') {
   if (!eventLockRequired(plan)) return eventHits(plan, value).length > 0;
-  if (!actionHits(plan, value).length) return false;
+  // Some event objects are naturally used as verbs in English. Accept that
+  // narrow grammatical form without treating every noun mention as the action.
+  if (!actionHits(plan, value).length && !contextActionHits(plan, value).length) return false;
   const required = requiredContextMatches(plan);
   if (!required) return true;
   return contextHits(plan, value).length >= required;
+}
+
+function eventContextAnchored(plan = {}, value = '') {
+  if (!eventLockRequired(plan)) return false;
+  const subjects = plan.subjects || [];
+  const subjectRequired = requiredSubjectMatches(plan);
+  if (subjects.length && subjectHits(plan, value).length < subjectRequired) return false;
+  return eventLockSatisfied(plan, value);
 }
 
 function sentences(text = '') {
@@ -154,6 +177,11 @@ function eventAlignedSource(plan = {}, source = {}) {
   const title = clean(source?.title || '');
   if (eventLockSatisfied(plan, title)) return true;
   const rows = sentences(source?.text || '');
+  // Headlines and their dek often express the same event with a different verb.
+  // Subject + required distinguishing context in the headline/lead remains a strict story lock;
+  // it does not admit another article merely because the brand is mentioned.
+  const headlineLead = `${title} ${rows.slice(0, 2).join(' ')}`.trim();
+  if (eventContextAnchored(plan, headlineLead)) return true;
   for (let index = 0; index < rows.length; index += 1) {
     if (eventLockSatisfied(plan, rows[index])) return true;
     const pair = `${rows[index]} ${rows[index + 1] || ''}`.trim();
@@ -279,12 +307,15 @@ function scopeEventSource(topic = '', source = {}, plan = {}) {
   const rows = sentences(source?.text || '');
   const keepIndexes = new Set();
   const titleLocked = eventLockSatisfied(plan, source?.title || '');
+  const leadLocked = eventContextAnchored(plan, `${source?.title || ''} ${rows.slice(0, 2).join(' ')}`);
 
   if (titleLocked) {
     // The opening core is usually the dek/lead of the requested story. Keep it,
     // but do not let later paragraphs survive merely because they repeat the
     // company/product name; later rows still need event context.
     for (let index = 0; index < Math.min(4, rows.length); index += 1) keepIndexes.add(index);
+  } else if (leadLocked) {
+    for (let index = 0; index < Math.min(2, rows.length); index += 1) keepIndexes.add(index);
   }
 
   rows.forEach((sentence, index) => {
@@ -369,6 +400,8 @@ module.exports = {
   subjectPresent,
   termPresent,
   actionTermPresent,
+  contextTermUsedAsEnglishVerb,
+  contextActionHits,
   subjectHits,
   eventHits,
   actionHits,
@@ -376,6 +409,7 @@ module.exports = {
   eventLockRequired,
   requiredContextMatches,
   eventLockSatisfied,
+  eventContextAnchored,
   eventAlignedSource,
   requiredSubjectMatches,
   sourceInScope,
