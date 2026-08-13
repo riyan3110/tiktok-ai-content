@@ -73,6 +73,34 @@ test('prepareSources keeps search snippets out when full articles already provid
   assert.ok(prepared.every(item => item.discovery?.evidenceMode !== 'search-snippet'));
 });
 
+test('pruneNearDuplicateFacts removes repeated launch wording before simple writer sees sources', () => {
+  const first = source(
+    'Muse Glimmer launch',
+    [
+      'Meta launched Muse Glimmer for developers on Monday.',
+      'Muse Glimmer is an open-weight AI model.',
+      'The model can run on one graphics card.'
+    ].join(' '),
+    'https://one.example/article'
+  );
+  const second = source(
+    'Muse Glimmer release',
+    [
+      'Meta released Muse Glimmer for developers on Monday.',
+      'The model is designed for smaller agentic tasks on personal devices.'
+    ].join(' '),
+    'https://two.example/article'
+  );
+  const plan = { rawTopic: 'Muse Glimmer', canonicalTopic: 'Muse Glimmer', subjects: [], eventTerms: [], contextTerms: [] };
+  const pruned = routing.pruneNearDuplicateFacts('Muse Glimmer', [first, second], plan);
+  const combined = pruned.map(item => item.text).join(' ');
+
+  assert.match(combined, /open-weight/i);
+  assert.match(combined, /graphics card/i);
+  assert.match(combined, /personal devices/i);
+  assert.ok(!(combined.includes('launched Muse Glimmer') && combined.includes('released Muse Glimmer')));
+});
+
 test('ensureDistinctEvidence searches again before writing when initial evidence would repeat slides', async () => {
   let expandedCalls = 0;
   const initial = {
