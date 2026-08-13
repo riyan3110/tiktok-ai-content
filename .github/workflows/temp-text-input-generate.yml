@@ -20,7 +20,7 @@ jobs:
         run: node --test test/text-input-composer.test.js
       - name: Manual text route and URL isolation
         run: node --test test/auto-source-patch.test.js
-      - name: Existing Auto Source helper regressions
-        run: node --test test/auto-source-evidence-first-regression.test.js
-      - name: Full test suite
-        run: npm test
+      - name: All Auto Source tests
+        run: node --test test/auto-source-*.test.js
+      - name: App API tests
+        run: node --test test/app.test.js
