@@ -156,8 +156,8 @@ function validateResult(result, sourceText, requestedSlideCount = targetSlideCou
     const last = slides.at(-1);
     const firstWords = words(first.body).length;
     if (first.points.length) errors.push('slide 1 harus tanpa bullet');
-    if (firstWords < 20 || firstWords > 24) {
-      errors.push(`slide 1 harus padat tetapi tetap muat, target 20–24 kata; sekarang ${firstWords} kata`);
+    if (firstWords < 16 || firstWords > 18) {
+      errors.push(`slide 1 harus padat tetapi tetap muat, target 16–18 kata; sekarang ${firstWords} kata`);
     }
 
     for (const index of [1, 2]) {
@@ -167,8 +167,8 @@ function validateResult(result, sourceText, requestedSlideCount = targetSlideCou
         errors.push(`slide ${index + 1} harus memiliki 2–3 bullet`);
       }
       const bodyWords = words(slide.body).length;
-      if (bodyWords < 8 || bodyWords > 18) {
-        errors.push(`slide ${index + 1}: body target 8–18 kata`);
+      if (bodyWords < 8 || bodyWords > 14) {
+        errors.push(`slide ${index + 1}: body target 8–14 kata`);
       }
       slide.points.forEach((point, pointIndex) => {
         const count = words(point).length;
@@ -182,15 +182,15 @@ function validateResult(result, sourceText, requestedSlideCount = targetSlideCou
       const fourth = slides[3];
       if (fourth.points.length) errors.push('slide 4 pada carousel 5 slide harus tanpa bullet');
       const count = words(fourth.body).length;
-      if (count < 12 || count > 20) {
-        errors.push(`slide 4: body target 12–20 kata; sekarang ${count} kata`);
+      if (count < 10 || count > 16) {
+        errors.push(`slide 4: body target 10–16 kata; sekarang ${count} kata`);
       }
     }
 
     if (last.points.length) errors.push('slide terakhir harus tanpa bullet');
     const lastWords = words(last.body).length;
-    if (lastWords < 16 || lastWords > 24) {
-      errors.push(`slide terakhir harus berupa penutup yang cukup isi, target 16–24 kata; sekarang ${lastWords} kata`);
+    if (lastWords < 14 || lastWords > 18) {
+      errors.push(`slide terakhir harus berupa penutup yang cukup isi, target 14–18 kata; sekarang ${lastWords} kata`);
     }
   }
 
@@ -202,10 +202,10 @@ function validateResult(result, sourceText, requestedSlideCount = targetSlideCou
 
 function promptFor(text, requestedSlideCount) {
   const optionalContext = requestedSlideCount === 5
-    ? '- Slide 4 = KONTEKS / DETAIL TAMBAHAN. Body 12–20 kata dan points wajib [].\n'
+    ? '- Slide 4 = KONTEKS / DETAIL TAMBAHAN. Body 10–16 kata dan points wajib [].\n'
     : '';
 
-  return `MODE: GENERATE DARI TEKS — TRANSFORM ONLY.\n\nTEKS INPUT PENGGUNA:\n<<<TEXT_INPUT>>>\n${text}\n<<<END_TEXT_INPUT>>>\n\nTUGAS:\nSusun teks input menjadi carousel AI Ads Lab berbahasa Indonesia yang rapi. Anda BUKAN peneliti dan BUKAN mesin pencari. Jangan browsing, jangan memakai pengetahuan internal, dan jangan menambahkan fakta dari luar teks input. Anda hanya boleh meringkas, memparafrasekan, mengurutkan, dan memperjelas informasi yang memang tertulis pada TEXT_INPUT.\n\nSTRUKTUR WAJIB:\n- Total HARUS tepat ${requestedSlideCount} slide. Jangan membuat slide tambahan.\n- Slide 1 = HOOK. Judul kuat tetapi tidak clickbait berlebihan. Body 20–24 kata, tetap cukup padat dan memberi konteks. points wajib [].\n- Slide 2 = FAKTA UTAMA. Body 8–18 kata + 2–3 bullet. Setiap bullet 3–7 kata dan membawa informasi berbeda.\n- Slide 3 = DETAIL / HAL PENTING. Body 8–18 kata + 2–3 bullet. Setiap bullet 3–7 kata. Jangan mengulang slide 2.\n${optionalContext}- Slide terakhir = PENUTUP / KESIMPULAN. Body 16–24 kata. points wajib []. Jangan sekadar mengulang hook.\n\nATURAN KERAS:\n- Tidak boleh menambah fakta, angka, tanggal, nama, lokasi, fitur, manfaat, sebab-akibat, opini, prediksi, atau status peluncuran yang tidak ada di teks input.\n- Nama brand, produk, model, angka, persentase, tanggal, dan tingkat kepastian harus dipertahankan maknanya.\n- Judul maksimal 10 kata.\n- Judul adalah label/angle slide, bukan salinan body. Body harus menambahkan konteks baru dan tidak mengulang ide judul.\n- Bullet tidak boleh mengulang body atau bullet lain pada slide yang sama.\n- Semua judul antar-slide harus berbeda.\n- Jangan mengulang satu fakta dengan susunan kata berbeda pada slide 2 dan 3. Penutup boleh merangkum, tetapi jangan menyalin kalimat sebelumnya.\n- Bullet jangan diawali simbol • karena renderer akan menambah tanda bullet sendiri.\n- Gunakan Bahasa Indonesia natural. Istilah resmi/brand boleh dipertahankan.\n- Caption 45–90 kata, hanya merangkum isi carousel dari teks input dan tidak menambah klaim baru.\n- Hashtag 3–5 item dan hanya berdasarkan objek/topik yang memang ada di teks input.\n\nKembalikan HANYA JSON dengan bentuk:\n{\"topic\":\"judul/topik singkat\",\"caption\":\"...\",\"hashtags\":[\"#...\"],\"slides\":[{\"section\":\"HOOK\",\"title\":\"...\",\"body\":\"...\",\"points\":[]},{\"section\":\"FAKTA UTAMA\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]},{\"section\":\"DETAIL\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]}${requestedSlideCount === 5 ? ',{\"section\":\"KONTEKS\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}' : ''},{\"section\":\"PENUTUP\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}]} `;
+  return `MODE: GENERATE DARI TEKS — TRANSFORM ONLY.\n\nTEKS INPUT PENGGUNA:\n<<<TEXT_INPUT>>>\n${text}\n<<<END_TEXT_INPUT>>>\n\nTUGAS:\nSusun teks input menjadi carousel AI Ads Lab berbahasa Indonesia yang rapi. Anda BUKAN peneliti dan BUKAN mesin pencari. Jangan browsing, jangan memakai pengetahuan internal, dan jangan menambahkan fakta dari luar teks input. Anda hanya boleh meringkas, memparafrasekan, mengurutkan, dan memperjelas informasi yang memang tertulis pada TEXT_INPUT.\n\nSTRUKTUR WAJIB:\n- Total HARUS tepat ${requestedSlideCount} slide. Jangan membuat slide tambahan.\n- Slide 1 = HOOK. Judul kuat tetapi tidak clickbait berlebihan. Body 16–18 kata, tetap cukup padat dan memberi konteks. points wajib [].\n- Slide 2 = FAKTA UTAMA. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata dan membawa informasi berbeda.\n- Slide 3 = DETAIL / HAL PENTING. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata. Jangan mengulang slide 2.\n${optionalContext}- Slide terakhir = PENUTUP / KESIMPULAN. Body 14–18 kata. points wajib []. Jangan sekadar mengulang hook.\n\nATURAN KERAS:\n- Tidak boleh menambah fakta, angka, tanggal, nama, lokasi, fitur, manfaat, sebab-akibat, opini, prediksi, atau status peluncuran yang tidak ada di teks input.\n- Nama brand, produk, model, angka, persentase, tanggal, dan tingkat kepastian harus dipertahankan maknanya.\n- Judul maksimal 10 kata.\n- Judul adalah label/angle slide, bukan salinan body. Body harus menambahkan konteks baru dan tidak mengulang ide judul.\n- Bullet tidak boleh mengulang body atau bullet lain pada slide yang sama.\n- Semua judul antar-slide harus berbeda.\n- Jangan mengulang satu fakta dengan susunan kata berbeda pada slide 2 dan 3. Penutup boleh merangkum, tetapi jangan menyalin kalimat sebelumnya.\n- Bullet jangan diawali simbol • karena renderer akan menambah tanda bullet sendiri.\n- Gunakan Bahasa Indonesia natural. Istilah resmi/brand boleh dipertahankan.\n- Caption 45–90 kata, hanya merangkum isi carousel dari teks input dan tidak menambah klaim baru.\n- Hashtag 3–5 item dan hanya berdasarkan objek/topik yang memang ada di teks input.\n\nKembalikan HANYA JSON dengan bentuk:\n{\"topic\":\"judul/topik singkat\",\"caption\":\"...\",\"hashtags\":[\"#...\"],\"slides\":[{\"section\":\"HOOK\",\"title\":\"...\",\"body\":\"...\",\"points\":[]},{\"section\":\"FAKTA UTAMA\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]},{\"section\":\"DETAIL\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]}${requestedSlideCount === 5 ? ',{\"section\":\"KONTEKS\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}' : ''},{\"section\":\"PENUTUP\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}]} `;
 }
 
 function buildContent(parsed, slides) {
@@ -267,7 +267,7 @@ async function compose({ text, client } = {}) {
         { role: 'assistant', content: JSON.stringify(parsed) },
         {
           role: 'user',
-          content: `Perbaiki JSON tadi TANPA menambah informasi dari luar TEXT_INPUT. Masalah: ${checked.errors.join('; ')}. Total harus tepat ${requestedSlideCount} slide. Pastikan slide 1 body 20–24 kata tanpa bullet; slide 2–3 body 8–18 kata dengan 2–3 bullet berisi 3–7 kata; ${requestedSlideCount === 5 ? 'slide 4 body 12–20 kata tanpa bullet; ' : ''}slide terakhir body 16–24 kata tanpa bullet. Judul, body, dan bullet pada slide yang sama harus membawa informasi berbeda. Jangan menyalin satu fakta yang sama ke slide 2 dan 3. Pertahankan fakta, nama, angka, dan tingkat kepastian dari teks input. Kembalikan JSON lengkap saja.`
+          content: `Perbaiki JSON tadi TANPA menambah informasi dari luar TEXT_INPUT. Masalah: ${checked.errors.join('; ')}. Total harus tepat ${requestedSlideCount} slide. Pastikan slide 1 body 16–18 kata tanpa bullet; slide 2–3 body 8–14 kata dengan 2–3 bullet berisi 3–7 kata; ${requestedSlideCount === 5 ? 'slide 4 body 10–16 kata tanpa bullet; ' : ''}slide terakhir body 14–18 kata tanpa bullet. Judul, body, dan bullet pada slide yang sama harus membawa informasi berbeda. Jangan menyalin satu fakta yang sama ke slide 2 dan 3. Pertahankan fakta, nama, angka, dan tingkat kepastian dari teks input. Kembalikan JSON lengkap saja.`
         }
       ],
       response_format: { type: 'json_object' }
