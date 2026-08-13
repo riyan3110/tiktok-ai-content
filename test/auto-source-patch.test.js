@@ -1,11 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-process.env.AI_PROVIDER ||= 'openai';
-process.env.AI_API_KEY ||= 'test-key';
-process.env.AI_BASE_URL ||= 'https://example.test/v1';
-process.env.AI_MODEL ||= 'test-model';
-
 const generation = require('../src/services/generation');
 const autoSourcePatch = require('../src/services/autoSourcePatch');
 const { autoSourceRequested, pakaiUrlRequested } = autoSourcePatch;
@@ -39,7 +34,7 @@ function clearAutoSourceCaches() {
   }
 }
 
-test('manual Tanpa URL activates auto source even when legacy UI sends useSources=false', () => {
+test('manual Tanpa URL is now Generate dari Teks when useSources=false', () => {
   assert.equal(autoSourceRequested({ mode: 'manual', useSources: false, sourceUrls: [] }), true);
 });
 
@@ -55,17 +50,17 @@ test('manual Pakai URL with an empty field is still handled by the existing URL 
   assert.equal(autoSourceRequested(args), false);
 });
 
-test('supplied URL never enters Auto Source even if a caller forgets useSources=true', () => {
+test('supplied URL never enters text mode even if a caller forgets useSources=true', () => {
   const args = { mode: 'manual', useSources: false, sourceUrls: ['https://example.test/article'] };
   assert.equal(pakaiUrlRequested(args), true);
   assert.equal(autoSourceRequested(args), false);
 });
 
-test('automatic AI topic mode without URLs is not hijacked by manual auto source', () => {
+test('automatic AI topic mode without URLs is not hijacked by manual text mode', () => {
   assert.equal(autoSourceRequested({ mode: 'ai', useSources: false, sourceUrls: [] }), false);
 });
 
-test('scoped Auto Source loader does not install legacy strict/plan validator stack', () => {
+test('scoped Auto Source loader remains available without installing legacy strict/plan validator stack', () => {
   clearAutoSourceCaches();
   const dependencies = autoSourcePatch.loadAutoSourceDependencies();
   assert.ok(dependencies.autoSourceDiscovery);
@@ -80,9 +75,10 @@ test('scoped Auto Source loader does not install legacy strict/plan validator st
   assert.equal(require.cache[require.resolve('../src/services/autoSourceStrictFinalizer')], undefined);
 });
 
-test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async () => {
+test('Pakai URL is exact pass-through to the pre-text-mode generator', async () => {
   autoSourcePatch.resetForTests();
   clearAutoSourceCaches();
+  try { delete require.cache[require.resolve('../src/services/textInputComposer')]; } catch {}
   const realGenerateAndSave = generation.generateAndSave;
   const args = {
     mode: 'manual',
@@ -107,6 +103,7 @@ test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async (
     assert.equal(result, 155);
     assert.equal(calls, 1);
     assert.strictEqual(received, args, 'Pakai URL args must be forwarded without cloning or rewriting');
+    assert.equal(require.cache[require.resolve('../src/services/textInputComposer')], undefined);
     for (const modulePath of AUTO_SOURCE_MODULES) {
       assert.equal(require.cache[require.resolve(modulePath)], undefined, `${modulePath} must stay unloaded for Pakai URL`);
     }
@@ -116,29 +113,12 @@ test('Pakai URL is exact pass-through to the pre-Auto-Source generator', async (
   }
 });
 
-test('production manual Tanpa URL enables topic interpretation before discovery', async () => {
+test('production manual no-URL uses pasted text without source discovery or trend injection', async () => {
   autoSourcePatch.resetForTests();
   clearAutoSourceCaches();
   const realGenerateAndSave = generation.generateAndSave;
-  const scopedDiscovery = require('../src/services/autoSourceScopedDiscovery');
-  const realDiscover = scopedDiscovery.discover;
-  let receivedDiscovery = null;
   let receivedGeneration = null;
 
-  scopedDiscovery.discover = async options => {
-    receivedDiscovery = options;
-    return {
-      topic: options.topic,
-      queries: [options.topic],
-      providers: ['test'],
-      sources: [{
-        title: 'Topik terbaru yang sesuai',
-        text: 'Sumber memuat fakta yang sesuai topik dan cukup panjang untuk proses penulisan carousel.',
-        url: 'https://example.test/relevant',
-        finalUrl: 'https://example.test/relevant'
-      }]
-    };
-  };
   generation.generateAndSave = async options => {
     receivedGeneration = options;
     return 201;
@@ -150,17 +130,20 @@ test('production manual Tanpa URL enables topic interpretation before discovery'
       mode: 'manual',
       useSources: false,
       sourceUrls: [],
-      requestedTopic: 'Topik berita bebas terbaru'
+      requestedTopic: 'Ringkasan berita yang cukup panjang untuk disusun ulang menjadi carousel tanpa pencarian sumber baru dan tanpa menambahkan fakta dari luar teks pengguna.'
     });
 
     assert.equal(result, 201);
-    assert.equal(receivedDiscovery.interpretTopic, true);
-    assert.equal(receivedDiscovery.topic, 'Topik berita bebas terbaru');
-    assert.equal(receivedGeneration.useSources, true);
+    assert.equal(receivedGeneration.useSources, false);
+    assert.deepEqual(receivedGeneration.sourceUrls, []);
+    assert.equal(receivedGeneration.useTrendReference, false);
+    assert.equal(typeof receivedGeneration.content.generateContent, 'function');
+    for (const modulePath of AUTO_SOURCE_MODULES) {
+      assert.equal(require.cache[require.resolve(modulePath)], undefined, `${modulePath} must stay unloaded for Generate dari Teks`);
+    }
   } finally {
     autoSourcePatch.resetForTests();
     generation.generateAndSave = realGenerateAndSave;
-    scopedDiscovery.discover = realDiscover;
   }
 });
 
@@ -185,7 +168,7 @@ test('current-topic recovery keeps subject and context but relaxes only literal 
   assert.equal(plan.planner, 'ai');
 });
 
-test('recoverable no-URL discovery failure retries fresh runtime topic through expanded discovery', async () => {
+test('recoverable no-URL discovery helper still retries fresh runtime topic through expanded discovery', async () => {
   const calls = [];
   const primaryError = Object.assign(new Error('current source too strict'), {
     status: 422,
@@ -247,7 +230,7 @@ test('recoverable no-URL discovery failure retries fresh runtime topic through e
   assert.equal(result.sources[0].finalUrl, 'https://example.test/current');
 });
 
-test('successful normal no-URL discovery never invokes the recovery path', async () => {
+test('successful discovery helper never invokes the recovery path', async () => {
   let plannerCalls = 0;
   let recoveryCalls = 0;
   const expected = {

@@ -61,9 +61,6 @@ function makeCurrentTopicRecoveryPlan(topic = '', plan = {}, planner = null) {
     return words.length > 1 || !(planner?.verbLike?.(term));
   }), 8);
 
-  // Generic recovery for runtime topics: if current reporting describes the
-  // same subject/object with a different verb, do not reject that current article
-  // only because the event verb is phrased differently. Concrete context remains.
   const distinguishing = contexts.length ? contexts : eventDetails;
   const recoveryEvents = distinguishing.length ? distinguishing : uniq(plan.eventTerms || [], 8);
   const subjectText = subjects.join(' ');
@@ -129,7 +126,6 @@ function mergeSources(...groups) {
 }
 
 function loadAutoSourceDependencies() {
-  // Loaded only AFTER explicit Pakai URL has been excluded.
   return {
     defaultContent: require('./content'),
     defaultSourceFetcher: require('./sourceFetcher'),
@@ -138,6 +134,13 @@ function loadAutoSourceDependencies() {
     topicPlanner: require('./autoSourceDynamicTopicPlan'),
     autoSourceComposer: require('./autoSourceRoutingComposer'),
     autoSourceVisualFit: require('./autoSourceVisualFit')
+  };
+}
+
+function loadTextInputDependencies() {
+  return {
+    defaultContent: require('./content'),
+    textInputComposer: require('./textInputComposer')
   };
 }
 
@@ -208,9 +211,6 @@ async function ensureDistinctEvidence({
   const initialCount = autoSourceComposer.distinctFactCount(topic, initialPrepared);
   if (initialCount >= autoSourceComposer.REQUIRED_DISTINCT_FACTS) return discovery;
 
-  // Do not manufacture slide 4 by repeating slide 1/2. Search for additional
-  // current evidence before the writer starts, then combine only discovery-approved
-  // sources and let the routing composer prefer full articles over snippets.
   const expansionPlan = makeFactExpansionPlan(topic, interpreted, topicPlanner);
   let expanded;
   try {
@@ -226,7 +226,7 @@ async function ensureDistinctEvidence({
   }
 
   const combinedSources = mergeSources(initialSources, expanded?.sources || []);
-  const combinedDiscovery = {
+  return {
     ...discovery,
     ...expanded,
     topic,
@@ -235,7 +235,6 @@ async function ensureDistinctEvidence({
     scopeMode: 'distinct-fact-recovery',
     recoveryFrom: discovery?.scopeMode || 'AUTO_SOURCE_DISTINCT_FACTS'
   };
-  return combinedDiscovery;
 }
 
 function contentWrapper(content) {
@@ -246,74 +245,30 @@ function contentWrapper(content) {
 function install() {
   if (installed) return generation.generateAndSave;
   originalGenerateAndSave = generation.generateAndSave;
-  generation.generateAndSave = async function generateAndSaveWithAutoSource(args = {}) {
-    // HARD ISOLATION LOCK: Pakai URL stays exact pass-through before Auto Source loads.
+  generation.generateAndSave = async function generateAndSaveWithTextInput(args = {}) {
+    // HARD ISOLATION LOCK: explicit Pakai URL is forwarded as the exact same
+    // object to the pre-patch generator. No text-mode dependency is loaded.
     if (pakaiUrlRequested(args)) return originalGenerateAndSave(args);
     if (!autoSourceRequested(args)) return originalGenerateAndSave(args);
 
-    const topic = String(args.requestedTopic || '').trim().replace(/\s+/g, ' ');
-    if (!topic) return originalGenerateAndSave(args);
+    const inputText = String(args.requestedTopic || '').trim();
+    if (!inputText) return originalGenerateAndSave(args);
 
-    const {
-      defaultContent,
-      defaultSourceFetcher,
-      autoSourceDiscovery,
-      expandedDiscovery,
-      topicPlanner,
-      autoSourceComposer,
-      autoSourceVisualFit
-    } = loadAutoSourceDependencies();
-
-    const sourceFetcher = args.sourceFetcher || defaultSourceFetcher;
-    const category = args.category === 'Custom' ? args.customCategory : args.category;
-    let discovery = await discoverCurrentSources({
-      topic,
-      category,
-      sourceFetcher,
-      autoSourceDiscovery,
-      expandedDiscovery,
-      topicPlanner,
-      topicPlannerClient: args.topicPlannerClient
-    });
-
-    discovery = await ensureDistinctEvidence({
-      topic,
-      category,
-      discovery,
-      sourceFetcher,
-      expandedDiscovery,
-      topicPlanner,
-      topicPlannerClient: args.topicPlannerClient,
-      autoSourceComposer
-    });
-
-    const sources = discovery.sources;
+    const { defaultContent, textInputComposer } = loadTextInputDependencies();
     const wrappedContent = contentWrapper(args.content || defaultContent);
-    const currentUrls = () => sources.map(source => source.finalUrl || source.url).filter(Boolean);
-    const autoFetcher = {
-      validateSourceUrls: () => currentUrls(),
-      fetchSources: async () => sources,
-      buildSourceContext: sourceFetcher.buildSourceContext || defaultSourceFetcher.buildSourceContext
-    };
+    wrappedContent.generateContent = async () => textInputComposer.compose({
+      text: inputText,
+      client: args.textInputClient
+    });
 
-    const autoRoleGuard = {
-      repairManualSourceRoles: async ({ options, sources: activeSources }) => {
-        const generated = await autoSourceComposer.compose({
-          options,
-          sources: activeSources,
-          discovery: { ...discovery, sources: activeSources }
-        });
-        return autoSourceVisualFit.fitAutoSourceContent(generated);
-      }
-    };
-
+    // Manual Tanpa URL is now Generate dari Teks. It never performs discovery,
+    // never fetches a source, and never imports facts outside the pasted text.
     return originalGenerateAndSave({
       ...args,
       content: wrappedContent,
-      sourceFetcher: autoFetcher,
-      manualSourceRoleGuard: autoRoleGuard,
-      useSources: true,
-      sourceUrls: currentUrls()
+      useSources: false,
+      sourceUrls: [],
+      useTrendReference: false
     });
   };
   installed = true;
@@ -343,5 +298,6 @@ module.exports = {
   discoverCurrentSources,
   ensureDistinctEvidence,
   contentWrapper,
-  loadAutoSourceDependencies
+  loadAutoSourceDependencies,
+  loadTextInputDependencies
 };
