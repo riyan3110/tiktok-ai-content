@@ -12,8 +12,17 @@ const indonesianOutput = require('./autoSourceIndonesianOutput');
 // Scope is used to rank/trim facts, never to turn a readable relevant article
 // into an empty generation merely because wording differs from the user query.
 
+const VISIBLE_EDITORIAL_HYPE = /\b(?:(?:pembaruan|perubahan|transformasi)\s+(?:besar(?:-besaran)?|fundamental)|secara\s+fundamental\s+(?:mengubah|mengubah\s+pengalaman)|membayangkan\s+ulang\s+(?:cara|pengalaman)|visi\s+(?:navigasi\s+)?digital\s+baru|era\s+baru\s+(?:navigasi|digital)|reimag(?:e|ines|ined|ining)\s+(?:navigation|the\s+experience)|fundamentally\s+(?:changes?|reshapes?|reimagines?))\b/i;
+
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function visibleEditorialHype(value = '', plan = {}) {
+  const text = clean(value);
+  if (!text) return false;
+  const requested = storyFocus.requestedText(plan);
+  return VISIBLE_EDITORIAL_HYPE.test(text) && !VISIBLE_EDITORIAL_HYPE.test(requested);
 }
 
 function normalizeFactSections(result, format = '') {
@@ -47,7 +56,10 @@ function hasSpecificStorySubject(plan = {}) {
 }
 
 function factRelevant(topic = '', fact = '', plan = {}, previousKept = false, source = {}) {
-  if (!fact || storyFocus.editorialNoise(fact, plan) || storyFocus.marketSnapshot(fact, plan)) return false;
+  if (!fact
+    || storyFocus.editorialNoise(fact, plan)
+    || visibleEditorialHype(fact, plan)
+    || storyFocus.marketSnapshot(fact, plan)) return false;
   if (previousKept && continuationFact(fact)) return true;
 
   if (identity.hasSpecificIdentity(topic)) return identity.identityMatches(topic, fact);
@@ -97,6 +109,7 @@ function readableFacts(topic = '', source = {}, plan = {}) {
     // still need to match the topic themselves so market/roundup side-notes stay out.
     if (!keep && anchoredLead && index < 4 && continuationFact(fact)
       && !storyFocus.editorialNoise(fact, plan)
+      && !visibleEditorialHype(fact, plan)
       && !storyFocus.marketSnapshot(fact, plan)) keep = true;
     if (keep) out.push(fact);
     previousKept = keep;
@@ -133,6 +146,14 @@ function factCount(topic = '', source = {}, plan = {}) {
   return readableFacts(topic, source, plan).length;
 }
 
+function keepOnlyReadableFacts(topic = '', source = {}, plan = {}) {
+  const facts = readableFacts(topic, source, plan);
+  return {
+    ...source,
+    text: facts.map(fact => /[.!?]$/.test(fact) ? fact : `${fact}.`).join(' ')
+  };
+}
+
 function prepareSources(topic = '', sources = [], plan = {}) {
   const scoped = dynamicScope.scopeSources(topic, sources, plan);
   const focused = storyFocus.focusSources(topic, scoped, plan);
@@ -145,7 +166,7 @@ function prepareSources(topic = '', sources = [], plan = {}) {
     // Prefer tightly focused text when it still contains enough material.
     // Otherwise keep the relevant factual neighborhood from the same article.
     return currentCount >= 4 ? current : fallbackCount > currentCount ? fallback : current;
-  }).filter(source => clean(source?.text));
+  }).map(source => keepOnlyReadableFacts(topic, source, plan)).filter(source => clean(source?.text));
 
   const totalFacts = prepared.reduce((sum, source) => sum + factCount(topic, source, plan), 0);
   if (totalFacts >= 4) return prepared;
@@ -154,6 +175,7 @@ function prepareSources(topic = '', sources = [], plan = {}) {
   // Relevance gates above still reject other stories/market side-notes.
   return sources
     .map(source => eventNeighborhoodSource(topic, source, plan, 14))
+    .map(source => keepOnlyReadableFacts(topic, source, plan))
     .filter(source => clean(source?.text));
 }
 
@@ -200,5 +222,7 @@ module.exports = {
   readableFacts,
   eventNeighborhoodSource,
   factCount,
-  prepareSources
+  keepOnlyReadableFacts,
+  prepareSources,
+  visibleEditorialHype
 };
