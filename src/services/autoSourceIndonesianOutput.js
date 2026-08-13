@@ -27,7 +27,6 @@ const COMPLETED_ROLLOUT = /\b(?:(?:telah|sudah)\s+(?:resmi\s+)?(?:dirilis|dilunc
 const VISIBLE_HYPE = /\b(?:(?:lompatan|terobosan)\s+besar|game[- ]?changer|revolusioner|pembaruan\s+besar(?:-besaran)?|perubahan\s+fundamental|transformasi\s+besar|secara\s+fundamental\s+(?:mengubah|membentuk\s+ulang)|membayangkan\s+ulang\s+(?:cara|pengalaman)|visi\s+(?:navigasi\s+)?digital\s+baru|era\s+baru\s+(?:navigasi|digital)|mengubah\s+(?:sepenuhnya\s+|total\s+)?cara\s+(?:kita|orang|pengguna)|masa\s+depan\s+(?:sudah\s+)?(?:tiba|dimulai)|fundamentally\s+(?:changes?|reshapes?|reimagines?)|reimag(?:e|ines|ined|ining)\s+(?:navigation|the\s+experience))\b/i;
 const UNIVERSAL_VISIBLE_SCOPE = /\b(?:(?:semua|seluruh)\s+(?:pengguna|user|lokasi|tempat|wilayah|negara)|di\s+semua\s+(?:lokasi|tempat|wilayah|negara)|semua\s+tempat\s+ask\s+maps\s+tersedia|everywhere|worldwide|globally|all\s+(?:users|locations|places|regions|countries))\b/i;
 const UNIVERSAL_EVIDENCE_SCOPE = /\b(?:(?:semua|seluruh)\s+(?:pengguna|user|lokasi|tempat|wilayah|negara)|di\s+semua\s+(?:lokasi|tempat|wilayah|negara)|everywhere(?:\s+ask\s+maps\s+is\s+available)?|worldwide|globally|all\s+(?:users|locations|places|regions|countries)|widely\s+available\s+to\s+all)\b/i;
-const POST_REPAIR_REQUIRED_ANGLES = new Set(['timing', 'availability', 'scope', 'language', 'regulation', 'choice']);
 const POST_REPAIR_NO_EXTRA_ANGLES = new Set(['realtime', 'personalization', 'conversation', 'mechanism', 'durability', 'detection']);
 
 function clean(value) {
@@ -100,9 +99,7 @@ function criticalAngleMismatch(copy = '', packet = {}) {
   const topic = packet?.topic || '';
   const evidenceAngles = new Set(simple.factAngles(evidence, topic));
   const visibleAngles = new Set(simple.factAngles(visible, topic));
-  if ([...POST_REPAIR_REQUIRED_ANGLES].some(angle => evidenceAngles.has(angle) && !visibleAngles.has(angle))) return true;
-  if ([...POST_REPAIR_NO_EXTRA_ANGLES].some(angle => visibleAngles.has(angle) && !evidenceAngles.has(angle))) return true;
-  return false;
+  return [...POST_REPAIR_NO_EXTRA_ANGLES].some(angle => visibleAngles.has(angle) && !evidenceAngles.has(angle));
 }
 
 function bodyNeedsDensityRepair(body = '', packet = {}) {
@@ -141,9 +138,9 @@ function needsQualityRepair(result = {}, packets = []) {
 
 // After a translation/editor pass, do not reject good Indonesian copy merely
 // because the language-agnostic semantic matcher cannot align Indonesian with
-// English evidence. Instead, preserve only cross-language-safe factual shape:
-// timing/scope/availability must remain, and a slide may not splice in another
-// feature angle such as real-time transit into Gmail/Personal Intelligence.
+// English evidence. Keep deterministic checks that are safe cross-language:
+// rollout certainty, universal scope, and guarded feature angles that must not
+// be spliced into a slide whose mainEvidence does not contain them.
 function needsPostRepairRetry(result = {}, packets = []) {
   if (needsIndonesianRepair(result)) return true;
   const slides = Array.isArray(result?.slides) ? result.slides : [];
