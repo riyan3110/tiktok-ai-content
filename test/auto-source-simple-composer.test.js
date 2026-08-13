@@ -244,11 +244,14 @@ test('caption combines two distinct supported slide facts instead of copying one
 
 test('zero bullets are valid when body has a grounded factual claim', () => {
   const packets = simple.buildSlidePackets(sources, 'Aplikasi Gemini', 'Fakta singkat');
+  const usedTitles = [];
   const slides = packets.map((packet, index) => {
     const body = packet.evidence[0];
+    const title = simple.deriveSafeTitle({ body }, packet, usedTitles);
+    usedTitles.push(title);
     return {
       section: packet.section,
-      title: `Fakta Gemini ${index + 1}`,
+      title,
       body,
       points: [],
       claims: [{
