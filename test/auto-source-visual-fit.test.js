@@ -52,6 +52,36 @@ test('Auto Source visual fit keeps source/evidence metadata while syncing visibl
   assert.equal(slide.claims[1].evidence, evidence);
 });
 
+test('Auto Source visual fit drops FAQ and bullets that would become dangling fragments', () => {
+  const evidence = 'The detected watermark only indicates that supported Claude content contains a machine-readable signal.';
+  const content = {
+    sourceMode: 'auto',
+    topic: 'Cloude menerapkan watermark',
+    caption: 'Claude memakai watermark tak terlihat. Alat deteksi akan tersedia kemudian.',
+    slides: [{
+      title: 'Batas arti watermark',
+      body: 'Watermark hanya menjadi sinyal yang dapat dibaca mesin.',
+      points: [
+        'Tanda air yang terdeteksi hanya menunjukkan bahwa konten tersebut memiliki sinyal asal tertentu',
+        'FAQ: Apakah watermark Claude terlihat?',
+        'Metadata C2PA menandai file gambar'
+      ],
+      claims: [
+        { field: 'slide:0:body', text: 'Watermark hanya menjadi sinyal yang dapat dibaca mesin.', sourceId: 'source-1', evidence },
+        { field: 'slide:0:point:0', text: 'Tanda air yang terdeteksi hanya menunjukkan bahwa konten tersebut memiliki sinyal asal tertentu', sourceId: 'source-1', evidence },
+        { field: 'slide:0:point:1', text: 'FAQ: Apakah watermark Claude terlihat?', sourceId: 'source-1', evidence },
+        { field: 'slide:0:point:2', text: 'Metadata C2PA menandai file gambar', sourceId: 'source-1', evidence: 'Supported image files use C2PA provenance metadata.' }
+      ]
+    }]
+  };
+
+  const result = fit.fitAutoSourceContent(content);
+  assert.deepEqual(result.slides[0].points, ['Metadata C2PA menandai file gambar']);
+  const pointClaim = result.slides[0].claims.find(claim => claim.field === 'slide:0:point:0');
+  assert.equal(pointClaim?.text, 'Metadata C2PA menandai file gambar');
+  assert.equal(pointClaim?.evidence, 'Supported image files use C2PA provenance metadata.');
+});
+
 test('non-Auto-Source content is exact pass-through', () => {
   const content = { sourceMode: 'url', slides: [{ title: 'Tetap', body: 'Tidak boleh diubah', points: [] }] };
   assert.strictEqual(fit.fitAutoSourceContent(content), content);
