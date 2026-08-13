@@ -11,7 +11,7 @@ function sample() {
     caption: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Perubahan ini membantu proses identifikasi tanpa mengubah tampilan teks, sementara penerapannya dilakukan secara bertahap sesuai dukungan model yang tersedia.',
     hashtags: ['#AI', '#Teknologi', '#ModelAI'],
     slides: [
-      { section: 'HOOK', title: 'Hal Baru Mulai Disiapkan', body: 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Fitur ini membantu identifikasi tanpa mengubah tampilan teks pengguna.', points: [] },
+      { section: 'HOOK', title: 'Perubahan Baru Mulai Disiapkan untuk Model AI', body: '', points: [] },
       { section: 'FAKTA UTAMA', title: 'Fokus pada Dukungan Model', body: 'Penerapan mengikuti dukungan model yang tersedia secara bertahap.', points: ['Tampilan teks tetap sama', 'Identifikasi menjadi lebih terbantu'] },
       { section: 'DETAIL', title: 'Dampak bagi Pengguna', body: 'Pengguna tetap membaca teks dengan tampilan yang sama.', points: ['Perubahan tidak mengubah tampilan', 'Penerapan dilakukan secara bertahap'] },
       { section: 'PENUTUP', title: 'Garis Besarnya', body: 'Perubahan berfokus pada identifikasi dan tampilan teks, dengan penerapan yang tetap mengikuti dukungan model secara bertahap.', points: [] }
@@ -24,7 +24,9 @@ test('four slides pass composer and stay four in renderer', () => {
   const checked = composer.validateResult(value, source);
   assert.deepEqual(checked.errors, []);
   const content = { ...composer.buildContent(value, checked.slides), contentCategory: 'Edukasi teknologi', contentFormat: 'Listicle' };
-  assert.equal(images.buildSlideLayouts(content).length, 4);
+  const layouts = images.buildSlideLayouts(content);
+  assert.equal(layouts.length, 4);
+  assert.equal(layouts[0].isOnlyTitle, true);
 });
 
 test('caption is kept short enough to leave room for hashtags', () => {
@@ -69,10 +71,16 @@ test('seven slides are reduced to four while keeping hook and closing', () => {
   assert.equal(shaped.at(-1).section, 'PENUTUP');
 });
 
-test('short hook body is rejected', () => {
+test('hook is title-only and requires a dense title', () => {
   const value = sample();
-  value.slides[0].body = 'Perubahan baru segera hadir.';
-  assert.ok(composer.validateResult(value, source).errors.some(error => /slide 1 harus padat/i.test(error)));
+  value.slides[0].body = 'Body dari provider harus dibuang sebelum validasi dan render.';
+  value.slides[0].points = ['Bullet juga harus dibuang'];
+  const checked = composer.validateResult(value, source);
+  assert.equal(checked.slides[0].body, '');
+  assert.deepEqual(checked.slides[0].points, []);
+  assert.equal(checked.errors.some(error => /slide 1.*body|slide 1.*bullet/i.test(error)), false);
+  value.slides[0].title = 'Perubahan Baru';
+  assert.ok(composer.validateResult(value, source).errors.some(error => /judul hook harus padat 7–10 kata/i.test(error)));
 });
 
 test('same idea inside one slide is rejected', () => {
