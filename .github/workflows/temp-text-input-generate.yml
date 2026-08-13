@@ -14,5 +14,13 @@ jobs:
         with:
           node-version: '20'
       - run: npm install --no-audit --no-fund
-      - run: npm run check
-      - run: npm test
+      - name: Syntax check
+        run: npm run check
+      - name: Text input composer
+        run: node --test test/text-input-composer.test.js
+      - name: Manual text route and URL isolation
+        run: node --test test/auto-source-patch.test.js
+      - name: Existing Auto Source helper regressions
+        run: node --test test/auto-source-evidence-first-regression.test.js
+      - name: Full test suite
+        run: npm test
