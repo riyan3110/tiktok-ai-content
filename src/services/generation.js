@@ -128,7 +128,6 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   const trendReference = useTrendReference ? trendReferences.usable(db) : null;
   const manualTopic = String(requestedTopic || '').trim().replace(/\s+/g, ' ');
   if (mode === 'manual' && !manualTopic) throw Object.assign(new Error('Topik manual wajib diisi'), { status: 400 });
-  if (mode === 'manual' && isDuplicate(db, manualTopic)) throw Object.assign(new Error('Topik tersebut sudah pernah dibuat'), { status: 409 });
   const shouldUseSources = useSources === true && (mode === 'manual' || mode === 'ai');
   let sources = [];
   let sourceContext = '';
@@ -269,8 +268,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
     const failsHistoryDiversity = mode !== 'manual' && (similarityScore > 0.55 || sameToolCount >= 2);
     if (failsHistoryDiversity && attempt < MAX_GENERATION_ATTEMPTS) continue;
     if (failsHistoryDiversity) throw Object.assign(new Error('Konten terlalu mirip dengan 15 konten terakhir setelah 2 kali pembuatan ulang angle.'), { status: 422 });
-    if (isDuplicate(db, generated.topic)) {
-      if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
+    if (mode !== 'manual' && isDuplicate(db, generated.topic)) {
+      if (attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
       trends = trends.filter((topic) => normalizeTopic(topic) !== normalizeTopic(basis));
       continue;
     }
@@ -298,7 +297,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       if (renderedSlides.length && images.cleanupSlides) await images.cleanupSlides(renderedSlides);
       const isUniqueConflict = String(error.code || error.message).includes('UNIQUE');
       if (!isUniqueConflict) throw error;
-      if (mode === 'manual' || attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
+      if (mode === 'manual') throw Object.assign(new Error('Konten belum dapat disimpan. Coba buat ulang.'), { status: 500 });
+      if (attempt === MAX_GENERATION_ATTEMPTS) throw duplicateTopicError();
     }
   }
 }
