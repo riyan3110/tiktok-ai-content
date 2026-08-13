@@ -148,6 +148,85 @@ function subjectlessEventQueries(plan = null) {
   return [...new Set(combinations.map(value => value.replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 3);
 }
 
+function focusedLatestNewsQueries(plan = null) {
+  const subjects = [...new Set((plan?.subjects || [])
+    .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 2);
+  if (!subjects.length) return [];
+
+  // Search engines often ignore or mistranslate an Indonesian action verb, and
+  // Bing occasionally returns a successful but empty HTML page for that literal
+  // query. A compact subject + distinguishing-context news query is a generic
+  // recovery for any runtime topic. The spelling remains exactly as planned;
+  // the search provider may apply its own high-confidence correction.
+  const contexts = [...new Set([
+    ...(plan?.contextTerms || []),
+    ...(plan?.eventTerms || [])
+  ].map(value => String(value || '').trim()).filter(value => {
+    if (!value) return false;
+    return !subjects.some(subject => dynamicScope.phrasePresent(subject, value));
+  }))].slice(0, 2);
+
+  const subjectText = subjects.join(' ');
+  return [...new Set(contexts.map(context => `${subjectText} ${context} latest news`
+    .replace(/\s+/g, ' ').trim()))].slice(0, 2);
+}
+
+function observedSubjectCorrections(plan = null, candidates = []) {
+  const subjects = (plan?.subjects || []).map(value => String(value || '').trim()).filter(Boolean);
+  const uniqueCandidates = new Map();
+  for (const candidate of candidates || []) {
+    const url = baseDiscovery.canonicalUrl(candidate?.url);
+    if (url && !uniqueCandidates.has(url)) uniqueCandidates.set(url, candidate);
+  }
+
+  const corrections = new Map();
+  for (const subject of subjects) {
+    if (!/^[A-Z][A-Za-z]{4,}$/.test(subject)) continue;
+    const matches = new Map();
+    for (const [url, candidate] of uniqueCandidates) {
+      const words = `${candidate?.title || ''} ${candidate?.description || ''}`.match(/[A-Z][A-Za-z]{4,}/g) || [];
+      for (const word of words) {
+        if (normalized(word) === normalized(subject)
+          || !dynamicScope.conservativeNamedSubjectVariant(subject, word)) continue;
+        const key = normalized(word);
+        if (!matches.has(key)) matches.set(key, { value: word, urls: new Set() });
+        matches.get(key).urls.add(url);
+      }
+    }
+    const best = [...matches.values()].sort((a, b) => b.urls.size - a.urls.size)[0];
+    // One search result can be wrong. Two different result URLs independently
+    // using the same near-identical proper name is the minimum correction proof.
+    if (best?.urls?.size >= 2) corrections.set(subject, best.value);
+  }
+  return corrections;
+}
+
+function observedCorrectionQueries(topic = '', plan = null, candidates = []) {
+  const corrections = observedSubjectCorrections(plan, candidates);
+  if (!corrections.size) return [];
+
+  const correctedSubjects = (plan?.subjects || [])
+    .map(subject => corrections.get(subject) || String(subject || '').trim())
+    .filter(Boolean);
+  const contexts = [...new Set([
+    ...(plan?.contextTerms || []),
+    ...(plan?.eventTerms || [])
+  ].map(value => String(value || '').trim()).filter(value => value
+    && !(plan?.actionTerms || []).some(action => normalized(action) === normalized(value))
+    && !correctedSubjects.some(subject => dynamicScope.phrasePresent(subject, value))))];
+  let correctedTopic = String(topic || '').trim();
+  for (const [before, after] of corrections) {
+    const escaped = before.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    correctedTopic = correctedTopic.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), after);
+  }
+
+  const subjectText = correctedSubjects.join(' ');
+  return [...new Set([
+    `${subjectText} ${contexts[0] || ''} latest news`,
+    `${correctedTopic} latest news`
+  ].map(value => value.replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 2);
+}
+
 async function mapLimit(items, limit, worker) {
   const values = Array.from(items || []);
   const results = new Array(values.length);
@@ -237,6 +316,7 @@ function expandedQueries(topic, category = '', plan = null) {
   const base = baseDiscovery.searchQueries(cleanTopic, category);
   const planQueries = Array.isArray(plan?.searchQueries) ? plan.searchQueries : [];
   const eventRescueQueries = subjectlessEventQueries(plan);
+  const latestNewsQueries = focusedLatestNewsQueries(plan);
   const subjects = Array.isArray(plan?.subjects) ? plan.subjects.join(' ') : '';
   const contextQueries = [...new Set([
     ...(Array.isArray(plan?.contextTerms) ? plan.contextTerms : []),
@@ -248,6 +328,7 @@ function expandedQueries(topic, category = '', plan = null) {
     cleanTopic,
     ...planQueries.slice(0, 3),
     ...eventRescueQueries,
+    ...latestNewsQueries,
     ...contextQueries,
     ...planQueries.slice(3),
     ...base,
@@ -431,7 +512,7 @@ async function discover({
   if (cached && nowMs - cached.savedAt < CACHE_TTL_MS) return clone(cached.bundle);
 
   const queries = expandedQueries(cleanTopic, category, topicPlan);
-  const groups = await mapLimit(queries, QUERY_CONCURRENCY, async query => {
+  const searchQueries = async values => mapLimit(values, QUERY_CONCURRENCY, async query => {
     try {
       const rows = await searchImpl(query, { fetchImpl });
       return (rows || []).slice(0, 14).map(row => ({ ...row, query }));
@@ -440,6 +521,14 @@ async function discover({
       return [];
     }
   });
+  const groups = await searchQueries(queries);
+  const correctionQueries = observedCorrectionQueries(cleanTopic, topicPlan, groups.flat())
+    .filter(query => !queries.some(existing => normalized(existing) === normalized(query)));
+  if (correctionQueries.length) {
+    groups.push(...await searchQueries(correctionQueries));
+    queries.push(...correctionQueries);
+    console.warn(`[AutoSource] memakai koreksi nama yang dikonfirmasi hasil pencarian: ${correctionQueries.join(' | ')}`);
+  }
 
   const unique = new Map();
   groups.flat().forEach(candidate => {
@@ -552,6 +641,9 @@ module.exports = {
   plannedRelevance,
   englishAnchorQuery,
   subjectlessEventQueries,
+  focusedLatestNewsQueries,
+  observedSubjectCorrections,
+  observedCorrectionQueries,
   fetchedContentRelevant,
   snippetEvidenceText,
   snippetEvidenceSource,

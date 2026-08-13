@@ -248,6 +248,153 @@ test('subjectless event rescue finds current news when a typoed name and differe
   assert.equal(simple.buildSlidePackets(prepared, topic, 'Fakta singkat').length, 4);
 });
 
+test('focused latest-news query rescues the exact typoed production topic from real-shaped news snippets', async () => {
+  discovery.clearCache();
+  const topic = 'Cloude menerapkan watermark';
+  const plan = {
+    rawTopic: topic,
+    canonicalTopic: topic,
+    subjects: ['Cloude'],
+    eventTerms: ['menerapkan', 'watermark'],
+    actionTerms: ['menerapkan'],
+    contextTerms: ['watermark'],
+    searchQueries: [topic, `${topic} terbaru`, `${topic} latest`],
+    marketIntent: false,
+    relation: 'event',
+    planner: 'fallback'
+  };
+  const rescueQuery = 'Cloude watermark latest news';
+  const candidates = [
+    {
+      title: 'Anthropic Will Watermark Claude-Generated Text and Files Worldwide',
+      url: 'https://alpha.example/claude-watermark',
+      description: 'Anthropic plans to watermark Claude-generated text and supported files worldwide under new transparency rules.',
+      provider: 'bing-news-en',
+      publishedAt: '2026-08-13T00:00:00.000Z'
+    },
+    {
+      title: 'Claude will watermark generated text across its products',
+      url: 'https://beta.example/claude-watermark',
+      description: 'Claude will watermark generated text with an invisible signal. The mark can travel when users copy the text.',
+      provider: 'bing-news-en',
+      publishedAt: '2026-08-12T00:00:00.000Z'
+    },
+    {
+      title: 'New Claude models will watermark AI-generated output',
+      url: 'https://gamma.example/claude-watermark',
+      description: 'Supported Claude models will watermark AI-generated output at the model level. The policy applies to supported products worldwide.',
+      provider: 'bing-news-en',
+      publishedAt: '2026-08-11T00:00:00.000Z'
+    }
+  ];
+  const queries = [];
+  const sourceFetcher = {
+    validateUrl: async raw => new URL(raw),
+    fetchSources: async () => { throw new Error('publisher blocks article extraction'); }
+  };
+  const fetchImpl = async () => new Response(JSON.stringify({ data: { content: 'too short' } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+
+  const result = await discovery.discover({
+    topic,
+    topicPlan: plan,
+    searchImpl: async query => {
+      queries.push(query);
+      return query === rescueQuery ? candidates : [];
+    },
+    sourceFetcher,
+    fetchImpl,
+    now: () => Date.parse('2026-08-13T00:00:00.000Z')
+  });
+
+  assert.ok(discovery.focusedLatestNewsQueries(plan).includes(rescueQuery));
+  assert.ok(queries.includes(rescueQuery));
+  assert.equal(result.evidenceMode, 'search-snippet-fallback');
+  assert.ok(discovery.evidenceFactCount(result.sources) >= 4);
+  assert.ok(result.sources.every(source => /Claude/i.test(`${source.title} ${source.text}`)));
+  const prepared = routing.prepareSources(topic, result.sources, plan);
+  assert.equal(simple.buildSlidePackets(prepared, topic, 'Fakta singkat').length, 4);
+});
+
+test('repeated corrected entity spelling in search results triggers an evidence-based retry', async () => {
+  discovery.clearCache();
+  const topic = 'Cloude menerapkan watermark';
+  const plan = {
+    rawTopic: topic,
+    canonicalTopic: topic,
+    subjects: ['Cloude'],
+    eventTerms: ['menerapkan', 'watermark'],
+    actionTerms: ['menerapkan'],
+    contextTerms: ['watermark'],
+    searchQueries: [topic],
+    marketIntent: false,
+    relation: 'event',
+    planner: 'fallback'
+  };
+  const hintRows = [
+    {
+      title: 'Claude watermark policy draws attention',
+      url: 'https://hint-one.example/claude-watermark',
+      description: 'Readers are discussing the new Claude watermark policy and its possible effects.',
+      provider: 'bing-news-en'
+    },
+    {
+      title: 'What the Claude watermark policy could mean',
+      url: 'https://hint-two.example/claude-watermark',
+      description: 'A second publisher examines questions surrounding the Claude watermark policy.',
+      provider: 'bing-news-en'
+    }
+  ];
+  const evidenceRows = [
+    {
+      title: 'Claude will watermark generated text worldwide',
+      url: 'https://alpha.example/claude-watermark',
+      description: 'Claude will watermark generated text with an invisible signal. The signal follows copied text across supported products.',
+      provider: 'bing-news-en',
+      publishedAt: '2026-08-13T00:00:00.000Z'
+    },
+    {
+      title: 'Anthropic plans to watermark Claude output',
+      url: 'https://beta.example/claude-watermark',
+      description: 'Anthropic plans to watermark Claude output at the model level. Supported files also receive signed provenance metadata.',
+      provider: 'bing-news-en',
+      publishedAt: '2026-08-12T00:00:00.000Z'
+    }
+  ];
+  const calls = [];
+  const sourceFetcher = {
+    validateUrl: async raw => new URL(raw),
+    fetchSources: async () => { throw new Error('publisher blocks article extraction'); }
+  };
+  const fetchImpl = async () => new Response(JSON.stringify({ data: { content: 'too short' } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+
+  const result = await discovery.discover({
+    topic,
+    topicPlan: plan,
+    searchImpl: async query => {
+      calls.push(query);
+      if (query === topic) return hintRows;
+      if (query === 'Claude watermark latest news') return evidenceRows;
+      return [];
+    },
+    sourceFetcher,
+    fetchImpl,
+    now: () => Date.parse('2026-08-13T00:00:00.000Z')
+  });
+
+  assert.equal(discovery.observedSubjectCorrections(plan, hintRows).get('Cloude'), 'Claude');
+  assert.ok(discovery.observedCorrectionQueries(topic, plan, hintRows).includes('Claude watermark latest news'));
+  assert.ok(calls.includes('Claude watermark latest news'));
+  assert.ok(discovery.evidenceFactCount(result.sources) >= 4);
+  const prepared = routing.prepareSources(topic, result.sources, plan);
+  assert.equal(simple.buildSlidePackets(prepared, topic, 'Fakta singkat').length, 4);
+});
+
 test('expanded discovery rejects misleading fetched pages and selects different publishers', async () => {
   discovery.clearCache();
   const candidates = [
