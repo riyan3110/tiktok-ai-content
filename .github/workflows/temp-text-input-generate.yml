@@ -21,18 +21,8 @@ jobs:
       - name: Manual text route and URL isolation
         run: node --test test/auto-source-patch.test.js
       - name: Pakai URL regressions
-        run: node --test test/pakai-url-*.test.js
-      - name: Auto Source files individually
-        shell: bash
-        run: |
-          failed=0
-          for file in test/auto-source-*.test.js; do
-            echo "RUNNING=$file"
-            if ! node --test "$file"; then
-              echo "FAILED_TEST_FILE=$file"
-              failed=1
-            fi
-          done
-          exit "$failed"
+        run: node --test --test-concurrency=1 test/pakai-url-*.test.js
+      - name: Auto Source regressions
+        run: node --test --test-concurrency=1 test/auto-source-*.test.js
       - name: App API tests
         run: node --test test/app.test.js
