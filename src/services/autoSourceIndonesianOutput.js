@@ -156,11 +156,10 @@ function needsQualityRepair(result = {}, packets = []) {
   });
 }
 
-// After a translation/editor pass, do not reject good Indonesian copy merely
-// because the language-agnostic semantic matcher cannot align Indonesian with
-// English evidence. Keep deterministic checks that are safe cross-language:
-// rollout certainty, universal scope, explicit offline claims, and guarded
-// feature angles that must not be spliced into another fact.
+// After a translation/editor pass, keep factual correctness as the hard gate.
+// Density may trigger the first repair, but it must NOT trigger another AI pass
+// after a factually safe repair; padding a correct short sentence creates filler
+// and increases the chance of unsupported claims.
 function needsPostRepairRetry(result = {}, packets = []) {
   if (needsIndonesianRepair(result)) return true;
   const slides = Array.isArray(result?.slides) ? result.slides : [];
@@ -169,7 +168,6 @@ function needsPostRepairRetry(result = {}, packets = []) {
     const body = clean(slide?.body);
     const title = clean(slide?.title);
     if (!body) return true;
-    if (bodyNeedsDensityRepair(body, packet)) return true;
     if (visibleHype(title) || visibleHype(body)) return true;
     if (titleShapeNeedsRepair(title, packet)) return true;
     if (factualShapeNeedsRepair(body, packet)) return true;
@@ -278,8 +276,8 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
   let current = result;
 
   // Normally one pass is enough. The second pass is only a fail-safe when the
-  // provider leaves English, hype, thin copy, a rollout-status overstatement,
-  // a widened scope, or a feature spliced in from another fact.
+  // provider leaves English, hype, a rollout-status overstatement, widened
+  // scope, unsupported offline wording, or a feature spliced from another fact.
   for (let attempt = 0; attempt < 2 && needsVisibleRepair(current, packets); attempt += 1) {
     let translated;
     try {
@@ -289,9 +287,6 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
     }
     const candidate = applyVisibleRepair(current, translated);
     const finalized = simple.finalizeVisibleCopy(candidate, packets, sources);
-    // Unsupported numbers, broken claim metadata, empty copy, and other
-    // factual errors remain blocking. Cross-language semantic mismatch alone
-    // must not throw away a valid Indonesian repair and expose English evidence.
     const blocking = simple.unsafeBlockingErrors(finalized.errors, packets);
     if (blocking.length || needsPostRepairRetry(finalized.candidate, packets)) continue;
     current = syncVisibleTop({ ...current, slides: finalized.candidate.slides });
