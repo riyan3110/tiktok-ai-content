@@ -47,7 +47,17 @@ test('generate from text requires three to five hashtags', () => {
 test('ungrounded editorial modifiers are rejected', () => {
   const value = sample();
   value.slides[3].body = 'Perubahan membantu identifikasi secara efektif tanpa mengubah tampilan teks, sementara penerapan tetap mengikuti dukungan model yang tersedia.';
-  assert.ok(composer.validateResult(value, source).errors.some(error => /kata penjelas baru.*efektif/i.test(error)));
+  assert.ok(composer.validateResult(value, source).errors.some(error => /kata atau penegasan baru.*efektif/i.test(error)));
+});
+
+test('unsupported emphasis and attribution are rejected', () => {
+  const value = sample();
+  value.slides[3].title = 'Perubahan Menjadi Kunci Persaingan';
+  value.slides[3].body = 'Perusahaan AI menegaskan perubahan ini meningkatkan produktivitas pengguna dan menjadi kunci baru bagi persaingan model saat ini.';
+  const extra = composer.validateGroundedModifiers(value, source);
+  assert.ok(extra.includes('kunci'));
+  assert.ok(extra.includes('menegaskan'));
+  assert.ok(extra.includes('produktivitas'));
 });
 
 test('seven slides are reduced to four while keeping hook and closing', () => {
