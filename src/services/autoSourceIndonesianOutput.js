@@ -290,6 +290,7 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
     const blocking = simple.unsafeBlockingErrors(finalized.errors, packets);
     if (blocking.length || needsPostRepairRetry(finalized.candidate, packets)) continue;
     current = syncVisibleTop({ ...current, slides: finalized.candidate.slides });
+    break;
   }
 
   return current;
