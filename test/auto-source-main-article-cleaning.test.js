@@ -128,3 +128,49 @@ test('draft Ask Maps yang hype dan tercemar dibangun ulang dari evidence bersih'
   assert.doesNotMatch(result.slides.map(slide => `${slide.title} ${slide.body}`).join(' '), /lompatan besar/i);
   assert.doesNotMatch(result.caption, pollution);
 });
+
+test('Ask Maps memulai carousel dari peluncuran, bukan contoh tur atau kampanye sampingan', () => {
+  const source = {
+    title: 'Google hadirkan fitur Ask Maps bagi pengguna di Indonesia',
+    url: 'https://antara.test/ask-maps-current',
+    text: [
+      'Jakarta (ANTARA) - Google menghadirkan fitur Ask Maps bagi pengguna layanan Google Maps di Indonesia untuk memudahkan mobilitas harian dan perjalanan.',
+      'Fitur percakapan berbasis Gemini itu sekarang dapat diakses dalam Bahasa Indonesia dan Bahasa Inggris.',
+      'Dukungan berbagai bahasa lokal akan diluncurkan secara bertahap dalam beberapa minggu ke depan.',
+      'Ask Maps telah dirilis di 150 negara dan membantu pengguna mengeksplorasi tempat serta merancang perjalanan.',
+      'Pengguna dapat merancang rute tur motor tiga jam atau menemukan kafe tenang untuk mengobrol.',
+      'Ask Maps didukung Personal Intelligence melalui Gmail untuk memahami preferensi dari reservasi hotel atau tiket penerbangan.',
+      'Menyambut perayaan Hari Kemerdekaan RI, Google mengampanyekan Jelajah Nusantara dengan bantuan Ask Maps.'
+    ].join(' ')
+  };
+
+  const prepared = routing.prepareSources(topic, [source], plan);
+  const preparedText = prepared.map(item => item.text).join(' ');
+  const packets = simple.buildSlidePackets(prepared, topic, 'Fakta singkat');
+
+  assert.doesNotMatch(preparedText, /kampanye|mengampanyekan|Jelajah Nusantara/i);
+  assert.match(packets[0].mainEvidence, /Google menghadirkan.*Ask Maps.*Indonesia/i);
+  assert.doesNotMatch(packets.map(packet => packet.mainEvidence).join(' '), /kampanye|Jelajah Nusantara/i);
+  assert.ok(simple.buildFactCandidates(prepared, topic).every(candidate => /[.!?]$/.test(candidate.evidence)), 'fallback Auto Source tidak boleh menghasilkan fragmen tengah kalimat');
+  assert.equal(new Set(packets.map(packet => packet.mainEvidence)).size, 4);
+
+  const caption = simple.buildCaption(packets.map(packet => ({ body: packet.mainEvidence })), '', topic);
+  assert.match(caption, /Google menghadirkan.*Ask Maps.*Indonesia/i);
+  assert.doesNotMatch(caption, /kampanye|Jelajah Nusantara/i);
+});
+
+test('detail pilihan Gmail wajib dipertahankan dan aktivasi pemasaran hanya dipakai jika diminta', () => {
+  const evidence = 'Users can choose to connect Gmail, and the connection is off by default.';
+  assert.equal(simple.mainEvidenceCovered(
+    'Ask Maps memakai Gmail untuk memberi rekomendasi personal.',
+    { topic, mainEvidence: evidence }
+  ), false);
+  assert.equal(simple.mainEvidenceCovered(
+    'Pengguna dapat memilih menghubungkan Gmail; koneksi ini nonaktif secara default.',
+    { topic, mainEvidence: evidence }
+  ), true);
+
+  const campaign = 'Google mengampanyekan Jelajah Nusantara untuk merayakan Hari Kemerdekaan dengan Ask Maps.';
+  assert.equal(storyFocus.marketingActivationNoise(campaign, plan), true);
+  assert.equal(storyFocus.marketingActivationNoise(campaign, planner.fallbackPlan('Kampanye Jelajah Nusantara dengan Ask Maps')), false);
+});

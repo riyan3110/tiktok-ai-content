@@ -436,3 +436,95 @@ test('expanded discovery rejects misleading fetched pages and selects different 
   assert.ok(!result.sources.some(source => /irrelevant\.example/.test(source.finalUrl)));
   assert.ok(result.queries.some(query => /latest|terbaru|official|research/i.test(query)));
 });
+
+test('rich single article is supplemented with independent scoped sources for current news', async () => {
+  discovery.clearCache();
+  const topic = 'Google hadirkan fitur Ask Maps';
+  const plan = {
+    rawTopic: topic,
+    canonicalTopic: 'Google meluncurkan Ask Maps di Indonesia',
+    subjects: ['Ask Maps'],
+    eventTerms: ['launch in Indonesia', 'meluncurkan di Indonesia'],
+    actionTerms: ['menghadirkan', 'meluncurkan', 'launch', 'rolling out', 'expanding'],
+    contextTerms: ['Indonesia'],
+    searchQueries: [topic],
+    marketIntent: false,
+    relation: 'event',
+    planner: 'ai'
+  };
+  const candidates = [
+    {
+      title: 'Google hadirkan fitur Ask Maps bagi pengguna di Indonesia',
+      url: 'https://www.antaranews.com/berita/ask-maps',
+      description: 'Google menghadirkan Ask Maps untuk pengguna di Indonesia dengan dukungan Gemini bagi mobilitas dan perjalanan.',
+      provider: 'test',
+      publishedAt: '2026-08-12T08:08:00.000Z'
+    },
+    {
+      title: 'Ask Maps gets more helpful with food ordering and more',
+      url: 'https://blog.google/products/maps/ask-maps',
+      description: 'Ask Maps is rolling out in Indonesia and more than 150 countries. Users can choose to connect Gmail, and the connection is off by default.',
+      provider: 'test',
+      publishedAt: '2026-08-06T00:00:00.000Z'
+    },
+    {
+      title: 'Google expands Ask Maps to Indonesia',
+      url: 'https://tech.example/ask-maps-indonesia',
+      description: 'Google is expanding Ask Maps to users in Indonesia. The Gemini-powered feature answers complex questions about places and travel.',
+      provider: 'test',
+      publishedAt: '2026-08-12T00:00:00.000Z'
+    },
+    {
+      title: 'Google launches Ask Maps in Indonesia',
+      url: 'https://local.example/ask-maps',
+      description: 'Google launches Ask Maps in Indonesia in English and Bahasa Indonesia. The feature helps users explore places and plan routes.',
+      provider: 'test',
+      publishedAt: '2026-08-12T00:00:00.000Z'
+    }
+  ];
+  const fullArticle = {
+    url: candidates[0].url,
+    finalUrl: candidates[0].url,
+    title: candidates[0].title,
+    text: [
+      'Google menghadirkan fitur Ask Maps bagi pengguna layanan Google Maps di Indonesia untuk memudahkan mobilitas harian dan perjalanan.',
+      'Fitur percakapan berbasis Gemini sekarang dapat diakses dalam Bahasa Indonesia dan Bahasa Inggris.',
+      'Ask Maps membantu pengguna mengeksplorasi tempat dan merancang perjalanan.',
+      'Pengguna dapat merancang rute tur motor tiga jam atau menemukan kafe tenang.',
+      'Menyambut Hari Kemerdekaan RI, Google mengampanyekan Jelajah Nusantara dengan Ask Maps.'
+    ].join(' '),
+    fetchedAt: '2026-08-12T00:00:00.000Z'
+  };
+  const sourceFetcher = {
+    validateUrl: async raw => new URL(raw),
+    fetchSources: async urls => {
+      if (urls[0] === fullArticle.url) return [fullArticle];
+      throw new Error('publisher blocks article extraction');
+    }
+  };
+  const fetchImpl = async () => new Response(JSON.stringify({ data: { content: 'too short' } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+
+  const result = await discovery.discover({
+    topic,
+    topicPlan: plan,
+    searchImpl: async () => candidates,
+    sourceFetcher,
+    fetchImpl,
+    now: () => Date.parse('2026-08-13T00:00:00.000Z')
+  });
+
+  assert.equal(result.evidenceMode, 'full-article-with-snippets');
+  assert.equal(result.sources.length, 3);
+  assert.equal(new Set(result.publishers).size, 3);
+  assert.ok(result.sources.some(source => source.discovery.publisher === 'blog.google'), 'sumber primer yang relevan diprioritaskan sebagai pembanding');
+
+  const prepared = routing.prepareSources(topic, result.sources, plan);
+  const packets = simple.buildSlidePackets(prepared, topic, 'Fakta singkat');
+  assert.match(packets[0].mainEvidence, /Google menghadirkan.*Ask Maps.*Indonesia/i);
+  assert.match(packets.map(packet => packet.mainEvidence).join(' '), /choose to connect Gmail.*off by default/i);
+  assert.doesNotMatch(packets.map(packet => packet.mainEvidence).join(' '), /kampanye|Jelajah Nusantara/i);
+  assert.equal(new Set(packets.map(packet => packet.mainEvidence)).size, 4);
+});

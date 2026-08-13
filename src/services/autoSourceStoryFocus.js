@@ -15,6 +15,8 @@ const AUDIENCE_ACTOR = /(?:\b(?:a|an|one|another|some)\s+(?:user|reader|commente
 const AUDIENCE_REACTION = /\b(?:wrote|posted|commented|joked|quipped|reacted|complained|praised|asked|tweeted|replied|tulis|menulis|mengunggah|berkomentar|bercanda|menanggapi|mengeluh|memuji|bertanya|membalas|ujar)\b/i;
 const FIRST_PERSON_REACTION = /\b(?:i\s+(?:can(?:no|')?t\s+wait|hope|wish|love|hate|want)|we\s+(?:can(?:no|')?t\s+wait|hope|wish|love|hate|want)|(?:aku|saya|kami)\s+(?:tidak\s+sabar|berharap|ingin|suka|benci)|semoga)\b/i;
 const REACTION_TOPIC = /\b(?:reaksi|tanggapan|komentar|respons\s+(?:pengguna|publik)|opini\s+publik|sentimen|user\s+reactions?|public\s+response|what\s+users\s+say)\b/i;
+const MARKETING_ACTIVATION = /\b(?:campaign|campaigning|kampanye|mengampanyekan|dikampanyekan|promosi|promotional|marketing\s+activation|brand\s+activation|celebrat(?:e|es|ed|ing|ion)|merayakan|dirayakan|menyambut\s+perayaan)\b/i;
+const MARKETING_TOPIC = /\b(?:campaign|kampanye|promosi|marketing|brand\s+activation|celebrat(?:e|es|ed|ing|ion)|merayakan|perayaan|hari\s+(?:kemerdekaan|nasional|raya))\b/i;
 const RELATED_NAVIGATION = /(?:\b(?:baca|read)\s+(?:juga|also)\b|\b(?:artikel|berita|stories?|articles?)\s+(?:terkait|lainnya|lain|related|recommended)\b|\b(?:recommended|rekomendasi|selengkapnya|load\s+more|most\s+read|terpopuler)\b)/i;
 const READ_TIME_METADATA = /(?:\b(?:waktu|durasi)\s+baca\b|\breading\s+time\b|\b\d+\s*(?:menit|minutes?)\s+(?:baca|read)\b)/i;
 const EMBEDDED_CARD_TIMESTAMP = /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}[:.]\d{2}\b/;
@@ -111,12 +113,19 @@ function audienceReactionNoise(value = '', plan = {}) {
   return attributedReaction || firstPersonAudienceQuote;
 }
 
+function marketingActivationNoise(value = '', plan = {}) {
+  const text = clean(value);
+  if (!text || !MARKETING_ACTIVATION.test(text)) return false;
+  return !MARKETING_TOPIC.test(requestedText(plan));
+}
+
 function editorialNoise(value = '', plan = {}) {
   const text = cleanArticleFact(value);
   if (!text) return true;
   const requested = requestedText(plan);
   if (sourceArtifactNoise(text, plan)) return true;
   if (audienceReactionNoise(text, plan)) return true;
+  if (marketingActivationNoise(text, plan)) return true;
   if (HARD_PROMO.test(text) && !HARD_PROMO.test(requested)) return true;
   if (!plan.marketIntent && STOCK_PICK_EDITORIAL.test(text) && !STOCK_PICK_EDITORIAL.test(requested)) return true;
   if (LEGAL_DISCLAIMER.test(text) && !LEGAL_DISCLAIMER.test(requested)) return true;
@@ -223,6 +232,7 @@ module.exports = {
   sourceArtifactNoise,
   unsupportedHype,
   audienceReactionNoise,
+  marketingActivationNoise,
   editorialNoise,
   marketSnapshot,
   sentenceRows,

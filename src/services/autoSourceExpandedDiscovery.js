@@ -13,6 +13,7 @@ const FETCH_CONCURRENCY = 6;
 const MAX_CANDIDATES = 32;
 const MAX_FETCH_CANDIDATES = 20;
 const MAX_SELECTED = 4;
+const MIN_INDEPENDENT_SOURCES = 3;
 const MIN_FACTS_PER_SOURCE = 1;
 const MIN_TOTAL_FACTS = 4;
 const MIN_SNIPPET_DESCRIPTION_WORDS = 8;
@@ -396,7 +397,7 @@ function evidenceFactCount(sources = []) {
   return evidenceFacts(sources).length;
 }
 
-function snippetEvidenceSource(candidate = {}, topic = '', plan = null, nowMs = Date.now()) {
+function snippetEvidenceSource(candidate = {}, topic = '', plan = null, nowMs = Date.now(), allowSoftEventScope = false) {
   const url = baseDiscovery.canonicalUrl(candidate.url);
   const title = cleanSnippet(candidate.title);
   const text = snippetEvidenceText(candidate);
@@ -412,7 +413,13 @@ function snippetEvidenceSource(candidate = {}, topic = '', plan = null, nowMs = 
     autoSourceFallback: { mode: 'search-result-evidence' }
   };
   if (!fetchedContentRelevant(topic, source, plan)) return null;
-  if (planHasScope(plan) && !dynamicScope.sourceInScope(topic, source, plan)) return null;
+  if (planHasScope(plan) && !dynamicScope.sourceInScope(topic, source, plan)) {
+    const softEventMatch = allowSoftEventScope
+      && dynamicScope.eventLockRequired(plan || {})
+      && dynamicScope.subjectAlignedSource(plan, source)
+      && dynamicScope.eventAlignedSource(plan, source);
+    if (!softEventMatch) return null;
+  }
   if (planHasScope(plan)) {
     const headlineLead = `${title} ${text}`;
     const leadHasSubject = !(plan.subjects || []).length || dynamicScope.subjectHits(plan, headlineLead).length > 0;
@@ -466,6 +473,38 @@ function selectSnippetSources(ranked = [], topic = '', plan = null, nowMs = Date
   }
 
   return evidenceFactCount(selected) >= MIN_TOTAL_FACTS ? selected : [];
+}
+
+function topicPublisherAlignment(topic = '', source = {}, plan = null) {
+  let labels = [];
+  try {
+    labels = new URL(source?.finalUrl || source?.url).hostname.toLocaleLowerCase('en-US').split('.');
+  } catch {}
+  const wanted = new Set(normalized(`${topic} ${plan?.canonicalTopic || ''} ${(plan?.subjects || []).join(' ')}`).split(' ').filter(Boolean));
+  return labels.some(label => label.length >= 4 && wanted.has(label)) ? 1 : 0;
+}
+
+function selectSnippetSupplements(ranked = [], existing = [], topic = '', plan = null, nowMs = Date.now(), target = MIN_INDEPENDENT_SOURCES) {
+  const selected = [];
+  const urls = new Set(existing.map(source => baseDiscovery.canonicalUrl(source?.finalUrl || source?.url)).filter(Boolean));
+  const publishers = new Set(existing.map(source => source?.discovery?.publisher || publisherKey(source?.finalUrl || source?.url)).filter(Boolean));
+  const titles = new Set(existing.map(source => normalized(source?.title)).filter(Boolean));
+  const eligible = ranked.map(candidate => snippetEvidenceSource(candidate, topic, plan, nowMs, true)).filter(Boolean)
+    .sort((left, right) => topicPublisherAlignment(topic, right, plan) - topicPublisherAlignment(topic, left, plan)
+      || Number(right.discovery?.score || 0) - Number(left.discovery?.score || 0));
+
+  for (const source of eligible) {
+    if (publishers.size >= target || existing.length + selected.length >= MAX_SELECTED) break;
+    const url = baseDiscovery.canonicalUrl(source.finalUrl || source.url);
+    const publisher = source.discovery.publisher;
+    const title = normalized(source.title);
+    if (!url || urls.has(url) || !publisher || publishers.has(publisher) || (title && titles.has(title))) continue;
+    selected.push(source);
+    urls.add(url);
+    publishers.add(publisher);
+    if (title) titles.add(title);
+  }
+  return selected;
 }
 
 function candidateScore(topic, candidate, nowMs, plan = null) {
@@ -617,6 +656,20 @@ async function discover({
     }
   }
 
+  // A single rich article may already contain four facts, but it still cannot
+  // provide the cross-checking/diversity expected from a current-news search.
+  // Supplement it with conservative, independently-published search snippets
+  // that pass the exact same topic scope. This is a preference, never a hard
+  // rejection: obscure topics may still proceed with the one source available.
+  if (publishers.size < MIN_INDEPENDENT_SOURCES && selected.length < MAX_SELECTED) {
+    const supplements = selectSnippetSupplements(ranked, selected, cleanTopic, topicPlan, nowMs);
+    if (supplements.length) {
+      selected.push(...supplements);
+      supplements.forEach(source => publishers.add(source.discovery.publisher));
+      console.warn(`[AutoSource] menambah ${supplements.length} sumber pembanding dari cuplikan pencarian yang lolos konteks.`);
+    }
+  }
+
   // Some publishers block both the direct extractor and Jina Reader, or expose
   // only a very short body. In Tanpa URL only, use the title/description returned
   // by the search provider as conservative evidence instead of rejecting a valid
@@ -642,7 +695,9 @@ async function discover({
     publishers: [...publishers],
     evidenceMode: selected.every(source => source.discovery?.evidenceMode === 'search-snippet')
       ? 'search-snippet-fallback'
-      : 'full-article',
+      : selected.some(source => source.discovery?.evidenceMode === 'search-snippet')
+        ? 'full-article-with-snippets'
+        : 'full-article',
     sources: selected
   };
   cache.set(cacheKey, { savedAt: nowMs, bundle: clone(bundle) });
@@ -672,6 +727,8 @@ module.exports = {
   snippetEvidenceText,
   snippetEvidenceSource,
   selectSnippetSources,
+  topicPublisherAlignment,
+  selectSnippetSupplements,
   evidenceFacts,
   evidenceFactCount,
   clearCache,
@@ -681,6 +738,7 @@ module.exports = {
   MAX_CANDIDATES,
   MAX_FETCH_CANDIDATES,
   MAX_SELECTED,
+  MIN_INDEPENDENT_SOURCES,
   MIN_FACTS_PER_SOURCE,
   MIN_TOTAL_FACTS,
   MIN_SNIPPET_DESCRIPTION_WORDS
