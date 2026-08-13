@@ -1,0 +1,20 @@
+name: temp-text-copy-caption
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: node --test test/text-input-composer.test.js
+      - run: node --test test/auto-source-patch.test.js
+      - run: node --test test/background-state.test.js
