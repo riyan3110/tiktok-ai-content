@@ -62,9 +62,8 @@ function makeCurrentTopicRecoveryPlan(topic = '', plan = {}, planner = null) {
   }), 8);
 
   // Generic recovery for runtime topics: if current reporting describes the
-  // same subject/object with a different verb (for example "plans to add"
-  // versus user wording "menerapkan"), do not reject that current article only
-  // because the event verb is phrased differently. Concrete context remains.
+  // same subject/object with a different verb, do not reject that current article
+  // only because the event verb is phrased differently. Concrete context remains.
   const distinguishing = contexts.length ? contexts : eventDetails;
   const recoveryEvents = distinguishing.length ? distinguishing : uniq(plan.eventTerms || [], 8);
   const subjectText = subjects.join(' ');
@@ -90,16 +89,47 @@ function makeCurrentTopicRecoveryPlan(topic = '', plan = {}, planner = null) {
     eventTerms: recoveryEvents,
     searchQueries,
     relation: ['multi', 'comparison'].includes(plan.relation) ? plan.relation : 'single',
-    // Keep AI-level subject/context anchoring. Only the hard action-verb lock is
-    // relaxed; source scope and evidence checks stay active.
     planner: 'ai'
   };
 }
 
+function makeFactExpansionPlan(topic = '', plan = {}, planner = null) {
+  const base = makeCurrentTopicRecoveryPlan(topic, plan, planner);
+  const subjectText = (base.subjects || []).join(' ');
+  const detailText = (base.contextTerms || []).slice(0, 3).join(' ');
+  return {
+    ...base,
+    searchQueries: uniq([
+      ...(base.searchQueries || []),
+      `${base.canonicalTopic} details`,
+      `${base.canonicalTopic} key facts`,
+      `${base.canonicalTopic} official announcement`,
+      `${base.canonicalTopic} how it works`,
+      subjectText && detailText ? `${subjectText} ${detailText} details` : '',
+      subjectText && detailText ? `${subjectText} ${detailText} official` : ''
+    ], 16),
+    evidenceIntent: 'distinct-facts'
+  };
+}
+
+function sourceKey(source = {}) {
+  return clean(source.finalUrl || source.url).replace(/#.*$/, '').replace(/\/$/, '').toLocaleLowerCase('en-US');
+}
+
+function mergeSources(...groups) {
+  const out = [];
+  const seen = new Set();
+  for (const source of groups.flat().filter(Boolean)) {
+    const key = sourceKey(source);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(source);
+  }
+  return out;
+}
+
 function loadAutoSourceDependencies() {
   // Loaded only AFTER explicit Pakai URL has been excluded.
-  // Production Auto Source intentionally does NOT install the old strict,
-  // coherence, density, plan-first, or runtime-guard stack anymore.
   return {
     defaultContent: require('./content'),
     defaultSourceFetcher: require('./sourceFetcher'),
@@ -134,9 +164,6 @@ async function discoverCurrentSources({
     primaryError = error;
   }
 
-  // The normal strict path has already tried current sources. Retry only after a
-  // recoverable source/scope failure, using a freshly interpreted runtime topic
-  // and current/latest queries. This has no entity/topic whitelist.
   const interpreted = await topicPlanner.createPlan(topic, { client: topicPlannerClient });
   const recoveryPlan = makeCurrentTopicRecoveryPlan(topic, interpreted, topicPlanner);
 
@@ -160,15 +187,59 @@ async function discoverCurrentSources({
     if (!recoverableDiscoveryError(error)) throw error;
   }
 
-  // Do not ever substitute the previous topic's evidence. If even the current
-  // search and its safe snippet fallback contain no verifiable facts, return the
-  // real current-topic discovery failure instead of fabricating a result.
   throw primaryError;
+}
+
+async function ensureDistinctEvidence({
+  topic,
+  category = '',
+  discovery,
+  sourceFetcher,
+  expandedDiscovery,
+  topicPlanner,
+  topicPlannerClient,
+  autoSourceComposer
+} = {}) {
+  const initialSources = Array.isArray(discovery?.sources) ? discovery.sources : [];
+  let interpreted = discovery?.topicPlan;
+  if (!interpreted) interpreted = await topicPlanner.createPlan(topic, { client: topicPlannerClient });
+
+  const initialPrepared = autoSourceComposer.prepareSources(topic, initialSources, interpreted);
+  const initialCount = autoSourceComposer.distinctFactCount(topic, initialPrepared);
+  if (initialCount >= autoSourceComposer.REQUIRED_DISTINCT_FACTS) return discovery;
+
+  // Do not manufacture slide 4 by repeating slide 1/2. Search for additional
+  // current evidence before the writer starts, then combine only discovery-approved
+  // sources and let the routing composer prefer full articles over snippets.
+  const expansionPlan = makeFactExpansionPlan(topic, interpreted, topicPlanner);
+  let expanded;
+  try {
+    expanded = await expandedDiscovery.discover({
+      topic,
+      category,
+      sourceFetcher,
+      topicPlan: expansionPlan
+    });
+  } catch (error) {
+    if (!recoverableDiscoveryError(error)) throw error;
+    return discovery;
+  }
+
+  const combinedSources = mergeSources(initialSources, expanded?.sources || []);
+  const combinedDiscovery = {
+    ...discovery,
+    ...expanded,
+    topic,
+    sources: combinedSources,
+    topicPlan: expansionPlan,
+    scopeMode: 'distinct-fact-recovery',
+    recoveryFrom: discovery?.scopeMode || 'AUTO_SOURCE_DISTINCT_FACTS'
+  };
+  return combinedDiscovery;
 }
 
 function contentWrapper(content) {
   const base = content || require('./content');
-  // Keep Auto Source isolated from generation.js's explicit Pakai URL final gate.
   return { ...base };
 }
 
@@ -176,8 +247,7 @@ function install() {
   if (installed) return generation.generateAndSave;
   originalGenerateAndSave = generation.generateAndSave;
   generation.generateAndSave = async function generateAndSaveWithAutoSource(args = {}) {
-    // HARD ISOLATION LOCK:
-    // Pakai URL is exact pass-through before any Auto Source dependency loads.
+    // HARD ISOLATION LOCK: Pakai URL stays exact pass-through before Auto Source loads.
     if (pakaiUrlRequested(args)) return originalGenerateAndSave(args);
     if (!autoSourceRequested(args)) return originalGenerateAndSave(args);
 
@@ -196,7 +266,7 @@ function install() {
 
     const sourceFetcher = args.sourceFetcher || defaultSourceFetcher;
     const category = args.category === 'Custom' ? args.customCategory : args.category;
-    const discovery = await discoverCurrentSources({
+    let discovery = await discoverCurrentSources({
       topic,
       category,
       sourceFetcher,
@@ -205,6 +275,18 @@ function install() {
       topicPlanner,
       topicPlannerClient: args.topicPlannerClient
     });
+
+    discovery = await ensureDistinctEvidence({
+      topic,
+      category,
+      discovery,
+      sourceFetcher,
+      expandedDiscovery,
+      topicPlanner,
+      topicPlannerClient: args.topicPlannerClient,
+      autoSourceComposer
+    });
+
     const sources = discovery.sources;
     const wrappedContent = contentWrapper(args.content || defaultContent);
     const currentUrls = () => sources.map(source => source.finalUrl || source.url).filter(Boolean);
@@ -255,7 +337,11 @@ module.exports = {
   uniq,
   recoverableDiscoveryError,
   makeCurrentTopicRecoveryPlan,
+  makeFactExpansionPlan,
+  sourceKey,
+  mergeSources,
   discoverCurrentSources,
+  ensureDistinctEvidence,
   contentWrapper,
   loadAutoSourceDependencies
 };
