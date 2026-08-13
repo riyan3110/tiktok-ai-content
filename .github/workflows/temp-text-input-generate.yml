@@ -7,7 +7,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,7 +20,19 @@ jobs:
         run: node --test test/text-input-composer.test.js
       - name: Manual text route and URL isolation
         run: node --test test/auto-source-patch.test.js
-      - name: All Auto Source tests
-        run: node --test test/auto-source-*.test.js
+      - name: Pakai URL regressions
+        run: node --test test/pakai-url-*.test.js
+      - name: Auto Source files individually
+        shell: bash
+        run: |
+          failed=0
+          for file in test/auto-source-*.test.js; do
+            echo "RUNNING=$file"
+            if ! node --test "$file"; then
+              echo "FAILED_TEST_FILE=$file"
+              failed=1
+            fi
+          done
+          exit "$failed"
       - name: App API tests
         run: node --test test/app.test.js
