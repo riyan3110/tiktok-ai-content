@@ -19,6 +19,7 @@ const INTENT_STOPWORDS = new Set([
   'yang','dan','atau','dari','untuk','dengan','tentang','pada','dalam','ini','itu','baru','terbaru','cara','aplikasi','fitur',
   'potensi','manfaat','dampak','pengaruh','terhadap','peran','kemampuan','fungsi','kegunaan','penggunaan','penerapan','contoh',
   'akan','bisa','dapat','menjadi','membantu','membuat','teknologi','edukasi','fakta','singkat','update','berita',
+  'kenali','mengenal','ketahui','pahami','simak','begini','inilah',
   'the','and','or','from','for','with','about','new','latest','how','can','could','benefit','benefits','impact','role','use','uses','using'
 ]);
 const BILINGUAL_ALIASES = new Map([

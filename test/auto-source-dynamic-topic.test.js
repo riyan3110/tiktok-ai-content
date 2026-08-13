@@ -74,7 +74,7 @@ test('dynamic scope keeps novel-topic facts and rejects unrelated side notes', (
   assert.doesNotMatch(narrowed.text, /Bitcoin/);
 });
 
-test('scoped discovery broadens with a runtime-generated query only when exact topic is weak', async () => {
+test('scoped discovery understands the topic before searching with a runtime-generated query', async () => {
   const original = expanded.discover;
   const calls = [];
   expanded.discover = async ({ topic }) => {
@@ -113,8 +113,8 @@ test('scoped discovery broadens with a runtime-generated query only when exact t
       })
     });
 
-    assert.equal(calls.length, 2);
-    assert.equal(calls[1], 'AetherNova NovaKite ZX-9 launch');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0], 'AetherNova NovaKite ZX-9 launch');
     assert.equal(result.sources.length, 1);
     assert.equal(result.topicPlan.subjects[1], 'NovaKite ZX-9');
   } finally {

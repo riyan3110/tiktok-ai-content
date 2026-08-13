@@ -5,10 +5,10 @@ const topicPlanner = require('./autoSourceDynamicTopicPlan');
 const dynamicScope = require('./autoSourceDynamicScope');
 
 // TANPA URL / AUTO SOURCE ONLY.
-// Search starts from the exact free-form topic typed by the user. Strict scope is
-// preferred, but it is a ranking signal rather than a reason to destroy a valid
-// generation. If strict sentence-level wording misses a real article, fall back
-// to sources that still contain the requested subject + event context.
+// Every free-form topic is interpreted before search. Search then starts from a
+// semantic query produced for that exact runtime topic, and fetched articles are
+// checked again against the interpreted intent before facts reach the writer.
+// There is no topic allowlist/catalog; planner/selector failures stay fail-soft.
 
 function sourceUrl(source = {}) {
   return String(source?.finalUrl || source?.url || '').trim();
@@ -41,6 +41,23 @@ function distinctAlternateQuery(topic, plan = {}) {
     const value = normalize(query);
     return value && value !== original && value !== `${original} terbaru` && value !== `${original} latest`;
   }) || '';
+}
+
+function plannedQueries(topic, plan = {}, limit = 2) {
+  const normalize = value => String(value || '').toLocaleLowerCase('id-ID').replace(/\s+/g, ' ').trim();
+  const original = normalize(topic);
+  const values = [...(plan?.searchQueries || []), plan?.canonicalTopic];
+  const seen = new Set();
+  const out = [];
+  for (const query of values) {
+    const value = String(query || '').trim().replace(/\s+/g, ' ');
+    const key = normalize(value);
+    if (!key || seen.has(key) || key === original || key === `${original} terbaru` || key === `${original} latest`) continue;
+    seen.add(key);
+    out.push(value);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 function mergeBundle(base, extra) {
@@ -118,40 +135,53 @@ async function discover(options = {}) {
   const topic = String(options.topic || '').trim().replace(/\s+/g, ' ');
   if (!topic) throw Object.assign(new Error('Topik wajib diisi untuk pencarian sumber otomatis.'), { status: 400 });
 
-  let plan = topicPlanner.fallbackPlan(topic);
-  let result = await safeDiscover(options, topic);
-  let baseSources = uniqueSources(result.sources || []).filter(source =>
-    dynamicScope.sourceInScope(topic, source, plan)
+  const plan = await topicPlanner.createPlan(topic, { client: options.topicPlannerClient });
+  const semanticQueries = plannedQueries(topic, plan);
+  const searchOrder = [...semanticQueries, topic].filter((query, index, values) =>
+    values.findIndex(value => value.toLocaleLowerCase('id-ID') === query.toLocaleLowerCase('id-ID')) === index
   );
-  let scopeMode = baseSources.length ? 'strict' : 'none';
+  let result = null;
+  let baseSources = [];
+  let scopeMode = 'none';
+  let sourceSelection = { mode: 'none', acceptedSourceIds: [] };
 
-  // If the literal Indonesian wording is too narrow, ask the configured model
-  // once for a same-event alternate/global query. This remains a search rescue,
-  // not another content-generation loop.
-  if (!baseSources.length) {
-    plan = await topicPlanner.createPlan(topic, { client: options.topicPlannerClient });
-    baseSources = uniqueSources(result.sources || []).filter(source =>
+  // A semantic query is attempted first. Exact raw text remains the final
+  // search fallback so unknown names, fresh headlines, and planner failures are
+  // never blocked by a closed taxonomy.
+  for (const query of searchOrder) {
+    const bundle = await safeDiscover(options, query);
+    result = result ? mergeBundle(result, bundle) : bundle;
+    const inScope = uniqueSources(result.sources || []).filter(source =>
       dynamicScope.sourceInScope(topic, source, plan)
     );
-    if (baseSources.length) scopeMode = 'strict-ai-plan';
+    if (!inScope.length) continue;
 
-    const alternate = distinctAlternateQuery(topic, plan);
-    if (!baseSources.length && alternate) {
-      const extra = await safeDiscover(options, alternate);
-      result = mergeBundle(result, extra);
-      baseSources = uniqueSources(result.sources || []).filter(source =>
-        dynamicScope.sourceInScope(topic, source, plan)
-      );
-      if (baseSources.length) scopeMode = 'strict-alternate';
+    sourceSelection = await topicPlanner.selectSources(topic, plan, inScope, {
+      client: options.sourceSelectorClient || options.topicPlannerClient
+    });
+    if (sourceSelection.mode === 'fallback' || sourceSelection.sources.length) {
+      baseSources = sourceSelection.sources;
+      scopeMode = `${query === topic ? 'strict-exact' : 'strict-planned'}-${sourceSelection.mode}`;
+      break;
     }
   }
+
+  result ||= { topic, sources: [], queries: [], providers: [], publishers: [] };
 
   // FAIL-SOFT: never turn a valid search into a 422 merely because the strict
   // wording matcher could not place action/context in the same sentence. The
   // relaxed fallback still requires the same subject/event ingredients.
   if (!baseSources.length) {
-    baseSources = softRelevantSources(topic, result.sources || [], plan);
-    if (baseSources.length) scopeMode = 'soft-relevant';
+    const soft = softRelevantSources(topic, result.sources || [], plan);
+    if (soft.length) {
+      sourceSelection = await topicPlanner.selectSources(topic, plan, soft, {
+        client: options.sourceSelectorClient || options.topicPlannerClient
+      });
+      if (sourceSelection.mode === 'fallback' || sourceSelection.sources.length) {
+        baseSources = sourceSelection.sources;
+        scopeMode = 'soft-relevant';
+      }
+    }
   }
 
   if (!baseSources.length) {
@@ -200,6 +230,7 @@ async function discover(options = {}) {
       topic,
       topicPlan: plan,
       scopeMode,
+      sourceSelection: { mode: sourceSelection.mode, acceptedSourceIds: sourceSelection.acceptedSourceIds || [] },
       sources: uniqueSources(sources.length ? sources : baseSources),
       queries: [...new Set([...(result.queries || []), ...extraQueries])],
       providers: [...new Set([...(result.providers || []), ...extraProviders])],
@@ -212,6 +243,7 @@ async function discover(options = {}) {
     topic,
     topicPlan: plan,
     scopeMode,
+    sourceSelection: { mode: sourceSelection.mode, acceptedSourceIds: sourceSelection.acceptedSourceIds || [] },
     sources: baseSources,
     publishers: [...new Set(baseSources.map(source => source?.discovery?.publisher).filter(Boolean))]
   };
@@ -222,6 +254,7 @@ module.exports = {
   uniqueSources,
   entityCoverage,
   distinctAlternateQuery,
+  plannedQueries,
   mergeBundle,
   softSourceScore,
   softRelevantSources
