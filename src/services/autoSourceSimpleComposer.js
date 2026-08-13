@@ -12,6 +12,13 @@ const MAX_FACTS_PER_SOURCE = 8;
 const STRICT_FACT_SIMILARITY = 0.58;
 const RELAXED_FACT_SIMILARITY = 0.76;
 const CRITICAL_FACT_ANGLES = new Set(['timing', 'availability', 'scope', 'language', 'regulation', 'choice']);
+const ANNOUNCEMENT_DISTINCT_ANGLES = new Set(['timing', 'scope', 'language', 'regulation', 'choice', 'personalization']);
+const COPY_ADDITIONAL_ANGLE_GUARD = new Set([
+  'timing','availability','scope','language','regulation','choice','personalization','realtime','mechanism','durability','detection'
+]);
+const BODY_TARGET_MIN_WORDS = 14;
+const BODY_TARGET_MAX_WORDS = 20;
+const BODY_HARD_MIN_WORDS = 10;
 const TITLE_TOPIC_STOPWORDS = new Set([
   'kenali','mengenal','tentang','berita','terbaru','terkini','fitur','cara','waktu','kapan','mengapa','kenapa','bagaimana',
   'hadir','hadirkan','menghadirkan','meluncurkan','rilis','merilis','menerapkan','menambahkan','memperkenalkan','mengumumkan',
@@ -96,7 +103,18 @@ const SEMANTIC_ALIASES = new Map([
   ['compliance','comply'],['compliant','comply'],['mematuhi','comply'],['kepatuhan','comply'],
   ['rules','rule'],['regulations','rule'],['regulation','rule'],['aturan','rule'],
   ['supports','support'],['supported','support'],['mendukung','support'],['didukung','support'],
-  ['globally','global'],['deployments','deployment'],['deployed','deployment'],['penerapan','deployment']
+  ['globally','global'],['deployments','deployment'],['deployed','deployment'],['penerapan','deployment'],
+  ['user','user'],['users','user'],['pengguna','user'],
+  ['questions','question'],['pertanyaan','question'],
+  ['conversations','conversation'],['percakapan','conversation'],
+  ['continues','continue'],['continued','continue'],['continuing','continue'],['melanjutkan','continue'],['lanjutan','continue'],
+  ['answers','answer'],['responses','answer'],['response','answer'],['jawaban','answer'],
+  ['information','information'],['informasi','information'],
+  ['locations','location'],['places','location'],['place','location'],['lokasi','location'],['tempat','location'],
+  ['languages','language'],['bahasa','language'],['english','english'],['inggris','english'],
+  ['reservations','reservation'],['reservasi','reservation'],['flights','flight'],['penerbangan','flight'],
+  ['hotels','hotel'],['preferences','preference'],['preferensi','preference'],
+  ['connects','connect'],['connected','connect'],['connecting','connect'],['menghubungkan','connect'],['dihubungkan','connect']
 ]);
 
 const GENERIC_FACT_TOKENS = new Set([
@@ -154,6 +172,15 @@ function bodyAddsDistinctDetail(title = '', body = '') {
   return bodyTokens.filter(token => !titleTokens.includes(token)).length >= 2;
 }
 
+function minimumBodyWords(packet = {}) {
+  const evidenceWords = words(cleanEvidence(packet?.mainEvidence)).length;
+  return evidenceWords ? Math.min(BODY_HARD_MIN_WORDS, evidenceWords) : BODY_HARD_MIN_WORDS;
+}
+
+function bodyIsDenseEnough(body = '', packet = {}) {
+  return words(cleanEvidence(body)).length >= minimumBodyWords(packet);
+}
+
 function titleContextDuplicate(left = '', right = '') {
   const leftKey = normalize(left);
   const rightKey = normalize(right);
@@ -187,6 +214,7 @@ function semanticBase(value) {
     .replace(/\b(?:tanda\s+air)\b/g, ' watermark ')
     .replace(/\b(?:tak|tidak)\s+terlihat\b/g, ' invisible ')
     .replace(/\bmachine\s+readable\b/g, ' machinereadable ')
+    .replace(/\b(?:real[ -]?time|waktu\s+nyata)\b/g, ' realtime ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -230,14 +258,24 @@ function mainEvidenceCovered(copy, packet = {}) {
   // still blocking the production failure where timing/mechanism/scope was
   // flattened into four copies of the same generic announcement.
   const evidenceAngles = factAngles(evidence, packet?.topic || '').filter(angle => angle !== 'announcement');
-  if (!evidenceAngles.length) return true;
   const visibleAngles = new Set(factAngles(visible, packet?.topic || '').filter(angle => angle !== 'announcement'));
+  const semanticScore = Math.max(
+    semanticSimilarity(evidence, visible, packet?.topic || ''),
+    semanticSimilarity(evidence, visible)
+  );
+  if (!evidenceAngles.length) return semanticScore >= 0.24 || similarity(evidence, visible) >= 0.3;
   if (!evidenceAngles.some(angle => visibleAngles.has(angle))) return false;
 
   // Timing, availability, scope, language, regulation, and user choice change
   // the meaning of a claim. They may not be flattened merely because another
   // softer angle (for example "personalization") is still mentioned.
   if (evidenceAngles.some(angle => CRITICAL_FACT_ANGLES.has(angle) && !visibleAngles.has(angle))) return false;
+
+  // A body may narrow the source, but it may not splice in another slide's
+  // factual angle (for example real-time data inside a Gmail/personalization
+  // sentence). That was the source of dense-looking but incoherent copy.
+  const evidenceAngleSet = new Set(evidenceAngles);
+  if ([...visibleAngles].some(angle => COPY_ADDITIONAL_ANGLE_GUARD.has(angle) && !evidenceAngleSet.has(angle))) return false;
 
   if (evidenceAngles.includes('timing')) {
     const visibleNumbers = new Set(canonicalNumbers(visible));
@@ -262,10 +300,12 @@ function factAngles(value, topic = '') {
   if (/\b(?:global|globally|across|deployments?|aws|google\s+cloud|microsoft\s+foundry|regions?|countries?|platforms?|products?|worldwide|indonesia|secara\s+global|lintas|wilayah|negara|platform|produk)\b/i.test(text)) angles.add('scope');
   if (tokens.has('comply') || tokens.has('eu') || /\b(?:law|laws|act|regulation|regulations|rules|legal|undang-undang|aturan|regulasi|kepatuhan)\b/i.test(text)) angles.add('regulation');
   if (tokens.has('detect') || /\b(?:identify|identifying|verify|verification|prove|proof|clues?|mendeteksi|mengidentifikasi|memverifikasi|membuktikan|petunjuk)\b/i.test(text)) angles.add('detection');
-  if (/\b(?:available|availability|accessible|accessed|launch(?:ed|es|ing)|rolling\s+out|rollout|tersedia|ketersediaan|hadir|hadirkan|menghadirkan|dihadirkan|meluncurkan|diluncurkan|merilis|dirilis|digulirkan|dapat\s+diakses|bisa\s+diakses|mulai\s+tersedia)\b/i.test(text)) angles.add('availability');
+  if (/\b(?:available|availability|accessible|accessed|launch(?:ed|es|ing)?|releas(?:e|ed|es|ing)|rolling\s+out|rollout|tersedia|ketersediaan|peluncuran|meluncurkan|diluncurkan|merilis|dirilis|digulirkan|dapat\s+diakses|bisa\s+diakses|mulai\s+tersedia)\b/i.test(text)) angles.add('availability');
   if (/\b(?:languages?|english|indonesian|bahasa\s+(?:indonesia|inggris|lokal)|dukungan\s+bahasa)\b/i.test(text)) angles.add('language');
   if (/\b(?:personal\s+intelligence|personalized|personalised|personalization|personalisation|preferences?|reservations?|gmail|calendar|personalisasi|dipersonalisasi|preferensi|reservasi)\b/i.test(text)) angles.add('personalization');
   if (/\b(?:choose|chooses|chosen|decide|decides|optional|opt(?:ed)?[ -]?in|opt(?:ed)?[ -]?out|off\s+by\s+default|permission|consent|in\s+control|pilih|memilih|dipilih|opsional|izin|persetujuan|kendali|kontrol|nonaktif\s+secara\s+default)\b/i.test(text)) angles.add('choice');
+  if (/\b(?:realtime|real[ -]?time|waktu\s+nyata|langsung\s+diperbarui)\b/i.test(text)) angles.add('realtime');
+  if (/\b(?:conversation|conversational|follow[ -]?up|percakapan|pertanyaan\s+lanjutan)\b/i.test(text)) angles.add('conversation');
   return [...angles];
 }
 
@@ -278,19 +318,23 @@ function topicSubjectLabel(topic = '') {
 }
 
 function angleTitleCandidates(body = '', packet = {}) {
-  const evidence = cleanEvidence(packet?.mainEvidence || body);
+  // A title describes the visible body. Packet evidence is only a fallback
+  // when no body exists; it must never make a mismatched body look valid.
+  const evidence = cleanEvidence(body || packet?.mainEvidence);
   const topic = packet?.topic || '';
-  const angles = new Set(factAngles(`${evidence} ${body}`, topic));
+  const angles = new Set(factAngles(evidence, topic));
   const candidates = [];
   const add = value => { if (value && !candidates.includes(value)) candidates.push(value); };
 
   if (angles.has('choice')) add('Kendali Ada di Pengguna');
   if (angles.has('language')) add('Dukungan Bahasa');
   if (angles.has('regulation')) add('Aturan yang Berlaku');
-  if (angles.has('availability') && angles.has('scope')) add('Cakupan Peluncuran');
+  if ((angles.has('availability') || angles.has('announcement')) && angles.has('scope')) add('Cakupan Peluncuran');
   if (angles.has('timing') && !angles.has('availability')) add('Waktu Penerapan');
   if (angles.has('availability')) add('Ketersediaan Fitur');
   if (angles.has('personalization')) add('Personalisasi Layanan');
+  if (angles.has('realtime')) add('Informasi Waktu Nyata');
+  if (angles.has('conversation')) add('Percakapan Berkelanjutan');
   if (angles.has('mechanism')) add('Cara Sistem Bekerja');
   if (angles.has('durability')) add('Ketahanan Penanda');
   if (angles.has('detection')) add('Cara Penanda Dikenali');
@@ -302,8 +346,6 @@ function angleTitleCandidates(body = '', packet = {}) {
   if (/\b(?:mobility|travel|journey|trip|route|mobilitas|perjalanan|rute)\b/i.test(evidence)) add('Dukungan untuk Perjalanan');
   if (angles.has('announcement')) add('Pembaruan Utama');
 
-  const subject = topicSubjectLabel(topic);
-  if (subject) add(`Sorotan ${subject}`);
   add(SECTION_TITLE_FALLBACKS[packet?.section] || 'Fakta Penting');
   add('Detail yang Perlu Diketahui');
   const start = Number(packet?.slideIndex || 0) % UNIVERSAL_TITLE_FALLBACKS.length;
@@ -323,7 +365,7 @@ function safeTitleCandidate(title = '', body = '', packet = {}, usedTitles = [],
 
   const lexical = similarity(cleanTitle, body);
   const titleAngles = factAngles(cleanTitle, packet?.topic || '');
-  const bodyAngles = new Set(factAngles(`${packet?.mainEvidence || ''} ${body}`, packet?.topic || ''));
+  const bodyAngles = new Set(factAngles(body, packet?.topic || ''));
   return lexical >= 0.15 || titleAngles.some(angle => bodyAngles.has(angle));
 }
 
@@ -350,8 +392,8 @@ function sameFactContext(left, right, topic = '') {
   const score = Math.max(semanticSimilarity(left, right, topic), semanticSimilarity(left, right));
   const bothAnnouncements = ANNOUNCEMENT.test(left) && ANNOUNCEMENT.test(right);
   if (bothAnnouncements) {
-    const leftAngles = new Set(factAngles(left, topic).filter(angle => CRITICAL_FACT_ANGLES.has(angle)));
-    const rightAngles = new Set(factAngles(right, topic).filter(angle => CRITICAL_FACT_ANGLES.has(angle)));
+    const leftAngles = new Set(factAngles(left, topic).filter(angle => ANNOUNCEMENT_DISTINCT_ANGLES.has(angle)));
+    const rightAngles = new Set(factAngles(right, topic).filter(angle => ANNOUNCEMENT_DISTINCT_ANGLES.has(angle)));
     const distinctCriticalDetail = [...leftAngles].some(angle => !rightAngles.has(angle))
       || [...rightAngles].some(angle => !leftAngles.has(angle));
     const leftNumbers = new Set(canonicalNumbers(left));
@@ -498,7 +540,8 @@ function selectDistinctFacts(sources = [], topic = '', count = SLIDE_COUNT) {
   // been exhausted. Rich articles never enter this branch.
   if (selected.length < count) {
     const remaining = candidates
-      .filter(candidate => !selected.includes(candidate))
+      .filter(candidate => !selected.includes(candidate)
+        && !selected.some(existing => sameFactContext(existing.evidence, candidate.evidence, topic)))
       .map(candidate => ({
         candidate,
         similarity: Math.max(0, ...selected.map(existing => semanticSimilarity(existing.evidence, candidate.evidence, topic)))
@@ -549,9 +592,11 @@ ATURAN:
 - Jangan jadikan komentar, lelucon, harapan, spekulasi, atau reaksi pembaca/pengguna sebagai fakta berita, kecuali TOPIK memang secara eksplisit meminta reaksi publik.
 - Jangan menjadikan heading FAQ atau kalimat pertanyaan sebagai isi fakta. Body wajib pernyataan lengkap yang menjawab pembaca.
 - Judul harus berupa SUDUT/LABEL editorial 3-8 kata, natural dan spesifik. Judul DILARANG menyalin kalimat body, mengambil potongan awal body, atau menyatakan ulang body dengan susunan kata yang hampir sama.
-- Body harus padat dan informatif, sekitar 10-16 kata, serta MENAMBAHKAN detail konkret yang tidak sudah habis disebut judul. Letakkan detail pembeda mainEvidence sebelum keterangan umum agar tidak terpotong saat dirender. Jangan membuat body filler atau pertanyaan kosong.
+- Body harus padat dan informatif, target ${BODY_TARGET_MIN_WORDS}-${BODY_TARGET_MAX_WORDS} kata, serta MENAMBAHKAN detail konkret yang tidak sudah habis disebut judul. Body di bawah ${BODY_HARD_MIN_WORDS} kata hanya boleh bila mainEvidence memang lebih pendek. Letakkan detail pembeda mainEvidence sebelum keterangan umum agar tidak terpotong saat dirender. Jangan membuat body filler atau pertanyaan kosong.
 - Bullet TIDAK wajib. Gunakan 0-3 bullet hanya jika mainEvidence memuat detail tambahan yang benar-benar berbeda dari judul/body. Setiap bullet harus utuh dan dapat dipahami sendiri.
 - Jangan mengulang ide/konteks yang sama di body, bullet, atau slide lain.
+- Jangan mengulang kalimat pengumuman/topik lengkap pada setiap slide. Setelah slide pembuka, langsung tulis detail unik slide tersebut; gunakan rujukan natural seperti “fitur ini” bila subjek sudah jelas.
+- Hindari kata promosi atau filler seperti “lompatan besar”, “revolusioner”, “mengubah cara kita”, dan “sorotan” jika bukan fakta eksplisit yang diminta pengguna.
 - Jangan menambahkan sebab-akibat, manfaat, tujuan, strategi, implikasi, angka, versi, tanggal, lokasi, atau kepastian yang tidak dinyatakan evidence.
 - Untuk body dan setiap bullet, WAJIB sertakan claim dengan field yang tepat, text sama persis dengan copy visible, sourceId sama dengan primarySourceId slide, dan evidence VERBATIM dari paket slide.
 - Title tidak perlu claim jika hanya memberi label/sudut editorial. Title tidak boleh menambahkan fakta baru yang tidak ada di body/evidence, dan semua title harus berbeda satu sama lain.
@@ -584,7 +629,8 @@ PERIKSA DAN PERBAIKI LANGSUNG:
 - Jangan mencampur primarySourceId antar-slide.
 - Jangan menambah fakta baru. Pertahankan angka, persentase, model, versi, nama, tanggal, lokasi, modalitas, dan ketidakpastian sesuai evidence.
 - Jangan pertahankan komentar, lelucon, harapan, spekulasi, atau reaksi pembaca/pengguna sebagai fakta berita, kecuali TOPIK memang meminta reaksi publik.
-- Body final sekitar 10-16 kata, meletakkan detail pembeda di bagian awal, dan harus menambah informasi yang tidak sekadar mengulang judul.
+- Body final target ${BODY_TARGET_MIN_WORDS}-${BODY_TARGET_MAX_WORDS} kata, meletakkan detail pembeda di bagian awal, dan harus menambah informasi yang tidak sekadar mengulang judul. Body di bawah ${BODY_HARD_MIN_WORDS} kata hanya boleh bila mainEvidence memang lebih pendek.
+- Jangan mengulang pengumuman/topik lengkap di beberapa slide. Tiap slide harus langsung membawa detail unik dari mainEvidence-nya, tanpa hype atau filler.
 - Judul berupa sudut/label editorial 3-8 kata dalam Bahasa Indonesia. DILARANG menyalin body, mengambil awal body, atau memparafrasekan body menjadi kalimat yang sama; semua judul harus berbeda. Nama produk/model/istilah teknis boleh tetap asli dan judul tidak boleh menambah klaim baru.
 - Untuk body dan bullet final, claim.text harus sama persis dengan copy; sourceId harus primarySourceId slide; evidence harus VERBATIM dari paket slide.
 - Hasil akhir harus padat, natural, tidak double context, dan tetap 4 slide.
@@ -758,6 +804,9 @@ function factualErrors(candidate, packets, sources) {
     const plan = { rawTopic: packet?.topic, canonicalTopic: packet?.topic, marketIntent: false };
     if (!String(slide.title || '').trim()) errors.push(`slide:${slideIndex}:title kosong.`);
     if (!String(slide.body || '').trim()) errors.push(`slide:${slideIndex}:body kosong.`);
+    if (String(slide.body || '').trim() && !bodyIsDenseEnough(slide.body, packet)) {
+      errors.push(`slide:${slideIndex}:body terlalu tipis; butuh minimal ${minimumBodyWords(packet)} kata faktual dari mainEvidence.`);
+    }
     if (titleBodyDuplicate(slide.title, slide.body) || !bodyAddsDistinctDetail(slide.title, slide.body)) {
       errors.push(`slide:${slideIndex}:title mengulang body; judul harus berupa sudut ringkas dan body harus menambah detail berbeda.`);
     }
@@ -791,9 +840,10 @@ function factualErrors(candidate, packets, sources) {
     if (storyFocus.marketingActivationNoise(slide.body, plan)) {
       errors.push(`slide:${slideIndex}:body memakai aktivasi pemasaran yang bukan inti topik.`);
     }
-    const visibleSlideCopy = [slide.title, slide.body, ...(slide.points || [])].filter(Boolean).join(' ');
-    if (!mainEvidenceCovered(visibleSlideCopy, packet)) {
-      errors.push(`slide:${slideIndex}: detail pembeda mainEvidence tidak masuk ke copy visible.`);
+    // The title is only an editorial label; it may never compensate for a body
+    // that dropped the actual fact (the production "Dukungan Bahasa" bug).
+    if (!mainEvidenceCovered(slide.body, packet)) {
+      errors.push(`slide:${slideIndex}:body tidak menjelaskan detail pembeda mainEvidence.`);
     }
     if ((slide.points || []).length > MAX_POINTS) errors.push(`slide:${slideIndex}: terlalu banyak bullet.`);
 
@@ -931,12 +981,15 @@ function strictBlockingErrors(errors = []) {
   return errors.filter(error => !/:point:\d+:/.test(error));
 }
 
-function editorialOnlyError(error = '') {
-  return /(?:detail pembeda mainEvidence tidak masuk ke copy visible|konteks\/fakta mengulang)/i.test(String(error || ''));
+function editorialOnlyError(error = '', packets = []) {
+  const text = String(error || '');
+  if (/body tidak menjelaskan detail pembeda mainEvidence/i.test(text)) return true;
+  const duplicate = text.match(/^slide:(\d+): konteks\/fakta mengulang/i);
+  return Boolean(duplicate && packets[Number(duplicate[1])]?.sparseFallback === true);
 }
 
-function unsafeBlockingErrors(errors = []) {
-  return strictBlockingErrors(errors).filter(error => !editorialOnlyError(error));
+function unsafeBlockingErrors(errors = [], packets = []) {
+  return strictBlockingErrors(errors).filter(error => !editorialOnlyError(error, packets));
 }
 
 function finalizeVisibleCopy(candidate, packets, sources) {
@@ -1073,7 +1126,7 @@ async function compose({ options = {}, sources = [], discovery = null, client } 
   // generated bullet. The Indonesian-output layer translates it afterwards.
   if (blocking.length) {
     const grounded = finalizeVisibleCopy(groundedEvidenceCandidate(packets), packets, sources);
-    const unsafe = unsafeBlockingErrors(grounded.errors);
+    const unsafe = unsafeBlockingErrors(grounded.errors, packets);
     if (!unsafe.length) {
       finalized = grounded;
       blocking = [];
@@ -1111,6 +1164,8 @@ module.exports = {
   similarity,
   titleBodyDuplicate,
   bodyAddsDistinctDetail,
+  minimumBodyWords,
+  bodyIsDenseEnough,
   titleContextDuplicate,
   illustrativeExample,
   topicSubjectLabel,

@@ -180,7 +180,7 @@ test('simple fact gate rejects generic copy that drops the packet detail', () =>
     }]
   }));
   const errors = simple.factualErrors({ slides }, packets, noisyClaudeSources);
-  assert.ok(errors.some(error => /detail pembeda mainEvidence tidak masuk/i.test(error)));
+  assert.ok(errors.some(error => /body tidak menjelaskan detail pembeda mainEvidence/i.test(error)));
 });
 
 test('detail gate accepts faithful Indonesian angles and rejects a flattened rollout fact', () => {

@@ -42,6 +42,7 @@ const contaminatedSources = [
     title: 'Google Maps Hadirkan Ask Maps dan Immersive Navigation Berbasis Gemini',
     url: 'https://hype.test/ask-maps',
     text: [
+      'Menjadi lompatan besar dalam cara kita menemukan lokasi.',
       'Ask Maps memungkinkan percakapan lanjutan tanpa memulai pencarian tempat dari awal.',
       'Google Maps menampilkan informasi tempat yang mendukung jawaban Ask Maps.',
       'Antara/Google) GOOGLE secara resmi menghadirkan fitur Ask Maps bagi pengguna layanan Google Maps di Indonesia.'
@@ -79,6 +80,7 @@ test('Ask Maps mengambil empat fakta bersih dan berbeda dari artikel utama', () 
   const preparedText = prepared.map(source => source.text).join(' ');
   assert.doesNotMatch(preparedText, pollution);
   assert.doesNotMatch(preparedText, /kemampuan visual baru/i);
+  assert.doesNotMatch(preparedText, /lompatan besar/i);
 
   const packets = simple.buildSlidePackets(prepared, topic, 'Fakta singkat');
   assert.equal(packets.length, 4);
@@ -266,4 +268,85 @@ test('pengumuman lintas sumber tidak didobel dan contoh penggunaan hanya menjadi
   assert.match(evidence, /nonaktif secara default/i);
   assert.equal(simple.illustrativeExample('Pengguna dapat merancang rute tur motor tiga jam sebagai contoh penggunaan.', topic), true);
   assert.equal(simple.illustrativeExample('Pengguna dapat merancang rute tur motor tiga jam.', 'Contoh penggunaan Ask Maps'), false);
+});
+
+test('hasil produksi berulang seperti screenshot dibangun ulang menjadi empat isi padat dan berbeda', async () => {
+  const sources = [
+    {
+      title: 'Google hadirkan fitur Ask Maps bagi pengguna di Indonesia',
+      url: 'https://antara.test/ask-maps-production',
+      text: [
+        'Google secara resmi menghadirkan fitur Ask Maps bagi pengguna layanan Google Maps di Indonesia.',
+        'Ask Maps tersedia dalam Bahasa Indonesia dan Bahasa Inggris untuk pengguna Google Maps.',
+        'Ask Maps memakai Personal Intelligence untuk memahami reservasi penerbangan dan hotel dari Gmail.',
+        'Ask Maps menyediakan informasi transportasi umum secara waktu nyata bagi pengguna.'
+      ].join(' ')
+    },
+    {
+      title: 'Google Hadirkan Fitur Ask Maps Berbasis Gemini di Indonesia',
+      url: 'https://media.test/ask-maps-production',
+      text: [
+        'Google memperkenalkan fitur Ask Maps untuk pengguna layanan Google Maps di Indonesia.',
+        'Ask Maps memakai Gemini untuk memahami pertanyaan kompleks tentang tempat dan tujuan perjalanan.',
+        'Jawaban Ask Maps disusun dari informasi lokasi yang tersedia di Google Maps.'
+      ].join(' ')
+    },
+    {
+      title: 'Google Maps Hadirkan Ask Maps dan Immersive Navigation Berbasis Gemini',
+      url: 'https://hype.test/ask-maps-production',
+      text: [
+        'Menjadi lompatan besar dalam cara kita menemukan lokasi.',
+        'Ask Maps memungkinkan percakapan lanjutan tanpa memulai pencarian tempat dari awal.'
+      ].join(' ')
+    }
+  ];
+  const prepared = routing.prepareSources(topic, sources, plan);
+  const packets = simple.buildSlidePackets(prepared, topic, 'Fakta singkat');
+  const screenshotDraft = [
+    ['Cakupan Peluncuran', 'GOOGLE secara resmi menghadirkan fitur Ask Maps bagi pengguna layanan Google Maps di Indonesia.'],
+    ['Dukungan Bahasa', 'Google memperkenalkan fitur Ask Maps untuk pengguna layanan Google Maps di Indonesia.'],
+    ['Sorotan Google Ask Maps', 'Menjadi lompatan besar dalam cara kita menemukan lokasi.'],
+    ['Ketersediaan Fitur', 'Selain menghadirkan informasi waktu nyata, fitur Ask Maps didukung Personal Intelligence yang dihubungkan dengan akun Gmail.']
+  ].map(([title, body], index) => ({
+    title,
+    body,
+    points: [],
+    claims: [{
+      field: `slide:${index}:body`,
+      text: body,
+      sourceId: packets[index].primarySourceId,
+      evidence: packets[index].mainEvidence
+    }]
+  }));
+  const client = {
+    chat: { completions: { create: async () => ({ choices: [{ message: { content: { slides: screenshotDraft } } }] }) } }
+  };
+
+  assert.equal(simple.sameFactContext(screenshotDraft[0].body, screenshotDraft[1].body, topic), true);
+  const draftErrors = simple.factualErrors({ slides: screenshotDraft }, packets, prepared);
+  assert.ok(draftErrors.some(error => /slide:1:body tidak menjelaskan/i.test(error)));
+  assert.ok(draftErrors.some(error => /slide:1: konteks\/fakta mengulang/i.test(error)));
+  assert.ok(draftErrors.some(error => /slide:2:body memakai klaim promosi/i.test(error)));
+
+  const result = await simple.compose({
+    options: { requestedTopic: topic, contentFormat: 'Fakta singkat' },
+    sources: prepared,
+    discovery: { topic, sources: prepared },
+    client
+  });
+
+  assert.equal(new Set(result.slides.map(slide => slide.title.toLocaleLowerCase('id-ID'))).size, 4);
+  assert.equal(new Set(result.slides.map(slide => slide.body.toLocaleLowerCase('id-ID'))).size, 4);
+  assert.doesNotMatch(result.slides.map(slide => `${slide.title} ${slide.body}`).join(' '), /lompatan besar|\bSorotan Google Ask Maps\b/i);
+  result.slides.forEach((slide, index) => {
+    assert.equal(simple.titleBodyDuplicate(slide.title, slide.body), false);
+    assert.equal(simple.bodyIsDenseEnough(slide.body, packets[index]), true);
+    assert.equal(simple.mainEvidenceCovered(slide.body, packets[index]), true);
+    if (/bahasa/i.test(slide.title)) assert.match(slide.body, /bahasa/i);
+  });
+  for (let right = 1; right < result.slides.length; right += 1) {
+    for (let left = 0; left < right; left += 1) {
+      assert.equal(simple.sameFactContext(result.slides[left].body, result.slides[right].body, topic), false);
+    }
+  }
 });
