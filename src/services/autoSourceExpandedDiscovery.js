@@ -479,6 +479,21 @@ function fetchedScore(topic, source, candidate, factCount, nowMs, plan = null) {
 
 function fetchedContentRelevant(topic, source, plan = null) {
   if (planHasScope(plan) && dynamicScope.sourceInScope(topic, source, plan)) return true;
+  // For event news, lexical overlap in the full page is unsafe: related-story
+  // widgets can contain the target entity even when the article itself covers a
+  // different company or event. Require the interpreted subject + event in the
+  // headline/dek/lead before this source can enter selection. A source whose
+  // subject is anchored there may still express action and context in separate
+  // paragraphs; the scoped-discovery soft gate verifies those ingredients.
+  if (dynamicScope.eventLockRequired(plan || {})) {
+    if (!dynamicScope.subjectAlignedSource(plan, source)) return false;
+    const combined = `${source?.title || ''} ${String(source?.text || '').slice(0, 12000)}`;
+    const hasAction = dynamicScope.actionHits(plan, combined).length > 0
+      || dynamicScope.contextActionHits(plan, combined).length > 0;
+    const hasContext = !(plan.contextTerms || []).length
+      || dynamicScope.contextHits(plan, combined).length >= dynamicScope.requiredContextMatches(plan);
+    return hasAction && hasContext;
+  }
   const variants = relevanceTopics(topic, plan);
   const combined = `${source?.title || ''} ${String(source?.text || '').slice(0, 9000)}`;
   // Search-result snippets may be stale or misleading. The fetched article itself
