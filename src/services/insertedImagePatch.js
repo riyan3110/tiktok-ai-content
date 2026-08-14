@@ -80,7 +80,7 @@ function install({ app, db, images } = {}) {
     Object.defineProperty(images, PATCHED, { value: true });
   }
 
-  app.post('/contents/:id/insert-image', async (req, res, next) => {
+  app.post('/contents/:id/insert-image', async (req, res) => {
     try {
       const contentId = Number(req.params.id);
       const row = db.prepare('SELECT * FROM contents WHERE id=?').get(contentId);
@@ -96,9 +96,9 @@ function install({ app, db, images } = {}) {
       renderSource.insertedImageAssetId = assetId;
       db.prepare('UPDATE contents SET render_source=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run(JSON.stringify(renderSource), contentId);
-      res.json(parseRecord(db.prepare('SELECT * FROM contents WHERE id=?').get(contentId)));
+      return res.json(parseRecord(db.prepare('SELECT * FROM contents WHERE id=?').get(contentId)));
     } catch (error) {
-      next(error);
+      return res.status(error.status || 500).json({ error: error.message || 'Gagal menyisipkan gambar.' });
     }
   });
 }
