@@ -2,7 +2,17 @@ const crypto = require('node:crypto');
 const config = require('../config');
 const API = 'https://open.tiktokapis.com';
 const STATE_TTL_MS = 15 * 60 * 1000;
-const STATUS_RETRY_DELAYS_MS = [500, 1500];
+const STATUS_RETRY_DELAYS_MS = [750, 2000, 5000];
+const CANCEL_RETRY_DELAYS_MS = [750, 2000, 5000];
+const TRANSIENT_NETWORK_CODES = new Set([
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'ECONNREFUSED'
+]);
 
 function randomState(redirectUri = config.tiktokRedirectUri) {
   // TikTok expects an opaque, URL-safe state value. Keep the callback URI and
@@ -39,29 +49,52 @@ async function refresh(refreshToken) {
   return request(`${API}/v2/oauth/token/`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
 }
 async function publishPhotos(accessToken, imageUrls, caption) {
+  // Do not auto-retry publish/init. If TikTok accepted the first request but the
+  // response was lost, replaying it could create a duplicate pending publish.
   return request(`${API}/v2/post/publish/content/init/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ post_info: { title: caption.slice(0, 90), description: caption.slice(0, 2200) }, source_info: { source: 'PULL_FROM_URL', photo_images: imageUrls, photo_cover_index: 0 }, post_mode: 'MEDIA_UPLOAD', media_type: 'PHOTO' }) });
+}
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function networkErrorCode(error) {
+  return String(error?.cause?.code || error?.code || '').trim();
+}
+function retryableNetworkError(error) {
+  const code = networkErrorCode(error);
+  if (TRANSIENT_NETWORK_CODES.has(code)) return true;
+  return error?.name === 'TypeError' && /fetch failed/i.test(String(error?.message || ''));
+}
+function retryableTikTokError(error) {
+  return retryableNetworkError(error)
+    || Number(error?.httpStatus) === 429
+    || Number(error?.httpStatus) >= 500
+    || error?.tiktokCode === 'internal_error'
+    || error?.tiktokCode === 'rate_limit_exceeded';
+}
+async function retryTransient(operation, delays) {
+  let lastError;
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!retryableTikTokError(error) || attempt >= delays.length) throw error;
+      await sleep(delays[attempt]);
+    }
+  }
+  throw lastError;
 }
 async function cancel(accessToken, publishId) {
   const id = String(publishId || '').trim();
   if (!id) throw Object.assign(new Error('Publish ID TikTok wajib diisi.'), { status: 400 });
-  return request(`${API}/v2/post/publish/cancel/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: id }) });
-}
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-function retryableStatusError(error) {
-  return Number(error?.httpStatus) === 429 || Number(error?.httpStatus) >= 500 || error?.tiktokCode === 'internal_error' || error?.tiktokCode === 'rate_limit_exceeded';
+  return retryTransient(
+    () => request(`${API}/v2/post/publish/cancel/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: id }) }),
+    CANCEL_RETRY_DELAYS_MS
+  );
 }
 async function status(accessToken, publishId) {
-  let lastError;
-  for (let attempt = 0; attempt <= STATUS_RETRY_DELAYS_MS.length; attempt += 1) {
-    try {
-      return await request(`${API}/v2/post/publish/status/fetch/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: publishId }) });
-    } catch (error) {
-      lastError = error;
-      if (!retryableStatusError(error) || attempt >= STATUS_RETRY_DELAYS_MS.length) throw error;
-      await sleep(STATUS_RETRY_DELAYS_MS[attempt]);
-    }
-  }
-  throw lastError;
+  return retryTransient(
+    () => request(`${API}/v2/post/publish/status/fetch/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: publishId }) }),
+    STATUS_RETRY_DELAYS_MS
+  );
 }
 async function validateAccessToken(accessToken) {
   const result = await request(`${API}/v2/user/info/?fields=open_id,display_name`, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -94,4 +127,20 @@ async function validateImageUrls(imageUrls, verifiedPrefix) {
   return Promise.all(imageUrls.map(imageUrl => validateImageUrl(imageUrl, prefix)));
 }
 function invalidImageUrl(message) { return Object.assign(new Error(message), { status: 400 }); }
-module.exports = { authorizationUrl, exchangeCode, refresh, publishPhotos, cancel, status, validateAccessToken, validateImageUrls, randomState, verifyState, STATE_TTL_MS, STATUS_RETRY_DELAYS_MS };
+module.exports = {
+  authorizationUrl,
+  exchangeCode,
+  refresh,
+  publishPhotos,
+  cancel,
+  status,
+  validateAccessToken,
+  validateImageUrls,
+  randomState,
+  verifyState,
+  STATE_TTL_MS,
+  STATUS_RETRY_DELAYS_MS,
+  CANCEL_RETRY_DELAYS_MS,
+  retryableNetworkError,
+  retryableTikTokError
+};
