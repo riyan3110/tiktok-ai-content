@@ -19,7 +19,7 @@ const BOTTOM_SAFE_AREA = SAFE_AREA.bottom;
 const CONTENT_BOTTOM = HEIGHT - BOTTOM_SAFE_AREA;
 const OVERFLOW_TOLERANCE = 8;
 const WATERMARK_Y = 270;
-const TEXT_INPUT_HOOK_Y = 680;
+const TEXT_INPUT_HOOK_Y = 740;
 
 const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 
