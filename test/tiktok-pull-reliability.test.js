@@ -5,6 +5,12 @@ const path = require('node:path');
 const tiktok = require('../src/services/tiktok');
 const cancelPatch = require('../src/services/tiktokCancelPatch');
 
+function connectTimeoutError() {
+  const error = new TypeError('fetch failed');
+  error.cause = { code: 'UND_ERR_CONNECT_TIMEOUT' };
+  return error;
+}
+
 test('TikTok status check retries transient API failure without retrying forever', async t => {
   const originalFetch = global.fetch;
   const originalSetTimeout = global.setTimeout;
@@ -28,6 +34,27 @@ test('TikTok status check retries transient API failure without retrying forever
   t.after(() => { global.fetch = originalFetch; global.setTimeout = originalSetTimeout; });
 
   const result = await tiktok.status('access-token', 'publish-1');
+  assert.equal(result.data.status, 'PROCESSING_DOWNLOAD');
+  assert.equal(calls, 2);
+});
+
+test('TikTok status retries a transient Undici connect timeout', async t => {
+  const originalFetch = global.fetch;
+  const originalSetTimeout = global.setTimeout;
+  let calls = 0;
+  global.setTimeout = fn => { fn(); return 1; };
+  global.fetch = async () => {
+    calls += 1;
+    if (calls === 1) throw connectTimeoutError();
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { status: 'PROCESSING_DOWNLOAD' }, error: { code: 'ok' } })
+    };
+  };
+  t.after(() => { global.fetch = originalFetch; global.setTimeout = originalSetTimeout; });
+
+  const result = await tiktok.status('access-token', 'publish-network');
   assert.equal(result.data.status, 'PROCESSING_DOWNLOAD');
   assert.equal(calls, 2);
 });
@@ -77,6 +104,42 @@ test('TikTok cancel uses the publish cancel endpoint with the current user token
   assert.equal(request.options.method, 'POST');
   assert.equal(request.options.headers.Authorization, 'Bearer access-token');
   assert.deepEqual(JSON.parse(request.options.body), { publish_id: 'publish-123' });
+});
+
+test('TikTok cancel retries a transient Undici connect timeout', async t => {
+  const originalFetch = global.fetch;
+  const originalSetTimeout = global.setTimeout;
+  let calls = 0;
+  global.setTimeout = fn => { fn(); return 1; };
+  global.fetch = async () => {
+    calls += 1;
+    if (calls === 1) throw connectTimeoutError();
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ error: { code: 'ok', message: '' } })
+    };
+  };
+  t.after(() => { global.fetch = originalFetch; global.setTimeout = originalSetTimeout; });
+
+  await tiktok.cancel('access-token', 'publish-timeout');
+  assert.equal(calls, 2);
+});
+
+test('publish init is never automatically replayed after an ambiguous network failure', async t => {
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    throw connectTimeoutError();
+  };
+  t.after(() => { global.fetch = originalFetch; });
+
+  await assert.rejects(
+    () => tiktok.publishPhotos('access-token', ['https://cdn.example.com/generated/1.jpg'], 'Caption'),
+    /fetch failed/
+  );
+  assert.equal(calls, 1);
 });
 
 test('accepted cancellation is attached only to a known pending AI Ads Lab publish id', async () => {
