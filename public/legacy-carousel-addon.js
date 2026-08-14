@@ -175,5 +175,3 @@ function install() {
 
 if (document.readyState === 'complete') install();
 else window.addEventListener('load', install, { once: true });
-
-export { compactStatus };
