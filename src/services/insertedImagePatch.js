@@ -5,7 +5,7 @@ const config = require('../config');
 const { StorageService } = require('../storage/service');
 
 const PATCHED = Symbol.for('aiads.insertedImagePatch');
-const INSERT_BOX = Object.freeze({ left: 90, top: 1140, width: 740, height: 340 });
+const INSERT_BOX = Object.freeze({ left: 90, top: 1210, width: 740, height: 280 });
 
 function parseRecord(row) {
   if (!row) return null;
