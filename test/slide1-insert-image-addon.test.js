@@ -34,6 +34,15 @@ test('compact TikTok copy is derived from real TikTok statuses', () => {
   assert.match(addon, /statusNode\.title = technicalStatus\(data\)/);
 });
 
+test('Content Studio shortcuts move to the top and the long text helper is hidden', () => {
+  assert.match(addon, /PRIORITY_NAV_HREFS = Object\.freeze\(\[\s*'#studio',\s*'#trend-reference',\s*'#schedule-dashboard',\s*'#history-section'/s);
+  assert.match(addon, /document\.querySelector\('#text-generate-field > small'\)/);
+  assert.match(addon, /textHelper\.hidden = true/);
+  assert.match(addon, /priorityLinks\.forEach\(link => fragment\.append\(link\)\)/);
+  assert.match(addon, /nav\.prepend\(fragment\)/);
+  assert.match(addon, /nav\.dataset\.priorityItemsMoved = 'true'/);
+});
+
 test('server mounts post-render insertion without replacing the existing generator', () => {
   assert.match(server, /installInsertedImagePatch\(\{ app, db, images \}\)/);
   assert.doesNotMatch(server, /generateAndSave\s*=/);
