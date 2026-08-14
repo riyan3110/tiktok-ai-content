@@ -7,6 +7,8 @@ const { install: installAutoSourcePatch } = require('./services/autoSourcePatch'
 installAutoSourcePatch();
 const { install: installTextInputVerbatimPatch } = require('./services/textInputVerbatimPatch');
 installTextInputVerbatimPatch();
+const { install: installTextInputSoftFitPatch } = require('./services/textInputSoftFitPatch');
+installTextInputSoftFitPatch();
 const { createApp } = require('./app');
 const content = require('./services/content');
 const images = require('./services/images');
