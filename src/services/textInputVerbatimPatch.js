@@ -4,6 +4,18 @@ const images = require('./images');
 const MAX_TEXT_CHARS = 20000;
 const SECTION_ORDER = ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'PENUTUP'];
 const INVISIBLE_SECTION = '\u2063';
+const MAX_POINTS = 3;
+const MAX_HASHTAGS = 5;
+const BULLET_PATTERN = /^(?:[•●▪◦‣*+\-–—]|\d{1,2}[.)])\s*(.+)$/u;
+const HASHTAG_PATTERN = /^#[\p{L}\p{N}_]+$/u;
+const HASHTAG_STOPWORDS = new Set([
+  'ada', 'agar', 'akan', 'atau', 'baru', 'bagi', 'bagian', 'bahwa', 'banyak', 'berbeda', 'berisi', 'bisa', 'buat', 'buatan',
+  'cara', 'dalam', 'dan', 'dapat', 'dari', 'dengan', 'detail', 'di', 'digunakan', 'diterapkan', 'ditujukan', 'dorong',
+  'fakta', 'fokus', 'guna', 'hadirkan', 'hasil', 'hingga', 'hook', 'ini', 'jadi', 'juga', 'kali', 'karena', 'ke', 'konten',
+  'langkah', 'lebih', 'masa', 'membantu', 'membuat', 'memiliki', 'menjadi', 'menuju', 'meningkatkan', 'model', 'oleh', 'pada',
+  'penutup', 'pengguna', 'sebagai', 'seiring', 'semakin', 'slide', 'tanpa', 'telah', 'tentang', 'terhadap', 'untuk',
+  'utama', 'yang'
+]);
 
 let installed = false;
 let originalCompose = null;
@@ -39,6 +51,20 @@ function parseHeader(line) {
   return null;
 }
 
+function bulletValue(line) {
+  const match = String(line || '').trim().match(BULLET_PATTERN);
+  return match ? cleanInline(match[1]) : '';
+}
+
+function plainLines(lines = []) {
+  return lines
+    .map(raw => String(raw || '').trim())
+    .filter(Boolean)
+    .filter(line => !bulletValue(line))
+    .map(cleanInline)
+    .filter(Boolean);
+}
+
 function paragraphBlocks(lines = []) {
   const blocks = [];
   let current = [];
@@ -53,7 +79,7 @@ function paragraphBlocks(lines = []) {
       flush();
       continue;
     }
-    if (/^[•*\-]\s+/.test(line)) {
+    if (bulletValue(line)) {
       flush();
       continue;
     }
@@ -64,38 +90,54 @@ function paragraphBlocks(lines = []) {
 }
 
 function bulletLines(lines = []) {
-  return lines
-    .map(raw => String(raw || '').trim())
-    .filter(line => /^[•*\-]\s+/.test(line))
-    .map(line => line.replace(/^[•*\-]\s+/, '').trim())
-    .filter(Boolean);
+  return lines.map(bulletValue).filter(Boolean);
+}
+
+function titleAndBody(lines = []) {
+  const blocks = paragraphBlocks(lines);
+  const visibleLines = plainLines(lines);
+  if (!blocks.length && !visibleLines.length) return { title: '', body: '' };
+
+  if (blocks.length >= 2) {
+    return { title: blocks[0], body: blocks.slice(1).join(' ') };
+  }
+  if (visibleLines.length >= 2) {
+    return { title: visibleLines[0], body: visibleLines.slice(1).join(' ') };
+  }
+  return { title: blocks[0] || visibleLines[0] || '', body: '' };
 }
 
 function parseSlideSection(section, lines) {
-  const blocks = paragraphBlocks(lines);
   const points = bulletLines(lines);
 
   if (section === 'HOOK') {
-    if (points.length) throw verbatimError('HOOK tidak boleh berisi bullet.');
-    if (blocks.length !== 1) throw verbatimError('HOOK harus berisi tepat satu judul. Pisahkan bagian berikutnya dengan label FAKTA UTAMA.');
-    return { section, title: blocks[0], body: '', points: [] };
+    if (points.length) throw verbatimError('HOOK tetap berupa judul saja; pindahkan bullet ke FAKTA UTAMA atau DETAIL.');
+    const title = plainLines(lines).join(' ');
+    if (!title) throw verbatimError('HOOK harus memiliki judul.');
+    return { section, title, body: '', points: [] };
   }
 
   if (section === 'FAKTA UTAMA' || section === 'DETAIL') {
-    if (blocks.length < 2) throw verbatimError(`${section} harus berisi judul lalu body pada paragraf berikutnya.`);
-    if (points.length > 3) throw verbatimError(`${section} maksimal memiliki 3 bullet. AI Ads Lab tidak akan memotong bullet yang kamu tempel.`);
-    return {
-      section,
-      title: blocks[0],
-      body: blocks.slice(1).join(' '),
-      points
-    };
+    const parsed = titleAndBody(lines);
+    if (!parsed.title) throw verbatimError(`${section} harus memiliki judul.`);
+
+    let body = parsed.body;
+    let normalizedPoints = [...points];
+    if (!body && normalizedPoints.length) body = normalizedPoints.shift();
+    if (!body) throw verbatimError(`${section} harus memiliki isi setelah judul, baik berupa body maupun bullet.`);
+    if (normalizedPoints.length > MAX_POINTS) {
+      throw verbatimError(`${section} memiliki terlalu banyak bullet untuk layout tetap. Maksimal ${MAX_POINTS} bullet setelah body.`);
+    }
+
+    return { section, title: parsed.title, body, points: normalizedPoints };
   }
 
   if (section === 'PENUTUP') {
-    if (points.length) throw verbatimError('PENUTUP tidak boleh berisi bullet.');
-    if (blocks.length < 2) throw verbatimError('PENUTUP harus berisi judul lalu body pada paragraf berikutnya.');
-    return { section, title: blocks[0], body: blocks.slice(1).join(' '), points: [] };
+    const parsed = titleAndBody(lines);
+    if (!parsed.title) throw verbatimError('PENUTUP harus memiliki judul.');
+    const body = [parsed.body, ...points].filter(Boolean).join(' ');
+    if (!body) throw verbatimError('PENUTUP harus memiliki isi setelah judul.');
+    return { section, title: parsed.title, body, points: [] };
   }
 
   throw verbatimError(`bagian ${section} tidak dikenali.`);
@@ -105,10 +147,46 @@ function parseHashtags(lines = []) {
   const value = lines.map(line => String(line || '').trim()).filter(Boolean).join(' ');
   if (!value) return [];
   const tokens = value.split(/[\s,]+/).filter(Boolean);
-  if (tokens.some(token => !/^#[\p{L}\p{N}_]+$/u.test(token))) {
-    throw verbatimError('HASHTAGS/TAGAR hanya boleh berisi hashtag yang memang kamu tempel.');
+  if (tokens.some(token => !HASHTAG_PATTERN.test(token))) {
+    throw verbatimError('HASHTAGS/TAGAR hanya boleh berisi hashtag yang valid.');
   }
-  return tokens;
+  return [...new Set(tokens)].slice(0, MAX_HASHTAGS);
+}
+
+function hashtagToken(value) {
+  return String(value || '').replace(/[^\p{L}\p{N}_]/gu, '').trim();
+}
+
+function generateHashtags(slides = [], caption = '') {
+  const candidates = new Map();
+  let order = 0;
+  const addText = (value, weight) => {
+    const words = String(value || '').match(/[\p{L}\p{N}_-]+/gu) || [];
+    for (const raw of words) {
+      const token = hashtagToken(raw);
+      if (!token) continue;
+      const lower = token.toLocaleLowerCase('id-ID');
+      if (HASHTAG_STOPWORDS.has(lower)) continue;
+      if (token.length < 3 && token.toUpperCase() !== 'AI') continue;
+      if (/^\d+$/.test(token)) continue;
+      const previous = candidates.get(lower) || { token, score: 0, order: order++ };
+      previous.score += weight;
+      if (/^[A-Z][\p{L}\p{N}_-]*$/u.test(raw) || raw === raw.toUpperCase()) previous.score += 1;
+      candidates.set(lower, previous);
+    }
+  };
+
+  for (const slide of slides) {
+    addText(slide.title, 5);
+    addText(slide.body, 2);
+    for (const point of slide.points || []) addText(point, 2);
+  }
+  addText(caption, 1);
+
+  return [...candidates.values()]
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .slice(0, MAX_HASHTAGS)
+    .map(item => `#${item.token}`);
 }
 
 function parseStructuredText(text) {
@@ -145,13 +223,13 @@ function parseStructuredText(text) {
   }
 
   if (seenSlides.length !== 4 || seenSlides.some((section, index) => section !== SECTION_ORDER[index])) {
-    throw verbatimError('gunakan tepat 4 bagian berurutan: HOOK, FAKTA UTAMA, DETAIL, PENUTUP. Label hanya dipakai untuk penempatan dan tidak akan ditampilkan.');
+    throw verbatimError('gunakan tepat 4 bagian berurutan: HOOK, FAKTA UTAMA, DETAIL, PENUTUP. Bentuk hasil carousel tetap sama; label hanya dipakai untuk penempatan.');
   }
 
   const slides = SECTION_ORDER.map(section => parseSlideSection(section, buckets.get(section) || []));
-  const captionBlocks = paragraphBlocks(buckets.get('CAPTION') || []);
-  const caption = captionBlocks.join(' ');
-  const hashtags = parseHashtags(buckets.get('HASHTAGS') || []);
+  const caption = (buckets.get('CAPTION') || []).map(cleanInline).filter(Boolean).join(' ');
+  const suppliedHashtags = parseHashtags(buckets.get('HASHTAGS') || []);
+  const hashtags = suppliedHashtags.length ? suppliedHashtags : generateHashtags(slides, caption);
 
   return { slides, caption, hashtags };
 }
@@ -238,9 +316,13 @@ module.exports = {
   parseHeader,
   parseStructuredText,
   parseSlideSection,
+  parseHashtags,
+  generateHashtags,
   composeVerbatim,
   prepareVerbatimRenderContent,
   SECTION_ORDER,
   INVISIBLE_SECTION,
-  MAX_TEXT_CHARS
+  MAX_TEXT_CHARS,
+  MAX_POINTS,
+  MAX_HASHTAGS
 };
