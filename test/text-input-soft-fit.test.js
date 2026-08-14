@@ -60,3 +60,29 @@ test('lowering amount is capped by remaining bottom-safe-area slack', () => {
   assert.ok(shift >= 0);
   assert.ok(shift <= patch.TEXT_INPUT_LOWER_SHIFT);
 });
+
+test('Generate from Text builds layouts directly by HOOK, FACT, DETAIL, CLOSING roles', () => {
+  const prepared = patch.prepareSoftFitContent(sampleContent());
+  const layouts = patch.buildTextInputLayouts(prepared);
+
+  assert.equal(layouts.length, 4);
+  assert.equal(layouts[0].textInputHook, true);
+  assert.equal(layouts[1].type, 'structured');
+  assert.equal(layouts[2].type, 'structured');
+  assert.equal(layouts[3].type, 'structured');
+  assert.doesNotThrow(() => layouts.forEach((layout, index) => images.validateVisualLayout(layout, { slideIndex: index + 1 })));
+});
+
+test('hook and closing content are bold while middle body remains normal', () => {
+  const hook = '<svg><text y="740" font-weight="700">hook</text></svg>';
+  const middle = '<svg><text y="650" font-weight="700">title</text><text y="760" font-weight="400">body</text></svg>';
+  const closing = '<svg><text y="650" font-weight="700">title</text><text y="760" font-weight="400">body</text></svg>';
+
+  const hookStyled = patch.emphasizeRoleText(hook, 0, 4);
+  const middleStyled = patch.emphasizeRoleText(middle, 1, 4);
+  const closingStyled = patch.emphasizeRoleText(closing, 3, 4);
+
+  assert.match(hookStyled, new RegExp(`font-weight="${patch.EMPHASIS_WEIGHT}"`));
+  assert.match(middleStyled, /font-weight="400">body/);
+  assert.match(closingStyled, new RegExp(`font-weight="${patch.EMPHASIS_WEIGHT}">body`));
+});
