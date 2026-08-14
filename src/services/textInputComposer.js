@@ -173,6 +173,90 @@ function validateComparisonCompleteness(result, sourceText) {
   return [...new Set(issues)];
 }
 
+function validateSemanticRedundancy(result) {
+  const fields = [
+    ['caption', result?.caption],
+    ['topik', result?.topic],
+    ...(result?.slides || []).flatMap((slide, index) => [
+      [`slide ${index + 1} judul`, slide?.title],
+      [`slide ${index + 1} body`, slide?.body],
+      ...(slide?.points || []).map((point, pointIndex) => [`slide ${index + 1} bullet ${pointIndex + 1}`, point])
+    ])
+  ];
+  const issues = [];
+  for (const [label, raw] of fields) {
+    const value = normalized(raw);
+    if (!value) continue;
+    if (/\bmempercepat\b[^.!?]{0,90}\blebih cepat\b/i.test(value)) {
+      issues.push(`${label}: redundansi makna "mempercepat ... lebih cepat"`);
+    }
+    if (/\bmemperlambat\b[^.!?]{0,90}\blebih lambat\b/i.test(value)) {
+      issues.push(`${label}: redundansi makna "memperlambat ... lebih lambat"`);
+    }
+  }
+  return [...new Set(issues)];
+}
+
+function sourceBlocks(sourceText) {
+  const raw = String(sourceText || '').trim();
+  const paragraphs = raw.split(/\n\s*\n+/).map(value => value.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (paragraphs.length > 1) return paragraphs;
+  return raw.split(/(?<=[.!?])\s+/).map(clean).filter(Boolean);
+}
+
+function extractQualifiedClaims(sourceText) {
+  const blocks = sourceBlocks(sourceText);
+  const claims = [];
+  for (const block of blocks) {
+    const match = block.match(/^(?:(?:dengan|melalui)\s+([^,]{1,70})|(?:saat|ketika)\s+(?:menggunakan|memakai)\s+([^,]{1,70}))\s*,\s*(.+)$/i);
+    if (!match) continue;
+    const qualifier = clean(match[1] || match[2]);
+    if (!qualifier || /^(?:demikian|kata lain|cara demikian)$/i.test(qualifier)) continue;
+    const claimText = clean(match[3]);
+    const qualifierTokens = [...new Set(meaningfulTokens(qualifier))];
+    const claimTokens = [...new Set(meaningfulTokens(claimText).filter(token => !qualifierTokens.includes(token)))];
+    if (claimTokens.length < 3) continue;
+    claims.push({ qualifier, qualifierTokens, claimText, claimTokens, block });
+  }
+  return claims;
+}
+
+function validateQualifierOwnership(result, sourceText) {
+  const claims = extractQualifiedClaims(sourceText);
+  if (!claims.length) return [];
+  const issues = [];
+  const slides = Array.isArray(result?.slides) ? result.slides : [];
+
+  const units = [];
+  if (clean(result?.caption)) units.push({ label: 'caption', field: clean(result.caption), context: clean(result.caption) });
+  slides.forEach((slide, index) => {
+    const context = [slide?.title, slide?.body, ...(slide?.points || [])].map(clean).filter(Boolean).join(' ');
+    if (clean(slide?.body)) units.push({ label: `slide ${index + 1} body`, field: clean(slide.body), context });
+    (slide?.points || []).forEach((point, pointIndex) => {
+      if (clean(point)) units.push({ label: `slide ${index + 1} bullet ${pointIndex + 1}`, field: clean(point), context });
+    });
+  });
+
+  for (const claim of claims) {
+    const outside = String(sourceText || '').replace(claim.block, ' ');
+    const outsideTokens = new Set(meaningfulTokens(outside));
+    const qualifierKey = normalized(claim.qualifier);
+    for (const unit of units) {
+      const tokens = [...new Set(meaningfulTokens(unit.field))];
+      if (tokens.length < 3) continue;
+      const overlap = tokens.filter(token => claim.claimTokens.includes(token));
+      const requiredOverlap = Math.max(3, Math.ceil(Math.min(tokens.length, 6) * 0.6));
+      if (overlap.length < requiredOverlap) continue;
+      if (normalized(unit.context).includes(qualifierKey)) continue;
+
+      const independentlyGrounded = overlap.filter(token => outsideTokens.has(token));
+      if (independentlyGrounded.length >= overlap.length - 1) continue;
+      issues.push(`${unit.label}: konteks bersyarat hilang; fakta ini di TEXT_INPUT terkait "${claim.qualifier}" dan tidak boleh dipindahkan menjadi sifat umum entitas lain`);
+    }
+  }
+  return [...new Set(issues)];
+}
+
 function duplicateSlideCopy(slide = {}) {
   const fields = [slide.title, slide.body, ...(slide.points || [])]
     .map(value => ({ raw: clean(value), tokens: [...new Set(meaningfulTokens(value))] }))
@@ -284,6 +368,16 @@ function buildRepairGuidance(errors = []) {
     const genericTitle = error.match(/^slide\s+(\d+):\s+judul besar harus spesifik/i);
     if (genericTitle) {
       guidance.push(`WAJIB ganti judul slide ${genericTitle[1]} dengan fakta atau objek spesifik yang benar-benar ada di TEXT_INPUT. Jangan gunakan label section, pola "... Utama", atau judul generik lain.`);
+      continue;
+    }
+
+    if (/redundansi makna/i.test(error)) {
+      guidance.push('WAJIB tulis ulang field yang redundan menjadi satu konstruksi natural. Jangan gabungkan verba yang sudah menyatakan perubahan dengan pembanding yang mengulang makna, misalnya "mempercepat ... lebih cepat".');
+      continue;
+    }
+
+    if (/konteks bersyarat hilang/i.test(error)) {
+      guidance.push('WAJIB pertahankan syarat/pengaktif/fitur yang menjadi konteks klaim di TEXT_INPUT. Efek yang hanya berlaku "dengan/melalui/saat memakai" sesuatu tidak boleh dipindahkan menjadi sifat umum model, produk, tugas, atau entitas lain.');
       continue;
     }
 
@@ -422,6 +516,8 @@ function validateResult(result, sourceText, requestedSlideCount = targetSlideCou
   errors.push(...validateEntityContext({ ...result, slides }, sourceText));
   errors.push(...validateComparisonCompleteness({ ...result, slides }, sourceText));
   errors.push(...validateModeSubjectShift({ ...result, slides }, sourceText));
+  errors.push(...validateSemanticRedundancy({ ...result, slides }));
+  errors.push(...validateQualifierOwnership({ ...result, slides }, sourceText));
 
   return { errors: [...new Set(errors)], slides, caption, hashtags };
 }
@@ -431,7 +527,7 @@ function promptFor(text, requestedSlideCount) {
     ? '- Slide 4 = KONTEKS / DETAIL TAMBAHAN. Body 10–16 kata dan points wajib [].\n'
     : '';
 
-  return `MODE: GENERATE DARI TEKS — TRANSFORM ONLY.\n\nTEKS INPUT PENGGUNA:\n<<<TEXT_INPUT>>>\n${text}\n<<<END_TEXT_INPUT>>>\n\nTUGAS:\nSusun teks input menjadi carousel AI Ads Lab berbahasa Indonesia yang rapi. Anda BUKAN peneliti dan BUKAN mesin pencari. Jangan browsing, jangan memakai pengetahuan internal, dan jangan menambahkan fakta dari luar teks input. Anda hanya boleh meringkas, memparafrasekan, mengurutkan, dan memperjelas informasi yang memang tertulis pada TEXT_INPUT.\n\nSTRUKTUR WAJIB:\n- Total HARUS tepat ${requestedSlideCount} slide. Jangan membuat slide tambahan.\n- Slide 1 = HOOK. HANYA judul besar 7–10 kata yang padat, jelas, dan menarik tanpa clickbait berlebihan. body wajib "" dan points wajib [].\n- Slide 2 = FAKTA UTAMA. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata dan membawa informasi berbeda.\n- Slide 3 = DETAIL / HAL PENTING. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata. Jangan mengulang slide 2.\n${optionalContext}- Slide terakhir = PENUTUP / KESIMPULAN. Body 14–18 kata. points wajib []. Jangan sekadar mengulang hook.\n\nATURAN KERAS:\n- Tidak boleh menambah fakta, angka, tanggal, nama, lokasi, fitur, manfaat, sebab-akibat, opini, prediksi, atau status peluncuran yang tidak ada di teks input.\n- Nama brand, produk, model, mode, fitur, angka, persentase, tanggal, dan tingkat kepastian harus dipertahankan maknanya. Jangan menukar jenis entitas: jika teks menyebut sesuatu sebagai MODE, jangan menyebutnya MODEL; jika sesuatu adalah MODEL, jangan menyebutnya MODE.\n- Kata kerja status dan tingkat kepastian harus setara dengan TEXT_INPUT. Jika sumber menulis "memperkenalkan", jangan ubah menjadi "meluncurkan"; jika sumber menulis "dapat", jangan menaikkan menjadi "menjanjikan" atau klaim yang lebih tegas.\n- Pertahankan subjek setiap fakta. Fakta tentang kemampuan MODEL harus tetap milik MODEL, jangan dipindahkan menjadi kemampuan/target MODE atau fitur.\n- Contoh penggunaan tetap ditulis sebagai contoh penggunaan; jangan diubah menjadi fitur, kemampuan, manfaat, dukungan, atau integrasi baru.\n- Jangan mengubah contoh/konteks menjadi relasi baru seperti dibuat untuk, dirancang untuk, cocok untuk, mendukung, ditujukan untuk, atau bertujuan untuk kecuali relasi itu memang tertulis pada subjek yang sama.\n- Jika TEXT_INPUT menyebut "peningkatan kecepatan ini ditujukan...", subjek itu harus tetap peningkatan kecepatan; jangan ubah menjadi "Mode ini ditujukan..." atau "[nama model] ditujukan...".\n- Jangan membuat atribusi baru. Kesimpulan naratif dari TEXT_INPUT tidak boleh diubah menjadi "perusahaan/brand menegaskan, mengklaim, atau menyebut" kecuali TEXT_INPUT memang menyatakannya.\n- Jangan menambahkan kata penilaian seperti signifikan, efektif, optimal, instan, terintegrasi, unggul, terbaik, sempurna, otomatis, efisiensi, produktivitas, kunci, atau real-time jika tidak tertulis pada TEXT_INPUT.\n- Judul maksimal 10 kata.\n- Nilai section adalah LABEL KECIL yang sudah ditampilkan renderer. Jangan memakai ulang label section sebagai judul besar.\n- Judul besar WAJIB spesifik pada objek/fakta dari TEXT_INPUT. Jangan gunakan judul generik seperti "Hook", "Fakta Utama", "Detail", "Detail Penting", "Hal Penting", "Konteks", "Penutup", "Kesimpulan", atau variasinya.\n- Satu fakta utama cukup muncul sekali. Jika angka/klaim utama sudah dipakai di judul, body wajib memberi konteks berbeda dan jangan mengulang angka/klaim yang sama.\n- Jika klaim angka utama sudah dipakai di hook, judul slide 2 WAJIB mengambil angle lain dari TEXT_INPUT dan tidak mengulang angka/klaim tersebut dengan susunan kata berbeda.\n- Judul adalah angle spesifik slide, bukan salinan body. Body harus menambahkan konteks baru dan tidak mengulang ide judul.\n- Bullet harus singkat, natural, spesifik, dan bersumber dari TEXT_INPUT. Hindari bullet generik seperti "kerja lebih cepat" atau "peningkatan efisiensi proses"; gunakan fakta/konteks konkret yang memang disebut pada teks.\n- Bullet tidak boleh mengulang body atau bullet lain pada slide yang sama.\n- Nama media/publisher yang hanya menjadi sumber berita jangan dijadikan bullet seperti "Diklaim oleh X"; bullet harus berisi substansi berita.\n- Jika TEXT_INPUT menamai sebuah mode, gunakan urutan Bahasa Indonesia "Mode [nama]", bukan "[nama] Mode".\n- Jika sumber menyebut perbandingan lengkap seperti "14 kali lebih cepat", jangan memotongnya menjadi "14 kali".\n- Jangan memberi judul seperti "Manfaat/Kemampuan/Aplikasi [mode]" lalu mengisinya dengan fakta yang sebenarnya milik MODEL.\n- Semua judul antar-slide harus berbeda.\n- Jangan mengulang satu fakta dengan susunan kata berbeda pada slide 2 dan 3. Penutup boleh merangkum, tetapi jangan menyalin kalimat sebelumnya.\n- Penutup harus mengikuti kesimpulan TEXT_INPUT tanpa menaikkan tingkat kepastian dan tanpa mengubahnya menjadi pernyataan resmi perusahaan.\n- Penutup tidak boleh menggeneralisasi ke persaingan AI, tren industri, pasar, atau real-time jika konteks itu tidak tertulis di TEXT_INPUT.\n- Bullet jangan diawali simbol • karena renderer akan menambah tanda bullet sendiri.\n- Gunakan Bahasa Indonesia natural. Istilah resmi/brand boleh dipertahankan.\n- Caption WAJIB ${CAPTION_MIN_WORDS}–${CAPTION_MAX_WORDS} kata, 1–2 kalimat. Langsung sebut inti berita, klaim utama, lalu satu konteks penting. Jangan CTA, jangan filler, jangan mengulang semua isi slide.\n- Hashtag WAJIB ${HASHTAG_MIN}–${HASHTAG_MAX} item, spesifik pada objek/topik yang memang ada di teks input.\n\nKembalikan HANYA JSON dengan bentuk:\n{\"topic\":\"judul/topik singkat\",\"caption\":\"...\",\"hashtags\":[\"#...\"],\"slides\":[{\"section\":\"HOOK\",\"title\":\"...\",\"body\":\"\",\"points\":[]},{\"section\":\"FAKTA UTAMA\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]},{\"section\":\"DETAIL\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]}${requestedSlideCount === 5 ? ',{\"section\":\"KONTEKS\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}' : ''},{\"section\":\"PENUTUP\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}]} `;
+  return `MODE: GENERATE DARI TEKS — TRANSFORM ONLY.\n\nTEKS INPUT PENGGUNA:\n<<<TEXT_INPUT>>>\n${text}\n<<<END_TEXT_INPUT>>>\n\nTUGAS:\nSusun teks input menjadi carousel AI Ads Lab berbahasa Indonesia yang rapi. Anda BUKAN peneliti dan BUKAN mesin pencari. Jangan browsing, jangan memakai pengetahuan internal, dan jangan menambahkan fakta dari luar teks input. Anda hanya boleh meringkas, memparafrasekan, mengurutkan, dan memperjelas informasi yang memang tertulis pada TEXT_INPUT.\n\nSTRUKTUR WAJIB:\n- Total HARUS tepat ${requestedSlideCount} slide. Jangan membuat slide tambahan.\n- Slide 1 = HOOK. HANYA judul besar 7–10 kata yang padat, jelas, dan menarik tanpa clickbait berlebihan. body wajib "" dan points wajib [].\n- Slide 2 = FAKTA UTAMA. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata dan membawa informasi berbeda.\n- Slide 3 = DETAIL / HAL PENTING. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata. Jangan mengulang slide 2.\n${optionalContext}- Slide terakhir = PENUTUP / KESIMPULAN. Body 14–18 kata. points wajib []. Jangan sekadar mengulang hook.\n\nATURAN KERAS:\n- Tidak boleh menambah fakta, angka, tanggal, nama, lokasi, fitur, manfaat, sebab-akibat, opini, prediksi, atau status peluncuran yang tidak ada di teks input.\n- Nama brand, produk, model, mode, fitur, angka, persentase, tanggal, dan tingkat kepastian harus dipertahankan maknanya. Jangan menukar jenis entitas: jika teks menyebut sesuatu sebagai MODE, jangan menyebutnya MODEL; jika sesuatu adalah MODEL, jangan menyebutnya MODE.\n- Kata kerja status dan tingkat kepastian harus setara dengan TEXT_INPUT. Jika sumber menulis "memperkenalkan", jangan ubah menjadi "meluncurkan"; jika sumber menulis "dapat", jangan menaikkan menjadi "menjanjikan" atau klaim yang lebih tegas.\n- Pertahankan subjek, predikat, objek, dan pemilik sifat/hasil pada setiap fakta. Jangan memindahkan efek, kemampuan, target, atau hasil ke entitas lain hanya agar kalimat lebih singkat.\n- Jika TEXT_INPUT menyatakan "model lebih responsif saat mengerjakan X", jangan ubah menjadi "pekerjaan X menjadi lebih responsif". Sifat harus tetap melekat pada entitas yang sama.\n- Jika sebuah efek di TEXT_INPUT hanya berlaku DENGAN/MELALUI/SAAT MENGGUNAKAN fitur, mode, opsi, kondisi, atau mekanisme tertentu, konteks tersebut WAJIB tetap terlihat saat efek itu dipakai. Jangan menjadikannya sifat umum model/produk dasar.\n- Fakta tentang kemampuan MODEL harus tetap milik MODEL, jangan dipindahkan menjadi kemampuan/target MODE atau fitur.\n- Contoh penggunaan tetap ditulis sebagai contoh penggunaan; jangan diubah menjadi fitur, kemampuan, manfaat, dukungan, atau integrasi baru.\n- Jangan mengubah contoh/konteks menjadi relasi baru seperti dibuat untuk, dirancang untuk, cocok untuk, mendukung, ditujukan untuk, atau bertujuan untuk kecuali relasi itu memang tertulis pada subjek yang sama.\n- Jika TEXT_INPUT menyebut "peningkatan kecepatan ini ditujukan...", subjek itu harus tetap peningkatan kecepatan; jangan ubah menjadi "Mode ini ditujukan..." atau "[nama model] ditujukan...".\n- Jangan membuat atribusi baru. Kesimpulan naratif dari TEXT_INPUT tidak boleh diubah menjadi "perusahaan/brand menegaskan, mengklaim, atau menyebut" kecuali TEXT_INPUT memang menyatakannya.\n- Jangan menambahkan kata penilaian seperti signifikan, efektif, optimal, instan, terintegrasi, unggul, terbaik, sempurna, otomatis, efisiensi, produktivitas, kunci, atau real-time jika tidak tertulis pada TEXT_INPUT.\n- Hindari tautologi dan pengulangan makna dalam satu field. Jangan menulis konstruksi seperti "mempercepat ... lebih cepat" atau "memperlambat ... lebih lambat"; pilih salah satu bentuk yang natural tanpa mengubah klaim.\n- Judul maksimal 10 kata.\n- Nilai section adalah LABEL KECIL yang sudah ditampilkan renderer. Jangan memakai ulang label section sebagai judul besar.\n- Judul besar WAJIB spesifik pada objek/fakta dari TEXT_INPUT. Jangan gunakan judul generik seperti "Hook", "Fakta Utama", "Detail", "Detail Penting", "Hal Penting", "Konteks", "Penutup", "Kesimpulan", atau variasinya.\n- Satu fakta utama cukup muncul sekali. Jika angka/klaim utama sudah dipakai di judul, body wajib memberi konteks berbeda dan jangan mengulang angka/klaim yang sama.\n- Jika klaim angka utama sudah dipakai di hook, judul slide 2 WAJIB mengambil angle lain dari TEXT_INPUT dan tidak mengulang angka/klaim tersebut dengan susunan kata berbeda.\n- Judul adalah angle spesifik slide, bukan salinan body. Body harus menambahkan konteks baru dan tidak mengulang ide judul.\n- Jika body sudah menyatakan hasil/sifat utama (misalnya lebih responsif, lebih cepat, lebih aman, atau lebih hemat), bullet pada slide yang sama harus mengambil fakta/konteks lain dari TEXT_INPUT dan tidak mengulang hasil/sifat tersebut.\n- Bullet harus singkat, natural, spesifik, dan bersumber dari TEXT_INPUT. Hindari bullet generik seperti "kerja lebih cepat" atau "peningkatan efisiensi proses"; gunakan fakta/konteks konkret yang memang disebut pada teks.\n- Bullet tidak boleh mengulang body atau bullet lain pada slide yang sama.\n- Nama media/publisher yang hanya menjadi sumber berita jangan dijadikan bullet seperti "Diklaim oleh X"; bullet harus berisi substansi berita.\n- Jika TEXT_INPUT menamai sebuah mode, gunakan urutan Bahasa Indonesia "Mode [nama]", bukan "[nama] Mode".\n- Jika sumber menyebut perbandingan lengkap seperti "14 kali lebih cepat", jangan memotongnya menjadi "14 kali".\n- Jangan memberi judul seperti "Manfaat/Kemampuan/Aplikasi [mode]" lalu mengisinya dengan fakta yang sebenarnya milik MODEL.\n- Semua judul antar-slide harus berbeda.\n- Jangan mengulang satu fakta dengan susunan kata berbeda pada slide 2 dan 3. Penutup boleh merangkum, tetapi jangan menyalin kalimat sebelumnya.\n- Penutup harus mengikuti kesimpulan TEXT_INPUT tanpa menaikkan tingkat kepastian dan tanpa mengubahnya menjadi pernyataan resmi perusahaan.\n- Penutup tidak boleh menggeneralisasi ke persaingan AI, tren industri, pasar, atau real-time jika konteks itu tidak tertulis di TEXT_INPUT.\n- Bullet jangan diawali simbol • karena renderer akan menambah tanda bullet sendiri.\n- Gunakan Bahasa Indonesia natural. Istilah resmi/brand boleh dipertahankan.\n- Caption WAJIB ${CAPTION_MIN_WORDS}–${CAPTION_MAX_WORDS} kata, 1–2 kalimat. Langsung sebut inti berita, klaim utama, lalu satu konteks penting. Pastikan subjek dan pemilik sifat tetap sama dengan TEXT_INPUT. Jangan CTA, jangan filler, jangan mengulang semua isi slide.\n- Hashtag WAJIB ${HASHTAG_MIN}–${HASHTAG_MAX} item, spesifik pada objek/topik yang memang ada di teks input.\n\nKembalikan HANYA JSON dengan bentuk:\n{\"topic\":\"judul/topik singkat\",\"caption\":\"...\",\"hashtags\":[\"#...\"],\"slides\":[{\"section\":\"HOOK\",\"title\":\"...\",\"body\":\"\",\"points\":[]},{\"section\":\"FAKTA UTAMA\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]},{\"section\":\"DETAIL\",\"title\":\"...\",\"body\":\"...\",\"points\":[\"...\",\"...\"]}${requestedSlideCount === 5 ? ',{\"section\":\"KONTEKS\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}' : ''},{\"section\":\"PENUTUP\",\"title\":\"...\",\"body\":\"...\",\"points\":[]}]} `;
 }
 
 function buildContent(parsed, slides) {
@@ -494,7 +590,7 @@ async function compose({ text, client } = {}) {
         { role: 'assistant', content: JSON.stringify(parsed) },
         {
           role: 'user',
-          content: `Perbaiki JSON tadi TANPA menambah informasi dari luar TEXT_INPUT. PERBAIKAN WAJIB BERDASARKAN ERROR SAAT INI: ${targetedRepair} Masalah lengkap: ${checked.errors.join('; ')}. Jangan sekadar mengganti satu kata bila kalimatnya bergantung pada klaim yang ditolak; tulis ulang field tersebut dari fakta yang benar-benar ada di TEXT_INPUT. Total harus tepat ${requestedSlideCount} slide. Slide 1 WAJIB hanya judul hook 7–10 kata dengan body "" dan points []; slide 2–3 body 8–14 kata dengan 2–3 bullet berisi 3–7 kata; ${requestedSlideCount === 5 ? 'slide 4 body 10–16 kata tanpa bullet; ' : ''}slide terakhir body 14–18 kata tanpa bullet. Caption harus ${CAPTION_MIN_WORDS}–${CAPTION_MAX_WORDS} kata dan hashtag ${HASHTAG_MIN}–${HASHTAG_MAX} item. Label section hanya untuk label kecil; judul besar harus spesifik. Jika angka/klaim utama sudah ada di hook atau judul, field berikutnya harus memberi konteks berbeda tanpa mengulang klaim itu. Bullet harus berupa fakta/konteks konkret dari TEXT_INPUT, bukan filler generik atau atribusi publisher seperti "Diklaim oleh X". Pertahankan subjek asli: kemampuan model tetap milik model dan jangan dipindah ke mode/fitur; relasi yang subjeknya "peningkatan kecepatan" tidak boleh dipindah ke mode atau model. Gunakan urutan "Mode [nama]", bukan "[nama] Mode". Pertahankan perbandingan lengkap seperti "14 kali lebih cepat". Pertahankan kata kerja status dan tingkat kepastian; jangan mengubah "memperkenalkan" menjadi "meluncurkan" atau "dapat" menjadi "menjanjikan" jika TEXT_INPUT tidak memakai makna itu. Penutup jangan membuat konteks baru seperti persaingan AI, tren industri, pasar, atau real-time bila tidak ada di TEXT_INPUT. Jangan membuat atribusi baru seperti perusahaan menegaskan atau mengklaim jika TEXT_INPUT tidak mengatakan itu. Jangan menyalin satu fakta yang sama ke slide 2 dan 3. Pertahankan jenis entitas, hubungan fakta, nama, angka, dan tingkat kepastian dari teks input. Kembalikan JSON lengkap saja.`
+          content: `Perbaiki JSON tadi TANPA menambah informasi dari luar TEXT_INPUT. PERBAIKAN WAJIB BERDASARKAN ERROR SAAT INI: ${targetedRepair} Masalah lengkap: ${checked.errors.join('; ')}. Jangan sekadar mengganti satu kata bila kalimatnya bergantung pada klaim yang ditolak; tulis ulang field tersebut dari fakta yang benar-benar ada di TEXT_INPUT. Total harus tepat ${requestedSlideCount} slide. Slide 1 WAJIB hanya judul hook 7–10 kata dengan body "" dan points []; slide 2–3 body 8–14 kata dengan 2–3 bullet berisi 3–7 kata; ${requestedSlideCount === 5 ? 'slide 4 body 10–16 kata tanpa bullet; ' : ''}slide terakhir body 14–18 kata tanpa bullet. Caption harus ${CAPTION_MIN_WORDS}–${CAPTION_MAX_WORDS} kata dan hashtag ${HASHTAG_MIN}–${HASHTAG_MAX} item. Label section hanya untuk label kecil; judul besar harus spesifik. Jika angka/klaim utama sudah ada di hook atau judul, field berikutnya harus memberi konteks berbeda tanpa mengulang klaim itu. Bullet harus berupa fakta/konteks konkret dari TEXT_INPUT, bukan filler generik atau atribusi publisher seperti "Diklaim oleh X". Pertahankan subjek, predikat, objek, dan pemilik sifat/hasil seperti TEXT_INPUT. Jangan membuat contoh pekerjaan/tugas menjadi pemilik sifat yang sebenarnya milik model/produk. Jika efek hanya berlaku dengan/melalui/saat memakai fitur, mode, opsi, atau kondisi tertentu, qualifier itu wajib tetap terlihat dan efek tidak boleh dipindah menjadi sifat umum entitas lain. Hindari tautologi seperti "mempercepat ... lebih cepat"; gunakan satu konstruksi natural. Pertahankan subjek asli: kemampuan model tetap milik model dan jangan dipindah ke mode/fitur; relasi yang subjeknya "peningkatan kecepatan" tidak boleh dipindah ke mode atau model. Jika body sudah menyatakan hasil/sifat utama, bullet ambil fakta lain dari TEXT_INPUT, bukan mengulang sifat yang sama. Gunakan urutan "Mode [nama]", bukan "[nama] Mode". Pertahankan perbandingan lengkap seperti "14 kali lebih cepat". Pertahankan kata kerja status dan tingkat kepastian; jangan mengubah "memperkenalkan" menjadi "meluncurkan" atau "dapat" menjadi "menjanjikan" jika TEXT_INPUT tidak memakai makna itu. Penutup jangan membuat konteks baru seperti persaingan AI, tren industri, pasar, atau real-time bila tidak ada di TEXT_INPUT. Jangan membuat atribusi baru seperti perusahaan menegaskan atau mengklaim jika TEXT_INPUT tidak mengatakan itu. Jangan menyalin satu fakta yang sama ke slide 2 dan 3. Pertahankan jenis entitas, hubungan fakta, nama, angka, dan tingkat kepastian dari teks input. Kembalikan JSON lengkap saja.`
         }
       ],
       response_format: { type: 'json_object' }
@@ -519,6 +615,9 @@ module.exports = {
   validateEntityContext,
   validateComparisonCompleteness,
   validateModeSubjectShift,
+  validateSemanticRedundancy,
+  extractQualifiedClaims,
+  validateQualifierOwnership,
   duplicateSlideCopy,
   targetSlideCount,
   shapeSlides,
