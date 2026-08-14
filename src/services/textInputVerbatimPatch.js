@@ -23,10 +23,19 @@ function normalizeSectionLabel(value) {
 
 function parseHeader(line) {
   const value = String(line || '').trim();
-  const slide = value.match(/^(?:SLIDE\s*(\d+)\s*(?:[-–—:]\s*)?)?(HOOK|FAKTA\s+UTAMA|DETAIL|PENUTUP)\s*:?[\s]*$/i);
-  if (slide) return { type: 'slide', number: slide[1] ? Number(slide[1]) : null, key: normalizeSectionLabel(slide[2]) };
-  const meta = value.match(/^(CAPTION|HASHTAGS?)\s*:?[\s]*$/i);
-  if (meta) return { type: 'meta', key: /^CAPTION$/i.test(meta[1]) ? 'CAPTION' : 'HASHTAGS' };
+  const slide = value.match(/^(?:SLIDE\s*(\d+)\s*(?:[-–—:]\s*)?)?(HOOK|FAKTA\s+UTAMA|DETAIL|PENUTUP)(?:\s*:\s*(.+))?\s*$/i);
+  if (slide) return {
+    type: 'slide',
+    number: slide[1] ? Number(slide[1]) : null,
+    key: normalizeSectionLabel(slide[2]),
+    inlineContent: cleanInline(slide[3])
+  };
+  const meta = value.match(/^(CAPTION|HASHTAGS?|TAGAR)(?:\s*:\s*(.+))?\s*$/i);
+  if (meta) return {
+    type: 'meta',
+    key: /^CAPTION$/i.test(meta[1]) ? 'CAPTION' : 'HASHTAGS',
+    inlineContent: cleanInline(meta[2])
+  };
   return null;
 }
 
@@ -97,7 +106,7 @@ function parseHashtags(lines = []) {
   if (!value) return [];
   const tokens = value.split(/[\s,]+/).filter(Boolean);
   if (tokens.some(token => !/^#[\p{L}\p{N}_]+$/u.test(token))) {
-    throw verbatimError('HASHTAGS hanya boleh berisi hashtag yang memang kamu tempel.');
+    throw verbatimError('HASHTAGS/TAGAR hanya boleh berisi hashtag yang memang kamu tempel.');
   }
   return tokens;
 }
@@ -118,6 +127,7 @@ function parseStructuredText(text) {
       current = header.key;
       if (buckets.has(current)) throw verbatimError(`label ${current} muncul lebih dari sekali.`);
       buckets.set(current, []);
+      if (header.inlineContent) buckets.get(current).push(header.inlineContent);
       if (header.type === 'slide') {
         slideHeaderCount += 1;
         seenSlides.push(current);
@@ -180,7 +190,7 @@ function prepareVerbatimRenderContent(content = {}) {
   if (content?.verificationStatus !== 'text_input_only' || !Array.isArray(content?.slides)) return content;
   if (content.slides.length !== 4) throw verbatimError('renderer hanya menerima 4 slide copy-locked.');
 
-  const slides = content.slides.map((slide, index) => ({
+  const slides = content.slides.map(slide => ({
     section: INVISIBLE_SECTION,
     title: cleanInline(slide?.title),
     body: cleanInline(slide?.body),
@@ -192,7 +202,7 @@ function prepareVerbatimRenderContent(content = {}) {
       const layout = images.buildStructuredLayout(slides[index], index, slides.length, content.contentFormat, { textInputOnly: true });
       images.validateVisualLayout(layout, { slideIndex: index + 1 });
     } catch (error) {
-      throw verbatimError(`teks slide ${index + 1} tidak muat pada template. Ringkas teks yang kamu tempel; AI Ads Lab tidak akan memotong, menulis ulang, atau menambah kalimat. (${error.message})`);
+      throw verbatimError(`teks slide ${index + 1} tidak muat pada template. Ringkas teks yang kamu tempel; AI Ads Lab tidak akan menambah klaim baru. (${error.message})`);
     }
   }
 
