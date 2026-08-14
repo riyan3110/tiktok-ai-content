@@ -281,3 +281,5 @@
   window.addEventListener('focus', resumeVisiblePending);
   document.addEventListener('visibilitychange', resumeVisiblePending);
 })();
+
+if (typeof window !== 'undefined') import('/legacy-carousel-addon.js').catch(error => console.error('Legacy carousel addon gagal dimuat:', error));
