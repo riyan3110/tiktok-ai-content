@@ -65,3 +65,69 @@
   document.querySelectorAll('input[name="source-mode"],input[name="topic-source"]').forEach(input => input.addEventListener('change', sync));
   sync();
 })();
+
+// TikTok PHOTO uploads use PULL_FROM_URL. TikTok can legitimately remain in
+// PROCESSING_DOWNLOAD well beyond the old five-minute UI window, so do not
+// turn an in-progress server download into a false client-side failure.
+(() => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const FAST_POLL_WINDOW_MS = 5 * 60 * 1000;
+  const URL_PULL_WINDOW_MS = 60 * 60 * 1000;
+  const FAST_POLL_INTERVAL_MS = 10 * 1000;
+  const SLOW_POLL_INTERVAL_MS = 30 * 1000;
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  async function reliableTikTokPollDraft(publishId) {
+    const startedAt = Date.now();
+    let lastData = { status: 'PROCESSING_DOWNLOAD', fail_reason: null, downloaded_bytes: null };
+
+    while (Date.now() - startedAt < URL_PULL_WINDOW_MS) {
+      const elapsed = Date.now() - startedAt;
+      await sleep(elapsed < FAST_POLL_WINDOW_MS ? FAST_POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS);
+
+      let data;
+      try {
+        data = await api(`/status/${encodeURIComponent(publishId)}`);
+      } catch (error) {
+        const statusElement = document.querySelector('#status');
+        if (statusElement) statusElement.textContent = `TikTok masih memproses draft. Pemeriksaan status sementara gagal: ${error.message}`;
+        continue;
+      }
+
+      lastData = data;
+      renderPublishStatus(data);
+      try { await history(); } catch {}
+
+      if (data.status === 'SEND_TO_USER_INBOX') {
+        renderPublishStatus(data, 'Draft berhasil dikirim. Buka Inbox TikTok untuk melanjutkan.');
+        return;
+      }
+      if (data.status === 'PUBLISH_COMPLETE') {
+        renderPublishStatus(data, 'TikTok menyelesaikan proses draft.');
+        return;
+      }
+      if (data.status === 'FAILED') {
+        const reason = data.fail_reason ? `: ${data.fail_reason}` : '.';
+        renderPublishStatus(data, `TikTok gagal memproses draft${reason}`);
+        return;
+      }
+      if (data.status === 'PROCESSING_DOWNLOAD') {
+        renderPublishStatus(data, 'TikTok sedang mengunduh gambar dari AI Ads Lab. Proses masih berjalan; jangan unggah ulang.');
+        continue;
+      }
+      if (data.status === 'PROCESSING_UPLOAD') {
+        renderPublishStatus(data, 'TikTok masih memproses unggahan. Proses masih berjalan; jangan unggah ulang.');
+        continue;
+      }
+
+      renderPublishStatus(data, 'Status TikTok diperbarui.');
+      return;
+    }
+
+    renderPublishStatus(lastData, 'TikTok belum memberi hasil akhir setelah waktu tunggu panjang. Proses tidak ditandai gagal oleh AI Ads Lab; periksa status lagi sebelum mengunggah ulang.');
+  }
+
+  window.addEventListener('load', () => {
+    if (typeof globalThis.pollDraft === 'function') globalThis.pollDraft = reliableTikTokPollDraft;
+  });
+})();
