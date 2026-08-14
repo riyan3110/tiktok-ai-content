@@ -7,6 +7,7 @@ const { INVISIBLE_SECTION } = require('./textInputVerbatimPatch');
 
 const BODY_MIN_KEEP_RATIO = 0.65;
 const TEXT_INPUT_LOWER_SHIFT = 70;
+const EMPHASIS_WEIGHT = 800;
 const OPTIONAL_TRAILING_STARTS = new Set([
   'untuk', 'agar', 'secara', 'dengan', 'melalui', 'sehingga', 'ketika', 'saat', 'yang'
 ]);
@@ -90,6 +91,9 @@ function fitSlide(slide, index, total, format) {
 
 function prepareSoftFitContent(content = {}) {
   if (content?.verificationStatus !== 'text_input_only' || !Array.isArray(content?.slides)) return content;
+  if (content.slides.length !== 4) {
+    throw Object.assign(new Error('Generate dari Teks harus memiliki tepat 4 slide: HOOK, FAKTA UTAMA, DETAIL, PENUTUP.'), { status: 422 });
+  }
   const total = content.slides.length;
   const fitted = content.slides.map((slide, index) => fitSlide(slide, index, total, content.contentFormat));
   return {
@@ -97,6 +101,13 @@ function prepareSoftFitContent(content = {}) {
     slides: fitted.map(item => item.slide),
     textInputSoftTrimmedSlides: fitted.flatMap((item, index) => item.trimmed ? [index + 1] : [])
   };
+}
+
+function buildTextInputLayouts(content = {}) {
+  if (content?.verificationStatus !== 'text_input_only' || !Array.isArray(content?.slides)) return [];
+  const total = content.slides.length;
+  if (total !== 4) throw Object.assign(new Error('Generate dari Teks harus memiliki tepat 4 slide.'), { status: 422 });
+  return content.slides.map((slide, index) => renderSlide(slide, index, total, content.contentFormat).layout);
 }
 
 function lowerShiftForLayout(layout) {
@@ -115,17 +126,33 @@ function shiftContentText(svg, shift) {
   });
 }
 
+function emphasizeRoleText(svg, index, total) {
+  if (index !== 0 && index !== total - 1) return String(svg);
+  return String(svg).replace(/<text\b[^>]*\by="(\d+(?:\.\d+)?)"[^>]*>/g, tag => {
+    const yMatch = tag.match(/\by="(\d+(?:\.\d+)?)"/);
+    const y = Number(yMatch?.[1]);
+    if (!Number.isFinite(y) || y < images.CONTENT_TOP) return tag;
+    if (/font-weight="\d+"/.test(tag)) return tag.replace(/font-weight="\d+"/, `font-weight="${EMPHASIS_WEIGHT}"`);
+    return tag.replace(/>$/, ` font-weight="${EMPHASIS_WEIGHT}">`);
+  });
+}
+
 async function createTextInputSlides(id, content) {
   let prepared;
+  let layouts;
   try {
     prepared = prepareSoftFitContent(content);
+    // Generate-dari-Teks already has explicit roles. Build each structured layout
+    // directly instead of sending pasted copy through the generic semantic-copy
+    // validator, which can reject a legitimate PENUTUP just because its title
+    // and body share topic words.
+    layouts = buildTextInputLayouts(prepared);
   } catch (error) {
-    throw Object.assign(new Error(`Generate dari Teks: teks masih tidak muat setelah diringkas sedikit dari copy yang kamu tempel. Ringkas manual bagian yang terlalu panjang. (${error.message})`), { status: 422 });
+    throw Object.assign(new Error(`Generate dari Teks: teks belum bisa ditempatkan dengan aman. ${error.message}`), { status: 422 });
   }
 
   const dir = path.join(config.root, 'public/generated');
   await fs.mkdir(dir, { recursive: true });
-  const layouts = images.validateCarouselLayouts(images.buildSlideLayouts(prepared));
   const files = [];
 
   try {
@@ -136,6 +163,7 @@ async function createTextInputSlides(id, content) {
         : prepared.background;
       let svg = images.renderLayout(layouts[index], index + 1, layouts.length, prepared.watermark, background);
       if (index > 0) svg = shiftContentText(svg, lowerShiftForLayout(layouts[index]));
+      svg = emphasizeRoleText(svg, index, layouts.length);
       await sharp(Buffer.from(svg))
         .resize(images.WIDTH, images.HEIGHT)
         .flatten({ background: '#ffffff' })
@@ -175,9 +203,12 @@ module.exports = {
   bodyCandidates,
   fitSlide,
   prepareSoftFitContent,
+  buildTextInputLayouts,
   lowerShiftForLayout,
   shiftContentText,
+  emphasizeRoleText,
   createTextInputSlides,
   BODY_MIN_KEEP_RATIO,
-  TEXT_INPUT_LOWER_SHIFT
+  TEXT_INPUT_LOWER_SHIFT,
+  EMPHASIS_WEIGHT
 };
