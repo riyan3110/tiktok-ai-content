@@ -5,7 +5,7 @@ const config = require('../config');
 const { StorageService } = require('../storage/service');
 
 const PATCHED = Symbol.for('aiads.insertedImagePatch');
-const INSERT_BOX = Object.freeze({ left: 90, top: 1210, width: 740, height: 280 });
+const INSERT_BOX = Object.freeze({ left: 50, top: 900, width: 980, height: 920 });
 
 function parseRecord(row) {
   if (!row) return null;
@@ -43,8 +43,8 @@ async function overlaySlideOne(file, input) {
   const overlay = await sharp(input)
     .rotate()
     .resize(INSERT_BOX.width, INSERT_BOX.height, {
-      fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
+      fit: 'cover',
+      position: 'centre'
     })
     .png()
     .toBuffer();
