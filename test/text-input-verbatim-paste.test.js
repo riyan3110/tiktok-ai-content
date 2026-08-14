@@ -85,6 +85,39 @@ test('text-input renderer hides routing labels and keeps pasted copy only', asyn
   assert.match(factSvg, /Service tier API baru/);
 });
 
+test('caption and TAGAR are recognized as metadata and never become slide copy', async () => {
+  const structured = `HOOK: Hook singkat untuk berita teknologi
+
+SLIDE 2 — FAKTA UTAMA: Judul fakta utama
+
+Body fakta utama tetap di slide dua.
+
+• Poin fakta satu
+• Poin fakta dua
+
+SLIDE 3 — DETAIL: Judul detail
+
+Body detail tetap di slide tiga.
+
+• Poin detail satu
+• Poin detail dua
+
+SLIDE 4 — PENUTUP: Judul penutup
+
+Kalimat penutup tetap berada di slide empat.
+
+CAPTION: Caption khusus TikTok tetap terpisah dari gambar carousel.
+TAGAR: #AI #OpenAI #Teknologi`;
+
+  const result = await patch.composeVerbatim({ text: structured });
+  assert.equal(result.caption, 'Caption khusus TikTok tetap terpisah dari gambar carousel.');
+  assert.deepEqual(result.hashtags, ['#AI', '#OpenAI', '#Teknologi']);
+  assert.equal(result.slides[0].title, 'Hook singkat untuk berita teknologi');
+  assert.equal(result.slides[3].title, 'Judul penutup');
+  assert.doesNotMatch(JSON.stringify(result.slides), /Caption khusus TikTok|#OpenAI/);
+  assert.doesNotMatch(result.body, /Caption khusus TikTok|#OpenAI/);
+});
+
 test('Pakai URL renderer behavior remains unchanged', () => {
   const slides = [
     { section: 'HOOK', title: 'Judul sumber yang tetap memakai label renderer', body: '', points: [] },
@@ -113,7 +146,7 @@ test('verbatim renderer rejects overflow instead of adding continuation copy', (
 
   assert.throws(
     () => patch.prepareVerbatimRenderContent(content),
-    error => error.status === 422 && /tidak akan memotong, menulis ulang, atau menambah kalimat/i.test(error.message)
+    error => error.status === 422 && /tidak muat|tidak akan menambah klaim baru/i.test(error.message)
   );
 });
 
