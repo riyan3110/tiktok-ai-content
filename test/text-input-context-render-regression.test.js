@@ -22,7 +22,7 @@ test('context guard catches publisher bullet, mode/model swap, and cut compariso
   assert.match(issues, /14 kali lebih cepat/i);
 });
 
-test('text-input renderer raises hook and preserves bullet semantics', () => {
+test('text-input renderer positions hook slightly lower and preserves bullet semantics', () => {
   const slides = [
     { section: 'HOOK', title: 'Mode Ultrafast Bikin GPT-5.6 Sol Lebih Cepat', body: '', points: [] },
     { section: 'FAKTA UTAMA', title: 'Kecepatan Mode Ultrafast', body: 'Mode ini mempercepat GPT-5.6 Sol pada tugas kompleks.', points: ['14 kali lebih cepat', 'Untuk coding dan riset'] },
@@ -34,7 +34,7 @@ test('text-input renderer raises hook and preserves bullet semantics', () => {
   assert.equal(textLayouts[1].content.points[0].text, '• 14 kali lebih cepat');
   assert.equal(textLayouts[1].content.points[1].text, '• Untuk coding dan riset');
   const hookSvg = images.renderLayout(textLayouts[0], 1, 4, { enabled: false }, {});
-  assert.match(hookSvg, /y="680"/);
+  assert.match(hookSvg, /y="740"/);
 
   const urlLayouts = images.buildSlideLayouts({ slides, contentFormat: 'Tutorial langkah', verificationStatus: 'source_based' });
   assert.equal(urlLayouts[0].textInputHook, false);
