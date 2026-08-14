@@ -41,6 +41,11 @@ async function refresh(refreshToken) {
 async function publishPhotos(accessToken, imageUrls, caption) {
   return request(`${API}/v2/post/publish/content/init/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ post_info: { title: caption.slice(0, 90), description: caption.slice(0, 2200) }, source_info: { source: 'PULL_FROM_URL', photo_images: imageUrls, photo_cover_index: 0 }, post_mode: 'MEDIA_UPLOAD', media_type: 'PHOTO' }) });
 }
+async function cancel(accessToken, publishId) {
+  const id = String(publishId || '').trim();
+  if (!id) throw Object.assign(new Error('Publish ID TikTok wajib diisi.'), { status: 400 });
+  return request(`${API}/v2/post/publish/cancel/`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ publish_id: id }) });
+}
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function retryableStatusError(error) {
   return Number(error?.httpStatus) === 429 || Number(error?.httpStatus) >= 500 || error?.tiktokCode === 'internal_error' || error?.tiktokCode === 'rate_limit_exceeded';
@@ -89,4 +94,4 @@ async function validateImageUrls(imageUrls, verifiedPrefix) {
   return Promise.all(imageUrls.map(imageUrl => validateImageUrl(imageUrl, prefix)));
 }
 function invalidImageUrl(message) { return Object.assign(new Error(message), { status: 400 }); }
-module.exports = { authorizationUrl, exchangeCode, refresh, publishPhotos, status, validateAccessToken, validateImageUrls, randomState, verifyState, STATE_TTL_MS, STATUS_RETRY_DELAYS_MS };
+module.exports = { authorizationUrl, exchangeCode, refresh, publishPhotos, cancel, status, validateAccessToken, validateImageUrls, randomState, verifyState, STATE_TTL_MS, STATUS_RETRY_DELAYS_MS };
