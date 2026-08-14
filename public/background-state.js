@@ -42,7 +42,7 @@
   const textField = document.createElement('label');
   textField.id = 'text-generate-field';
   textField.className = 'hidden';
-  textField.innerHTML = 'Teks / ringkasan berita<textarea id="manual-text-input" rows="9" maxlength="20000" placeholder="Tempel ringkasan atau teks berita di sini. AI Ads Lab hanya akan menyusun isi teks ini menjadi carousel 4–5 slide."></textarea><small>Generate dari Teks tidak mencari sumber dan tidak menambah fakta dari luar teks yang kamu tempel.</small>';
+  textField.innerHTML = 'Teks carousel siap tempel<textarea id="manual-text-input" rows="12" maxlength="20000" placeholder="Tempel copy siap pakai dengan bagian HOOK, FAKTA UTAMA, DETAIL, PENUTUP, lalu CAPTION bila ada. AI Ads Lab akan menempelkan isinya apa adanya."></textarea><small>Label bagian hanya dipakai untuk penempatan dan tidak ikut tampil. AI Ads Lab tidak menulis ulang, meringkas, memotong, atau menambah kalimat yang kamu tempel.</small>';
   originalField.after(textField);
   const textInput = textField.querySelector('textarea');
 
