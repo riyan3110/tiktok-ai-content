@@ -12,11 +12,14 @@ installTextInputSoftFitPatch();
 const { createApp } = require('./app');
 const content = require('./services/content');
 const images = require('./services/images');
+const tiktok = require('./services/tiktok');
 const trending = require('./services/trendingTopics');
 const { generateAndSave } = require('./services/generation');
 const automation = require('./services/automation');
+const { install: installTikTokCancelPatch } = require('./services/tiktokCancelPatch');
 
 const db = createDatabase(); const app = createApp({ db });
+installTikTokCancelPatch({ app, db, tiktok });
 automation.recoverInterruptedJobs(db);
 if (config.enableCron) cron.schedule(config.cronSchedule, async () => { try { await generateAndSave({ db, content, images, trending, mode: config.dailyTopicMode, requestedTopic: config.dailyManualTopic }); } catch (e) { console.error('Cron gagal:', e); } }, { timezone: config.cronTimezone });
 let automationRunning = false;
