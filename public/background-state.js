@@ -283,3 +283,4 @@
 })();
 
 if (typeof window !== 'undefined') import('/legacy-carousel-addon.js').catch(error => console.error('Legacy carousel addon gagal dimuat:', error));
+if (typeof window !== 'undefined') import('/text-input-paste-normalizer.js').catch(error => console.error('Text input paste normalizer gagal dimuat:', error));
