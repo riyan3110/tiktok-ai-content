@@ -8,6 +8,13 @@ const STATUS_LABELS = Object.freeze({
   CANCELED: 'Upload TikTok dibatalkan.'
 });
 
+const PRIORITY_NAV_HREFS = Object.freeze([
+  '#studio',
+  '#trend-reference',
+  '#schedule-dashboard',
+  '#history-section'
+]);
+
 function compactStatus(data = {}) {
   const status = String(data.status || '').toUpperCase();
   if (status === 'FAILED') return String(data.fail_reason || '').toLowerCase() === 'publish_cancelled'
@@ -36,6 +43,26 @@ function compactDirectMessage(value) {
   if (/^TikTok gagal memproses draft/i.test(text)) return 'Upload TikTok gagal.';
   if (/^TikTok belum memberi (status|hasil) akhir/i.test(text)) return STATUS_LABELS.PROCESSING_DOWNLOAD;
   return text;
+}
+
+function installUiLayoutPolish() {
+  const textHelper = document.querySelector('#text-generate-field > small');
+  if (textHelper) {
+    textHelper.hidden = true;
+    textHelper.setAttribute('aria-hidden', 'true');
+  }
+
+  const nav = document.querySelector('.side-nav');
+  if (!nav || nav.dataset.priorityItemsMoved === 'true') return;
+  const priorityLinks = PRIORITY_NAV_HREFS.map(href => nav.querySelector(`a[href="${href}"]`));
+  if (priorityLinks.some(link => !link)) return;
+
+  const divider = priorityLinks[0].previousElementSibling;
+  const fragment = document.createDocumentFragment();
+  priorityLinks.forEach(link => fragment.append(link));
+  if (divider?.classList.contains('nav-divider')) fragment.append(divider);
+  nav.prepend(fragment);
+  nav.dataset.priorityItemsMoved = 'true';
 }
 
 function installCompactTikTokStatus() {
@@ -169,6 +196,7 @@ function install() {
     return;
   }
   window.__legacyCarouselAddonInstalled = true;
+  installUiLayoutPolish();
   installInsertedImageUi();
   installCompactTikTokStatus();
 }
