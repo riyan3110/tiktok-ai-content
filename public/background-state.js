@@ -156,14 +156,18 @@
     if (polling.has(id)) return;
     polling.add(id);
     const startedAt = Date.now();
+    let firstCheck = true;
     let lastData = { status: 'PROCESSING_DOWNLOAD', fail_reason: null, downloaded_bytes: null };
 
     try {
       while (Date.now() - startedAt < URL_PULL_WINDOW_MS) {
         if (activePublishId !== id) return;
-        const elapsed = Date.now() - startedAt;
-        await sleep(elapsed < FAST_POLL_WINDOW_MS ? FAST_POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS);
-        if (activePublishId !== id) return;
+        if (!firstCheck) {
+          const elapsed = Date.now() - startedAt;
+          await sleep(elapsed < FAST_POLL_WINDOW_MS ? FAST_POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS);
+          if (activePublishId !== id) return;
+        }
+        firstCheck = false;
 
         let data;
         try {
@@ -248,12 +252,23 @@
     const wrappedShow = function tiktokPendingAwareShow(item) {
       const result = originalShow(item);
       const status = String(item?.publish_status || '').toUpperCase();
-      if (item?.publish_id && PENDING_STATUSES.has(status)) setPending(item.publish_id, status);
-      else if (!activePublishId && !polling.size) clearPending();
+      if (item?.publish_id && PENDING_STATUSES.has(status)) {
+        setPending(item.publish_id, status);
+        void reliableTikTokPollDraft(item.publish_id);
+      } else if (item?.publish_id && TERMINAL_STATUSES.has(status)) {
+        clearPending(item.publish_id);
+      } else if (!polling.size) {
+        clearPending();
+      }
       return result;
     };
     wrappedShow.__tiktokPendingSync = true;
     globalThis.show = wrappedShow;
+  }
+
+  function resumeVisiblePending() {
+    if (document.visibilityState === 'hidden' || !activePublishId) return;
+    void reliableTikTokPollDraft(activePublishId);
   }
 
   window.addEventListener('load', () => {
@@ -261,5 +276,8 @@
     installUploadGuard();
     installShowSync();
     if (typeof globalThis.pollDraft === 'function') globalThis.pollDraft = reliableTikTokPollDraft;
+    resumeVisiblePending();
   });
+  window.addEventListener('focus', resumeVisiblePending);
+  document.addEventListener('visibilitychange', resumeVisiblePending);
 })();
