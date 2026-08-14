@@ -7,6 +7,7 @@ const INVISIBLE_SECTION = '\u2063';
 const MAX_POINTS = 3;
 const MAX_HASHTAGS = 5;
 const BULLET_PATTERN = /^(?:[•●▪◦‣*+\-–—]|\d{1,2}[.)])\s*(.+)$/u;
+const INLINE_BULLET_MARKER = /(?:^|\s)([•●▪◦‣*+]|\d{1,2}[.)])\s+/gu;
 const HASHTAG_PATTERN = /^#[\p{L}\p{N}_]+$/u;
 const HASHTAG_STOPWORDS = new Set([
   'ada', 'agar', 'akan', 'atau', 'baru', 'bagi', 'bagian', 'bahwa', 'banyak', 'berbeda', 'berisi', 'bisa', 'buat', 'buatan',
@@ -33,6 +34,14 @@ function normalizeSectionLabel(value) {
   return cleanInline(value).toLocaleUpperCase('id-ID').replace(/\s+/g, ' ');
 }
 
+function normalizeText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u2028\u2029]/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+}
+
 function parseHeader(line) {
   const value = String(line || '').trim();
   const slide = value.match(/^(?:SLIDE\s*(\d+)\s*(?:[-–—:]\s*)?)?(HOOK|FAKTA\s+UTAMA|DETAIL|PENUTUP)(?:\s*:\s*(.+))?\s*$/i);
@@ -56,6 +65,30 @@ function bulletValue(line) {
   return match ? cleanInline(match[1]) : '';
 }
 
+function splitInlineBullets(rawLine) {
+  const line = String(rawLine || '').trim();
+  if (!line || !bulletValue(line)) return [line];
+
+  const matches = [...line.matchAll(INLINE_BULLET_MARKER)];
+  if (matches.length <= 1) return [line];
+
+  const parts = [];
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index];
+    const start = match.index + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index : line.length;
+    const value = cleanInline(line.slice(start, end));
+    if (value) parts.push(`• ${value}`);
+  }
+  return parts.length ? parts : [line];
+}
+
+function logicalLines(value) {
+  return normalizeText(value)
+    .split('\n')
+    .flatMap(line => splitInlineBullets(line));
+}
+
 function plainLines(lines = []) {
   return lines
     .map(raw => String(raw || '').trim())
@@ -65,46 +98,16 @@ function plainLines(lines = []) {
     .filter(Boolean);
 }
 
-function paragraphBlocks(lines = []) {
-  const blocks = [];
-  let current = [];
-  const flush = () => {
-    if (!current.length) return;
-    blocks.push(current.map(cleanInline).filter(Boolean).join(' '));
-    current = [];
-  };
-  for (const raw of lines) {
-    const line = String(raw || '').trim();
-    if (!line) {
-      flush();
-      continue;
-    }
-    if (bulletValue(line)) {
-      flush();
-      continue;
-    }
-    current.push(line);
-  }
-  flush();
-  return blocks.filter(Boolean);
-}
-
 function bulletLines(lines = []) {
-  return lines.map(bulletValue).filter(Boolean);
+  return lines.flatMap(splitInlineBullets).map(bulletValue).filter(Boolean);
 }
 
 function titleAndBody(lines = []) {
-  const blocks = paragraphBlocks(lines);
   const visibleLines = plainLines(lines);
-  if (!blocks.length && !visibleLines.length) return { title: '', body: '' };
-
-  if (blocks.length >= 2) {
-    return { title: blocks[0], body: blocks.slice(1).join(' ') };
-  }
-  if (visibleLines.length >= 2) {
-    return { title: visibleLines[0], body: visibleLines.slice(1).join(' ') };
-  }
-  return { title: blocks[0] || visibleLines[0] || '', body: '' };
+  return {
+    title: visibleLines[0] || '',
+    body: visibleLines.slice(1).join(' ')
+  };
 }
 
 function parseSlideSection(section, lines) {
@@ -190,7 +193,7 @@ function generateHashtags(slides = [], caption = '') {
 }
 
 function parseStructuredText(text) {
-  const source = String(text || '').replace(/\r\n?/g, '\n').trim();
+  const source = normalizeText(text);
   if (!source) throw verbatimError('tempel copy carousel yang sudah siap dipakai.');
   if (source.length > MAX_TEXT_CHARS) throw verbatimError(`teks terlalu panjang. Maksimal ${MAX_TEXT_CHARS.toLocaleString('id-ID')} karakter.`);
 
@@ -199,7 +202,7 @@ function parseStructuredText(text) {
   let slideHeaderCount = 0;
   const seenSlides = [];
 
-  for (const rawLine of source.split('\n')) {
+  for (const rawLine of logicalLines(source)) {
     const header = parseHeader(rawLine);
     if (header) {
       current = header.key;
@@ -313,6 +316,8 @@ function resetForTests() {
 module.exports = {
   install,
   resetForTests,
+  normalizeText,
+  logicalLines,
   parseHeader,
   parseStructuredText,
   parseSlideSection,
