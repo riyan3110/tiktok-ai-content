@@ -34,6 +34,52 @@ test('status and closing broadening must also exist in text input', () => {
   assert.ok(modifiers.includes('persaingan'));
 });
 
+test('semantic redundancy rejects comparative tautology without hardcoding a product', () => {
+  const bad = c.validateSemanticRedundancy({
+    caption: 'Fitur Turbo dapat mempercepat Model Atlas hingga 3 kali lebih cepat.',
+    slides: []
+  });
+  assert.match(bad.join(' '), /redundansi makna.*mempercepat.*lebih cepat/i);
+
+  const good = c.validateSemanticRedundancy({
+    caption: 'Fitur Turbo dapat membuat Model Atlas hingga 3 kali lebih cepat.',
+    slides: []
+  });
+  assert.deepEqual(good, []);
+});
+
+test('qualified effects stay owned by the activating feature or condition', () => {
+  const genericSource = 'Perusahaan memperkenalkan Fitur Turbo untuk Model Atlas. Dengan Fitur Turbo, Model Atlas mengurangi waktu tunggu saat memproses laporan dan dapat memberikan hasil lebih cepat. Model Atlas dirancang untuk analisis dokumen.';
+  const drifted = {
+    caption: '',
+    slides: [{
+      title: 'Model Atlas untuk Analisis Dokumen',
+      body: 'Model ini dirancang untuk analisis dokumen yang kompleks.',
+      points: ['Memberikan hasil lebih cepat']
+    }]
+  };
+  assert.match(c.validateQualifierOwnership(drifted, genericSource).join(' '), /konteks bersyarat hilang.*Fitur Turbo/i);
+
+  const preserved = {
+    caption: '',
+    slides: [{
+      title: 'Fitur Turbo untuk Model Atlas',
+      body: 'Fitur Turbo mengurangi waktu tunggu saat memproses laporan.',
+      points: ['Memberikan hasil lebih cepat']
+    }]
+  };
+  assert.deepEqual(c.validateQualifierOwnership(preserved, genericSource), []);
+});
+
+test('repair guidance explains redundancy and lost qualifier generically', () => {
+  const guidance = c.buildRepairGuidance([
+    'slide 1 judul: redundansi makna "mempercepat ... lebih cepat"',
+    'slide 3 bullet 2: konteks bersyarat hilang; fakta ini di TEXT_INPUT terkait "Fitur Turbo" dan tidak boleh dipindahkan menjadi sifat umum entitas lain'
+  ]);
+  assert.match(guidance, /jangan gabungkan verba.*pembanding/i);
+  assert.match(guidance, /pertahankan syarat\/pengaktif\/fitur/i);
+});
+
 test('compose gives the retry exact guidance for the current validation errors', async () => {
   const text = 'Perusahaan AI menyiapkan perubahan untuk model yang didukung. Perubahan membantu proses identifikasi tanpa mengubah tampilan teks bagi pengguna. Penerapan dilakukan secara bertahap sesuai dukungan model. Informasi tersebut menjadi dasar seluruh carousel.';
   const valid = {
