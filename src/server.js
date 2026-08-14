@@ -17,9 +17,11 @@ const trending = require('./services/trendingTopics');
 const { generateAndSave } = require('./services/generation');
 const automation = require('./services/automation');
 const { install: installTikTokCancelPatch } = require('./services/tiktokCancelPatch');
+const { install: installInsertedImagePatch } = require('./services/insertedImagePatch');
 
 const db = createDatabase(); const app = createApp({ db });
 installTikTokCancelPatch({ app, db, tiktok });
+installInsertedImagePatch({ app, db, images });
 automation.recoverInterruptedJobs(db);
 if (config.enableCron) cron.schedule(config.cronSchedule, async () => { try { await generateAndSave({ db, content, images, trending, mode: config.dailyTopicMode, requestedTopic: config.dailyManualTopic }); } catch (e) { console.error('Cron gagal:', e); } }, { timezone: config.cronTimezone });
 let automationRunning = false;
