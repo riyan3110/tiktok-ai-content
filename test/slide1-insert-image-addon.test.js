@@ -16,8 +16,10 @@ test('legacy carousel selector is repurposed as one optional inserted image, not
   assert.match(addon, /\/contents\/\$\{encodeURIComponent\(generated\.id\)\}\/insert-image/);
 });
 
-test('selected image is composited only onto slide one below the hook area', () => {
-  assert.match(insertion, /INSERT_BOX = Object\.freeze\(\{ left: 90, top: 1210, width: 740, height: 280 \}\)/);
+test('selected image fills a large framed area on slide one below the hook', () => {
+  assert.match(insertion, /INSERT_BOX = Object\.freeze\(\{ left: 50, top: 900, width: 980, height: 920 \}\)/);
+  assert.match(insertion, /fit: 'cover'/);
+  assert.match(insertion, /position: 'centre'/);
   assert.match(insertion, /await overlaySlideOne\(files\[0\], file\.data\)/);
   assert.match(insertion, /await overlaySlideOne\(slides\[0\], file\.data\)/);
   assert.doesNotMatch(insertion, /overlaySlideOne\(files\[i\]/);
