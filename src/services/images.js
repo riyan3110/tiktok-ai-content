@@ -6,7 +6,7 @@ const { normalizeSlides, validateSlides: validateContentSlides } = require('./co
 
 const WIDTH = 1080;
 const HEIGHT = 1920;
-const JPEG_QUALITY = 90;
+const JPEG_QUALITY = 98;
 // TikTok overlays occupy the search/header region, the action rail at the
 // right, and the caption/navigation region at the bottom. Keep all meaningful
 // copy inside this deliberately asymmetric canvas.
@@ -514,7 +514,7 @@ async function createSlides(id, content) {
     for (let i = 0; i < layouts.length; i++) {
       const name = `${id}-${i + 1}.jpg`;
       const background = content.background?.applyToAllSlides === false ? (content.background.slideBackgrounds?.[i] || content.background) : content.background;
-      await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark, background))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY }).toFile(path.join(dir, name));
+      await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark, background))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY, chromaSubsampling: '4:4:4' }).toFile(path.join(dir, name));
       files.push(`/generated/${name}`);
     }
     return files;
