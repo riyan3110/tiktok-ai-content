@@ -97,6 +97,96 @@ function installCompactTikTokStatus() {
   observer.observe(statusNode, { childList: true, characterData: true, subtree: true });
 }
 
+function installNativeShareUi() {
+  const uploadButton = document.querySelector('#upload');
+  const slidesHost = document.querySelector('#slides');
+  const captionInput = document.querySelector('#caption');
+  if (!uploadButton || !slidesHost || !captionInput || document.querySelector('#share-carousel')) return;
+
+  const shareButton = document.createElement('button');
+  shareButton.id = 'share-carousel';
+  shareButton.type = 'button';
+  shareButton.className = 'outline';
+  shareButton.textContent = 'Bagikan ke aplikasi';
+  shareButton.disabled = true;
+  shareButton.style.width = '100%';
+  shareButton.style.marginBottom = '10px';
+
+  const shareStatus = document.createElement('p');
+  shareStatus.id = 'share-carousel-status';
+  shareStatus.setAttribute('role', 'status');
+  shareStatus.style.marginTop = '0';
+
+  uploadButton.before(shareButton, shareStatus);
+
+  let preparedFiles = [];
+  let preparationVersion = 0;
+
+  async function prepareShareFiles() {
+    const version = ++preparationVersion;
+    const sources = [...slidesHost.querySelectorAll('img')]
+      .map(image => image.getAttribute('src') || image.src)
+      .filter(Boolean);
+
+    preparedFiles = [];
+    shareStatus.textContent = '';
+    shareButton.disabled = true;
+    shareButton.textContent = sources.length ? 'Menyiapkan bagikan…' : 'Bagikan ke aplikasi';
+
+    if (!sources.length) return;
+    if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function' || typeof File !== 'function') {
+      shareButton.textContent = 'Bagikan tidak didukung';
+      shareStatus.textContent = 'Browser atau perangkat ini belum mendukung berbagi beberapa file.';
+      return;
+    }
+
+    try {
+      const files = await Promise.all(sources.map(async (source, index) => {
+        const response = await fetch(source, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`slide ${index + 1} tidak dapat dibaca`);
+        const blob = await response.blob();
+        const type = String(blob.type || '').startsWith('image/') ? blob.type : 'image/jpeg';
+        const extension = type.includes('png') ? 'png' : 'jpg';
+        return new File([blob], `ai-ads-lab-slide-${index + 1}.${extension}`, { type });
+      }));
+
+      if (version !== preparationVersion) return;
+      if (!navigator.canShare({ files })) throw new Error('perangkat tidak mendukung berbagi beberapa gambar sekaligus');
+
+      preparedFiles = files;
+      shareButton.disabled = false;
+      shareButton.textContent = 'Bagikan ke aplikasi';
+    } catch (error) {
+      if (version !== preparationVersion) return;
+      shareButton.disabled = true;
+      shareButton.textContent = 'Bagikan tidak tersedia';
+      shareStatus.textContent = `Gambar belum bisa dibagikan: ${error.message}`;
+    }
+  }
+
+  shareButton.onclick = async () => {
+    if (!preparedFiles.length) return;
+    try {
+      await navigator.share({
+        title: 'AI Ads Lab',
+        text: captionInput.value.trim(),
+        files: preparedFiles
+      });
+      shareStatus.textContent = 'Konten sudah diserahkan ke aplikasi yang dipilih.';
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        shareStatus.textContent = '';
+        return;
+      }
+      shareStatus.textContent = `Gagal membuka menu bagikan: ${error.message}`;
+    }
+  };
+
+  const observer = new MutationObserver(() => { void prepareShareFiles(); });
+  observer.observe(slidesHost, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  void prepareShareFiles();
+}
+
 function installInsertedImageUi() {
   const selectButton = document.querySelector('#studio-select-assets');
   const host = document.querySelector('#studio-assets');
@@ -199,6 +289,7 @@ function install() {
   installUiLayoutPolish();
   installInsertedImageUi();
   installCompactTikTokStatus();
+  installNativeShareUi();
 }
 
 if (document.readyState === 'complete') install();
