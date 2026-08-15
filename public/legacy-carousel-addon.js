@@ -107,7 +107,7 @@ function installNativeShareUi() {
   shareButton.id = 'share-carousel';
   shareButton.type = 'button';
   shareButton.className = 'outline';
-  shareButton.textContent = 'Bagikan ke aplikasi';
+  shareButton.textContent = 'Bagikan + salin caption';
   shareButton.disabled = true;
   shareButton.style.width = '100%';
   shareButton.style.marginBottom = '10px';
@@ -122,6 +122,31 @@ function installNativeShareUi() {
   let preparedFiles = [];
   let preparationVersion = 0;
 
+  function legacyClipboardCopy(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.append(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch {}
+    textarea.remove();
+    return copied;
+  }
+
+  function copyCaptionToClipboard(text) {
+    const value = String(text || '').trim();
+    if (!value) return Promise.resolve(false);
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(value).then(() => true).catch(() => false);
+    }
+    return Promise.resolve(legacyClipboardCopy(value));
+  }
+
   async function prepareShareFiles() {
     const version = ++preparationVersion;
     const sources = [...slidesHost.querySelectorAll('img')]
@@ -131,7 +156,7 @@ function installNativeShareUi() {
     preparedFiles = [];
     shareStatus.textContent = '';
     shareButton.disabled = true;
-    shareButton.textContent = sources.length ? 'Menyiapkan bagikan…' : 'Bagikan ke aplikasi';
+    shareButton.textContent = sources.length ? 'Menyiapkan bagikan…' : 'Bagikan + salin caption';
 
     if (!sources.length) return;
     if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function' || typeof File !== 'function') {
@@ -155,7 +180,7 @@ function installNativeShareUi() {
 
       preparedFiles = files;
       shareButton.disabled = false;
-      shareButton.textContent = 'Bagikan ke aplikasi';
+      shareButton.textContent = 'Bagikan + salin caption';
     } catch (error) {
       if (version !== preparationVersion) return;
       shareButton.disabled = true;
@@ -166,19 +191,27 @@ function installNativeShareUi() {
 
   shareButton.onclick = async () => {
     if (!preparedFiles.length) return;
+    const caption = captionInput.value.trim();
+    const clipboardResult = copyCaptionToClipboard(caption);
     try {
       await navigator.share({
         title: 'AI Ads Lab',
-        text: captionInput.value.trim(),
+        text: caption,
         files: preparedFiles
       });
-      shareStatus.textContent = 'Konten sudah diserahkan ke aplikasi yang dipilih.';
+      const copied = await clipboardResult;
+      shareStatus.textContent = copied
+        ? 'Konten dibagikan. Caption + tagar sudah disalin—tinggal Tempel di aplikasi tujuan.'
+        : 'Konten dibagikan. Jika caption tidak ikut, salin teks dari kolom Caption secara manual.';
     } catch (error) {
+      const copied = await clipboardResult;
       if (error?.name === 'AbortError') {
-        shareStatus.textContent = '';
+        shareStatus.textContent = copied ? 'Bagikan dibatalkan. Caption + tagar tetap sudah disalin.' : '';
         return;
       }
-      shareStatus.textContent = `Gagal membuka menu bagikan: ${error.message}`;
+      shareStatus.textContent = copied
+        ? `Menu bagikan gagal dibuka: ${error.message}. Caption + tagar sudah disalin.`
+        : `Gagal membuka menu bagikan: ${error.message}`;
     }
   };
 
