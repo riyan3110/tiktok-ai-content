@@ -7,6 +7,7 @@ const { INVISIBLE_SECTION } = require('./textInputVerbatimPatch');
 
 const BODY_MIN_KEEP_RATIO = 0.65;
 const TEXT_INPUT_LOWER_SHIFT = 70;
+const TEXT_INPUT_HOOK_RAISE = 90;
 const EMPHASIS_WEIGHT = 800;
 const OPTIONAL_TRAILING_STARTS = new Set([
   'untuk', 'agar', 'secara', 'dengan', 'melalui', 'sehingga', 'ketika', 'saat', 'yang'
@@ -162,7 +163,8 @@ async function createTextInputSlides(id, content) {
         ? (prepared.background.slideBackgrounds?.[index] || prepared.background)
         : prepared.background;
       let svg = images.renderLayout(layouts[index], index + 1, layouts.length, prepared.watermark, background);
-      if (index > 0) svg = shiftContentText(svg, lowerShiftForLayout(layouts[index]));
+      if (index === 0) svg = shiftContentText(svg, -TEXT_INPUT_HOOK_RAISE);
+      else svg = shiftContentText(svg, lowerShiftForLayout(layouts[index]));
       svg = emphasizeRoleText(svg, index, layouts.length);
       await sharp(Buffer.from(svg))
         .resize(images.WIDTH, images.HEIGHT)
@@ -210,5 +212,6 @@ module.exports = {
   createTextInputSlides,
   BODY_MIN_KEEP_RATIO,
   TEXT_INPUT_LOWER_SHIFT,
+  TEXT_INPUT_HOOK_RAISE,
   EMPHASIS_WEIGHT
 };

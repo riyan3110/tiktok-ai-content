@@ -43,7 +43,7 @@ test('preferred trimming keeps sentence flow by dropping optional trailing phras
   assert.equal(candidates[0], 'Ultrafast berfokus pada percepatan inferensi, sedangkan Ultra mode menggunakan beberapa subagen untuk mengerjakan tugas kompleks.');
 });
 
-test('slides 2 to 4 can be lowered without moving labels or slide 1', () => {
+test('slides 2 to 4 can be lowered without moving labels', () => {
   const svg = '<svg><text y="270">watermark</text><text y="425">label</text><text y="610">title</text><text y="760">body</text></svg>';
   const shifted = patch.shiftContentText(svg, patch.TEXT_INPUT_LOWER_SHIFT);
 
@@ -51,6 +51,16 @@ test('slides 2 to 4 can be lowered without moving labels or slide 1', () => {
   assert.match(shifted, /y="425">label/);
   assert.match(shifted, /y="680">title/);
   assert.match(shifted, /y="830">body/);
+});
+
+test('slide 1 hook is raised 90px without moving watermark or slide counter', () => {
+  const svg = '<svg><text y="270">watermark</text><text y="425">1/4</text><text y="740">hook line</text></svg>';
+  const shifted = patch.shiftContentText(svg, -patch.TEXT_INPUT_HOOK_RAISE);
+
+  assert.equal(patch.TEXT_INPUT_HOOK_RAISE, 90);
+  assert.match(shifted, /y="270">watermark/);
+  assert.match(shifted, /y="425">1\/4/);
+  assert.match(shifted, /y="650">hook line/);
 });
 
 test('lowering amount is capped by remaining bottom-safe-area slack', () => {
