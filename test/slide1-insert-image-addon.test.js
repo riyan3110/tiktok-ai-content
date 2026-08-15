@@ -52,19 +52,24 @@ test('carousel can be prepared as multiple image files for the Android share she
   assert.match(addon, /new File\(\[blob\], `ai-ads-lab-slide-\$\{index \+ 1\}\.\$\{extension\}`/);
   assert.match(addon, /navigator\.canShare\(\{ files \}\)/);
   assert.match(addon, /await navigator\.share\(\{/);
-  assert.match(addon, /text: caption/);
+  assert.match(addon, /text: shareText/);
   assert.match(addon, /files: preparedFiles/);
   assert.match(addon, /MutationObserver\(\(\) => \{ void prepareShareFiles\(\); \}\)/);
   assert.match(addon, /installNativeShareUi\(\)/);
 });
 
-test('native share copies the full caption and hashtags to clipboard before handing off files', () => {
+test('native share copies caption and generated hashtags together before handing off files', () => {
+  assert.match(addon, /let latestHashtags = \[\]/);
+  assert.match(addon, /function normalizeHashtag\(value\)/);
+  assert.match(addon, /function buildShareText\(\)/);
+  assert.match(addon, /latestHashtags = Array\.isArray\(item\?\.hashtags\) \? item\.hashtags : \[\]/);
+  assert.match(addon, /return \[caption, hashtags\.join\(' '\)\]\.filter\(Boolean\)\.join\('\\n\\n'\)/);
   assert.match(addon, /function copyCaptionToClipboard\(text\)/);
   assert.match(addon, /navigator\.clipboard\?\.writeText/);
   assert.match(addon, /navigator\.clipboard\.writeText\(value\)/);
   assert.match(addon, /document\.execCommand\('copy'\)/);
-  assert.match(addon, /const caption = captionInput\.value\.trim\(\)/);
-  assert.match(addon, /const clipboardResult = copyCaptionToClipboard\(caption\)/);
+  assert.match(addon, /const shareText = buildShareText\(\)/);
+  assert.match(addon, /const clipboardResult = copyCaptionToClipboard\(shareText\)/);
   assert.match(addon, /Caption \+ tagar sudah disalin/);
 });
 

@@ -121,6 +121,35 @@ function installNativeShareUi() {
 
   let preparedFiles = [];
   let preparationVersion = 0;
+  let latestHashtags = [];
+
+  function normalizeHashtag(value) {
+    const clean = String(value || '').trim().replace(/^#+/, '').replace(/\s+/g, '');
+    return clean ? `#${clean}` : '';
+  }
+
+  function buildShareText() {
+    const caption = captionInput.value.trim();
+    const existingTags = new Set((caption.match(/#[^\s#]+/g) || []).map(tag => tag.toLocaleLowerCase('id-ID')));
+    const seen = new Set();
+    const hashtags = latestHashtags.map(normalizeHashtag).filter(tag => {
+      const key = tag.toLocaleLowerCase('id-ID');
+      if (!tag || existingTags.has(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [caption, hashtags.join(' ')].filter(Boolean).join('\n\n');
+  }
+
+  if (typeof window.show === 'function' && !window.show.__shareHashtags) {
+    const originalShow = window.show;
+    const wrappedShow = function shareHashtagsShow(item) {
+      latestHashtags = Array.isArray(item?.hashtags) ? item.hashtags : [];
+      return originalShow(item);
+    };
+    wrappedShow.__shareHashtags = true;
+    window.show = wrappedShow;
+  }
 
   function legacyClipboardCopy(text) {
     const textarea = document.createElement('textarea');
@@ -191,12 +220,12 @@ function installNativeShareUi() {
 
   shareButton.onclick = async () => {
     if (!preparedFiles.length) return;
-    const caption = captionInput.value.trim();
-    const clipboardResult = copyCaptionToClipboard(caption);
+    const shareText = buildShareText();
+    const clipboardResult = copyCaptionToClipboard(shareText);
     try {
       await navigator.share({
         title: 'AI Ads Lab',
-        text: caption,
+        text: shareText,
         files: preparedFiles
       });
       const copied = await clipboardResult;
