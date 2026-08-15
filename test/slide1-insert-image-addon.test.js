@@ -45,15 +45,25 @@ test('Content Studio shortcuts move to the top and the long text helper is hidde
 
 test('carousel can be prepared as multiple image files for the Android share sheet', () => {
   assert.match(addon, /shareButton\.id = 'share-carousel'/);
-  assert.match(addon, /shareButton\.textContent = 'Bagikan ke aplikasi'/);
+  assert.match(addon, /shareButton\.textContent = 'Bagikan \+ salin caption'/);
   assert.match(addon, /slidesHost\.querySelectorAll\('img'\)/);
   assert.match(addon, /new File\(\[blob\], `ai-ads-lab-slide-\$\{index \+ 1\}\.\$\{extension\}`/);
   assert.match(addon, /navigator\.canShare\(\{ files \}\)/);
   assert.match(addon, /await navigator\.share\(\{/);
-  assert.match(addon, /text: captionInput\.value\.trim\(\)/);
+  assert.match(addon, /text: caption/);
   assert.match(addon, /files: preparedFiles/);
   assert.match(addon, /MutationObserver\(\(\) => \{ void prepareShareFiles\(\); \}\)/);
   assert.match(addon, /installNativeShareUi\(\)/);
+});
+
+test('native share copies the full caption and hashtags to clipboard before handing off files', () => {
+  assert.match(addon, /function copyCaptionToClipboard\(text\)/);
+  assert.match(addon, /navigator\.clipboard\?\.writeText/);
+  assert.match(addon, /navigator\.clipboard\.writeText\(value\)/);
+  assert.match(addon, /document\.execCommand\('copy'\)/);
+  assert.match(addon, /const caption = captionInput\.value\.trim\(\)/);
+  assert.match(addon, /const clipboardResult = copyCaptionToClipboard\(caption\)/);
+  assert.match(addon, /Caption \+ tagar sudah disalin/);
 });
 
 test('server mounts post-render insertion without replacing the existing generator', () => {
