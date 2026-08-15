@@ -43,8 +43,9 @@ async function overlaySlideOne(file, input) {
   const overlay = await sharp(input)
     .rotate()
     .resize(INSERT_BOX.width, INSERT_BOX.height, {
-      fit: 'cover',
-      position: 'centre'
+      fit: 'contain',
+      position: 'centre',
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
     .png()
     .toBuffer();
