@@ -192,3 +192,18 @@ test('browser exposes cancel for a pending share and blocks another upload until
   assert.match(source, /PENDING_STATUSES/);
   assert.match(source, /installShowSync/);
 });
+
+test('one manual Upload can recover one stalled TikTok photo pull without creating concurrent tasks', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../public/background-state.js'), 'utf8');
+  assert.match(source, /STALL_RETRY_AFTER_MS\s*=\s*90\s*\*\s*1000/);
+  assert.match(source, /AUTO_RETRY_LIMIT\s*=\s*1/);
+  assert.match(source, /installUploadCapture\(\)/);
+  assert.match(source, /lastUploadPayload\s*=\s*\{ id: payload\.id, caption: String\(payload\.caption \|\| ''\) \}/);
+  assert.match(source, /await api\(`\/cancel-tiktok\/\$\{encodeURIComponent\(publishId\)\}`/);
+  assert.match(source, /const stopped = await waitForCancelledTask\(publishId\)/);
+  assert.match(source, /if \(stopped\.outcome !== 'stopped'\)/);
+  assert.match(source, /return startAutomaticRetry\(publishId, 'berhenti setelah tidak ada progres'\)/);
+  assert.match(source, /automaticRetriesUsed \+= 1/);
+  assert.match(source, /body: JSON\.stringify\(lastUploadPayload\)/);
+  assert.match(source, /Draft pertama ternyata berhasil masuk ke TikTok\. Retry otomatis dibatalkan/);
+});

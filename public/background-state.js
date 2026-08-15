@@ -66,21 +66,31 @@
   sync();
 })();
 
-// TikTok PHOTO uploads use PULL_FROM_URL. Keep a single pending share attached
-// to the UI, expose TikTok's official cancel operation, and do not let repeated
-// taps create more publish IDs while the previous task is still pending.
+// TikTok PHOTO uploads use PULL_FROM_URL. Keep one pending share attached to
+// the UI. If TikTok accepts the first publish but makes no pull progress for a
+// sustained period, cancel that exact task first and replay the same upload at
+// most once. This replaces the manual "click Upload a second time" workaround
+// without risking two live publish tasks for the same carousel.
 (() => {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   const FAST_POLL_WINDOW_MS = 5 * 60 * 1000;
   const URL_PULL_WINDOW_MS = 60 * 60 * 1000;
   const FAST_POLL_INTERVAL_MS = 10 * 1000;
   const SLOW_POLL_INTERVAL_MS = 30 * 1000;
+  const STALL_RETRY_AFTER_MS = 90 * 1000;
+  const CANCEL_CONFIRM_WINDOW_MS = 90 * 1000;
+  const CANCEL_CONFIRM_INTERVAL_MS = 3 * 1000;
+  const AUTO_RETRY_LIMIT = 1;
   const PENDING_STATUSES = new Set(['PROCESSING_UPLOAD', 'PROCESSING_DOWNLOAD', 'CANCEL_REQUESTED']);
   const TERMINAL_STATUSES = new Set(['SEND_TO_USER_INBOX', 'PUBLISH_COMPLETE', 'FAILED', 'CANCELLED', 'CANCELED']);
+  const AUTO_RETRYABLE_FAILURES = new Set(['photo_pull_failed', 'internal', 'internal_error']);
   const polling = new Set();
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let activePublishId = null;
   let cancelRequestedFor = null;
+  let lastUploadPayload = null;
+  let automaticRetriesUsed = 0;
+  let autoRecoveryFor = null;
 
   function controls() {
     const upload = document.querySelector('#upload');
@@ -107,8 +117,10 @@
     if (upload) upload.disabled = true;
     if (cancel) {
       cancel.classList.remove('hidden');
-      cancel.disabled = cancelRequestedFor === id;
-      cancel.textContent = cancelRequestedFor === id ? 'Pembatalan diminta…' : 'Batalkan upload TikTok';
+      cancel.disabled = cancelRequestedFor === id || autoRecoveryFor === id;
+      cancel.textContent = autoRecoveryFor === id
+        ? 'Memulihkan upload…'
+        : cancelRequestedFor === id ? 'Pembatalan diminta…' : 'Batalkan upload TikTok';
     }
   }
 
@@ -117,6 +129,7 @@
     if (id && activePublishId && activePublishId !== id) return;
     activePublishId = null;
     cancelRequestedFor = null;
+    autoRecoveryFor = null;
     const { upload, cancel } = controls();
     if (upload) upload.disabled = false;
     if (cancel) {
@@ -126,9 +139,33 @@
     }
   }
 
+  function normalizedDownloadedBytes(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+  }
+
+  function installUploadCapture() {
+    if (window.fetch.__tiktokUploadCapture) return;
+    const originalFetch = window.fetch.bind(window);
+    const wrappedFetch = async (input, init = {}) => {
+      let url;
+      try { url = new URL(typeof input === 'string' ? input : input.url, window.location.href); } catch { return originalFetch(input, init); }
+      const method = String(init?.method || (typeof input !== 'string' ? input.method : 'GET') || 'GET').toUpperCase();
+      if (url.pathname === '/upload-tiktok' && method === 'POST') {
+        try {
+          const payload = JSON.parse(String(init.body || '{}'));
+          if (payload?.id) lastUploadPayload = { id: payload.id, caption: String(payload.caption || '') };
+        } catch {}
+      }
+      return originalFetch(input, init);
+    };
+    wrappedFetch.__tiktokUploadCapture = true;
+    window.fetch = wrappedFetch;
+  }
+
   async function requestCancel() {
     const publishId = activePublishId;
-    if (!publishId || cancelRequestedFor === publishId) return;
+    if (!publishId || cancelRequestedFor === publishId || autoRecoveryFor === publishId) return;
     if (!window.confirm('Batalkan upload TikTok yang masih diproses?')) return;
     const { cancel } = controls();
     if (cancel) { cancel.disabled = true; cancel.textContent = 'Membatalkan…'; }
@@ -149,6 +186,95 @@
     }
   }
 
+  async function startAutomaticRetry(oldPublishId, reason) {
+    if (!lastUploadPayload || automaticRetriesUsed >= AUTO_RETRY_LIMIT) return false;
+    automaticRetriesUsed += 1;
+    autoRecoveryFor = null;
+    cancelRequestedFor = null;
+    renderPublishStatus(
+      { status: 'PROCESSING_UPLOAD', fail_reason: null, downloaded_bytes: null },
+      `Percobaan pertama ${reason}. AI Ads Lab mencoba mengirim ulang satu kali secara otomatis.`
+    );
+
+    try {
+      const retry = await api('/upload-tiktok', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lastUploadPayload)
+      });
+      const nextId = String(retry?.publishId || '').trim();
+      if (!nextId || nextId === oldPublishId) throw new Error('TikTok tidak memberikan publish ID baru untuk percobaan ulang.');
+      setPending(nextId, retry.status || 'PROCESSING_UPLOAD');
+      renderPublishStatus(retry, 'Percobaan ulang sudah dikirim ke TikTok. Menunggu draft masuk.');
+      try { await history(); } catch {}
+      void reliableTikTokPollDraft(nextId);
+      return true;
+    } catch (error) {
+      clearPending(oldPublishId);
+      const statusElement = document.querySelector('#status');
+      if (statusElement) statusElement.textContent = `Percobaan ulang otomatis gagal: ${error.message}. Kamu bisa menekan Upload lagi.`;
+      return false;
+    }
+  }
+
+  async function waitForCancelledTask(publishId) {
+    const deadline = Date.now() + CANCEL_CONFIRM_WINDOW_MS;
+    while (Date.now() < deadline) {
+      await sleep(CANCEL_CONFIRM_INTERVAL_MS);
+      if (activePublishId !== publishId) return { outcome: 'superseded', data: null };
+      let data;
+      try {
+        data = await api(`/status/${encodeURIComponent(publishId)}`);
+      } catch {
+        continue;
+      }
+      renderPublishStatus(data, 'Percobaan pertama dihentikan sebelum retry otomatis.');
+      try { await history(); } catch {}
+      if (data.status === 'SEND_TO_USER_INBOX' || data.status === 'PUBLISH_COMPLETE') return { outcome: 'delivered', data };
+      if (data.status === 'FAILED' || data.status === 'CANCELLED' || data.status === 'CANCELED') return { outcome: 'stopped', data };
+    }
+    return { outcome: 'pending', data: null };
+  }
+
+  async function recoverStalledPull(publishId) {
+    if (!lastUploadPayload || automaticRetriesUsed >= AUTO_RETRY_LIMIT || cancelRequestedFor === publishId || autoRecoveryFor === publishId) return false;
+    autoRecoveryFor = publishId;
+    setPending(publishId, 'PROCESSING_DOWNLOAD');
+    renderPublishStatus(
+      { status: 'PROCESSING_DOWNLOAD', fail_reason: null, downloaded_bytes: null },
+      'Percobaan pertama tidak menunjukkan progres. AI Ads Lab menghentikan task itu sebelum mencoba ulang satu kali.'
+    );
+
+    try {
+      const result = await api(`/cancel-tiktok/${encodeURIComponent(publishId)}`, { method: 'POST' });
+      cancelRequestedFor = publishId;
+      setPending(publishId, result.status || 'CANCEL_REQUESTED');
+    } catch (error) {
+      autoRecoveryFor = null;
+      setPending(publishId, 'PROCESSING_DOWNLOAD');
+      const statusElement = document.querySelector('#status');
+      if (statusElement) statusElement.textContent = `TikTok belum bisa membatalkan percobaan pertama: ${error.message}. Task lama tetap dipantau agar tidak membuat draft ganda.`;
+      return false;
+    }
+
+    const stopped = await waitForCancelledTask(publishId);
+    if (stopped.outcome === 'delivered') {
+      renderPublishStatus(stopped.data, 'Draft pertama ternyata berhasil masuk ke TikTok. Retry otomatis dibatalkan.');
+      clearPending(publishId);
+      return true;
+    }
+    if (stopped.outcome !== 'stopped') {
+      autoRecoveryFor = null;
+      renderPublishStatus(
+        { status: 'CANCEL_REQUESTED', fail_reason: null, downloaded_bytes: null },
+        'TikTok belum mengonfirmasi task pertama berhenti. Retry otomatis tidak dijalankan untuk mencegah draft ganda.'
+      );
+      return false;
+    }
+
+    return startAutomaticRetry(publishId, 'berhenti setelah tidak ada progres');
+  }
+
   async function reliableTikTokPollDraft(publishId) {
     const id = String(publishId || '').trim();
     if (!id) return;
@@ -156,6 +282,8 @@
     if (polling.has(id)) return;
     polling.add(id);
     const startedAt = Date.now();
+    let lastProgressAt = startedAt;
+    let lastDownloadedBytes = null;
     let firstCheck = true;
     let lastData = { status: 'PROCESSING_DOWNLOAD', fail_reason: null, downloaded_bytes: null };
 
@@ -193,6 +321,10 @@
           return;
         }
         if (data.status === 'FAILED') {
+          const failReason = String(data.fail_reason || '').toLowerCase();
+          if (cancelRequestedFor !== id && AUTO_RETRYABLE_FAILURES.has(failReason) && automaticRetriesUsed < AUTO_RETRY_LIMIT && lastUploadPayload) {
+            if (await startAutomaticRetry(id, `gagal dengan status ${failReason}`)) return;
+          }
           const reason = data.fail_reason ? `: ${data.fail_reason}` : '.';
           renderPublishStatus(data, cancelRequestedFor === id ? 'Task TikTok sudah berhenti setelah pembatalan.' : `TikTok gagal memproses draft${reason}`);
           clearPending(id);
@@ -204,6 +336,16 @@
           return;
         }
         if (data.status === 'PROCESSING_DOWNLOAD') {
+          const bytes = normalizedDownloadedBytes(data.downloaded_bytes);
+          if (bytes !== null && (lastDownloadedBytes === null || bytes > lastDownloadedBytes)) {
+            lastDownloadedBytes = bytes;
+            lastProgressAt = Date.now();
+          }
+          const stalled = Date.now() - lastProgressAt >= STALL_RETRY_AFTER_MS;
+          if (!cancelRequestedFor && stalled && automaticRetriesUsed < AUTO_RETRY_LIMIT && lastUploadPayload) {
+            if (await recoverStalledPull(id)) return;
+            lastProgressAt = Date.now();
+          }
           renderPublishStatus(data, cancelRequestedFor === id
             ? 'Pembatalan sudah diminta; menunggu TikTok menghentikan task lama. Upload baru masih dikunci.'
             : 'TikTok sedang mengunduh gambar dari AI Ads Lab. Proses masih berjalan; jangan unggah ulang.');
@@ -235,6 +377,9 @@
     upload.dataset.tiktokPendingGuard = 'true';
     upload.onclick = async function guardedTikTokUpload(event) {
       if (this.dataset.tiktokSubmitting === 'true' || activePublishId) return;
+      automaticRetriesUsed = 0;
+      lastUploadPayload = null;
+      autoRecoveryFor = null;
       this.dataset.tiktokSubmitting = 'true';
       this.disabled = true;
       try {
@@ -271,6 +416,7 @@
     void reliableTikTokPollDraft(activePublishId);
   }
 
+  installUploadCapture();
   window.addEventListener('load', () => {
     controls();
     installUploadGuard();
