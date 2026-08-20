@@ -61,7 +61,19 @@ class StorageService {
   inferType(mime = '') { return mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'prompt-attachment'; }
   async url(asset) { return this.adapter(asset.storage_provider).signedUrl(asset.storage_key, this.row().signed_url_expiration); }
   assetMimeType(asset) { return detectMimeType(Buffer.alloc(0), asset.name || asset.storage_key, asset.mime_type); }
-  async accessible(asset) { const url = await this.url(asset); const image = asset.type === 'image' || this.assetMimeType(asset).startsWith('image/'); const previewUrl = `/api/assets/${encodeURIComponent(asset.id)}/preview`; return { ...asset, mime_type: this.assetMimeType(asset), type: image ? 'image' : asset.type, storage_url: url, url, preview_url: image ? previewUrl : null }; }
+  async accessible(asset) {
+    const url = await this.url(asset);
+    const image = asset.type === 'image' || this.assetMimeType(asset).startsWith('image/');
+    return {
+      ...asset,
+      mime_type: this.assetMimeType(asset),
+      type: image ? 'image' : asset.type,
+      storage_url: url,
+      url,
+      preview_url: image ? url : null,
+      preview_proxy_url: image ? `/api/assets/${encodeURIComponent(asset.id)}/preview` : null
+    };
+  }
   async preview(asset) { const downloaded = await this.adapter(asset.storage_provider).download(asset.storage_key); return { data: downloaded.data, mimeType: detectMimeType(downloaded.data, asset.name || asset.storage_key, downloaded.contentType || asset.mime_type) }; }
   async accessibleList(query = {}) { return Promise.all(this.repository.list(query).map(asset => this.accessible(asset))); }
   async resolveIds(ids = []) {
