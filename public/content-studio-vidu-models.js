@@ -33,3 +33,28 @@
   function clearHandler(input){input.onchange=null}
   return {MODEL_KEYS,modelsFor,stateFor,validate,applySelect,genericState,clearHandler};
 });
+
+(function setupPwa(){
+  if(typeof window==='undefined'||typeof document==='undefined')return;
+  if(!document.querySelector('link[rel="manifest"]')){
+    const manifest=document.createElement('link');
+    manifest.rel='manifest';
+    manifest.href='/manifest.webmanifest';
+    document.head.appendChild(manifest);
+  }
+  const metaValues=[
+    ['mobile-web-app-capable','yes'],
+    ['apple-mobile-web-app-capable','yes'],
+    ['apple-mobile-web-app-title','AI Ads Lab']
+  ];
+  metaValues.forEach(([name,content])=>{
+    if(document.querySelector(`meta[name="${name}"]`))return;
+    const meta=document.createElement('meta');
+    meta.name=name;
+    meta.content=content;
+    document.head.appendChild(meta);
+  });
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(error=>console.warn('PWA service worker gagal didaftarkan:',error));
+  }
+})();
