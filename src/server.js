@@ -1,3 +1,5 @@
+const { install: installSlideSpacingPatch } = require('./services/slideSpacingPatch');
+installSlideSpacingPatch();
 const cron = require('node-cron');
 const config = require('./config');
 const { createDatabase } = require('./db');
