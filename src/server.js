@@ -1,0 +1,31 @@
+const cron = require('node-cron');
+const config = require('./config');
+const { createDatabase } = require('./db');
+const { install: installSourceSafetyPatch } = require('./services/sourceSafetyPatch');
+installSourceSafetyPatch();
+const { install: installAutoSourcePatch } = require('./services/autoSourcePatch');
+installAutoSourcePatch();
+const { install: installTextInputVerbatimPatch } = require('./services/textInputVerbatimPatch');
+installTextInputVerbatimPatch();
+const { install: installTextInputSoftFitPatch } = require('./services/textInputSoftFitPatch');
+installTextInputSoftFitPatch();
+const { createApp } = require('./app');
+const content = require('./services/content');
+const images = require('./services/images');
+const tiktok = require('./services/tiktok');
+const trending = require('./services/trendingTopics');
+const { generateAndSave } = require('./services/generation');
+const automation = require('./services/automation');
+const { install: installTikTokCancelPatch } = require('./services/tiktokCancelPatch');
+const { install: installInsertedImagePatch } = require('./services/insertedImagePatch');
+
+const db = createDatabase(); const app = createApp({ db });
+installTikTokCancelPatch({ app, db, tiktok });
+installInsertedImagePatch({ app, db, images });
+automation.recoverInterruptedJobs(db);
+if (config.enableCron) cron.schedule(config.cronSchedule, async () => { try { await generateAndSave({ db, content, images, trending, mode: config.dailyTopicMode, requestedTopic: config.dailyManualTopic }); } catch (e) { console.error('Cron gagal:', e); } }, { timezone: config.cronTimezone });
+let automationRunning = false;
+async function runAutomation() { if (automationRunning) return; automationRunning = true; try { await automation.tick(db); } catch (e) { console.error('Scheduler otomatis gagal:', e); } finally { automationRunning = false; } }
+runAutomation();
+setInterval(runAutomation, 30 * 1000).unref();
+app.listen(config.port, () => console.log(`TikTok AI Content aktif di http://localhost:${config.port}`));

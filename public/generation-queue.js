@@ -1,0 +1,55 @@
+(() => {
+  const KEYS = { jobs: 'queue.jobs', history: 'queue.history', settings: 'queue.settings' };
+  const stages = [0, 10, 25, 40, 60, 80, 100];
+  const statuses = ['Preparing', 'Running', 'Uploading', 'Generating', 'Processing', 'Completed'];
+  const terminal = ['Completed', 'Failed', 'Cancelled'];
+  const defaults = { maxConcurrentJobs: 2, retryCount: 2, retryDelay: 2000, autoRetry: true, autoRemoveCompleted: false, notification: true, paused: false };
+  const read = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return value ?? fallback; } catch (_) { return fallback; } };
+  let jobs = read(KEYS.jobs, []); let settings = { ...defaults, ...read(KEYS.settings, {}) }; let selectedId; let worker;
+  const $ = selector => document.querySelector(selector);
+  const safe = value => { const span = document.createElement('span'); span.textContent = value == null ? '' : String(value); return span.innerHTML; };
+  const persist = () => { localStorage.setItem(KEYS.jobs, JSON.stringify(jobs)); localStorage.setItem(KEYS.settings, JSON.stringify(settings)); };
+  const now = () => new Date().toISOString();
+  const time = value => value ? new Date(value).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '—';
+  const duration = job => !job.startedAt ? '—' : `${Math.max(0, Math.round((new Date(job.finishedAt || Date.now()) - new Date(job.startedAt)) / 1000))}s`;
+  function notify(message, error = false) { const toast = $('#consistency-toast'); toast.textContent = message; toast.classList.toggle('error', error); toast.classList.add('show'); clearTimeout(notify.timer); notify.timer = setTimeout(() => toast.classList.remove('show'), 2300); }
+  function enqueue(input = {}) {
+    const job = { id:`JOB-${Date.now().toString(36).toUpperCase()}`, project:input.project || 'Prompt Studio', provider:input.provider || 'Mock Provider', model:input.model || 'Mock v1', promptType:input.promptType || 'General', priority:input.priority || 'Normal', prompt:input.prompt || '', progress:0, status:'Waiting', createdAt:now(), startedAt:null, finishedAt:null, attempts:0, logs:[{ at:now(), message:'Job queued locally' }], timeline:[{ at:now(), status:'Waiting' }], result:null };
+    jobs.unshift(job); persist(); render(); window.dispatchEvent(new CustomEvent('aiads:queue-updated',{detail:{job:{...job}}})); return job;
+  }
+  function log(job, status, message) { job.status = status; job.logs.push({ at:now(), message }); job.timeline.push({ at:now(), status }); }
+  function complete(job) {
+    job.progress = 100; job.finishedAt = now(); job.result = { type:'Mock Output', preview:'Mock generation complete — ready for future backend adapter.', asset:`mock://${job.id}` }; log(job, 'Completed', 'Mock output saved to queue history');
+    const history = read(KEYS.history, []); history.unshift({ prompt:job.prompt, provider:job.provider, project:job.project, start:job.startedAt, finish:job.finishedAt, duration:duration(job), result:job.result, status:job.status, jobId:job.id }); localStorage.setItem(KEYS.history, JSON.stringify(history.slice(0, 200)));
+    window.dispatchEvent(new CustomEvent('aiads:queue-updated',{detail:{job:{...job}}})); if (settings.notification) notify(`${job.id} completed.`);
+  }
+  function tick() {
+    if (settings.paused) return;
+    jobs.filter(j => !terminal.includes(j.status) && j.status !== 'Waiting').forEach(job => {
+      const index = stages.indexOf(job.progress); job.progress = stages[Math.min(index + 1, stages.length - 1)];
+      if (job.progress === 100) complete(job); else log(job, statuses[Math.min(index + 1, statuses.length - 2)], `Mock worker advanced to ${job.progress}%`);
+    });
+    const active = jobs.filter(j => !terminal.includes(j.status) && j.status !== 'Waiting').length;
+    jobs.filter(j => j.status === 'Waiting').slice(0, Math.max(0, settings.maxConcurrentJobs - active)).forEach(job => { job.startedAt ||= now(); job.progress = 10; log(job, job.attempts ? 'Retrying' : 'Preparing', 'Mock worker claimed job'); });
+    if (settings.autoRemoveCompleted) jobs = jobs.filter(j => j.status !== 'Completed'); persist(); render();
+  }
+  function retry(job) { job.attempts += 1; job.progress = 0; job.finishedAt = null; job.result = null; log(job, 'Waiting', `Retry ${job.attempts} scheduled locally`); }
+  function duplicate(job) { enqueue({ ...job, prompt:job.prompt }); }
+  function cancel(job) { if (!terminal.includes(job.status)) { job.finishedAt = now(); log(job, 'Cancelled', 'Cancelled by user'); persist(); render(); } }
+  function download(job) { const blob = new Blob([JSON.stringify(job.result, null, 2)], { type:'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${job.id}-result.json`; link.click(); URL.revokeObjectURL(link.href); }
+  function detail(job) { selectedId = job.id; $('#job-detail').classList.remove('hidden'); $('#job-detail').innerHTML = `<div class="detail-heading"><div><span class="eyebrow">JOB DETAIL</span><h2>${safe(job.id)}</h2></div><button class="icon-button" data-close-detail>✕</button></div><div class="detail-progress"><div><b>${safe(job.status)}</b><span>Estimated time: ${terminal.includes(job.status) ? 'Complete' : `${Math.ceil((100-job.progress)/20)*2}s`}</span></div><div class="queue-progress"><i style="width:${job.progress}%"></i></div><strong>${job.progress}%</strong></div><div class="job-detail-grid"><section><h3>Prompt</h3><pre>${safe(job.prompt || 'No prompt supplied')}</pre><h3>Provider & Model</h3><p>${safe(job.provider)} · ${safe(job.model)}</p><h3>Output Preview (Mock)</h3><div class="mock-output">${job.result ? `<span>✦</span><b>${safe(job.result.preview)}</b><code>${safe(job.result.asset)}</code>` : '<span class="spinner"></span><b>Output will appear after processing</b>'}</div></section><section><h3>Timeline</h3><ol class="job-timeline">${job.timeline.map(item => `<li><i></i><span><b>${safe(item.status)}</b><small>${time(item.at)}</small></span></li>`).join('')}</ol><h3>Logs</h3><div class="job-logs">${job.logs.map(item => `<p><time>${time(item.at)}</time> ${safe(item.message)}</p>`).join('')}</div></section></div>`; $('[data-close-detail]').onclick = () => $('#job-detail').classList.add('hidden'); }
+  function renderSettings() { $('#queue-settings').innerHTML = `<label>Maximum Concurrent Jobs<input type="number" min="1" max="8" data-setting="maxConcurrentJobs" value="${settings.maxConcurrentJobs}"></label><label>Retry Count<input type="number" min="0" max="10" data-setting="retryCount" value="${settings.retryCount}"></label><label>Retry Delay (ms)<input type="number" min="250" step="250" data-setting="retryDelay" value="${settings.retryDelay}"></label>${['autoRetry','autoRemoveCompleted','notification'].map(key => `<label class="queue-check"><input type="checkbox" data-setting="${key}" ${settings[key]?'checked':''}> ${key.replace(/([A-Z])/g,' $1')}</label>`).join('')}`; document.querySelectorAll('[data-setting]').forEach(input => input.onchange = () => { settings[input.dataset.setting] = input.type === 'checkbox' ? input.checked : Number(input.value); persist(); }); }
+  function render() {
+    const counts = { Active:jobs.filter(j => !terminal.includes(j.status) && j.status !== 'Waiting').length, Waiting:jobs.filter(j => j.status === 'Waiting').length, Completed:jobs.filter(j => j.status === 'Completed').length, Failed:jobs.filter(j => j.status === 'Failed').length, Cancelled:jobs.filter(j => j.status === 'Cancelled').length };
+    $('#queue-summary').innerHTML = `<article><small>QUEUE SUMMARY</small><strong>${jobs.length}</strong><span>Total jobs</span></article>${Object.entries(counts).map(([name,count]) => `<article><small>${name.toUpperCase()} JOBS</small><strong>${count}</strong><span>${name}</span></article>`).join('')}`;
+    $('#queue-empty').classList.toggle('hidden', jobs.length > 0); $('.queue-table').classList.toggle('hidden', !jobs.length); $('#queue-pause').classList.toggle('hidden', settings.paused); $('#queue-resume').classList.toggle('hidden', !settings.paused); $('#queue-worker-state').textContent = settings.paused ? 'Ⅱ Worker paused' : '● Worker active';
+    $('#queue-jobs').innerHTML = jobs.map(j => `<tr><td><code>${safe(j.id)}</code></td><td>${safe(j.project)}</td><td>${safe(j.provider)}</td><td>${safe(j.model)}</td><td>${safe(j.promptType)}</td><td><span class="priority-${j.priority.toLowerCase()}">${safe(j.priority)}</span></td><td><div class="table-progress"><i style="width:${j.progress}%"></i></div><small>${j.progress}%</small></td><td><span class="queue-status status-${j.status.toLowerCase()}">${safe(j.status)}</span></td><td>${time(j.startedAt)}</td><td>${time(j.finishedAt)}</td><td>${duration(j)}</td><td><select aria-label="Action for ${safe(j.id)}" data-job-action="${safe(j.id)}"><option value="">Action</option><option>View</option><option>Retry</option><option>Duplicate</option><option>Cancel</option><option>Delete</option><option>Copy Prompt</option><option>Export Result</option></select></td></tr>`).join('');
+    document.querySelectorAll('[data-job-action]').forEach(select => select.onchange = () => { const job=jobs.find(j=>j.id===select.dataset.jobAction); const action=select.value; select.value=''; if (!job) return; if(action==='View') detail(job); else if(action==='Retry') retry(job); else if(action==='Duplicate') duplicate(job); else if(action==='Cancel') cancel(job); else if(action==='Delete') jobs=jobs.filter(j=>j.id!==job.id); else if(action==='Copy Prompt') navigator.clipboard?.writeText(job.prompt).then(()=>notify('Prompt copied.')); else if(action==='Export Result') job.result ? download(job) : notify('No result available.', true); persist(); render(); });
+    if (selectedId && !$('#job-detail').classList.contains('hidden')) { const selected=jobs.find(j=>j.id===selectedId); if(selected) detail(selected); }
+  }
+  $('#queue-pause').onclick = () => { settings.paused=true; persist(); render(); }; $('#queue-resume').onclick = () => { settings.paused=false; persist(); render(); };
+  $('#queue-clear-completed').onclick = () => { jobs=jobs.filter(j=>j.status!=='Completed'); persist(); render(); }; $('#queue-clear-failed').onclick = () => { jobs=jobs.filter(j=>j.status!=='Failed'); persist(); render(); };
+  $('#queue-retry-failed').onclick = () => { jobs.filter(j=>j.status==='Failed').forEach(retry); persist(); render(); }; $('#queue-cancel-all').onclick = () => jobs.filter(j=>!terminal.includes(j.status)).forEach(cancel);
+  $('#queue-settings-toggle').onclick = () => $('#queue-settings').classList.toggle('hidden'); renderSettings(); render(); worker=setInterval(tick, 2000); window.addEventListener('beforeunload',()=>clearInterval(worker));
+  window.GenerationQueue = { enqueue, getJobs:() => [...jobs], retry:id=>{const job=jobs.find(item=>item.id===id);if(job){retry(job);persist();render();}return job;}, cancel:id=>{const job=jobs.find(item=>item.id===id);if(job)cancel(job);return job;} };
+})();

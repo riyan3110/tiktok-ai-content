@@ -1,0 +1,63 @@
+(() => {
+  const templates = [
+    ['✦','Fakta Unik','Edukasi','Fakta mengejutkan yang mudah dibagikan','5–7 slide','30 dtk','TikTok, Instagram'],['⌘','Tutorial AI','AI','Panduan praktis memakai tools AI','7–10 slide','45 dtk','TikTok, YouTube'],['{ }','Prompt AI','AI','Prompt siap pakai dengan contoh hasil','3–5 slide','30 dtk','TikTok, X'],['▤','Edukasi','Edukasi','Konsep kompleks menjadi mudah dipahami','5–10 slide','45 dtk','Semua platform'],['↗','Tips Bisnis','Bisnis','Tips yang aplikatif untuk pertumbuhan','5–7 slide','30 dtk','TikTok, LinkedIn'],['◎','Marketing','Marketing','Strategi dan insight pemasaran modern','5–10 slide','45 dtk','Instagram, TikTok'],['₿','Crypto','Finansial','Edukasi aset digital yang bertanggung jawab','5–7 slide','45 dtk','X, TikTok'],['⬡','Teknologi','Teknologi','Update dan penjelasan teknologi','5–7 slide','30 dtk','TikTok, X'],['◒','Storytelling','Kreatif','Narasi dengan konflik dan resolusi','7–10 slide','60 dtk','Semua platform'],['▲','Motivasi','Lifestyle','Pesan inspiratif yang autentik','3–5 slide','30 dtk','Instagram, TikTok'],['◇','Produk','Commerce','Sorotan manfaat dan diferensiasi produk','5–7 slide','30 dtk','TikTok Shop'],['★','Review Produk','Commerce','Review berimbang berbasis pengalaman','5–7 slide','45 dtk','TikTok, YouTube'],['☺','UGC','Commerce','Naskah natural ala pengguna produk','3–5 slide','30 dtk','TikTok, Instagram'],['▥','Carousel TikTok','Carousel','Carousel vertikal dengan retention kuat','3–15 slide','—','TikTok'],['𝕏','Thread X','Social','Thread ringkas dengan alur kuat','5–10 post','—','X'],['▦','Instagram Carousel','Carousel','Carousel visual yang save-worthy','3–15 slide','—','Instagram'],['f','Facebook Post','Social','Post komunitas yang mengundang diskusi','1 post','—','Facebook'],['▶','YouTube Shorts Script','Video','Script cepat dengan beat per adegan','—','15–60 dtk','YouTube'],['♪','TikTok Script','Video','Script native untuk retention TikTok','—','15–60 dtk','TikTok']
+  ].map(([icon,name,category,description,slides,duration,platform]) => ({ icon,name,category,description,slides,duration,platform }));
+  const $ = selector => document.querySelector(selector);
+  const safe = value => { const node = document.createElement('span'); node.textContent = String(value || ''); return node.innerHTML; };
+  let selected = templates[0]; let assets = []; let result = null; let activeTab = 'carousel';
+
+  function renderTemplates(query = '') {
+    const normalized = query.toLocaleLowerCase('id');
+    $('#factory-templates').innerHTML = templates.filter(item => `${item.name} ${item.category} ${item.platform}`.toLocaleLowerCase('id').includes(normalized)).map(item => `<button type="button" class="factory-template ${item.name === selected.name ? 'active' : ''}" data-template="${safe(item.name)}"><span class="factory-template-icon">${item.icon}</span><span class="factory-template-copy"><small>${safe(item.category)}</small><b>${safe(item.name)}</b><em>${safe(item.description)}</em><i><span>▥ ${safe(item.slides)}</span><span>◷ ${safe(item.duration)}</span></i><strong>${safe(item.platform)}</strong></span></button>`).join('');
+    document.querySelectorAll('[data-template]').forEach(button => button.onclick = () => selectTemplate(button.dataset.template));
+  }
+  function selectTemplate(name) {
+    selected = templates.find(item => item.name === name) || selected;
+    $('#factory-selected-title').textContent = selected.name; $('#factory-selected-icon').textContent = selected.icon; $('#factory-category').value = selected.name;
+    renderTemplates($('#factory-template-search').value);
+  }
+  function slideCount(value) { return value.endsWith('s') ? (Number.parseInt(value, 10) <= 30 ? 5 : 7) : Number(value); }
+  function makeContent(data, index) {
+    const count = slideCount(data.length); const variation = index + 1;
+    const slides = Array.from({ length: count }, (_, position) => {
+      const number = position + 1; const first = position === 0; const last = number === count;
+      return { number, title: first ? `${data.topic}: ini yang perlu kamu tahu` : last ? 'Siap mencoba hari ini?' : `${number - 1}. Insight penting`, content: first ? `Hook variasi ${variation} untuk ${data.audience}.` : last ? `Simpan, bagikan, lalu mulai dari langkah paling mudah.` : `Jelaskan sisi ${number - 1} dari ${data.topic} secara konkret, ringkas, dan relevan.`, visualPrompt: `Vertical editorial visual about ${data.topic}, ${data.style} style, scene ${number}, purple accent, no text`, voiceScript: first ? `Pernah kepikiran tentang ${data.topic}?` : last ? 'Mulai sekarang dan ikuti untuk insight berikutnya.' : `Inilah poin ${number - 1} yang perlu kamu pahami.` };
+    });
+    const providerPrompts = data.providers.map(provider => ({ provider, prompt: `${provider}: Buat visual ${data.output} bertema “${data.topic}”, gaya ${data.style}, target ${data.audience}, untuk ${data.platform}, format vertikal 9:16. Gunakan asset referensi: ${assets.map(a => a.name).join(', ') || 'tidak ada'}.` }));
+    return { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`, template: selected.name, title: `${data.topic} — ${selected.name} #${variation}`, hook: slides[0].title, opening: slides[0].content, content: slides.slice(1, -1).map(x => x.content).join('\n'), cta: slides.at(-1).content, caption: `${data.topic} bukan harus rumit. Ini rangkuman praktis yang bisa langsung kamu terapkan. Simpan untuk nanti!`, hashtags: [`#${data.topic.replace(/\s+/g, '')}`, '#AIAdsLab', `#${data.platform.replace(/\s+/g, '')}`], keywords: data.topic.split(/\s+/).filter(Boolean), slides, videoScript: slides.map(x => `[Scene ${x.number}] ${x.voiceScript}`).join('\n'), thumbnail: `${data.topic}\nWAJIB TAHU`, providerPrompts, brief: data, assetIds: assets.map(a => a.id), createdAt: new Date().toISOString(), workflow: { engine: 'Milestone 18', status: 'Completed', stages: ['Brief','Structure','Prompt','Generate','History'] } };
+  }
+  function serialize(item = result?.items?.[0], format = 'txt') {
+    if (!item) return '';
+    if (format === 'json') return JSON.stringify(result, null, 2);
+    const heading = format === 'md' ? '# ' : ''; const section = format === 'md' ? '## ' : '';
+    return `${heading}${item.title}\n\n${section}Hook\n${item.hook}\n\n${section}Opening\n${item.opening}\n\n${section}Isi\n${item.content}\n\n${section}CTA\n${item.cta}\n\n${section}Caption\n${item.caption}\n\n${section}Hashtag\n${item.hashtags.join(' ')}\n\n${section}Script\n${item.videoScript}`;
+  }
+  function renderPreview() {
+    const item = result?.items?.[0]; if (!item) return;
+    let html = '';
+    if (activeTab === 'carousel') html = `<div class="factory-slides">${item.slides.map(slide => `<article><small>SLIDE ${slide.number}</small><h3>${safe(slide.title)}</h3><p>${safe(slide.content)}</p><details><summary>Visual prompt &amp; voice</summary><b>Visual</b><p>${safe(slide.visualPrompt)}</p><b>Voice</b><p>${safe(slide.voiceScript)}</p></details></article>`).join('')}</div>`;
+    if (activeTab === 'caption') html = `<div class="factory-copy"><small>CAPTION</small><h3>${safe(item.title)}</h3><p>${safe(item.caption)}</p><b>${safe(item.hashtags.join(' '))}</b><hr><small>KEYWORD</small><p>${safe(item.keywords.join(' · '))}</p></div>`;
+    if (activeTab === 'prompt') html = `<div class="factory-prompt-list">${item.providerPrompts.map(entry => `<article><b>${safe(entry.provider)}</b><p>${safe(entry.prompt)}</p></article>`).join('')}</div>`;
+    if (activeTab === 'script') html = `<div class="factory-copy"><small>VIDEO SCRIPT</small><h3>${safe(item.brief.length)}</h3><pre>${safe(item.videoScript)}</pre><hr><b>Opening</b><p>${safe(item.opening)}</p><b>CTA</b><p>${safe(item.cta)}</p></div>`;
+    if (activeTab === 'thumbnail') html = `<div class="factory-thumbnail"><span>${selected.icon}</span><small>${safe(item.template)}</small><strong>${safe(item.brief.topic)}</strong><em>AI ADS LAB</em></div>`;
+    $('#factory-preview-body').innerHTML = html;
+  }
+  async function openAssets() {
+    const chosen = await window.AssetManager.select({ selectedIds: assets.map(asset => asset.id) });
+    if (!chosen) return;
+    assets = chosen;
+    $('#factory-assets-list').innerHTML = assets.map(asset => `<span class="selected-asset"><img src="${safe(asset.previewUrl)}" alt=""><button type="button" data-remove-factory-asset="${safe(asset.id)}" aria-label="Remove asset">×</button></span>`).join('');
+    document.querySelectorAll('[data-remove-factory-asset]').forEach(button => button.onclick = () => { assets = assets.filter(asset => asset.id !== button.dataset.removeFactoryAsset); button.closest('.selected-asset').remove(); });
+  }
+  function storeResults(factoryResult) {
+    const read = key => { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (_) { return []; } };
+    const history = read('ai-ads-lab-content-factory-history-v1'); history.unshift(...factoryResult.items); localStorage.setItem('ai-ads-lab-content-factory-history-v1', JSON.stringify(history.slice(0, 200)));
+    let workflows = read('ai-ads-lab-workflow-history-v1'); factoryResult.items.forEach(item => { const record = { id: item.id, name: item.title, status: 'Completed', source: 'AI Content Factory', createdAt: item.createdAt, updatedAt: item.createdAt, payload: item }; workflows = window.WorkflowHistory?.upsert(workflows, record) || [record, ...workflows].slice(0, 200); }); localStorage.setItem('ai-ads-lab-workflow-history-v1', JSON.stringify(workflows.slice(0, 200)));
+    window.dispatchEvent(new CustomEvent('ai-ads-lab:workflow-result', { detail: factoryResult }));
+  }
+  $('#factory-form').onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget); const data = Object.fromEntries(form); data.providers = form.getAll('providers'); if (!data.providers.length) return void ($('#factory-status').textContent = 'Pilih minimal satu prompt output.'); const batch = Number(data.batch); $('#factory-generate').disabled = true; $('#factory-status').textContent = `Menjalankan ${batch} workflow…`; setTimeout(() => { result = { batchId: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), items: Array.from({ length: batch }, (_, index) => makeContent(data, index)) }; storeResults(result); $('#factory-result-count').textContent = `${batch} hasil`; $('#factory-export').classList.remove('hidden'); $('#factory-generate').disabled = false; $('#factory-status').textContent = `Selesai — ${batch} konten masuk ke Workflow & History.`; renderPreview(); }, 350); };
+  $('#factory-template-search').oninput = event => renderTemplates(event.target.value); $('#factory-assets-button').onclick = openAssets;
+  document.querySelectorAll('[data-factory-tab]').forEach(button => button.onclick = () => { activeTab = button.dataset.factoryTab; document.querySelectorAll('[data-factory-tab]').forEach(x => x.classList.toggle('active', x === button)); renderPreview(); });
+  document.querySelectorAll('[data-factory-export]').forEach(button => button.onclick = async () => { const type = button.dataset.factoryExport; const content = serialize(undefined, type); if (type === 'copy') { await navigator.clipboard.writeText(serialize()); button.textContent = 'Tersalin ✓'; setTimeout(() => { button.textContent = 'Copy'; }, 1200); return; } const blob = new Blob([content], { type: type === 'json' ? 'application/json' : 'text/plain' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `ai-content-factory.${type}`; link.click(); URL.revokeObjectURL(link.href); });
+  $('#factory-category').innerHTML = templates.map(item => `<option>${safe(item.name)}</option>`).join(''); renderTemplates(); selectTemplate(selected.name);
+})();
