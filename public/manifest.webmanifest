@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "AI Ads Lab",
+  "short_name": "AI Ads Lab",
+  "description": "AI Ads Lab Content Studio",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/assets/98539220-c6ac-482e-9b44-0ebeb41b003e.png?v=4",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/98539220-c6ac-482e-9b44-0ebeb41b003e.png?v=4",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
