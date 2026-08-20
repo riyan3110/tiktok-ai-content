@@ -1,8 +1,16 @@
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const config = require('../config');
+
 const PATCHED = Symbol.for('aiads.tiktokPullResilience');
 const MAX_PULL_RETRIES = 2;
 const RETRY_DELAYS_MS = [1500, 4000];
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function invalidImageUrl(message) {
+  return Object.assign(new Error(message), { status: 400 });
+}
 
 function withPullToken(url, token, index) {
   const parsed = new URL(url);
@@ -15,15 +23,80 @@ function freshUrls(imageUrls, attempt) {
   return imageUrls.map((url, index) => withPullToken(url, token, index));
 }
 
+async function validateGeneratedFileLocally(imageUrl, verifiedPrefix) {
+  let url;
+  let prefix;
+  try {
+    url = new URL(imageUrl);
+    prefix = new URL(verifiedPrefix.endsWith('/') ? verifiedPrefix : `${verifiedPrefix}/`);
+  } catch {
+    throw invalidImageUrl(`URL gambar tidak valid: ${imageUrl}`);
+  }
+
+  if (url.origin !== prefix.origin || !url.pathname.startsWith(prefix.pathname)) {
+    throw invalidImageUrl(`URL gambar harus memakai prefix domain yang sudah diverifikasi: ${prefix}`);
+  }
+
+  if (!url.pathname.startsWith('/generated/')) return null;
+
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(url.pathname);
+  } catch {
+    throw invalidImageUrl(`URL gambar tidak valid: ${imageUrl}`);
+  }
+
+  const publicRoot = path.resolve(config.root, 'public');
+  const localPath = path.resolve(publicRoot, decodedPath.replace(/^\/+/, ''));
+  if (!localPath.startsWith(`${publicRoot}${path.sep}`)) {
+    throw invalidImageUrl(`Path gambar tidak valid: ${imageUrl}`);
+  }
+
+  let stat;
+  try {
+    stat = await fs.stat(localPath);
+  } catch {
+    throw invalidImageUrl(`File gambar tidak ditemukan: ${imageUrl}`);
+  }
+  if (!stat.isFile() || stat.size <= 0) {
+    throw invalidImageUrl(`File gambar kosong atau tidak valid: ${imageUrl}`);
+  }
+
+  const handle = await fs.open(localPath, 'r');
+  try {
+    const header = Buffer.alloc(3);
+    const { bytesRead } = await handle.read(header, 0, 3, 0);
+    if (bytesRead < 3 || header[0] !== 0xff || header[1] !== 0xd8 || header[2] !== 0xff) {
+      throw invalidImageUrl(`File gambar harus JPEG yang valid: ${imageUrl}`);
+    }
+  } finally {
+    await handle.close();
+  }
+
+  return stat.size;
+}
+
 function install({ tiktok } = {}) {
-  if (!tiktok?.publishPhotos || !tiktok?.status) throw new Error('TikTok pull resilience patch membutuhkan TikTok service.');
+  if (!tiktok?.publishPhotos || !tiktok?.status || !tiktok?.validateImageUrls) {
+    throw new Error('TikTok pull resilience patch membutuhkan TikTok service.');
+  }
   if (tiktok[PATCHED]) return;
 
   const originalPublishPhotos = tiktok.publishPhotos.bind(tiktok);
   const originalStatus = tiktok.status.bind(tiktok);
+  const originalValidateImageUrls = tiktok.validateImageUrls.bind(tiktok);
   const originalCancel = typeof tiktok.cancel === 'function' ? tiktok.cancel.bind(tiktok) : null;
   const contexts = new Map();
   const aliases = new Map();
+
+  tiktok.validateImageUrls = async (imageUrls, verifiedPrefix) => {
+    const localResults = await Promise.all(
+      imageUrls.map(url => validateGeneratedFileLocally(url, verifiedPrefix))
+    );
+
+    if (localResults.every(value => value !== null)) return localResults;
+    return originalValidateImageUrls(imageUrls, verifiedPrefix);
+  };
 
   tiktok.publishPhotos = async (accessToken, imageUrls, caption) => {
     const sourceUrls = [...imageUrls];
