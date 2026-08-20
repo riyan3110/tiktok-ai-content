@@ -64,13 +64,20 @@ class StorageService {
   async accessible(asset) {
     const url = await this.url(asset);
     const image = asset.type === 'image' || this.assetMimeType(asset).startsWith('image/');
+    let directPreview = url;
+    if (asset.storage_provider === 'local') {
+      try {
+        const parsed = new URL(url, config.publicBaseUrl);
+        directPreview = `${parsed.pathname}${parsed.search}`;
+      } catch {}
+    }
     return {
       ...asset,
       mime_type: this.assetMimeType(asset),
       type: image ? 'image' : asset.type,
       storage_url: url,
       url,
-      preview_url: image ? url : null,
+      preview_url: image ? directPreview : null,
       preview_proxy_url: image ? `/api/assets/${encodeURIComponent(asset.id)}/preview` : null
     };
   }
