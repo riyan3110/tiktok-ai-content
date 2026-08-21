@@ -12,44 +12,58 @@ const KNOWN_MODELS = Object.freeze([
 ]);
 
 const unique = values => [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
+const isClaudeModel = model => /^claude-/i.test(String(model || '').trim());
 
 class AgentRouterProvider extends BaseProvider {
   rootBase() {
     return String(this.config.base_url || 'https://agentrouter.org')
       .replace(/\/$/, '')
-      .replace(/\/v1(?:\/responses)?$/i, '');
+      .replace(/\/v1(?:\/(?:responses|chat\/completions|messages|models))?$/i, '');
   }
 
   endpoint(path = '') { return `${this.rootBase()}${path}`; }
-  requestPath() { return '/v1/responses'; }
-  healthPath() { return '/v1/models'; }
   selectedModel(input = {}) { return input.model || this.config.text_model || this.config.default_model || 'gpt-5.5'; }
+  requestPath(input = {}) { return isClaudeModel(this.selectedModel(input)) ? '/v1/messages' : '/v1/chat/completions'; }
 
-  buildRequest(input = {}) {
+  openAiHeaders() {
+    return { 'Content-Type': 'application/json', Authorization: `Bearer ${this.config.api_key}` };
+  }
+
+  anthropicHeaders() {
     return {
-      model: this.selectedModel(input),
-      input: String(input.prompt || ''),
-      stream: false
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${this.config.api_key}`,
+      'anthropic-version': '2023-06-01'
     };
   }
 
-  parse(data = {}) {
+  buildOpenAiRequest(input = {}, probe = false) {
+    const body = {
+      model: this.selectedModel(input),
+      messages: [{ role: 'user', content: String(input.prompt || '') }],
+      stream: false
+    };
+    const maxTokens = probe ? 1 : Number(input.parameters?.maxTokens || 0);
+    if (maxTokens > 0) body.max_tokens = Math.max(1, Math.min(8192, maxTokens));
+    return body;
+  }
+
+  buildClaudeRequest(input = {}, probe = false) {
+    return {
+      model: this.selectedModel(input),
+      max_tokens: probe ? 1 : Math.max(1, Math.min(8192, Number(input.parameters?.maxTokens) || 4096)),
+      messages: [{ role: 'user', content: String(input.prompt || '') }]
+    };
+  }
+
+  parseOpenAi(data = {}) {
     const usage = data.usage || {};
-    const outputItems = Array.isArray(data.output) ? data.output : [];
-    const nestedText = outputItems.flatMap(item => Array.isArray(item?.content) ? item.content : [])
-      .map(item => item?.text || item?.output_text || '')
-      .filter(Boolean)
-      .join('');
-    const content = data.output_text
-      || nestedText
-      || data.choices?.[0]?.message?.content
-      || data.text
-      || '';
-    if (!content) {
+    const content = data.choices?.[0]?.message?.content || data.output_text || '';
+    if (!content && !data.choices?.length) {
       throw Object.assign(new Error('AgentRouter tidak mengembalikan respons teks'), { type: 'Provider Error', code: 'EMPTY_TEXT_RESPONSE' });
     }
-    const promptTokens = usage.input_tokens || usage.prompt_tokens || 0;
-    const completionTokens = usage.output_tokens || usage.completion_tokens || 0;
+    const promptTokens = usage.prompt_tokens || usage.input_tokens || 0;
+    const completionTokens = usage.completion_tokens || usage.output_tokens || 0;
     return {
       content,
       media: [],
@@ -65,50 +79,83 @@ class AgentRouterProvider extends BaseProvider {
     };
   }
 
+  parseClaude(data = {}) {
+    const usage = data.usage || {};
+    const content = Array.isArray(data.content)
+      ? data.content.filter(item => item?.type === 'text').map(item => item.text || '').join('')
+      : '';
+    if (!content) throw Object.assign(new Error('AgentRouter Claude tidak mengembalikan respons teks'), { type: 'Provider Error', code: 'EMPTY_TEXT_RESPONSE' });
+    const promptTokens = usage.input_tokens || 0;
+    const completionTokens = usage.output_tokens || 0;
+    return {
+      content,
+      media: [],
+      providerJobId: data.id || null,
+      providerRequestId: data.id || null,
+      status: data.stop_reason ? 'completed' : (data.status || 'completed'),
+      usage: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens },
+      raw: data
+    };
+  }
+
   async execute(input, { signal, onProgress = () => {} } = {}) {
     if (input.mediaType && input.mediaType !== 'text') {
       throw Object.assign(new Error('AgentRouter agentrouter.org saat ini dikonfigurasi sebagai provider Text AI, bukan image/video generation.'), { status: 409, nonRetryable: true });
     }
+
+    const claude = isClaudeModel(this.selectedModel(input));
+    const url = this.endpoint(claude ? '/v1/messages' : '/v1/chat/completions');
     try {
-      return await super.execute(input, { signal, onProgress });
+      onProgress('Sending');
+      const response = await this.transport(url, {
+        method: 'POST',
+        headers: claude ? this.anthropicHeaders() : this.openAiHeaders(),
+        body: JSON.stringify(claude ? this.buildClaudeRequest(input) : this.buildOpenAiRequest(input)),
+        signal
+      });
+      if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status, endpoint: url });
+      onProgress('Receiving');
+      return claude ? this.parseClaude(await response.json()) : this.parseOpenAi(await response.json());
     } catch (error) {
+      error.endpoint ||= url;
       throw normalizeError(error);
     }
   }
 
-  async listModels(signal) {
-    const response = await this.transport(this.endpoint(this.healthPath()), {
-      method: 'GET',
-      headers: this.headers(),
-      signal
-    });
-    if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
-    const payload = await response.json();
-    const entries = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
-    return unique([...KNOWN_MODELS, ...entries.map(entry => typeof entry === 'string' ? entry : entry?.id || entry?.model)]);
-  }
-
   async testConnection({ signal } = {}) {
     const started = Date.now();
+    const model = this.config.text_model || this.config.default_model || 'gpt-5.5';
+    const claude = isClaudeModel(model);
+    const url = this.endpoint(claude ? '/v1/messages' : '/v1/chat/completions');
     try {
-      const models = await this.listModels(signal);
+      const response = await this.transport(url, {
+        method: 'POST',
+        headers: claude ? this.anthropicHeaders() : this.openAiHeaders(),
+        body: JSON.stringify(claude
+          ? this.buildClaudeRequest({ model, prompt: 'Reply OK' }, true)
+          : this.buildOpenAiRequest({ model, prompt: 'Reply OK' }, true)),
+        signal
+      });
+      if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
       return {
         connected: true,
-        providerVersion: 'Unified Responses API',
-        defaultModel: this.config.text_model || this.config.default_model || models[0] || 'gpt-5.5',
+        providerVersion: claude ? 'Anthropic Messages' : 'OpenAI Chat Completions',
+        defaultModel: model,
         responseTime: Date.now() - started,
-        models
+        models: unique(KNOWN_MODELS)
       };
     } catch (error) {
       const status = Number(error.status || 0);
       if (status === 401 || status === 403) throw Object.assign(new Error('API key AgentRouter tidak valid'), { status, type: 'Authentication Error' });
       if (status === 402 || /insufficient|balance|saldo|credit/i.test(String(error.message || ''))) throw Object.assign(new Error('Saldo AgentRouter tidak mencukupi'), { status: status || 402, type: 'Quota Exceeded' });
+      if (status === 404) throw Object.assign(new Error(`Endpoint AgentRouter tidak ditemukan: ${url}`), { status, type: 'Provider Error' });
       if (status === 429) throw Object.assign(new Error('Batas penggunaan AgentRouter tercapai'), { status, type: 'Rate Limited' });
-      if (!status || error.type === 'Network Error') throw Object.assign(new Error('Tidak dapat menghubungi AgentRouter'), { status: 502, type: 'Network Error' });
+      if (!status || error.type === 'Network Error') throw Object.assign(new Error(`Tidak dapat menghubungi AgentRouter (${url})`), { status: 502, type: 'Network Error' });
       throw normalizeError(error);
     }
   }
 }
 
 AgentRouterProvider.KNOWN_MODELS = KNOWN_MODELS;
+AgentRouterProvider.isClaudeModel = isClaudeModel;
 module.exports = AgentRouterProvider;
