@@ -12,6 +12,7 @@ installTextInputVerbatimPatch();
 const { install: installTextInputSoftFitPatch } = require('./services/textInputSoftFitPatch');
 installTextInputSoftFitPatch();
 const { createApp } = require('./app');
+const { createSiteAuthGateway } = require('./services/siteAuthGateway');
 const content = require('./services/content');
 const images = require('./services/images');
 const tiktok = require('./services/tiktok');
@@ -23,11 +24,13 @@ const { install: installInsertedImagePatch } = require('./services/insertedImage
 const { install: installAssetUploadPatch } = require('./services/assetUploadPatch');
 const { install: installTikTokPullResiliencePatch } = require('./services/tiktokPullResiliencePatch');
 
-const db = createDatabase(); const app = createApp({ db });
-installTikTokCancelPatch({ app, db, tiktok });
+const db = createDatabase();
+const innerApp = createApp({ db });
+installTikTokCancelPatch({ app: innerApp, db, tiktok });
 installTikTokPullResiliencePatch({ tiktok });
-installInsertedImagePatch({ app, db, images });
-installAssetUploadPatch({ app, db });
+installInsertedImagePatch({ app: innerApp, db, images });
+installAssetUploadPatch({ app: innerApp, db });
+const app = createSiteAuthGateway(innerApp, config);
 automation.recoverInterruptedJobs(db);
 if (config.enableCron) cron.schedule(config.cronSchedule, async () => { try { await generateAndSave({ db, content, images, trending, mode: config.dailyTopicMode, requestedTopic: config.dailyManualTopic }); } catch (e) { console.error('Cron gagal:', e); } }, { timezone: config.cronTimezone });
 let automationRunning = false;
