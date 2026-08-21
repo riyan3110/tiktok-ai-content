@@ -2,7 +2,7 @@
   'use strict';
   const $ = selector => document.querySelector(selector);
   const safe = value => { const span = document.createElement('span'); span.textContent = String(value ?? ''); return span.innerHTML; };
-  const http = (url, options = {}) => window['fetch'](url, { headers: { 'Content-Type':'application/json' }, ...options }).then(async response => { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`); return data; });
+  const http = (url, options = {}) => window['fetch'](url, { credentials:'include', cache:'no-store', headers: { 'Content-Type':'application/json' }, ...options }).then(async response => { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`); return data; });
   let providers = [], selectedId = 'orcarouter', activeId = null, nineModels = null;
   let zarkModels = (() => { try { return JSON.parse(localStorage.getItem('aiads.zark.models') || 'null'); } catch { return null; } })();
   let agentRouterModels = (() => { try { return JSON.parse(localStorage.getItem('aiads.agentrouter.models') || 'null'); } catch { return null; } })();
