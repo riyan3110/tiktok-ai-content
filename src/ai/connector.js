@@ -15,6 +15,7 @@ const PLACEHOLDER_HOSTS = /(^|\.)(example\.(com|org|net)|localhost|invalid)$/i;
 
 function seed(db) { db.transaction(() => { for (const provider of ProviderFactory.names()) { const defaults = ProviderFactory.defaults(provider); db.prepare('INSERT OR IGNORE INTO ai_provider_settings(provider,base_url,default_model) VALUES(?,?,?)').run(provider, defaults.baseUrl, defaults.model); }
   db.prepare("UPDATE ai_provider_settings SET text_model=COALESCE(text_model,'orcarouter/auto'),image_model=COALESCE(image_model,'openai/gpt-image-1'),video_model=COALESCE(video_model,'kling/kling-v2-6') WHERE provider='orcarouter'").run();
+  db.prepare("UPDATE ai_provider_settings SET base_url='https://agentrouter.org',text_model=COALESCE(text_model,default_model,'gpt-5.5') WHERE provider='agentrouter' AND base_url IN ('https://co.agentrouter.org','https://co.agentrouter.org/v1','https://agentrouter.org/v1','https://agentrouter.org/v1/responses')").run();
   const target = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='orcarouter'").get(); const legacy = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='openai'").get();
   if (!target.api_key_encrypted && legacy?.api_key_encrypted) db.prepare("UPDATE ai_provider_settings SET api_key_encrypted=?,base_url='https://api.orcarouter.ai',default_model='orcarouter/auto',timeout_ms=?,retry_count=?,enabled=? WHERE provider='orcarouter' AND (api_key_encrypted IS NULL OR api_key_encrypted='')").run(legacy.api_key_encrypted, legacy.timeout_ms, legacy.retry_count, legacy.enabled);
 })(); }
