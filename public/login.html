@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Login · AI Ads Lab</title>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f7f4fb;background:#08090b}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#211337 0,#0d0d12 32%,#08090b 70%)}
+    main{width:min(100%,430px);border:1px solid #2d2a35;border-radius:28px;padding:28px;background:rgba(16,16,20,.94);box-shadow:0 28px 90px rgba(0,0,0,.42)}
+    .eyebrow{margin:0 0 10px;color:#aa7cff;font-size:12px;font-weight:800;letter-spacing:.18em}h1{margin:0;font-size:34px;line-height:1.05}p{color:#aaa5b3;line-height:1.55;margin:14px 0 24px}
+    label{display:block;margin:16px 0 8px;color:#d8d3df;font-weight:650}input{width:100%;height:54px;border-radius:15px;border:1px solid #3a3642;background:#0b0b0f;color:#fff;padding:0 16px;font-size:16px;outline:none}input:focus{border-color:#9a65ff;box-shadow:0 0 0 3px rgba(154,101,255,.14)}
+    button{width:100%;height:54px;margin-top:22px;border:0;border-radius:15px;background:#6f35d2;color:#fff;font-size:16px;font-weight:800}button:disabled{opacity:.55}.message{min-height:22px;margin-top:14px;color:#ff9b9b;font-size:14px}.note{font-size:12px;color:#77717f;margin-top:16px}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">AI ADS LAB</div>
+    <h1>Masuk sekali.</h1>
+    <p>Setelah berhasil, perangkat ini akan tetap masuk. Ganti provider, Test Connection, dan Refresh Models tidak akan meminta login lagi.</p>
+    <form id="login-form" autocomplete="on">
+      <label for="username">Nama pengguna</label>
+      <input id="username" name="username" autocomplete="username" required autofocus>
+      <label for="password">Sandi</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button id="submit" type="submit">Login</button>
+      <div id="message" class="message" role="alert"></div>
+    </form>
+    <div class="note">Login disimpan sebagai cookie HttpOnly yang ditandatangani server. Sandi tidak disimpan di browser oleh AI Ads Lab.</div>
+  </main>
+  <script>
+    const form=document.getElementById('login-form'),button=document.getElementById('submit'),message=document.getElementById('message');
+    const rawNext=new URLSearchParams(location.search).get('next')||'/';
+    const next=rawNext.startsWith('/')&&!rawNext.startsWith('//')?rawNext:'/';
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();button.disabled=true;message.textContent='';
+      try{
+        const response=await fetch('/api/auth/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.username.value,password:form.password.value})});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);
+        location.replace(next);
+      }catch(error){message.textContent=error.message;button.disabled=false;}
+    });
+  </script>
+</body>
+</html>
