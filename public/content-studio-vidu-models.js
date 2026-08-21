@@ -89,3 +89,13 @@
     navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(error=>console.warn('PWA service worker gagal didaftarkan:',error));
   }
 })();
+
+(function setupFloatingChat(){
+  if(typeof window==='undefined'||typeof document==='undefined'||window.__AIADS_FLOATING_CHAT_LOADER__)return;
+  window.__AIADS_FLOATING_CHAT_LOADER__=true;
+  const script=document.createElement('script');
+  script.src='/floating-chat.js';
+  script.defer=true;
+  script.dataset.aiadsFloatingChat='1';
+  document.head.appendChild(script);
+})();
