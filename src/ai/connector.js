@@ -8,9 +8,9 @@ const active = new Map();
 const key = crypto.createHash('sha256').update(config.sessionSecret).digest();
 function encrypt(value) { if (!value) return null; const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return [iv, cipher.getAuthTag(), data].map(x => x.toString('base64url')).join('.'); }
 function decrypt(value) { if (!value) return ''; const [iv, tag, data] = value.split('.').map(x => Buffer.from(x, 'base64url')); const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv); decipher.setAuthTag(tag); return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8'); }
-const DISPLAY_NAMES = Object.freeze({ '9router': '9Router', orcarouter: 'OrcaRouter', 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', zark: 'Zark', omni: 'Omni' });
+const DISPLAY_NAMES = Object.freeze({ '9router': '9Router', orcarouter: 'OrcaRouter', agentrouter: 'AgentRouter', 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', zark: 'Zark', omni: 'Omni' });
 const publicSetting = (row, defaults = []) => ({ provider: row.provider, name: DISPLAY_NAMES[row.provider], capabilities: CAPABILITIES[row.provider] || [], baseUrl: row.base_url, organizationId: row.organization_id, region: row.region, defaultModel: row.default_model, textModel: row.text_model, imageModel: row.image_model, videoModel: row.video_model, timeout: row.timeout_ms, retry: row.retry_count, enabled: Boolean(row.enabled), hasApiKey: Boolean(row.api_key_encrypted), ...(row.provider === '9router' ? {} : { apiKey: row.api_key_encrypted ? '••••••••' : '' }), defaultCapabilities: defaults, isDefault: defaults.length > 0, updatedAt: row.updated_at });
-const CAPABILITIES = Object.freeze({ '9router': ['text', 'image', 'video'], orcarouter: ['text', 'image', 'video'], 'google-flow': ['image', 'video'], 'google-veo': ['video'], 'google-imagen': ['image'], 'google-gemini': ['image'], 'openai-images': ['image'], vidu: ['image', 'video'], zark: ['image', 'video'], omni: ['image', 'video'] });
+const CAPABILITIES = Object.freeze({ '9router': ['text', 'image', 'video'], orcarouter: ['text', 'image', 'video'], agentrouter: ['text'], 'google-flow': ['image', 'video'], 'google-veo': ['video'], 'google-imagen': ['image'], 'google-gemini': ['image'], 'openai-images': ['image'], vidu: ['image', 'video'], zark: ['image', 'video'], omni: ['image', 'video'] });
 const PLACEHOLDER_HOSTS = /(^|\.)(example\.(com|org|net)|localhost|invalid)$/i;
 
 function seed(db) { db.transaction(() => { for (const provider of ProviderFactory.names()) { const defaults = ProviderFactory.defaults(provider); db.prepare('INSERT OR IGNORE INTO ai_provider_settings(provider,base_url,default_model) VALUES(?,?,?)').run(provider, defaults.baseUrl, defaults.model); }
@@ -29,7 +29,7 @@ function configuredProviders(db) {
 }
 function validationError(message, status = 422, extra = {}) { return Object.assign(new Error(message), { status, ...extra }); }
 function validateGeneration(db, body = {}) {
-  seed(db); const mediaType = ['text', 'image', 'video'].includes(body.mediaType) ? body.mediaType : (body.provider === 'orcarouter' ? 'text' : 'image');
+  seed(db); const textDefaultProvider = body.provider === 'orcarouter' || body.provider === 'agentrouter'; const mediaType = ['text', 'image', 'video'].includes(body.mediaType) ? body.mediaType : (textDefaultProvider ? 'text' : 'image');
   const valid = configuredProviders(db); const defaultId = db.prepare('SELECT provider FROM ai_provider_defaults WHERE capability=?').get(mediaType)?.provider; const defaultRow = valid.find(row => row.provider === defaultId) || (valid.length === 1 ? valid[0] : null);
   const provider = body.provider || defaultRow?.provider;
   if (!provider) throw validationError('Provider belum diaktifkan', 409);
