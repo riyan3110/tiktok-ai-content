@@ -4,6 +4,8 @@ const { normalizeError } = require('../ai/errors');
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value)));
 
+const unique = values => [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
+
 class ZarkProvider extends BaseProvider {
   headers() {
     return { 'Content-Type': 'application/json', 'X-API-Key': this.config.api_key };
@@ -103,6 +105,67 @@ class ZarkProvider extends BaseProvider {
     return events;
   }
 
+  async readMcpPayload(response) {
+    const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) return response.json();
+    const text = await response.text();
+    const payloads = text.split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+      .filter(Boolean)
+      .map(value => { try { return JSON.parse(value); } catch { return null; } })
+      .filter(Boolean);
+    return payloads.findLast?.(item => item?.result?.tools) || payloads.find(item => item?.result?.tools) || null;
+  }
+
+  modelValuesFromSchema(schema, hint = '') {
+    const result = { image: new Set(), video: new Set() };
+    const visit = (node, path = []) => {
+      if (!node || typeof node !== 'object') return;
+      const joined = `${hint} ${path.join(' ')}`.toLowerCase();
+      const modelPath = path.some(part => /model/i.test(part));
+      if (modelPath) {
+        const values = [];
+        if (Array.isArray(node.enum)) values.push(...node.enum);
+        if (typeof node.const === 'string') values.push(node.const);
+        if (Array.isArray(node.oneOf)) {
+          for (const option of node.oneOf) {
+            if (typeof option?.const === 'string') values.push(option.const);
+            if (Array.isArray(option?.enum)) values.push(...option.enum);
+          }
+        }
+        const target = /video/.test(joined) ? ['video'] : /image|photo/.test(joined) ? ['image'] : ['image', 'video'];
+        for (const type of target) for (const value of values) if (typeof value === 'string') result[type].add(value);
+      }
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'enum' || key === 'const') continue;
+        visit(value, [...path, key]);
+      }
+    };
+    visit(schema, []);
+    return result;
+  }
+
+  async discoverModels(signal) {
+    const response = await this.transport(this.endpoint('/v1/mcp'), {
+      method: 'POST',
+      headers: { ...this.headers(), Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `aiads-${Date.now()}`, method: 'tools/list', params: {} }),
+      signal
+    });
+    if (!response.ok) throw Object.assign(new Error(await response.text() || `MCP HTTP ${response.status}`), { status: response.status });
+    const payload = await this.readMcpPayload(response);
+    const tools = payload?.result?.tools || [];
+    const buckets = { image: new Set(['auto']), video: new Set(['auto']) };
+    for (const tool of tools) {
+      const hint = `${tool?.name || ''} ${tool?.description || ''}`;
+      const found = this.modelValuesFromSchema(tool?.inputSchema || tool?.input_schema || {}, hint);
+      for (const type of ['image', 'video']) for (const value of found[type]) buckets[type].add(value);
+    }
+    return { image: unique([...buckets.image]), video: unique([...buckets.video]) };
+  }
+
   async resolveFile(fileId, signal) {
     const response = await this.transport(this.endpoint(`/v1/media/files/${encodeURIComponent(fileId)}`), {
       method: 'GET', headers: this.headers(), signal
@@ -167,7 +230,22 @@ class ZarkProvider extends BaseProvider {
     const started = Date.now();
     const response = await this.transport(this.endpoint('/v1/storage/files?limit=1'), { method: 'GET', headers: this.headers(), signal });
     if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
-    return { connected: true, providerVersion: response.headers?.get?.('x-api-version') || 'Zark API', defaultModel: this.config.default_model || 'auto', responseTime: Date.now() - started };
+    let models = { image: ['auto'], video: ['auto'] };
+    let modelDiscovery = 'auto-fallback';
+    try {
+      models = await this.discoverModels(signal);
+      modelDiscovery = 'mcp';
+    } catch (error) {
+      console.warn('[Zark] MCP model discovery unavailable, using auto', error.message);
+    }
+    return {
+      connected: true,
+      providerVersion: response.headers?.get?.('x-api-version') || 'Zark API',
+      defaultModel: this.config.default_model || 'auto',
+      responseTime: Date.now() - started,
+      models,
+      modelDiscovery
+    };
   }
 }
 
