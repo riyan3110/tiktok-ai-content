@@ -40,7 +40,8 @@ test('floating chat API persists messages and sends previous turns to AgentRoute
   const requestBodies = [];
   const transport = async (url, options = {}) => {
     assert.equal(url, 'https://agentrouter.org/v1/messages');
-    assert.equal(options.headers['x-api-key'], 'agent-secret');
+    assert.equal(options.headers.Authorization, 'Bearer agent-secret');
+    assert.equal(options.headers['anthropic-version'], '2023-06-01');
     const body = JSON.parse(options.body);
     requestBodies.push(body);
     const answer = requestBodies.length === 1 ? 'Halo juga.' : 'Namanya Atlas.';
