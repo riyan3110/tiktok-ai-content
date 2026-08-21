@@ -34,6 +34,37 @@
   return {MODEL_KEYS,modelsFor,stateFor,validate,applySelect,genericState,clearHandler};
 });
 
+(function setupZarkControls(){
+  if(typeof window==='undefined'||typeof document==='undefined')return;
+  const form=document.getElementById('studio-generate-form');
+  const provider=document.getElementById('studio-provider');
+  const prompt=document.getElementById('studio-prompt');
+  const resolution=document.getElementById('studio-resolution');
+  if(!form||!provider||!prompt||!resolution)return;
+
+  const field=document.createElement('label');
+  field.id='studio-zark-duration-field';
+  field.className='hidden';
+  field.innerHTML='Durasi Zark<select id="studio-zark-duration"><option value="">Auto</option><option value="5">5 detik</option><option value="10">10 detik</option><option value="15">15 detik</option><option value="30">30 detik</option></select><small>Storyboard bertimestamp sampai 30 detik juga dibaca otomatis.</small>';
+  resolution.closest('.form-section-body')?.insertBefore(field,resolution.parentElement.nextSibling);
+  const duration=document.getElementById('studio-zark-duration');
+  if(!duration)return;
+
+  const isVideoMode=()=>document.querySelector('[data-studio-type="video"]')?.classList.contains('active');
+  const refresh=()=>field.classList.toggle('hidden',provider.value!=='zark'||!isVideoMode());
+  provider.addEventListener('change',()=>queueMicrotask(refresh));
+  document.querySelectorAll('[data-studio-type]').forEach(button=>button.addEventListener('click',()=>setTimeout(refresh,0)));
+  new MutationObserver(refresh).observe(provider,{attributes:true,childList:true,subtree:true});
+
+  form.addEventListener('submit',()=>{
+    if(provider.value!=='zark'||!isVideoMode()||!duration.value)return;
+    const original=prompt.value;
+    if(!new RegExp(`\\b${duration.value}\\s*(?:s|sec|detik)\\b`,'i').test(original)) prompt.value=`${original.trim()}\n\nTarget duration: ${duration.value} detik.`;
+    queueMicrotask(()=>{prompt.value=original});
+  },true);
+  refresh();
+})();
+
 (function setupPwa(){
   if(typeof window==='undefined'||typeof document==='undefined')return;
   if(!document.querySelector('link[rel="manifest"]')){
