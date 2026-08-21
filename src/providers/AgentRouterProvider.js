@@ -12,37 +12,44 @@ const KNOWN_MODELS = Object.freeze([
 ]);
 
 const unique = values => [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
-const isClaudeModel = model => /^claude-/i.test(String(model || '').trim());
 
 class AgentRouterProvider extends BaseProvider {
-  openAiBase() {
-    const raw = String(this.config.base_url || 'https://co.agentrouter.org/v1').replace(/\/$/, '');
-    return /\/v1$/i.test(raw) ? raw : `${raw}/v1`;
+  rootBase() {
+    return String(this.config.base_url || 'https://agentrouter.org')
+      .replace(/\/$/, '')
+      .replace(/\/v1(?:\/responses)?$/i, '');
   }
 
-  anthropicBase() {
-    return String(this.config.base_url || 'https://co.agentrouter.org/v1').replace(/\/$/, '').replace(/\/v1$/i, '');
-  }
-
-  endpoint(path = '') { return `${this.openAiBase()}${path}`; }
-  requestPath() { return '/chat/completions'; }
-  healthPath() { return '/models'; }
+  endpoint(path = '') { return `${this.rootBase()}${path}`; }
+  requestPath() { return '/v1/responses'; }
+  healthPath() { return '/v1/models'; }
   selectedModel(input = {}) { return input.model || this.config.text_model || this.config.default_model || 'gpt-5.5'; }
 
   buildRequest(input = {}) {
     return {
       model: this.selectedModel(input),
-      messages: [{ role: 'user', content: input.prompt }],
+      input: String(input.prompt || ''),
       stream: false
     };
   }
 
   parse(data = {}) {
     const usage = data.usage || {};
-    const content = data.choices?.[0]?.message?.content || data.output_text || '';
-    if (!content && !data.choices?.length) {
+    const outputItems = Array.isArray(data.output) ? data.output : [];
+    const nestedText = outputItems.flatMap(item => Array.isArray(item?.content) ? item.content : [])
+      .map(item => item?.text || item?.output_text || '')
+      .filter(Boolean)
+      .join('');
+    const content = data.output_text
+      || nestedText
+      || data.choices?.[0]?.message?.content
+      || data.text
+      || '';
+    if (!content) {
       throw Object.assign(new Error('AgentRouter tidak mengembalikan respons teks'), { type: 'Provider Error', code: 'EMPTY_TEXT_RESPONSE' });
     }
+    const promptTokens = usage.input_tokens || usage.prompt_tokens || 0;
+    const completionTokens = usage.output_tokens || usage.completion_tokens || 0;
     return {
       content,
       media: [],
@@ -50,30 +57,9 @@ class AgentRouterProvider extends BaseProvider {
       providerRequestId: data.id || null,
       status: data.status || 'completed',
       usage: {
-        promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
-        completionTokens: usage.completion_tokens || usage.output_tokens || 0,
-        totalTokens: usage.total_tokens || ((usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0))
-      },
-      raw: data
-    };
-  }
-
-  parseClaude(data = {}) {
-    const usage = data.usage || {};
-    const content = Array.isArray(data.content)
-      ? data.content.filter(item => item?.type === 'text').map(item => item.text || '').join('')
-      : '';
-    if (!content) throw Object.assign(new Error('AgentRouter Claude tidak mengembalikan respons teks'), { type: 'Provider Error', code: 'EMPTY_TEXT_RESPONSE' });
-    return {
-      content,
-      media: [],
-      providerJobId: data.id || null,
-      providerRequestId: data.id || null,
-      status: data.stop_reason ? 'completed' : (data.status || 'completed'),
-      usage: {
-        promptTokens: usage.input_tokens || 0,
-        completionTokens: usage.output_tokens || 0,
-        totalTokens: (usage.input_tokens || 0) + (usage.output_tokens || 0)
+        promptTokens,
+        completionTokens,
+        totalTokens: usage.total_tokens || promptTokens + completionTokens
       },
       raw: data
     };
@@ -81,31 +67,10 @@ class AgentRouterProvider extends BaseProvider {
 
   async execute(input, { signal, onProgress = () => {} } = {}) {
     if (input.mediaType && input.mediaType !== 'text') {
-      throw Object.assign(new Error('AgentRouter co.agentrouter.org saat ini dikonfigurasi sebagai provider Text AI, bukan image/video generation.'), { status: 409, nonRetryable: true });
+      throw Object.assign(new Error('AgentRouter agentrouter.org saat ini dikonfigurasi sebagai provider Text AI, bukan image/video generation.'), { status: 409, nonRetryable: true });
     }
-    const model = this.selectedModel(input);
-    if (!isClaudeModel(model)) return super.execute(input, { signal, onProgress });
-
     try {
-      onProgress('Sending');
-      const response = await this.transport(`${this.anthropicBase()}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.api_key}`,
-          'x-api-key': this.config.api_key,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: Math.max(1, Math.min(8192, Number(input.parameters?.maxTokens) || 4096)),
-          messages: [{ role: 'user', content: input.prompt }]
-        }),
-        signal
-      });
-      if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
-      onProgress('Receiving');
-      return this.parseClaude(await response.json());
+      return await super.execute(input, { signal, onProgress });
     } catch (error) {
       throw normalizeError(error);
     }
@@ -129,14 +94,14 @@ class AgentRouterProvider extends BaseProvider {
       const models = await this.listModels(signal);
       return {
         connected: true,
-        providerVersion: 'OpenAI + Anthropic Compatible',
+        providerVersion: 'Unified Responses API',
         defaultModel: this.config.text_model || this.config.default_model || models[0] || 'gpt-5.5',
         responseTime: Date.now() - started,
         models
       };
     } catch (error) {
       const status = Number(error.status || 0);
-      if (status === 401 || status === 403) throw Object.assign(new Error('API key AgentRouter tidak valid atau tidak diizinkan untuk endpoint model'), { status, type: 'Authentication Error' });
+      if (status === 401 || status === 403) throw Object.assign(new Error('API key AgentRouter tidak valid'), { status, type: 'Authentication Error' });
       if (status === 402 || /insufficient|balance|saldo|credit/i.test(String(error.message || ''))) throw Object.assign(new Error('Saldo AgentRouter tidak mencukupi'), { status: status || 402, type: 'Quota Exceeded' });
       if (status === 429) throw Object.assign(new Error('Batas penggunaan AgentRouter tercapai'), { status, type: 'Rate Limited' });
       if (!status || error.type === 'Network Error') throw Object.assign(new Error('Tidak dapat menghubungi AgentRouter'), { status: 502, type: 'Network Error' });
@@ -146,5 +111,4 @@ class AgentRouterProvider extends BaseProvider {
 }
 
 AgentRouterProvider.KNOWN_MODELS = KNOWN_MODELS;
-AgentRouterProvider.isClaudeModel = isClaudeModel;
 module.exports = AgentRouterProvider;
