@@ -27,6 +27,35 @@ test('Zark API key is encrypted at rest and never returned to browser', () => {
   assert.equal(connector.configured(row).api_key, 'zark-secret-key');
 });
 
+test('Zark discovers account model options from MCP tools/list', async () => {
+  const transport = async (url, options = {}) => {
+    if (url.endsWith('/v1/storage/files?limit=1')) {
+      return new Response(JSON.stringify({ files: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.endsWith('/v1/mcp')) {
+      assert.equal(options.headers['X-API-Key'], 'secret');
+      const request = JSON.parse(options.body);
+      assert.equal(request.method, 'tools/list');
+      return new Response(JSON.stringify({
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          tools: [
+            { name: 'image_gen', description: 'Generate image', inputSchema: { type: 'object', properties: { model: { type: 'string', enum: ['auto', 'gpt-image-2', 'seedream'] } } } },
+            { name: 'video_gen', description: 'Generate video', inputSchema: { type: 'object', properties: { model: { type: 'string', enum: ['auto', 'seedance-2.5', 'kling-3'] } } } }
+          ]
+        }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  };
+  const provider = ProviderFactory.create({ provider: 'zark', base_url: 'https://api.zarklab.ai', api_key: 'secret', default_model: 'auto' }, transport);
+  const result = await provider.testConnection({});
+  assert.equal(result.modelDiscovery, 'mcp');
+  assert.deepEqual(result.models.image, ['auto', 'gpt-image-2', 'seedream']);
+  assert.deepEqual(result.models.video, ['auto', 'seedance-2.5', 'kling-3']);
+});
+
 test('Content Studio exposes enabled Zark without adding a new page', () => {
   const db = createDatabase(':memory:');
   connector.seed(db);
