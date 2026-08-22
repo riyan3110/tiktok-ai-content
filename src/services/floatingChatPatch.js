@@ -124,17 +124,33 @@ function buildConversationPrompt(rows) {
 async function executeTextProvider(db, providerId, model, prompt, transport) {
   const row = aiConnector.setting(db, providerId);
   const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(row.timeout_ms) || 30000));
+  const timeoutMs = providerId === 'agentrouter'
+    ? Math.max(120000, Number(row.timeout_ms) || 0)
+    : Math.max(1000, Number(row.timeout_ms) || 30000);
+  const retries = Math.max(0, Number(row.retry_count) || 0);
   const started = Date.now();
-  try {
-    const result = await adapter.execute({ mediaType: 'text', model, prompt, assets: [], parameters: { maxTokens: 2048 } }, { signal: controller.signal });
-    aiConnector.updateHealth(db, providerId, true, { responseTime: Date.now() - started });
-    return result;
-  } catch (error) {
-    aiConnector.updateHealth(db, providerId, false, { responseTime: Date.now() - started });
-    throw error;
-  } finally { clearTimeout(timer); }
+  let lastError;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const result = await adapter.execute({ mediaType: 'text', model, prompt, assets: [], parameters: { maxTokens: 2048 } }, { signal: controller.signal });
+      aiConnector.updateHealth(db, providerId, true, { responseTime: Date.now() - started });
+      return result;
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status || error?.cause?.status || 0);
+      const transient = status === 429 || status === 502 || status === 503 || status === 504 || error?.name === 'AbortError' || error?.cause?.name === 'AbortError';
+      if (!transient || attempt === retries) break;
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  aiConnector.updateHealth(db, providerId, false, { responseTime: Date.now() - started });
+  throw lastError;
 }
 
 function getSession(db, id) { return db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(id); }
