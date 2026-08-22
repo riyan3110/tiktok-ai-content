@@ -26,7 +26,7 @@ test('floating chat schema and transcript builder keep multi-turn context', () =
   assert.match(prompt, /Assistant:$/);
 });
 
-test('floating chat API persists messages and sends previous turns to AgentRouter', async t => {
+test('floating chat API persists messages and sends previous turns through AgentRouter API gateway', async t => {
   const db = createDatabase(':memory:');
   connector.seed(db);
   connector.save(db, 'agentrouter', {
@@ -39,7 +39,7 @@ test('floating chat API persists messages and sends previous turns to AgentRoute
 
   const requestBodies = [];
   const transport = async (url, options = {}) => {
-    assert.equal(url, 'https://agentrouter.org/v1/messages');
+    assert.equal(url, 'https://co.agentrouter.org/v1/messages');
     assert.equal(options.headers.Authorization, 'Bearer agent-secret');
     assert.equal(options.headers['anthropic-version'], '2023-06-01');
     const body = JSON.parse(options.body);
