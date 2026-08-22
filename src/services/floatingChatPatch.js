@@ -79,6 +79,13 @@ function messageJson(row) {
   };
 }
 
+function sendError(res, error) {
+  const rawStatus = Number(error?.status || error?.cause?.status || 0);
+  const status = rawStatus >= 400 && rawStatus <= 599 ? rawStatus : 502;
+  const message = String(error?.message || error?.cause?.message || 'Gagal menghubungi Text AI provider.');
+  return res.status(status).json({ error: message, message, type: error?.type || null, status });
+}
+
 function buildConversationPrompt(rows) {
   const selected = [];
   let used = 0;
@@ -138,7 +145,7 @@ function install({ app, db, transport } = {}) {
     res.json(rows.map(sessionJson));
   });
 
-  app.post('/api/floating-chat/sessions', (req, res, next) => {
+  app.post('/api/floating-chat/sessions', (req, res) => {
     try {
       const provider = pickProvider(db, req.body?.provider);
       const model = modelFor(provider, req.body?.model);
@@ -147,7 +154,7 @@ function install({ app, db, transport } = {}) {
       db.prepare('INSERT INTO floating_chat_sessions(id,title,provider,model) VALUES(?,?,?,?)')
         .run(id, 'New chat', provider.provider, model);
       res.status(201).json(sessionJson(db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(id)));
-    } catch (error) { next(error); }
+    } catch (error) { sendError(res, error); }
   });
 
   app.get('/api/floating-chat/sessions/:id/messages', (req, res) => {
@@ -162,7 +169,7 @@ function install({ app, db, transport } = {}) {
     res.status(deleted ? 200 : 404).json({ deleted: Boolean(deleted) });
   });
 
-  app.post('/api/floating-chat/sessions/:id/messages', async (req, res, next) => {
+  app.post('/api/floating-chat/sessions/:id/messages', async (req, res) => {
     try {
       const session = db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(req.params.id);
       if (!session) return res.status(404).json({ error: 'Chat tidak ditemukan.' });
@@ -204,8 +211,8 @@ function install({ app, db, transport } = {}) {
         user: messageJson(userMessage),
         assistant: messageJson(assistantMessage)
       });
-    } catch (error) { next(error); }
+    } catch (error) { sendError(res, error); }
   });
 }
 
-module.exports = { install, ensureSchema, buildConversationPrompt, textProviders, executeTextProvider };
+module.exports = { install, ensureSchema, buildConversationPrompt, textProviders, executeTextProvider, sendError };
