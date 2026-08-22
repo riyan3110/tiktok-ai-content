@@ -93,9 +93,15 @@
 (function setupFloatingChat(){
   if(typeof window==='undefined'||typeof document==='undefined'||window.__AIADS_FLOATING_CHAT_LOADER__)return;
   window.__AIADS_FLOATING_CHAT_LOADER__=true;
-  const script=document.createElement('script');
-  script.src='/floating-chat.js';
-  script.defer=true;
-  script.dataset.aiadsFloatingChat='1';
-  document.head.appendChild(script);
+  const chat=document.createElement('script');
+  chat.src='/floating-chat.js';
+  chat.defer=true;
+  chat.dataset.aiadsFloatingChat='1';
+  document.head.appendChild(chat);
+
+  const theme=document.createElement('script');
+  theme.src='/floating-chat-theme.js';
+  theme.defer=true;
+  theme.dataset.aiadsFloatingChatTheme='compact';
+  document.head.appendChild(theme);
 })();
