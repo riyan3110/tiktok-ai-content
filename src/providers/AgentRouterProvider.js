@@ -20,7 +20,7 @@ class AgentRouterProvider extends BaseProvider {
   }
 
   endpoint(path = '') { return `${this.rootBase()}${path}`; }
-  selectedModel(input = {}) { return input.model || this.config.text_model || this.config.default_model || 'deepseek-ai/deepseek-v4-flash'; }
+  selectedModel(input = {}) { return String(input.model || this.config.text_model || this.config.default_model || '').trim(); }
   requestPath() { return '/chat/completions'; }
 
   headers() {
@@ -78,8 +78,10 @@ class AgentRouterProvider extends BaseProvider {
   }
 
   buildRequest(input = {}, probe = false) {
+    const model = this.selectedModel(input);
+    if (!model) throw Object.assign(new Error('Model BluesMinds belum dipilih'), { status: 422, nonRetryable: true });
     const body = {
-      model: this.selectedModel(input),
+      model,
       messages: this.chatMessages(input),
       stream: false
     };
