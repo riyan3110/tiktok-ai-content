@@ -91,19 +91,26 @@ class AgentRouterProvider extends BaseProvider {
       throw Object.assign(new Error('BluesMinds saat ini dikonfigurasi sebagai provider Text AI di AI Ads Lab.'), { status: 409, nonRetryable: true });
     }
     const url = this.endpoint('/chat/completions');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.max(120000, Number(this.config.timeout_ms) || 0));
     try {
       onProgress('Sending');
       const data = await this.requestJson(url, {
         method: 'POST',
         headers: this.headers(),
         body: JSON.stringify(this.buildRequest(input)),
-        signal
+        signal: controller.signal
       });
       onProgress('Receiving');
       return this.parseResponse(data);
     } catch (error) {
       error.endpoint ||= url;
+      if (controller.signal.aborted && error.name === 'AbortError') {
+        throw Object.assign(new Error('BluesMinds belum merespons setelah 120 detik'), { status: 504, type: 'Network Error', endpoint: url });
+      }
       throw normalizeError(error);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
