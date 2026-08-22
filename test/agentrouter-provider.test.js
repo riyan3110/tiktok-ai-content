@@ -51,21 +51,20 @@ test('BluesMinds sends text through OpenAI Chat Completions', async () => {
   assert.equal(result.content, 'OK');
 });
 
-test('BluesMinds Test Connection parses a real one-token model response', async () => {
+test('BluesMinds Test Connection validates chat only and does not wait for model catalog', async () => {
   const calls = [];
   const provider = ProviderFactory.create({
     provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash', text_model: 'deepseek-ai/deepseek-v4-flash'
   }, async (url, options = {}) => {
     calls.push({ url, options });
-    if (url.endsWith('/models')) return jsonResponse({ data: [{ id: 'deepseek-ai/deepseek-v4-flash' }, { id: 'z-ai/glm-5.1' }] });
-    return jsonResponse({ id: 'probe', choices: [{ message: { content: 'O' } }], usage: { prompt_tokens: 2, completion_tokens: 1 } });
+    return jsonResponse({ id: 'probe', choices: [{ message: { content: 'OK' } }], usage: { prompt_tokens: 2, completion_tokens: 1 } });
   });
   const result = await provider.testConnection({});
+  assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://api.bluesminds.com/v1/chat/completions');
-  assert.equal(JSON.parse(calls[0].options.body).max_tokens, 1);
+  assert.equal(JSON.parse(calls[0].options.body).max_tokens, 8);
   assert.equal(result.connected, true);
   assert.equal(result.providerVersion, 'OpenAI Chat Completions');
-  assert.ok(result.models.includes('z-ai/glm-5.1'));
 });
 
 test('BluesMinds Test Connection rejects HTML instead of reporting false Connected', async () => {
