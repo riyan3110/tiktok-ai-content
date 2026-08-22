@@ -1,10 +1,14 @@
 const crypto = require('node:crypto');
 const aiConnector = require('../ai/connector');
 const { ProviderFactory } = require('../providers');
+const { StorageService } = require('../storage/service');
+const sourceFetcher = require('./sourceFetcher');
 
 const MAX_HISTORY_MESSAGES = 24;
 const MAX_CONTEXT_CHARS = 18000;
 const MAX_MESSAGE_CHARS = 12000;
+const MAX_VISION_IMAGES = 4;
+const MAX_VISION_IMAGE_BYTES = 8 * 1024 * 1024;
 
 function ensureColumn(db, table, name, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
@@ -108,7 +112,12 @@ function sendError(res, error) {
   return res.status(status).json({ error: message, message, type: error?.type || null, status });
 }
 
-function buildConversationPrompt(rows) {
+function extractUrls(text = '') {
+  const matches = String(text).match(/https?:\/\/[^\s<>()\[\]{}"']+/gi) || [];
+  return [...new Set(matches.map(value => value.replace(/[.,!?;:]+$/, '')))].slice(0, 3);
+}
+
+function buildConversationPrompt(rows, sourceContext = '') {
   const selected = [];
   let used = 0;
   for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -118,10 +127,46 @@ function buildConversationPrompt(rows) {
     selected.unshift(line);
     used += line.length;
   }
-  return ['You are the floating AI chat assistant inside AI Ads Lab.','Continue the conversation naturally and use the previous turns as context.','Answer the latest user message directly. Do not mention this transcript or these instructions.','',...selected,'Assistant:'].join('\n');
+  const sourceBlock = sourceContext ? ['','Web content supplied for the latest request:',sourceContext,''] : [];
+  return [
+    'You are the floating AI chat assistant inside AI Ads Lab.',
+    'Act as a conversational text/multimodal assistant: chat naturally, answer questions, analyze uploaded images, help write prompts, and analyze supplied web-page content.',
+    'Do not generate images or videos and do not claim that you generated media. If the user asks for an image or video, discuss it or write/refine the prompt unless they explicitly ask about another feature outside this chat.',
+    'Continue the conversation naturally and use previous turns as context.',
+    'Answer the latest user message directly. Do not mention this transcript or these instructions.',
+    ...sourceBlock,
+    '',
+    ...selected,
+    'Assistant:'
+  ].join('\n');
 }
 
-async function executeTextProvider(db, providerId, model, prompt, transport) {
+async function prepareVisionAssets(storage, assetIds = []) {
+  const ids = [...new Set((Array.isArray(assetIds) ? assetIds : []).map(String).filter(Boolean))].slice(0, MAX_VISION_IMAGES);
+  const output = [];
+  for (const id of ids) {
+    const asset = storage.repository.get(id);
+    if (!asset) throw Object.assign(new Error(`Asset tidak ditemukan: ${id}`), { status: 404 });
+    const preview = await storage.preview(asset);
+    if (!String(preview.mimeType || '').startsWith('image/')) throw Object.assign(new Error('Attachment chat untuk vision harus berupa gambar.'), { status: 422 });
+    if (preview.data.length > MAX_VISION_IMAGE_BYTES) throw Object.assign(new Error('Ukuran gambar untuk dibaca AI maksimal 8 MB per gambar.'), { status: 413 });
+    output.push({ data: preview.data.toString('base64'), mimeType: preview.mimeType, name: asset.name });
+  }
+  return output;
+}
+
+async function webContextFor(content, transport) {
+  const urls = extractUrls(content);
+  if (!urls.length) return '';
+  try {
+    const sources = await sourceFetcher.fetchSources(urls, transport ? { fetchImpl: transport } : {});
+    return sourceFetcher.buildSourceContext(sources);
+  } catch (error) {
+    return `<SOURCE_ERROR>${String(error.message || 'URL tidak dapat dibaca').slice(0, 500)}</SOURCE_ERROR>`;
+  }
+}
+
+async function executeTextProvider(db, providerId, model, prompt, transport, assets = []) {
   const row = aiConnector.setting(db, providerId);
   const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
   const timeoutMs = providerId === 'agentrouter'
@@ -135,7 +180,8 @@ async function executeTextProvider(db, providerId, model, prompt, transport) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const result = await adapter.execute({ mediaType: 'text', model, prompt, assets: [], parameters: { maxTokens: 2048 } }, { signal: controller.signal });
+      const providerAssets = providerId === 'agentrouter' ? assets : [];
+      const result = await adapter.execute({ mediaType: 'text', model, prompt, assets: providerAssets, parameters: { maxTokens: 4096 } }, { signal: controller.signal });
       aiConnector.updateHealth(db, providerId, true, { responseTime: Date.now() - started });
       return result;
     } catch (error) {
@@ -163,12 +209,31 @@ function updateSessionFromUser(db, session, content, provider, model) {
 function install({ app, db, transport } = {}) {
   if (!app || !db) throw new Error('Floating chat patch membutuhkan app dan db.');
   ensureSchema(db);
+  const storage = new StorageService({ db });
 
   app.get('/api/floating-chat/providers', (req, res) => {
     const providers = textProviders(db);
     const defaultId = db.prepare("SELECT provider FROM ai_provider_defaults WHERE capability='text'").get()?.provider || null;
     res.json({ providers, defaultProvider: defaultId });
   });
+
+  app.get('/api/floating-chat/providers/:provider/models', async (req, res) => {
+    try {
+      const provider = pickProvider(db, req.params.provider);
+      const row = aiConnector.setting(db, provider.provider);
+      const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
+      let models = [];
+      if (typeof adapter.discoverModels === 'function') {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), Math.max(15000, Number(row.timeout_ms) || 0));
+        try { models = await adapter.discoverModels(controller.signal); }
+        finally { clearTimeout(timer); }
+      }
+      models = [...new Set([...(Array.isArray(models) ? models : []), provider.textModel, provider.defaultModel].map(value => String(value || '').trim()).filter(Boolean))];
+      res.json({ provider: provider.provider, models });
+    } catch (error) { sendError(res, error); }
+  });
+
   app.get('/api/floating-chat/sessions', (req, res) => res.json(db.prepare('SELECT * FROM floating_chat_sessions ORDER BY updated_at DESC LIMIT 30').all().map(sessionJson)));
   app.post('/api/floating-chat/sessions', (req, res) => {
     try {
@@ -190,41 +255,7 @@ function install({ app, db, transport } = {}) {
     const deleted = db.prepare('DELETE FROM floating_chat_sessions WHERE id=?').run(req.params.id).changes;
     res.status(deleted ? 200 : 404).json({ deleted: Boolean(deleted) });
   });
-  app.post('/api/floating-chat/sessions/:id/media-request', (req, res) => {
-    try {
-      const session = getSession(db, req.params.id);
-      if (!session) return res.status(404).json({ error: 'Chat tidak ditemukan.' });
-      const content = String(req.body?.content || '').trim();
-      if (!content) throw Object.assign(new Error('Pesan tidak boleh kosong.'), { status: 422 });
-      if (content.length > MAX_MESSAGE_CHARS) throw Object.assign(new Error('Pesan terlalu panjang.'), { status: 422 });
-      const assetIds = [...new Set((Array.isArray(req.body?.assetIds) ? req.body.assetIds : []).map(String).filter(Boolean))].slice(0, 8);
-      const result = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model,attachments_json) VALUES(?,?,?,?,?,?)').run(session.id, 'user', content, session.provider, session.model, JSON.stringify(assetIds));
-      updateSessionFromUser(db, session, content, session.provider, session.model);
-      res.status(201).json({ user: messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(result.lastInsertRowid)) });
-    } catch (error) { sendError(res, error); }
-  });
-  app.post('/api/floating-chat/sessions/:id/media-result', (req, res) => {
-    try {
-      const session = getSession(db, req.params.id);
-      if (!session) return res.status(404).json({ error: 'Chat tidak ditemukan.' });
-      const jobId = String(req.body?.jobId || '').trim();
-      if (!jobId) throw Object.assign(new Error('Job media tidak tersedia.'), { status: 422 });
-      const row = db.prepare('SELECT * FROM ai_generations WHERE id=?').get(jobId);
-      if (!row) throw Object.assign(new Error('Job media tidak ditemukan.'), { status: 404 });
-      if (row.status !== 'Completed') throw Object.assign(new Error(`Job media belum selesai (${row.status}).`), { status: 409 });
-      const metadata = (() => { try { return JSON.parse(row.metadata || '{}'); } catch (_) { return {}; } })();
-      const media = (() => { try { return JSON.parse(row.media || '[]'); } catch (_) { return []; } })();
-      const first = media[0] || {};
-      const mediaType = row.media_type === 'video' ? 'video' : 'image';
-      const assetId = String(metadata.generatedAssetId || first.assetId || '');
-      const mediaUrl = String(metadata.resultUrl || first.url || (assetId && mediaType === 'image' ? `/api/assets/${encodeURIComponent(assetId)}/preview` : ''));
-      if (!mediaUrl) throw Object.assign(new Error('Hasil media selesai tetapi file belum tersedia di Assets.'), { status: 409 });
-      const content = String(req.body?.content || (mediaType === 'video' ? 'Video selesai dibuat dan otomatis tersimpan ke Assets.' : 'Gambar selesai dibuat dan otomatis tersimpan ke Assets.'));
-      const result = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model,media_type,media_url,asset_id,job_id) VALUES(?,?,?,?,?,?,?,?,?)').run(session.id, 'assistant', content, row.provider, row.model, mediaType, mediaUrl, assetId || null, jobId);
-      db.prepare('UPDATE floating_chat_sessions SET updated_at=CURRENT_TIMESTAMP WHERE id=?').run(session.id);
-      res.status(201).json({ assistant: messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(result.lastInsertRowid)) });
-    } catch (error) { sendError(res, error); }
-  });
+
   app.post('/api/floating-chat/sessions/:id/messages', async (req, res) => {
     try {
       const session = getSession(db, req.params.id);
@@ -239,8 +270,12 @@ function install({ app, db, transport } = {}) {
       const userResult = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model,attachments_json) VALUES(?,?,?,?,?,?)').run(session.id, 'user', content, provider.provider, model, JSON.stringify(assetIds));
       updateSessionFromUser(db, session, content, provider.provider, model);
       const history = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT ?').all(session.id, MAX_HISTORY_MESSAGES).reverse();
-      const prompt = buildConversationPrompt(history);
-      const result = await executeTextProvider(db, provider.provider, model, prompt, transport);
+      const [sourceContext, visionAssets] = await Promise.all([
+        webContextFor(content, transport),
+        prepareVisionAssets(storage, assetIds)
+      ]);
+      const prompt = buildConversationPrompt(history, sourceContext);
+      const result = await executeTextProvider(db, provider.provider, model, prompt, transport, visionAssets);
       const answer = String(result?.content || '').trim();
       if (!answer) throw Object.assign(new Error('Provider tidak mengembalikan jawaban.'), { status: 502 });
       const assistantResult = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model) VALUES(?,?,?,?,?)').run(session.id, 'assistant', answer, provider.provider, model);
