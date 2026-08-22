@@ -144,7 +144,26 @@ class AgentRouterProvider extends BaseProvider {
     if (input.mediaType && input.mediaType !== 'text') {
       throw Object.assign(new Error('BluesMinds saat ini dikonfigurasi sebagai provider Text AI di AI Ads Lab.'), { status: 409, nonRetryable: true });
     }
+
     const url = this.endpoint('/chat/completions');
+    const nativeChat = Array.isArray(input.messages) && input.messages.length > 0;
+
+    if (nativeChat) {
+      try {
+        onProgress('Sending');
+        const data = await this.requestJson(url, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify(this.buildRequest(input))
+        });
+        onProgress('Receiving');
+        return this.parseResponse(data);
+      } catch (error) {
+        error.endpoint ||= url;
+        throw normalizeError(error);
+      }
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Math.max(120000, Number(this.config.timeout_ms) || 0));
     if (signal) {
@@ -164,7 +183,7 @@ class AgentRouterProvider extends BaseProvider {
     } catch (error) {
       error.endpoint ||= url;
       if (controller.signal.aborted && error.name === 'AbortError') {
-        throw Object.assign(new Error('BluesMinds belum merespons dalam batas waktu chat'), { status: 504, type: 'Network Error', endpoint: url });
+        throw Object.assign(new Error('BluesMinds belum merespons dalam batas waktu'), { status: 504, type: 'Network Error', endpoint: url });
       }
       throw normalizeError(error);
     } finally {
