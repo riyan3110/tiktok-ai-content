@@ -104,4 +104,10 @@
   theme.defer=true;
   theme.dataset.aiadsFloatingChatTheme='compact';
   document.head.appendChild(theme);
+
+  const enhancements=document.createElement('script');
+  enhancements.src='/chat-copy-pull-refresh.js';
+  enhancements.defer=true;
+  enhancements.dataset.aiadsChatEnhancements='copy-pull-refresh';
+  document.head.appendChild(enhancements);
 })();
