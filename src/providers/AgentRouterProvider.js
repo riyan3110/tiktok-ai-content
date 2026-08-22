@@ -37,7 +37,7 @@ class AgentRouterProvider extends BaseProvider {
       messages: [{ role: 'user', content: String(input.prompt || '') }],
       stream: false
     };
-    const maxTokens = probe ? 1 : Number(input.parameters?.maxTokens || 0);
+    const maxTokens = probe ? 8 : Number(input.parameters?.maxTokens || 0);
     if (maxTokens > 0) body.max_tokens = Math.max(1, Math.min(8192, maxTokens));
     return body;
   }
@@ -81,13 +81,9 @@ class AgentRouterProvider extends BaseProvider {
   }
 
   async discoverModels(signal) {
-    try {
-      const data = await this.requestJson(this.endpoint('/models'), { method: 'GET', headers: this.headers(), signal });
-      const rows = Array.isArray(data?.data) ? data.data : [];
-      return unique(rows.map(item => item?.id || item?.name).filter(Boolean));
-    } catch (_) {
-      return [...KNOWN_MODELS];
-    }
+    const data = await this.requestJson(this.endpoint('/models'), { method: 'GET', headers: this.headers(), signal });
+    const rows = Array.isArray(data?.data) ? data.data : [];
+    return unique(rows.map(item => item?.id || item?.name).filter(Boolean));
   }
 
   async execute(input, { signal, onProgress = () => {} } = {}) {
@@ -119,17 +115,16 @@ class AgentRouterProvider extends BaseProvider {
       const data = await this.requestJson(url, {
         method: 'POST',
         headers: this.headers(),
-        body: JSON.stringify(this.buildRequest({ model, prompt: 'Reply OK' }, true)),
+        body: JSON.stringify(this.buildRequest({ model, prompt: 'Reply only: OK' }, true)),
         signal
       });
       const parsed = this.parseResponse(data);
-      const models = await this.discoverModels(signal);
       return {
         connected: true,
         providerVersion: 'OpenAI Chat Completions',
         defaultModel: model,
         responseTime: Date.now() - started,
-        models: unique([model, ...models])
+        models: unique([model, ...KNOWN_MODELS])
       };
     } catch (error) {
       const status = Number(error.status || 0);
