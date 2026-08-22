@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const aiConnector = require('../ai/connector');
+const { ProviderFactory } = require('../providers');
 
 const MAX_HISTORY_MESSAGES = 24;
 const MAX_CONTEXT_CHARS = 18000;
@@ -98,6 +99,30 @@ function buildConversationPrompt(rows) {
   ].join('\n');
 }
 
+async function executeTextProvider(db, providerId, model, prompt, transport) {
+  const row = aiConnector.setting(db, providerId);
+  const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(row.timeout_ms) || 30000));
+  const started = Date.now();
+  try {
+    const result = await adapter.execute({
+      mediaType: 'text',
+      model,
+      prompt,
+      assets: [],
+      parameters: { maxTokens: 2048 }
+    }, { signal: controller.signal });
+    aiConnector.updateHealth(db, providerId, true, { responseTime: Date.now() - started });
+    return result;
+  } catch (error) {
+    aiConnector.updateHealth(db, providerId, false, { responseTime: Date.now() - started });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function install({ app, db, transport } = {}) {
   if (!app || !db) throw new Error('Floating chat patch membutuhkan app dan db.');
   ensureSchema(db);
@@ -163,15 +188,8 @@ function install({ app, db, transport } = {}) {
         .reverse();
       const prompt = buildConversationPrompt(history);
 
-      const generation = await aiConnector.execute(db, {
-        provider: provider.provider,
-        model,
-        mediaType: 'text',
-        prompt,
-        metadata: { source: 'floating-chat', chatSessionId: session.id }
-      }, transport);
-
-      const answer = String(generation?.output || '').trim();
+      const result = await executeTextProvider(db, provider.provider, model, prompt, transport);
+      const answer = String(result?.content || '').trim();
       if (!answer) throw Object.assign(new Error('Provider tidak mengembalikan jawaban.'), { status: 502 });
 
       const assistantResult = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model) VALUES(?,?,?,?,?)')
@@ -190,4 +208,4 @@ function install({ app, db, transport } = {}) {
   });
 }
 
-module.exports = { install, ensureSchema, buildConversationPrompt, textProviders };
+module.exports = { install, ensureSchema, buildConversationPrompt, textProviders, executeTextProvider };
