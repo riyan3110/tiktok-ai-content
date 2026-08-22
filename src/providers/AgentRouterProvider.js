@@ -109,22 +109,16 @@ class AgentRouterProvider extends BaseProvider {
 
   async testConnection({ signal } = {}) {
     const started = Date.now();
-    const model = this.config.text_model || this.config.default_model || 'deepseek-ai/deepseek-v4-flash';
-    const url = this.endpoint('/chat/completions');
+    const url = this.endpoint('/models');
     try {
-      const data = await this.requestJson(url, {
-        method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify(this.buildRequest({ model, prompt: 'Reply only: OK' }, true)),
-        signal
-      });
-      const parsed = this.parseResponse(data);
+      const models = await this.discoverModels(signal);
+      if (!models.length) throw Object.assign(new Error('BluesMinds tidak mengembalikan katalog model'), { status: 502, type: 'Provider Error' });
       return {
         connected: true,
-        providerVersion: 'OpenAI Chat Completions',
-        defaultModel: model,
+        providerVersion: 'OpenAI-compatible API',
+        defaultModel: this.selectedModel(),
         responseTime: Date.now() - started,
-        models: unique([model, ...KNOWN_MODELS])
+        models
       };
     } catch (error) {
       const status = Number(error.status || 0);
