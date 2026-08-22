@@ -44,15 +44,43 @@ class AgentRouterProvider extends BaseProvider {
     }).filter(Boolean);
   }
 
-  buildRequest(input = {}, probe = false) {
+  chatMessages(input = {}) {
+    const supplied = Array.isArray(input.messages) ? input.messages : [];
+    const messages = supplied
+      .map(message => ({
+        role: ['system', 'user', 'assistant'].includes(message?.role) ? message.role : 'user',
+        content: message?.content ?? ''
+      }))
+      .filter(message => String(message.content ?? '').trim() || Array.isArray(message.content));
+
+    if (!messages.length) {
+      messages.push({ role: 'user', content: String(input.prompt || '') });
+    }
+
     const images = this.imageParts(input);
-    const text = String(input.prompt || '');
-    const content = images.length
-      ? [{ type: 'text', text }, ...images]
-      : text;
+    if (images.length) {
+      let userIndex = -1;
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index].role === 'user') { userIndex = index; break; }
+      }
+      if (userIndex < 0) {
+        messages.push({ role: 'user', content: [{ type: 'text', text: '' }, ...images] });
+      } else {
+        const current = messages[userIndex].content;
+        const content = Array.isArray(current)
+          ? [...current, ...images]
+          : [{ type: 'text', text: String(current || '') }, ...images];
+        messages[userIndex] = { ...messages[userIndex], content };
+      }
+    }
+
+    return messages;
+  }
+
+  buildRequest(input = {}, probe = false) {
     const body = {
       model: this.selectedModel(input),
-      messages: [{ role: 'user', content }],
+      messages: this.chatMessages(input),
       stream: false
     };
     const maxTokens = probe ? 8 : Number(input.parameters?.maxTokens || 0);
