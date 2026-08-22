@@ -43,6 +43,11 @@ function createSiteAuthGateway(innerApp, config) {
     return res.sendStatus(401);
   });
 
+  gateway.post('/api/ai/providers/nanobanana/callback', express.json({ limit: '1mb' }), (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    return res.sendStatus(204);
+  });
+
   gateway.use(auth.requireAuth);
   gateway.use(innerApp);
   return gateway;
