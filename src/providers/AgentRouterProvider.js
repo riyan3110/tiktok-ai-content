@@ -31,10 +31,28 @@ class AgentRouterProvider extends BaseProvider {
     };
   }
 
+  imageParts(input = {}) {
+    return (Array.isArray(input.assets) ? input.assets : []).map(asset => {
+      if (!asset) return null;
+      if (typeof asset === 'string') return { type: 'image_url', image_url: { url: asset } };
+      if (asset.url) return { type: 'image_url', image_url: { url: asset.url } };
+      if (asset.data) {
+        const mime = asset.mimeType || asset.mime_type || 'image/jpeg';
+        return { type: 'image_url', image_url: { url: `data:${mime};base64,${asset.data}` } };
+      }
+      return null;
+    }).filter(Boolean);
+  }
+
   buildRequest(input = {}, probe = false) {
+    const images = this.imageParts(input);
+    const text = String(input.prompt || '');
+    const content = images.length
+      ? [{ type: 'text', text }, ...images]
+      : text;
     const body = {
       model: this.selectedModel(input),
-      messages: [{ role: 'user', content: String(input.prompt || '') }],
+      messages: [{ role: 'user', content }],
       stream: false
     };
     const maxTokens = probe ? 8 : Number(input.parameters?.maxTokens || 0);
@@ -44,7 +62,10 @@ class AgentRouterProvider extends BaseProvider {
 
   parseResponse(data = {}) {
     const usage = data.usage || {};
-    const content = data.choices?.[0]?.message?.content || data.output_text || '';
+    const rawContent = data.choices?.[0]?.message?.content ?? data.output_text ?? '';
+    const content = Array.isArray(rawContent)
+      ? rawContent.map(part => typeof part === 'string' ? part : (part?.text || part?.content || '')).join('').trim()
+      : String(rawContent || '').trim();
     if (!content) throw Object.assign(new Error('BluesMinds tidak mengembalikan respons teks'), { type: 'Provider Error', code: 'EMPTY_TEXT_RESPONSE' });
     const promptTokens = usage.prompt_tokens || usage.input_tokens || 0;
     const completionTokens = usage.completion_tokens || usage.output_tokens || 0;
