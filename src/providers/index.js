@@ -2,11 +2,35 @@ const BaseProvider = require('./BaseProvider');
 const OrcaRouterProvider = require('./OrcaRouterProvider');
 const NineRouterProvider = require('./NineRouterProvider');
 const AgentRouterProvider = require('./AgentRouterProvider');
-const FlowProvider = require('./FlowProvider'); const VeoProvider = require('./VeoProvider'); const ImagenProvider = require('./ImagenProvider'); const GeminiProvider = require('./GeminiProvider'); const OpenAIProvider = require('./OpenAIProvider'); const ViduProvider = require('./ViduProvider'); const ZarkProvider = require('./ZarkProvider'); const OmniProvider = require('./OmniProvider');
-const DEFINITIONS = Object.freeze({ '9router': [NineRouterProvider, 'http://43.159.50.231:20130/v1', 'My2'], orcarouter: [OrcaRouterProvider, 'https://api.orcarouter.ai', 'orcarouter/auto'], agentrouter: [AgentRouterProvider, 'https://api.bluesminds.com/v1', 'deepseek-ai/deepseek-v4-flash'], 'google-flow': [FlowProvider, 'https://flow.googleapis.com', 'flow'], 'google-veo': [VeoProvider, 'https://generativelanguage.googleapis.com', 'veo-3.0-generate-preview'], 'google-imagen': [ImagenProvider, 'https://generativelanguage.googleapis.com', 'imagen-4.0-generate-001'], 'google-gemini': [GeminiProvider, 'https://generativelanguage.googleapis.com', 'gemini-2.5-flash-image'], 'openai-images': [OpenAIProvider, 'https://api.openai.com', 'gpt-image-1'], vidu: [ViduProvider, 'https://api.vidu.com', 'viduq3-turbo'], zark: [ZarkProvider, 'https://api.zarklab.ai', 'auto'], omni: [OmniProvider, 'https://api.example.com', 'omni'] });
+const FlowProvider = require('./FlowProvider');
+const VeoProvider = require('./VeoProvider');
+const ImagenProvider = require('./ImagenProvider');
+const GeminiProvider = require('./GeminiProvider');
+const OpenAIProvider = require('./OpenAIProvider');
+const ViduProvider = require('./ViduProvider');
+const ZarkProvider = require('./ZarkProvider');
+const OmniProvider = require('./OmniProvider');
+const NanoBananaProvider = require('./NanoBananaProvider');
+
+const DEFINITIONS = Object.freeze({
+  '9router': [NineRouterProvider, 'http://43.159.50.231:20130/v1', 'My2'],
+  orcarouter: [OrcaRouterProvider, 'https://api.orcarouter.ai', 'orcarouter/auto'],
+  agentrouter: [AgentRouterProvider, 'https://api.bluesminds.com/v1', 'deepseek-ai/deepseek-v4-flash'],
+  'google-flow': [FlowProvider, 'https://flow.googleapis.com', 'flow'],
+  'google-veo': [VeoProvider, 'https://generativelanguage.googleapis.com', 'veo-3.0-generate-preview'],
+  'google-imagen': [ImagenProvider, 'https://generativelanguage.googleapis.com', 'imagen-4.0-generate-001'],
+  'google-gemini': [GeminiProvider, 'https://generativelanguage.googleapis.com', 'gemini-2.5-flash-image'],
+  'openai-images': [OpenAIProvider, 'https://api.openai.com', 'gpt-image-1'],
+  vidu: [ViduProvider, 'https://api.vidu.com', 'viduq3-turbo'],
+  zark: [ZarkProvider, 'https://api.zarklab.ai', 'auto'],
+  nanobanana: [NanoBananaProvider, 'https://api.nanobananaapi.ai', 'nanobanana'],
+  omni: [OmniProvider, 'https://api.example.com', 'omni']
+});
+
 class ProviderFactory {
   static names() { return Object.keys(DEFINITIONS); }
   static defaults(name) { const item = DEFINITIONS[name]; if (!item) throw new Error(`Unknown provider: ${name}`); return { baseUrl: item[1], model: item[2] }; }
   static create(config, transport) { const Adapter = DEFINITIONS[config.provider]?.[0]; if (!Adapter) throw Object.assign(new Error(`Provider ID tidak valid: ${config.provider}`), { status: 422 }); return new Adapter(config, transport); }
 }
+
 module.exports = { ProviderFactory, DEFINITIONS, BaseProvider };
