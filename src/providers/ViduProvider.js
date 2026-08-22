@@ -14,7 +14,30 @@ const delay = (milliseconds, signal) => new Promise((resolve, reject) => {
 });
 
 class ViduProvider extends BaseProvider {
-  headers() { return { 'Content-Type': 'application/json', Authorization: `Token ${this.config.api_key}` }; }
+  apiKey() {
+    return String(this.config.api_key || '').trim().replace(/^(?:Token|Bearer)\s+/i, '');
+  }
+
+  headers() {
+    return { 'Content-Type': 'application/json', Authorization: `Token ${this.apiKey()}` };
+  }
+
+  async responseError(response) {
+    const text = await response.text();
+    let message = text || `HTTP ${response.status}`;
+    try {
+      const payload = JSON.parse(text);
+      message = payload?.message || payload?.error?.message || payload?.error || message;
+    } catch (_) {}
+    if (response.status === 401 || response.status === 403) {
+      return Object.assign(new Error(`Vidu menolak API key (${response.status}). Simpan ulang API key Vidu lalu coba lagi.`), {
+        status: response.status,
+        type: 'Authentication Error',
+        nonRetryable: true
+      });
+    }
+    return Object.assign(new Error(String(message)), { status: response.status });
+  }
 
   model(input = {}) {
     if (input.mediaType === 'image') {
@@ -67,7 +90,7 @@ class ViduProvider extends BaseProvider {
         const response = await this.transport(this.endpoint(`/ent/v2/tasks/${encodeURIComponent(taskId)}/creations`), {
           method: 'GET', headers: this.headers(), signal
         });
-        if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
+        if (!response.ok) throw await this.responseError(response);
         return await response.json();
       } catch (error) {
         lastError = error;
@@ -95,11 +118,12 @@ class ViduProvider extends BaseProvider {
   async execute(input, { signal, onProgress = () => {} } = {}) {
     let taskId;
     try {
+      if (!this.apiKey()) throw Object.assign(new Error('API key Vidu belum tersedia'), { status: 422, nonRetryable: true });
       onProgress('Sending');
       const submitted = await this.transport(this.endpoint(this.requestPath(input)), {
         method: 'POST', headers: this.headers(), body: JSON.stringify(this.buildRequest(input)), signal
       });
-      if (!submitted.ok) throw Object.assign(new Error(await submitted.text() || `HTTP ${submitted.status}`), { status: submitted.status });
+      if (!submitted.ok) throw await this.responseError(submitted);
       const submission = await submitted.json();
       taskId = submission.task_id || submission.id || submission.data?.task_id;
       if (!taskId) throw new Error('Vidu tidak mengembalikan task_id');
@@ -132,8 +156,9 @@ class ViduProvider extends BaseProvider {
 
   async testConnection({ signal } = {}) {
     const started = Date.now();
+    if (!this.apiKey()) throw Object.assign(new Error('API key Vidu belum tersedia'), { status: 422, nonRetryable: true });
     const response = await this.transport(this.endpoint('/ent/v2/tasks'), { method: 'GET', headers: this.headers(), signal });
-    if (!response.ok) throw Object.assign(new Error(await response.text() || `HTTP ${response.status}`), { status: response.status });
+    if (!response.ok) throw await this.responseError(response);
     return { connected: true, providerVersion: response.headers?.get?.('x-api-version') || 'Available', defaultModel: this.model({ mediaType: 'video' }), responseTime: Date.now() - started };
   }
 }
