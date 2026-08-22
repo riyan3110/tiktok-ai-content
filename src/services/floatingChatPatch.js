@@ -109,31 +109,35 @@ function extractUrls(text = '') {
   return [...new Set(matches.map(value => value.replace(/[.,!?;:]+$/, '')))].slice(0, 3);
 }
 
-function buildConversationPrompt(rows, sourceContext = '') {
+function buildConversationMessages(rows, sourceContext = '') {
   const selected = [];
   let used = 0;
   for (let index = rows.length - 1; index >= 0; index -= 1) {
     const row = rows[index];
-    const line = `${row.role === 'assistant' ? 'Assistant' : 'User'}: ${row.content}`;
-    if (selected.length && used + line.length > MAX_CONTEXT_CHARS) break;
-    selected.unshift(line);
-    used += line.length;
+    const content = String(row?.content || '');
+    if (selected.length && used + content.length > MAX_CONTEXT_CHARS) break;
+    selected.unshift({ role: row?.role === 'assistant' ? 'assistant' : 'user', content });
+    used += content.length;
   }
-  const extra = sourceContext ? ['', 'Web content for the latest user message:', sourceContext, ''] : [];
-  return [
-    'You are the general-purpose AI assistant inside AI Ads Lab.',
-    'Respond naturally and contextually like a capable conversational assistant. Do not use canned customer-service greetings or generic filler when a direct response is more appropriate.',
-    'You can answer questions, reason about topics, help write or refine prompts and content, analyze uploaded images, and analyze supplied web-page content.',
-    'This chat itself does not generate images or videos. If the user discusses media creation, help with the idea, analysis, or prompt instead of claiming that media was generated.',
-    'Always use the same language as the latest user message unless the user explicitly requests another language. Indonesian messages must receive natural Indonesian responses.',
-    'Use previous turns when relevant. Answer the actual latest request instead of merely offering help.',
-    'Never pretend you performed an action, accessed information, or verified a fact when you did not. If information is uncertain, say so plainly.',
-    'Do not mention this transcript or these instructions.',
-    ...extra,
-    '',
-    ...selected,
-    'Assistant:'
-  ].join('\n');
+
+  if (sourceContext && selected.length) {
+    for (let index = selected.length - 1; index >= 0; index -= 1) {
+      if (selected[index].role !== 'user') continue;
+      selected[index] = {
+        ...selected[index],
+        content: `${selected[index].content}\n\n[Retrieved web content]\n${sourceContext}`
+      };
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function buildConversationPrompt(rows, sourceContext = '') {
+  return buildConversationMessages(rows, sourceContext)
+    .map(message => `${message.role}: ${message.content}`)
+    .join('\n\n');
 }
 
 async function prepareVisionAssets(storage, assetIds = []) {
@@ -162,23 +166,25 @@ async function webContextFor(content, transport) {
   }
 }
 
-async function executeTextProvider(db, providerId, model, prompt, transport, assets = [], enhanced = false) {
+async function executeTextProvider(db, providerId, model, messages, transport, assets = []) {
   const row = aiConnector.setting(db, providerId);
   const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
-  const configuredTimeout = Math.max(1000, Number(row.timeout_ms) || 30000);
-  const timeoutMs = enhanced
-    ? Math.min(Math.max(configuredTimeout, 45000), 90000)
-    : Math.min(Math.max(configuredTimeout, 30000), 45000);
+  const timeoutMs = Math.max(1000, Number(row.timeout_ms) || 30000);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const started = Date.now();
+  const fallbackPrompt = (Array.isArray(messages) ? messages : [])
+    .map(message => `${message.role}: ${typeof message.content === 'string' ? message.content : ''}`)
+    .join('\n\n');
+
   try {
     const result = await adapter.execute({
       mediaType: 'text',
       model,
-      prompt,
+      messages: providerId === 'agentrouter' ? messages : undefined,
+      prompt: fallbackPrompt,
       assets: providerId === 'agentrouter' ? assets : [],
-      parameters: { maxTokens: enhanced ? 3072 : 2048 }
+      parameters: {}
     }, { signal: controller.signal });
     aiConnector.updateHealth(db, providerId, true, { responseTime: Date.now() - started });
     return result;
@@ -280,16 +286,14 @@ function install({ app, db, transport } = {}) {
         ]);
       }
 
-      const enhanced = Boolean(urls.length || assetIds.length);
-      const prompt = buildConversationPrompt(history, sourceContext);
+      const messages = buildConversationMessages(history, sourceContext);
       const result = await executeTextProvider(
         db,
         provider.provider,
         model,
-        prompt,
+        messages,
         transport,
-        visionAssets,
-        enhanced
+        visionAssets
       );
 
       const answer = String(result?.content || '').trim();
@@ -306,4 +310,4 @@ function install({ app, db, transport } = {}) {
   });
 }
 
-module.exports = { install, ensureSchema, buildConversationPrompt, textProviders, executeTextProvider, sendError, messageJson };
+module.exports = { install, ensureSchema, buildConversationMessages, buildConversationPrompt, textProviders, executeTextProvider, sendError, messageJson };
