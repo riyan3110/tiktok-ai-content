@@ -13,7 +13,6 @@
     .aiads-chat-copy:active{transform:scale(.96)}
     .aiads-pull-refresh{position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));z-index:10020;transform:translate(-50%,-70px);opacity:0;pointer-events:none;background:rgba(18,18,24,.94);color:#f5f3ff;border:1px solid rgba(139,92,246,.38);border-radius:999px;padding:8px 13px;font:600 12px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.35);transition:opacity .16s ease,transform .16s ease}
     .aiads-pull-refresh.visible{opacity:1}
-    html,body{overscroll-behavior-y:contain}
   `;
   document.head.appendChild(style);
 
@@ -134,13 +133,12 @@
       return;
     }
     if (delta < 8) return;
-    event.preventDefault();
     distance = Math.min(120, delta * 0.58);
     const ready = distance >= threshold;
     indicator.classList.add('visible');
     indicator.textContent = ready ? 'Lepas untuk refresh' : 'Tarik untuk refresh';
     indicator.style.transform = `translate(-50%,${Math.min(18, -42 + distance * 0.58)}px)`;
-  }, { passive: false });
+  }, { passive: true });
 
   document.addEventListener('touchend', () => {
     if (!tracking) return;
