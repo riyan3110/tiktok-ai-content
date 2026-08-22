@@ -26,7 +26,7 @@ test('floating chat schema and transcript builder keep multi-turn context', () =
   assert.match(prompt, /Assistant:$/);
 });
 
-test('floating chat API persists messages and sends previous turns to AgentRouter', async t => {
+test('floating chat API persists messages and sends previous turns to AgentRouter Responses API', async t => {
   const db = createDatabase(':memory:');
   connector.seed(db);
   connector.save(db, 'agentrouter', {
@@ -39,17 +39,16 @@ test('floating chat API persists messages and sends previous turns to AgentRoute
 
   const requestBodies = [];
   const transport = async (url, options = {}) => {
-    assert.equal(url, 'https://agentrouter.org/v1/messages');
+    assert.equal(url, 'https://agentrouter.org/v1/responses');
     assert.equal(options.headers.Authorization, 'Bearer agent-secret');
-    assert.equal(options.headers['anthropic-version'], '2023-06-01');
     const body = JSON.parse(options.body);
     requestBodies.push(body);
     const answer = requestBodies.length === 1 ? 'Halo juga.' : 'Namanya Atlas.';
     return jsonResponse({
-      id: `msg-${requestBodies.length}`,
-      content: [{ type: 'text', text: answer }],
-      stop_reason: 'end_turn',
-      usage: { input_tokens: 5, output_tokens: 3 }
+      id: `resp-${requestBodies.length}`,
+      status: 'completed',
+      output: [{ type: 'message', content: [{ type: 'output_text', text: answer }] }],
+      usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 }
     });
   };
 
@@ -79,9 +78,9 @@ test('floating chat API persists messages and sends previous turns to AgentRoute
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Apa nama proyek tadi?' })
   }).then(response => response.json());
   assert.equal(second.assistant.content, 'Namanya Atlas.');
-  assert.match(requestBodies[1].messages[0].content, /Nama proyek kita Atlas/);
-  assert.match(requestBodies[1].messages[0].content, /Halo juga/);
-  assert.match(requestBodies[1].messages[0].content, /Apa nama proyek tadi/);
+  assert.match(requestBodies[1].input, /Nama proyek kita Atlas/);
+  assert.match(requestBodies[1].input, /Halo juga/);
+  assert.match(requestBodies[1].input, /Apa nama proyek tadi/);
 
   const history = await fetch(`${base}/api/floating-chat/sessions/${session.id}/messages`).then(response => response.json());
   assert.equal(history.messages.length, 4);
