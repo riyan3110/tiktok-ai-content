@@ -15,7 +15,7 @@ const PLACEHOLDER_HOSTS = /(^|\.)(example\.(com|org|net)|localhost|invalid)$/i;
 
 function seed(db) { db.transaction(() => { for (const provider of ProviderFactory.names()) { const defaults = ProviderFactory.defaults(provider); db.prepare('INSERT OR IGNORE INTO ai_provider_settings(provider,base_url,default_model) VALUES(?,?,?)').run(provider, defaults.baseUrl, defaults.model); }
   db.prepare("UPDATE ai_provider_settings SET text_model=COALESCE(text_model,'orcarouter/auto'),image_model=COALESCE(image_model,'openai/gpt-image-1'),video_model=COALESCE(video_model,'kling/kling-v2-6') WHERE provider='orcarouter'").run();
-  db.prepare("UPDATE ai_provider_settings SET base_url='https://api.bluesminds.com/v1',default_model=CASE WHEN default_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR default_model IS NULL OR TRIM(default_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE default_model END,text_model=CASE WHEN text_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR text_model IS NULL OR TRIM(text_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE text_model END WHERE provider='agentrouter' AND base_url IN ('https://co.agentrouter.org','https://co.agentrouter.org/v1','https://agentrouter.org','https://agentrouter.org/v1','https://agentrouter.org/v1/responses')").run();
+  db.prepare("UPDATE ai_provider_settings SET base_url='https://api.bluesminds.com/v1',default_model=CASE WHEN default_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR default_model IS NULL OR TRIM(default_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE default_model END,text_model=CASE WHEN text_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR text_model IS NULL OR TRIM(text_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE text_model END WHERE provider='agentrouter' AND base_url IN ('https://co.agentrouter.org','https://co.agentrouter.org/v1','https://agentrouter.org','https://agentrouter.org/v1/responses')").run();
   const target = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='orcarouter'").get(); const legacy = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='openai'").get();
   if (!target.api_key_encrypted && legacy?.api_key_encrypted) db.prepare("UPDATE ai_provider_settings SET api_key_encrypted=?,base_url='https://api.orcarouter.ai',default_model='orcarouter/auto',timeout_ms=?,retry_count=?,enabled=? WHERE provider='orcarouter' AND (api_key_encrypted IS NULL OR api_key_encrypted='')").run(legacy.api_key_encrypted, legacy.timeout_ms, legacy.retry_count, legacy.enabled);
 })(); }
@@ -63,17 +63,38 @@ function isVagueFloatingMediaPrompt(body = {}) {
   return /^(?:tolong\s+)?(?:buat|buatkan|bikin|bikinin|generate|hasilkan|jadikan|lanjutkan)?\s*(?:gambar|gambarnya|foto|fotonya|image|video|videonya|itu|yang itu|yang tadi|tersebut)?[.!?\s]*$/i.test(value)
     || /^(?:buatkan|bikin|generate|hasilkan|jadikan)\s+(?:gambar|gambarnya|foto|fotonya|video|videonya|itu|yang tadi|tersebut)(?:\s+(?:sekarang|aja|saja))?[.!?\s]*$/i.test(value);
 }
+function stripMarkdown(value = '') {
+  return String(value).replace(/```[\s\S]*?```/g, ' ').replace(/[*_`>#]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function extractFocusedMediaPrompt(rows, mediaType) {
+  const assistants = rows.filter(row => row.role === 'assistant').map(row => String(row.content || '').trim()).filter(Boolean).reverse();
+  const labels = mediaType === 'video'
+    ? ['prompt video', 'video prompt', 'prompt']
+    : ['prompt iklan', 'prompt gambar', 'image prompt', 'prompt'];
+  for (const content of assistants) {
+    for (const label of labels) {
+      const pattern = new RegExp(`(?:^|\\n)\\s*(?:\\*\\*)?${label}(?:\\*\\*)?\\s*:?\\s*(?:\\n|$)([\\s\\S]*?)(?=\\n\\s*(?:\\*\\*)?[A-Za-z][^\\n]{0,40}(?:\\*\\*)?\\s*:|$)`, 'i');
+      const match = content.match(pattern);
+      if (match?.[1]) {
+        const focused = stripMarkdown(match[1]).replace(/^['“"]|['”"]$/g, '').trim();
+        if (focused.length >= 20) return focused.slice(0, 1850);
+      }
+    }
+  }
+  const latestAssistant = assistants[0] ? stripMarkdown(assistants[0]) : '';
+  const latestUser = rows.filter(row => row.role === 'user').map(row => stripMarkdown(row.content)).filter(Boolean).reverse().find(value => !/^(?:buat|buatkan|bikin|generate|hasilkan|jadikan).*(?:gambar|foto|video|itu|yang tadi)/i.test(value)) || '';
+  const fallback = [latestUser, latestAssistant].filter(Boolean).join('. ');
+  return fallback.slice(0, 1850);
+}
 function enrichFloatingMediaBody(db, body = {}) {
   if (!isVagueFloatingMediaPrompt(body)) return body;
   try {
     const session = db.prepare('SELECT id FROM floating_chat_sessions ORDER BY updated_at DESC LIMIT 1').get();
     if (!session?.id) return body;
-    const rows = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 6').all(session.id).reverse();
-    const latest = String(body.prompt || '').trim();
-    const context = rows.filter(row => String(row.content || '').trim() !== latest).slice(-4).map(row => `${row.role === 'assistant' ? 'Assistant' : 'User'}: ${String(row.content || '').trim()}`).join('\n').slice(-7000);
-    if (!context) return body;
-    const target = body.mediaType === 'video' ? 'video' : 'image';
-    return { ...body, prompt: [`Create the requested ${target} using the conversation context below.`, 'Follow the concrete subject, appearance, style, composition, and constraints from the context. Do not invent an unrelated subject.', '', 'Conversation context:', context, '', `Latest request: ${latest}`].join('\n') };
+    const rows = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 8').all(session.id).reverse();
+    const focused = extractFocusedMediaPrompt(rows, body.mediaType);
+    if (!focused) return body;
+    return { ...body, prompt: focused };
   } catch (_) { return body; }
 }
 
