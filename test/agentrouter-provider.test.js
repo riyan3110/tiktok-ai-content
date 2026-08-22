@@ -9,82 +9,75 @@ const jsonResponse = body => new Response(JSON.stringify(body), {
   headers: { 'content-type': 'application/json' }
 });
 
-test('AgentRouter is registered as text-only provider', () => {
+test('BluesMinds replacement keeps legacy agentrouter provider id as text-only', () => {
   assert.ok(ProviderFactory.names().includes('agentrouter'));
   assert.deepEqual(connector.CAPABILITIES.agentrouter, ['text']);
+  assert.equal(ProviderFactory.defaults('agentrouter').baseUrl, 'https://api.bluesminds.com/v1');
 });
 
-test('AgentRouter API key stays encrypted in provider settings', () => {
+test('BluesMinds API key stays encrypted in provider settings', () => {
   const db = createDatabase(':memory:');
   connector.seed(db);
-  const saved = connector.save(db, 'agentrouter', { apiKey: 'agent-secret', enabled: true });
+  const saved = connector.save(db, 'agentrouter', { apiKey: 'blues-secret', enabled: true });
   const row = db.prepare('SELECT * FROM ai_provider_settings WHERE provider=?').get('agentrouter');
+  assert.equal(saved.name, 'BluesMinds');
   assert.equal(saved.hasApiKey, true);
   assert.equal(saved.apiKey, '••••••••');
-  assert.notEqual(row.api_key_encrypted, 'agent-secret');
-  assert.equal(connector.configured(row).api_key, 'agent-secret');
+  assert.notEqual(row.api_key_encrypted, 'blues-secret');
+  assert.equal(connector.configured(row).api_key, 'blues-secret');
 });
 
-test('AgentRouter normalizes website host to official API gateway', () => {
-  const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://agentrouter.org', api_key: 'x', default_model: 'gpt-5.5'
-  });
-  assert.equal(provider.rootBase(), 'https://co.agentrouter.org');
+test('legacy AgentRouter base URL migrates to BluesMinds', () => {
+  const db = createDatabase(':memory:');
+  connector.seed(db);
+  db.prepare("UPDATE ai_provider_settings SET base_url='https://agentrouter.org',default_model='gpt-5.5',text_model='gpt-5.5' WHERE provider='agentrouter'").run();
+  connector.seed(db);
+  const row = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='agentrouter'").get();
+  assert.equal(row.base_url, 'https://api.bluesminds.com/v1');
+  assert.equal(row.text_model, 'deepseek-ai/deepseek-v4-flash');
 });
 
-test('AgentRouter sends GPT-family models through OpenAI Chat Completions API gateway', async () => {
+test('BluesMinds sends text through OpenAI Chat Completions', async () => {
   const calls = [];
   const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://agentrouter.org', api_key: 'agent-secret', default_model: 'gpt-5.5'
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash'
   }, async (url, options = {}) => {
     calls.push({ url, options });
     return jsonResponse({ id: 'chat-1', choices: [{ message: { content: 'OK' } }], usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 } });
   });
-  const result = await provider.execute({ mediaType: 'text', model: 'gpt-5.5', prompt: 'Reply OK', parameters: {} });
-  assert.equal(calls[0].url, 'https://co.agentrouter.org/v1/chat/completions');
+  const result = await provider.execute({ mediaType: 'text', model: 'deepseek-ai/deepseek-v4-flash', prompt: 'Reply OK', parameters: {} });
+  assert.equal(calls[0].url, 'https://api.bluesminds.com/v1/chat/completions');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer blues-secret');
   assert.equal(result.content, 'OK');
 });
 
-test('AgentRouter sends Claude models through Anthropic Messages API gateway', async () => {
+test('BluesMinds Test Connection parses a real one-token model response', async () => {
   const calls = [];
   const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://agentrouter.org', api_key: 'agent-secret', default_model: 'claude-opus-4-8'
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash', text_model: 'deepseek-ai/deepseek-v4-flash'
   }, async (url, options = {}) => {
     calls.push({ url, options });
-    return jsonResponse({ id: 'msg-1', content: [{ type: 'text', text: 'CLAUDE OK' }], stop_reason: 'end_turn', usage: { input_tokens: 5, output_tokens: 2 } });
-  });
-  const result = await provider.execute({ mediaType: 'text', model: 'claude-opus-4-8', prompt: 'Reply OK', parameters: {} });
-  assert.equal(calls[0].url, 'https://co.agentrouter.org/v1/messages');
-  assert.equal(calls[0].options.headers.Authorization, 'Bearer agent-secret');
-  assert.equal(calls[0].options.headers['anthropic-version'], '2023-06-01');
-  assert.equal(result.content, 'CLAUDE OK');
-});
-
-test('AgentRouter Test Connection parses a real one-token model response', async () => {
-  const calls = [];
-  const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://agentrouter.org', api_key: 'agent-secret', default_model: 'claude-opus-4-8', text_model: 'claude-opus-4-8'
-  }, async (url, options = {}) => {
-    calls.push({ url, options });
-    return jsonResponse({ id: 'probe', content: [{ type: 'text', text: 'O' }], usage: { input_tokens: 2, output_tokens: 1 } });
+    if (url.endsWith('/models')) return jsonResponse({ data: [{ id: 'deepseek-ai/deepseek-v4-flash' }, { id: 'z-ai/glm-5.1' }] });
+    return jsonResponse({ id: 'probe', choices: [{ message: { content: 'O' } }], usage: { prompt_tokens: 2, completion_tokens: 1 } });
   });
   const result = await provider.testConnection({});
-  assert.equal(calls[0].url, 'https://co.agentrouter.org/v1/messages');
+  assert.equal(calls[0].url, 'https://api.bluesminds.com/v1/chat/completions');
   assert.equal(JSON.parse(calls[0].options.body).max_tokens, 1);
   assert.equal(result.connected, true);
-  assert.equal(result.providerVersion, 'Anthropic Messages');
+  assert.equal(result.providerVersion, 'OpenAI Chat Completions');
+  assert.ok(result.models.includes('z-ai/glm-5.1'));
 });
 
-test('AgentRouter Test Connection rejects HTML instead of reporting false Connected', async () => {
+test('BluesMinds Test Connection rejects HTML instead of reporting false Connected', async () => {
   const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://agentrouter.org', api_key: 'agent-secret', default_model: 'claude-opus-4-8', text_model: 'claude-opus-4-8'
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash', text_model: 'deepseek-ai/deepseek-v4-flash'
   }, async () => new Response('<!doctype html><html><body>website</body></html>', { status: 200, headers: { 'content-type': 'text/html' } }));
   await assert.rejects(() => provider.testConnection({}), /halaman HTML|bukan respons API JSON/);
 });
 
-test('AgentRouter refuses image/video generation', async () => {
+test('BluesMinds replacement remains text-only in AI Ads Lab', async () => {
   const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://agentrouter.org', api_key: 'agent-secret', default_model: 'gpt-5.5'
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash'
   }, async () => { throw new Error('transport should not run'); });
   await assert.rejects(() => provider.execute({ mediaType: 'image', prompt: 'image' }), /Text AI/);
   await assert.rejects(() => provider.execute({ mediaType: 'video', prompt: 'video' }), /Text AI/);
