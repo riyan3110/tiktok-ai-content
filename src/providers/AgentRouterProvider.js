@@ -63,11 +63,14 @@ class AgentRouterProvider extends BaseProvider {
     const response = await this.transport(url, options);
     const text = await response.text();
     if (!response.ok) {
-      let message = text || `HTTP ${response.status}`;
-      try {
-        const parsed = JSON.parse(text);
-        message = parsed?.error?.message || parsed?.message || parsed?.error || message;
-      } catch (_) {}
+      const html = /^\s*</.test(text) || /<!doctype|<html/i.test(text);
+      let message = html ? `BluesMinds gateway error (HTTP ${response.status})` : (text || `HTTP ${response.status}`);
+      if (!html) {
+        try {
+          const parsed = JSON.parse(text);
+          message = parsed?.error?.message || parsed?.message || parsed?.error || message;
+        } catch (_) {}
+      }
       throw Object.assign(new Error(String(message)), { status: response.status, endpoint: url });
     }
     try {
@@ -93,6 +96,10 @@ class AgentRouterProvider extends BaseProvider {
     const url = this.endpoint('/chat/completions');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Math.max(120000, Number(this.config.timeout_ms) || 0));
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
     try {
       onProgress('Sending');
       const data = await this.requestJson(url, {
@@ -106,7 +113,7 @@ class AgentRouterProvider extends BaseProvider {
     } catch (error) {
       error.endpoint ||= url;
       if (controller.signal.aborted && error.name === 'AbortError') {
-        throw Object.assign(new Error('BluesMinds belum merespons setelah 120 detik'), { status: 504, type: 'Network Error', endpoint: url });
+        throw Object.assign(new Error('BluesMinds belum merespons dalam batas waktu chat'), { status: 504, type: 'Network Error', endpoint: url });
       }
       throw normalizeError(error);
     } finally {
