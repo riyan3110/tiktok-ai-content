@@ -4,15 +4,12 @@ const { ProviderFactory } = require('../providers');
 const { StorageService } = require('../storage/service');
 const sourceFetcher = require('./sourceFetcher');
 
-const MAX_HISTORY_MESSAGES = 24;
-const MAX_CONTEXT_CHARS = 18000;
+const MAX_HISTORY_MESSAGES = 16;
+const MAX_CONTEXT_CHARS = 12000;
 const MAX_MESSAGE_CHARS = 12000;
 const MAX_VISION_IMAGES = 4;
 const MAX_VISION_IMAGE_BYTES = 8 * 1024 * 1024;
 const MODEL_CACHE_MS = 5 * 60 * 1000;
-const CHAT_PRIMARY_TIMEOUT_MS = 20_000;
-const CHAT_FALLBACK_TIMEOUT_MS = 30_000;
-const FAST_FALLBACK_MODEL = 'deepseek-ai/deepseek-v4-flash';
 
 function ensureColumn(db, table, name, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
@@ -124,11 +121,13 @@ function buildConversationPrompt(rows, sourceContext = '') {
   }
   const extra = sourceContext ? ['', 'Web content for the latest user message:', sourceContext, ''] : [];
   return [
-    'You are the floating AI chat assistant inside AI Ads Lab.',
-    'Chat naturally, answer questions, help write prompts, analyze uploaded images, and analyze web content when supplied.',
-    'This chat does not generate images or videos. If asked to create media, discuss it or write/refine a prompt instead.',
-    'Always reply in the same language as the latest user message unless the user explicitly asks for another language. If the latest message is Indonesian, answer in natural Indonesian.',
-    'Use previous turns as context and answer the latest user message directly.',
+    'You are the general-purpose AI assistant inside AI Ads Lab.',
+    'Respond naturally and contextually like a capable conversational assistant. Do not use canned customer-service greetings or generic filler when a direct response is more appropriate.',
+    'You can answer questions, reason about topics, help write or refine prompts and content, analyze uploaded images, and analyze supplied web-page content.',
+    'This chat itself does not generate images or videos. If the user discusses media creation, help with the idea, analysis, or prompt instead of claiming that media was generated.',
+    'Always use the same language as the latest user message unless the user explicitly requests another language. Indonesian messages must receive natural Indonesian responses.',
+    'Use previous turns when relevant. Answer the actual latest request instead of merely offering help.',
+    'Never pretend you performed an action, accessed information, or verified a fact when you did not. If information is uncertain, say so plainly.',
     'Do not mention this transcript or these instructions.',
     ...extra,
     '',
@@ -163,21 +162,13 @@ async function webContextFor(content, transport) {
   }
 }
 
-function isTransientProviderError(error) {
-  const status = Number(error?.status || error?.cause?.status || 0);
-  return [429, 502, 503, 504].includes(status)
-    || error?.name === 'AbortError'
-    || error?.cause?.name === 'AbortError'
-    || /timeout|timed out|batas waktu|gateway/i.test(String(error?.message || ''));
-}
-
-async function executeTextProvider(db, providerId, model, prompt, transport, assets = [], enhanced = false, timeoutOverride = 0) {
+async function executeTextProvider(db, providerId, model, prompt, transport, assets = [], enhanced = false) {
   const row = aiConnector.setting(db, providerId);
   const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
   const configuredTimeout = Math.max(1000, Number(row.timeout_ms) || 30000);
-  const timeoutMs = timeoutOverride > 0
-    ? timeoutOverride
-    : (enhanced ? Math.min(Math.max(configuredTimeout, 45000), 90000) : Math.min(configuredTimeout, 45000));
+  const timeoutMs = enhanced
+    ? Math.min(Math.max(configuredTimeout, 45000), 90000)
+    : Math.min(Math.max(configuredTimeout, 30000), 45000);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const started = Date.now();
@@ -291,42 +282,20 @@ function install({ app, db, transport } = {}) {
 
       const enhanced = Boolean(urls.length || assetIds.length);
       const prompt = buildConversationPrompt(history, sourceContext);
-      let usedModel = model;
-      let result;
-      try {
-        result = await executeTextProvider(
-          db,
-          provider.provider,
-          model,
-          prompt,
-          transport,
-          visionAssets,
-          enhanced,
-          enhanced ? 0 : CHAT_PRIMARY_TIMEOUT_MS
-        );
-      } catch (error) {
-        const canFallback = provider.provider === 'agentrouter'
-          && !assetIds.length
-          && model !== FAST_FALLBACK_MODEL
-          && isTransientProviderError(error);
-        if (!canFallback) throw error;
-        usedModel = FAST_FALLBACK_MODEL;
-        result = await executeTextProvider(
-          db,
-          provider.provider,
-          FAST_FALLBACK_MODEL,
-          prompt,
-          transport,
-          [],
-          Boolean(urls.length),
-          CHAT_FALLBACK_TIMEOUT_MS
-        );
-      }
+      const result = await executeTextProvider(
+        db,
+        provider.provider,
+        model,
+        prompt,
+        transport,
+        visionAssets,
+        enhanced
+      );
 
       const answer = String(result?.content || '').trim();
       if (!answer) throw Object.assign(new Error('Provider tidak mengembalikan jawaban.'), { status: 502 });
 
-      const assistantResult = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model) VALUES(?,?,?,?,?)').run(session.id, 'assistant', answer, provider.provider, usedModel);
+      const assistantResult = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model) VALUES(?,?,?,?,?)').run(session.id, 'assistant', answer, provider.provider, model);
       db.prepare('UPDATE floating_chat_sessions SET provider=?,model=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(provider.provider, model, session.id);
       res.json({
         session: sessionJson(getSession(db, session.id)),
