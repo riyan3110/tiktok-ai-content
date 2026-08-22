@@ -15,7 +15,7 @@ const PLACEHOLDER_HOSTS = /(^|\.)(example\.(com|org|net)|localhost|invalid)$/i;
 
 function seed(db) { db.transaction(() => { for (const provider of ProviderFactory.names()) { const defaults = ProviderFactory.defaults(provider); db.prepare('INSERT OR IGNORE INTO ai_provider_settings(provider,base_url,default_model) VALUES(?,?,?)').run(provider, defaults.baseUrl, defaults.model); }
   db.prepare("UPDATE ai_provider_settings SET text_model=COALESCE(text_model,'orcarouter/auto'),image_model=COALESCE(image_model,'openai/gpt-image-1'),video_model=COALESCE(video_model,'kling/kling-v2-6') WHERE provider='orcarouter'").run();
-  db.prepare("UPDATE ai_provider_settings SET base_url='https://api.bluesminds.com/v1',default_model=CASE WHEN default_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR default_model IS NULL OR TRIM(default_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE default_model END,text_model=CASE WHEN text_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR text_model IS NULL OR TRIM(text_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE text_model END WHERE provider='agentrouter' AND base_url IN ('https://co.agentrouter.org','https://co.agentrouter.org/v1','https://agentrouter.org','https://agentrouter.org/v1/responses')").run();
+  db.prepare("UPDATE ai_provider_settings SET base_url='https://api.bluesminds.com/v1',default_model=CASE WHEN default_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR default_model IS NULL OR TRIM(default_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE default_model END,text_model=CASE WHEN text_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR text_model IS NULL OR TRIM(text_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE text_model END WHERE provider='agentrouter' AND base_url IN ('https://co.agentrouter.org','https://co.agentrouter.org/v1','https://agentrouter.org','https://agentrouter.org/v1','https://agentrouter.org/v1/responses')").run();
   const target = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='orcarouter'").get(); const legacy = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='openai'").get();
   if (!target.api_key_encrypted && legacy?.api_key_encrypted) db.prepare("UPDATE ai_provider_settings SET api_key_encrypted=?,base_url='https://api.orcarouter.ai',default_model='orcarouter/auto',timeout_ms=?,retry_count=?,enabled=? WHERE provider='orcarouter' AND (api_key_encrypted IS NULL OR api_key_encrypted='')").run(legacy.api_key_encrypted, legacy.timeout_ms, legacy.retry_count, legacy.enabled);
 })(); }
@@ -57,7 +57,7 @@ function updateHealth(db, provider, success, data = {}) { db.prepare(`INSERT INT
 async function retry(task, count, progress) { let last; for (let attempt = 0; attempt <= count; attempt += 1) { try { return await task(); } catch (error) { last = error; if (attempt === count || error.nonRetryable || error.name === 'AbortError' || error.cause?.name === 'AbortError' || ['Authentication Error', 'Model Not Found', 'Quota Exceeded'].includes(error.type)) throw error; progress('Retrying'); } } throw last; }
 
 function isVagueFloatingMediaPrompt(body = {}) {
-  if (body?.metadata?.source !== 'floating-chat' || !['image', 'video'].includes(body.mediaType)) return false;
+  if (!['image', 'video'].includes(body.mediaType)) return false;
   const value = String(body.prompt || '').trim().toLowerCase();
   if (!value || value.length > 120) return false;
   return /^(?:tolong\s+)?(?:buat|buatkan|bikin|bikinin|generate|hasilkan|jadikan|lanjutkan)?\s*(?:gambar|gambarnya|foto|fotonya|image|video|videonya|itu|yang itu|yang tadi|tersebut)?[.!?\s]*$/i.test(value)
@@ -89,9 +89,12 @@ function extractFocusedMediaPrompt(rows, mediaType) {
 function enrichFloatingMediaBody(db, body = {}) {
   if (!isVagueFloatingMediaPrompt(body)) return body;
   try {
-    const session = db.prepare('SELECT id FROM floating_chat_sessions ORDER BY updated_at DESC LIMIT 1').get();
+    const latest = String(body.prompt || '').trim();
+    const session = db.prepare('SELECT id,updated_at FROM floating_chat_sessions ORDER BY updated_at DESC LIMIT 1').get();
     if (!session?.id) return body;
-    const rows = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 8').all(session.id).reverse();
+    const rows = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 10').all(session.id).reverse();
+    const latestUser = [...rows].reverse().find(row => row.role === 'user');
+    if (!latestUser || String(latestUser.content || '').trim().toLowerCase() !== latest.toLowerCase()) return body;
     const focused = extractFocusedMediaPrompt(rows, body.mediaType);
     if (!focused) return body;
     return { ...body, prompt: focused };
