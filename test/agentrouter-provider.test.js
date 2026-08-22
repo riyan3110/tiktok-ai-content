@@ -51,32 +51,60 @@ test('BluesMinds sends text through OpenAI Chat Completions', async () => {
   assert.equal(result.content, 'OK');
 });
 
-test('BluesMinds Test Connection validates chat only and does not wait for model catalog', async () => {
+test('BluesMinds preserves native chat roles instead of wrapping history into one prompt', async () => {
+  let requestBody;
+  const provider = ProviderFactory.create({
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'gpt-5.6-luna'
+  }, async (_url, options = {}) => {
+    requestBody = JSON.parse(options.body);
+    return jsonResponse({ id: 'chat-native', choices: [{ message: { content: 'Natural reply' } }] });
+  });
+
+  await provider.execute({
+    mediaType: 'text',
+    model: 'gpt-5.6-luna',
+    messages: [
+      { role: 'user', content: 'Halo' },
+      { role: 'assistant', content: 'Hai' },
+      { role: 'user', content: 'Lanjut ngobrol' }
+    ],
+    parameters: {}
+  });
+
+  assert.deepEqual(requestBody.messages, [
+    { role: 'user', content: 'Halo' },
+    { role: 'assistant', content: 'Hai' },
+    { role: 'user', content: 'Lanjut ngobrol' }
+  ]);
+  assert.equal('max_tokens' in requestBody, false);
+});
+
+test('BluesMinds Test Connection reads the live model catalog', async () => {
   const calls = [];
   const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash', text_model: 'deepseek-ai/deepseek-v4-flash'
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'gpt-5.6-luna', text_model: 'gpt-5.6-luna'
   }, async (url, options = {}) => {
     calls.push({ url, options });
-    return jsonResponse({ id: 'probe', choices: [{ message: { content: 'OK' } }], usage: { prompt_tokens: 2, completion_tokens: 1 } });
+    return jsonResponse({ data: [{ id: 'gpt-5.6-luna' }, { id: 'claude-opus-4-8' }] });
   });
   const result = await provider.testConnection({});
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, 'https://api.bluesminds.com/v1/chat/completions');
-  assert.equal(JSON.parse(calls[0].options.body).max_tokens, 8);
+  assert.equal(calls[0].url, 'https://api.bluesminds.com/v1/models');
   assert.equal(result.connected, true);
-  assert.equal(result.providerVersion, 'OpenAI Chat Completions');
+  assert.equal(result.providerVersion, 'OpenAI-compatible API');
+  assert.deepEqual(result.models, ['gpt-5.6-luna', 'claude-opus-4-8']);
 });
 
 test('BluesMinds Test Connection rejects HTML instead of reporting false Connected', async () => {
   const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash', text_model: 'deepseek-ai/deepseek-v4-flash'
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'gpt-5.6-luna', text_model: 'gpt-5.6-luna'
   }, async () => new Response('<!doctype html><html><body>website</body></html>', { status: 200, headers: { 'content-type': 'text/html' } }));
   await assert.rejects(() => provider.testConnection({}), /halaman HTML|bukan respons API JSON/);
 });
 
 test('BluesMinds replacement remains text-only in AI Ads Lab', async () => {
   const provider = ProviderFactory.create({
-    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'deepseek-ai/deepseek-v4-flash'
+    provider: 'agentrouter', base_url: 'https://api.bluesminds.com/v1', api_key: 'blues-secret', default_model: 'gpt-5.6-luna'
   }, async () => { throw new Error('transport should not run'); });
   await assert.rejects(() => provider.execute({ mediaType: 'image', prompt: 'image' }), /Text AI/);
   await assert.rejects(() => provider.execute({ mediaType: 'video', prompt: 'video' }), /Text AI/);
