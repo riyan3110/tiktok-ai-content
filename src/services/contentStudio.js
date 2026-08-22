@@ -9,6 +9,7 @@ const decodeDataUrl = value => {
   return { mimeType: match[1] || 'application/octet-stream', data: match[2] ? Buffer.from(match[3], 'base64') : Buffer.from(decodeURIComponent(match[3])) };
 };
 const imageMime = data => data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? 'image/png' : data.subarray(0, 3).equals(Buffer.from([255,216,255])) ? 'image/jpeg' : data.subarray(0, 6).toString('ascii').startsWith('GIF8') ? 'image/gif' : data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP' ? 'image/webp' : '';
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 class ContentStudioService {
   constructor({ db, storage, fetcher = fetch } = {}) { this.db = db; this.storage = storage; this.fetcher = fetcher; }
@@ -65,20 +66,57 @@ class ContentStudioService {
     this.db.prepare("INSERT INTO ai_generations(id,provider,model,prompt,status,media_type,assets,metadata,request_time,prompt_size) VALUES(?,?,?,?,'Queued',?,?,?,?,?)").run(id, body.provider, body.model || null, prompt, mediaType, JSON.stringify(body.assets || []), JSON.stringify(metadata), new Date().toISOString(), Buffer.byteLength(prompt));
     return { count, metadata };
   }
+  async fetchResultPayload(item, source, orcaImage) {
+    const inline = decodeDataUrl(source.b64_json ? `data:${source.mime_type || 'image/png'};base64,${source.b64_json}` : source.url);
+    if (inline?.data?.length) return inline;
+    if (!source.url) return null;
+
+    const attempts = item.provider === 'nanobanana' ? 4 : 1;
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const response = await this.fetcher(source.url);
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok) {
+          const error = Object.assign(new Error(orcaImage ? `Download hasil gagal (${response.status})` : `Gagal mengambil hasil provider (${response.status})`), { status: response.status, code: orcaImage ? 'MEDIA_DOWNLOAD_FAILED' : 'PROVIDER_MEDIA_DOWNLOAD_FAILED' });
+          const transient = [404, 408, 425, 429].includes(response.status) || response.status >= 500;
+          if (!transient || attempt === attempts) throw error;
+          lastError = error;
+        } else {
+          const data = Buffer.from(await response.arrayBuffer());
+          if (data.length) return { data, mimeType: contentType.split(';')[0] || 'application/octet-stream' };
+          lastError = Object.assign(new Error('File hasil provider masih kosong'), { code: 'EMPTY_PROVIDER_RESULT' });
+          if (attempt === attempts) throw lastError;
+        }
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts) throw error;
+      }
+      await wait(750 * attempt);
+    }
+    throw lastError || Object.assign(new Error('File hasil provider belum tersedia'), { code: 'PROVIDER_RESULT_NOT_READY' });
+  }
   async persistResult(id) {
-    const item = this.get(id); if (!item || item.status !== 'Completed' || !item.media.length) return item;
+    const item = this.get(id); if (!item || item.status !== 'Completed') return item;
+    if (!item.media.length) throw Object.assign(new Error('Provider selesai tetapi URL/file hasil belum tersedia'), { code: 'RESULT_MEDIA_MISSING' });
+
+    this.db.prepare("UPDATE ai_generations SET status='Downloading media',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='Completed'").run(id);
     const orcaImage = item.provider === 'orcarouter' && item.media_type === 'image';
-    if (orcaImage) this.db.prepare("UPDATE ai_generations SET status='Downloading media',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
-    const source = item.media[0]; let payload = decodeDataUrl(source.b64_json ? `data:${source.mime_type || 'image/png'};base64,${source.b64_json}` : source.url);
-    if (!payload && source.url) { const response = await this.fetcher(source.url); if (!response.ok) throw Object.assign(new Error(orcaImage ? `Download hasil gagal (${response.status})` : `Gagal mengambil hasil provider (${response.status})`), { code: orcaImage ? 'MEDIA_DOWNLOAD_FAILED' : undefined }); const contentType = response.headers.get('content-type') || ''; if (orcaImage && !contentType.toLowerCase().startsWith('image/')) throw Object.assign(new Error(`Download hasil bukan image (${contentType || 'tanpa content-type'})`), { code: 'INVALID_IMAGE_CONTENT_TYPE' }); payload = { data: Buffer.from(await response.arrayBuffer()), mimeType: contentType.split(';')[0] }; }
-    if (!payload?.data?.length) { if (orcaImage) throw Object.assign(new Error('Response image kosong'), { code: 'EMPTY_IMAGE_RESPONSE' }); return item; }
-    if (orcaImage) { const detected = imageMime(payload.data); if (!detected) throw Object.assign(new Error('Data hasil bukan image yang valid'), { code: 'INVALID_IMAGE_DATA' }); payload.mimeType = detected; }
+    const source = item.media[0];
+    const payload = await this.fetchResultPayload(item, source, orcaImage);
+    if (!payload?.data?.length) throw Object.assign(new Error('File hasil provider kosong'), { code: 'EMPTY_PROVIDER_RESULT' });
+
+    if (item.media_type === 'image') {
+      const detected = imageMime(payload.data);
+      if (detected) payload.mimeType = detected;
+      else if (orcaImage) throw Object.assign(new Error('Data hasil bukan image yang valid'), { code: 'INVALID_IMAGE_DATA' });
+    }
     const extension = payload.mimeType.includes('video') ? '.mp4' : payload.mimeType.includes('png') ? '.png' : '.jpg';
-    if (orcaImage) this.db.prepare("UPDATE ai_generations SET status='Uploading to COS',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
-    let asset; try { asset = await this.storage.upload({ name: `content-studio-${id}${extension}`, mimeType: payload.mimeType, type: item.media_type, data: payload.data, generated: true, tags: ['content-studio', item.provider], metadata: { generationId: id, prompt: item.prompt } }); } catch (error) { if (orcaImage) throw Object.assign(new Error(`Upload Tencent COS gagal: ${error.message}`), { code: 'COS_UPLOAD_FAILED', cause: error }); throw error; }
+    this.db.prepare("UPDATE ai_generations SET status='Uploading to COS',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+    let asset; try { asset = await this.storage.upload({ name: `content-studio-${id}${extension}`, mimeType: payload.mimeType, type: item.media_type, data: payload.data, generated: true, tags: ['content-studio', item.provider], metadata: { generationId: id, prompt: item.prompt } }); } catch (error) { throw Object.assign(new Error(`Penyimpanan hasil gagal: ${error.message}`), { code: 'RESULT_STORAGE_FAILED', cause: error }); }
     const resultUrl = item.media_type === 'image' ? this.previewUrl(asset.id) : (await this.storage.accessible(asset)).url;
     const metadata = { ...item.metadata, generatedAssetId: asset.id, fileSize: asset.size, resultUrl };
-    this.db.prepare("UPDATE ai_generations SET status='Completed',metadata=?,media=?,output_size=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(metadata), JSON.stringify([{ url: resultUrl, assetId: asset.id, mimeType: asset.mime_type }]), asset.size, id);
+    this.db.prepare("UPDATE ai_generations SET status='Completed',metadata=?,media=?,output_size=?,error_type=NULL,error_code=NULL,error_message=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(metadata), JSON.stringify([{ url: resultUrl, assetId: asset.id, mimeType: asset.mime_type }]), asset.size, id);
     return this.get(id);
   }
   async remove(id) { const item = this.get(id); if (!item) return false; if (item.asset_id) { const asset = this.storage.repository.get(item.asset_id); if (asset) { await this.storage.adapter(asset.storage_provider).delete(asset.storage_key); this.storage.repository.remove(asset.id); } } return this.db.prepare('DELETE FROM ai_generations WHERE id=?').run(id).changes > 0; }
