@@ -55,7 +55,29 @@ function defaultCapabilities(db, provider) { return db.prepare('SELECT capabilit
 function clamp(value, min, max) { return Math.max(min, Math.min(max, Number(value) || min)); }
 function updateHealth(db, provider, success, data = {}) { db.prepare(`INSERT INTO ai_provider_health(provider,status,latency_ms,last_success,last_failure,quota_status,provider_version) VALUES(?,?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET status=excluded.status,latency_ms=excluded.latency_ms,last_success=COALESCE(excluded.last_success,ai_provider_health.last_success),last_failure=COALESCE(excluded.last_failure,ai_provider_health.last_failure),quota_status=excluded.quota_status,provider_version=excluded.provider_version,updated_at=CURRENT_TIMESTAMP`).run(provider, success ? 'Online' : 'Offline', data.responseTime ?? null, success ? new Date().toISOString() : null, success ? null : new Date().toISOString(), data.quotaStatus || (success ? 'Available' : 'Unknown'), data.providerVersion || null); }
 async function retry(task, count, progress) { let last; for (let attempt = 0; attempt <= count; attempt += 1) { try { return await task(); } catch (error) { last = error; if (attempt === count || error.nonRetryable || error.name === 'AbortError' || error.cause?.name === 'AbortError' || ['Authentication Error', 'Model Not Found', 'Quota Exceeded'].includes(error.type)) throw error; progress('Retrying'); } } throw last; }
-async function execute(db, body, transport, progress = () => {}, suppliedId) { const validated = validateGeneration(db, body); const requestedProvider = validated.provider; const row = validated.row;
+
+function isVagueFloatingMediaPrompt(body = {}) {
+  if (body?.metadata?.source !== 'floating-chat' || !['image', 'video'].includes(body.mediaType)) return false;
+  const value = String(body.prompt || '').trim().toLowerCase();
+  if (!value || value.length > 120) return false;
+  return /^(?:tolong\s+)?(?:buat|buatkan|bikin|bikinin|generate|hasilkan|jadikan|lanjutkan)?\s*(?:gambar|gambarnya|foto|fotonya|image|video|videonya|itu|yang itu|yang tadi|tersebut)?[.!?\s]*$/i.test(value)
+    || /^(?:buatkan|bikin|generate|hasilkan|jadikan)\s+(?:gambar|gambarnya|foto|fotonya|video|videonya|itu|yang tadi|tersebut)(?:\s+(?:sekarang|aja|saja))?[.!?\s]*$/i.test(value);
+}
+function enrichFloatingMediaBody(db, body = {}) {
+  if (!isVagueFloatingMediaPrompt(body)) return body;
+  try {
+    const session = db.prepare('SELECT id FROM floating_chat_sessions ORDER BY updated_at DESC LIMIT 1').get();
+    if (!session?.id) return body;
+    const rows = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 6').all(session.id).reverse();
+    const latest = String(body.prompt || '').trim();
+    const context = rows.filter(row => String(row.content || '').trim() !== latest).slice(-4).map(row => `${row.role === 'assistant' ? 'Assistant' : 'User'}: ${String(row.content || '').trim()}`).join('\n').slice(-7000);
+    if (!context) return body;
+    const target = body.mediaType === 'video' ? 'video' : 'image';
+    return { ...body, prompt: [`Create the requested ${target} using the conversation context below.`, 'Follow the concrete subject, appearance, style, composition, and constraints from the context. Do not invent an unrelated subject.', '', 'Conversation context:', context, '', `Latest request: ${latest}`].join('\n') };
+  } catch (_) { return body; }
+}
+
+async function execute(db, body, transport, progress = () => {}, suppliedId) { body = enrichFloatingMediaBody(db, body); const validated = validateGeneration(db, body); const requestedProvider = validated.provider; const row = validated.row;
   const id = suppliedId || body.id || crypto.randomUUID(); const started = new Date(); const request = buildGenerationRequest(body, row); const prompt = request.prompt;
   db.prepare('INSERT OR IGNORE INTO ai_generations(id,provider,model,prompt,status,prompt_size,request_time,media_type,assets,metadata) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id, requestedProvider, request.model, prompt, 'Preparing', Buffer.byteLength(prompt), started.toISOString(), request.mediaType, JSON.stringify(request.assets), JSON.stringify(request.metadata));
   const controller = new AbortController(); active.set(id, controller); const timeout = setTimeout(() => controller.abort(), row.timeout_ms); const adapter = ProviderFactory.create(configured(row), transport);
