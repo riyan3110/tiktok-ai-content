@@ -35,6 +35,12 @@ class NanoBananaProvider extends BaseProvider {
     return `/api/v1/nanobanana/record-info?taskId=${encodeURIComponent(taskId)}`;
   }
 
+  async payload(response) {
+    const text = await response.text();
+    if (!text) return {};
+    try { return JSON.parse(text); } catch { return { msg: text }; }
+  }
+
   imageUrls(input = {}) {
     return (input.assets || []).map(asset => typeof asset === 'string' ? asset : asset?.url).filter(Boolean);
   }
@@ -52,13 +58,8 @@ class NanoBananaProvider extends BaseProvider {
     return body;
   }
 
-  async responseError(response, payload) {
-    let data = payload;
-    if (data === undefined) {
-      const text = await response.text();
-      try { data = JSON.parse(text); } catch { data = text; }
-    }
-    const message = data?.msg || data?.message || data?.errorMessage || data?.error || (typeof data === 'string' ? data : '') || `HTTP ${response.status}`;
+  responseError(response, data = {}) {
+    const message = data?.msg || data?.message || data?.errorMessage || data?.error || `HTTP ${response.status}`;
     const status = Number(data?.code || response.status || 500);
     const error = Object.assign(new Error(String(message)), { status });
     if ([401, 403].includes(status)) {
@@ -80,8 +81,8 @@ class NanoBananaProvider extends BaseProvider {
         const response = await this.transport(this.endpoint(this.taskPath(taskId)), {
           method: 'GET', headers: this.headers(), signal
         });
-        const payload = await response.json().catch(async () => ({ msg: await response.text() }));
-        if (!response.ok || Number(payload?.code) !== 200) throw await this.responseError(response, payload);
+        const payload = await this.payload(response);
+        if (!response.ok || Number(payload?.code) !== 200) throw this.responseError(response, payload);
         return payload;
       } catch (error) {
         lastError = error;
@@ -105,8 +106,8 @@ class NanoBananaProvider extends BaseProvider {
       const submitted = await this.transport(this.endpoint(this.requestPath()), {
         method: 'POST', headers: this.headers(), body: JSON.stringify(this.buildRequest(input)), signal
       });
-      const submission = await submitted.json().catch(async () => ({ msg: await submitted.text() }));
-      if (!submitted.ok || Number(submission?.code) !== 200) throw await this.responseError(submitted, submission);
+      const submission = await this.payload(submitted);
+      if (!submitted.ok || Number(submission?.code) !== 200) throw this.responseError(submitted, submission);
       taskId = submission?.data?.taskId || submission?.data?.task_id || submission?.taskId;
       if (!taskId) throw Object.assign(new Error('NanoBanana tidak mengembalikan taskId'), { nonRetryable: true });
 
@@ -158,8 +159,8 @@ class NanoBananaProvider extends BaseProvider {
     const response = await this.transport(this.endpoint(this.healthPath()), {
       method: 'GET', headers: this.headers(), signal
     });
-    const payload = await response.json().catch(async () => ({ msg: await response.text() }));
-    if (!response.ok || Number(payload?.code) !== 200) throw await this.responseError(response, payload);
+    const payload = await this.payload(response);
+    if (!response.ok || Number(payload?.code) !== 200) throw this.responseError(response, payload);
     const credits = Number(payload?.data);
     return {
       connected: true,
