@@ -35,22 +35,34 @@ function run(command, args, { cwd } = {}) {
   });
 }
 
-function encoderFromList(value = '') {
+function encoderCandidatesFromList(value = '') {
   const encoders = String(value || '');
-  if (/\blibx264\b/i.test(encoders)) {
-    return { name: 'libx264', options: ['-preset', 'veryfast', '-crf', '21'] };
-  }
-  if (/\blibopenh264\b/i.test(encoders)) {
-    return { name: 'libopenh264', options: ['-b:v', '5M', '-maxrate', '6M', '-bufsize', '10M'] };
-  }
-  if (/\bmpeg4\b/i.test(encoders)) {
-    return { name: 'mpeg4', options: ['-q:v', '3'] };
-  }
-  return null;
+  const candidates = [];
+  if (/\blibx264\b/i.test(encoders)) candidates.push({ name: 'libx264', options: ['-preset', 'veryfast', '-crf', '21'] });
+  if (/\blibopenh264\b/i.test(encoders)) candidates.push({ name: 'libopenh264', options: ['-b:v', '5M', '-maxrate', '6M', '-bufsize', '10M'] });
+  if (/\bmpeg4\b/i.test(encoders)) candidates.push({ name: 'mpeg4', options: ['-q:v', '3'] });
+  return candidates;
+}
+
+function encoderFromList(value = '') {
+  return encoderCandidatesFromList(value)[0] || null;
 }
 
 function videoCodecArgs(encoder) {
   return ['-c:v', encoder.name, ...encoder.options, '-pix_fmt', 'yuv420p'];
+}
+
+async function encoderActuallyWorks(encoder) {
+  try {
+    await run('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'color=c=black:s=32x32:r=1:d=0.1',
+      '-frames:v', '1', '-an', ...videoCodecArgs(encoder), '-f', 'null', '-'
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function ensureFfmpeg() {
@@ -58,16 +70,19 @@ async function ensureFfmpeg() {
     await run('ffmpeg', ['-version']);
     await run('ffprobe', ['-version']);
     const listed = await run('ffmpeg', ['-hide_banner', '-encoders']);
-    const encoder = encoderFromList(`${listed.stdout}\n${listed.stderr}`);
-    if (!encoder) {
+    const candidates = encoderCandidatesFromList(`${listed.stdout}\n${listed.stderr}`);
+    if (!candidates.length) {
       throw Object.assign(new Error('FFmpeg tersedia tetapi tidak memiliki encoder video yang didukung (libx264, libopenh264, atau mpeg4).'), { code: 'FFMPEG_ENCODER_MISSING' });
     }
-    return encoder;
+    for (const encoder of candidates) {
+      if (await encoderActuallyWorks(encoder)) return encoder;
+    }
+    throw Object.assign(new Error('FFmpeg mendeteksi encoder video, tetapi tidak ada yang benar-benar dapat dijalankan. Renderer lokal dihentikan sebelum provider video dipanggil agar kredit tidak terbuang.'), { code: 'FFMPEG_ENCODER_RUNTIME_BROKEN' });
   } catch (error) {
-    if (error.code === 'FFMPEG_ENCODER_MISSING') {
+    if (['FFMPEG_ENCODER_MISSING', 'FFMPEG_ENCODER_RUNTIME_BROKEN'].includes(error.code)) {
       throw Object.assign(error, { status: 503 });
     }
-    throw Object.assign(new Error('FFmpeg/ffprobe belum siap di VPS. Pastikan paket FFmpeg terpasang dan memiliki encoder video.'), { status: 503, code: 'FFMPEG_MISSING', cause: error });
+    throw Object.assign(new Error('FFmpeg/ffprobe belum siap di VPS. Pastikan paket FFmpeg terpasang dan memiliki encoder video yang berfungsi.'), { status: 503, code: 'FFMPEG_MISSING', cause: error });
   }
 }
 
@@ -80,6 +95,17 @@ function slideFile(slideUrl) {
   const candidate = path.resolve(root, path.basename(value));
   if (path.dirname(candidate) !== root) throw Object.assign(new Error('Path slide berada di luar folder generated.'), { status: 422, code: 'INVALID_SLIDE_PATH' });
   return candidate;
+}
+
+async function prepareLocalRender({ db, contentId }) {
+  const content = db.prepare('SELECT id,topic,slides,render_source FROM contents WHERE id=?').get(Number(contentId));
+  if (!content) throw Object.assign(new Error('Text Content tidak ditemukan.'), { status: 404, code: 'CONTENT_NOT_FOUND' });
+  const slides = parseJson(content.slides, []);
+  if (!Array.isArray(slides) || slides.length < 1) throw Object.assign(new Error('Text Content belum memiliki slide hasil render.'), { status: 422, code: 'SLIDES_MISSING' });
+  const slideFiles = slides.map(slideFile);
+  await Promise.all(slideFiles.map(file => fs.access(file)));
+  const encoder = await ensureFfmpeg();
+  return { content, slides, slideFiles, encoder };
 }
 
 async function probeDuration(file) {
@@ -169,19 +195,14 @@ async function concatSegments(files, output, dir, encoder) {
 }
 
 async function compose({ db, contentId, jobIds, audioOnlySlides = [3] }) {
-  const content = db.prepare('SELECT id,topic,slides,render_source FROM contents WHERE id=?').get(Number(contentId));
-  if (!content) throw Object.assign(new Error('Text Content tidak ditemukan.'), { status: 404, code: 'CONTENT_NOT_FOUND' });
-  const slides = parseJson(content.slides, []);
-  if (!Array.isArray(slides) || slides.length < 1) throw Object.assign(new Error('Text Content belum memiliki slide hasil render.'), { status: 422, code: 'SLIDES_MISSING' });
+  const prepared = await prepareLocalRender({ db, contentId });
+  const { content, slides, slideFiles, encoder } = prepared;
   if (!Array.isArray(jobIds) || jobIds.length !== slides.length) throw Object.assign(new Error(`Dibutuhkan tepat ${slides.length} job presenter, satu untuk setiap slide.`), { status: 422, code: 'PRESENTER_JOB_COUNT_MISMATCH' });
   const audioOnly = new Set((Array.isArray(audioOnlySlides) ? audioOnlySlides : [3]).map(Number).filter(Number.isInteger));
   const storage = new StorageService({ db });
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aiads-presenter-'));
 
   try {
-    const encoder = await ensureFfmpeg();
-    const slideFiles = slides.map(slideFile);
-    await Promise.all(slideFiles.map(file => fs.access(file)));
     const presenterFiles = [];
     for (let index = 0; index < jobIds.length; index += 1) presenterFiles.push(await materializeJobVideo({ db, storage, jobId: jobIds[index], dir, index }));
 
@@ -236,6 +257,16 @@ async function compose({ db, contentId, jobIds, audioOnlySlides = [3] }) {
 function install({ app, db }) {
   if (!app || !db || app.__aiadsPresenterVideoPatch) return;
   app.__aiadsPresenterVideoPatch = true;
+
+  app.post('/api/presenter-video/preflight', async (req, res) => {
+    try {
+      const prepared = await prepareLocalRender({ db, contentId: req.body?.contentId });
+      res.json({ ok: true, encoder: prepared.encoder.name, slideCount: prepared.slides.length });
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message || 'Renderer lokal belum siap', code: error.code || null });
+    }
+  });
+
   app.post('/api/presenter-video/compose', async (req, res) => {
     try {
       const result = await compose({
@@ -252,4 +283,4 @@ function install({ app, db }) {
   });
 }
 
-module.exports = { install, compose, slideFile, generatedAssetId, encoderFromList };
+module.exports = { install, compose, slideFile, generatedAssetId, encoderFromList, encoderCandidatesFromList, encoderActuallyWorks, ensureFfmpeg, prepareLocalRender };
