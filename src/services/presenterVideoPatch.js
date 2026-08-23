@@ -35,12 +35,39 @@ function run(command, args, { cwd } = {}) {
   });
 }
 
+function encoderFromList(value = '') {
+  const encoders = String(value || '');
+  if (/\blibx264\b/i.test(encoders)) {
+    return { name: 'libx264', options: ['-preset', 'veryfast', '-crf', '21'] };
+  }
+  if (/\blibopenh264\b/i.test(encoders)) {
+    return { name: 'libopenh264', options: ['-b:v', '5M', '-maxrate', '6M', '-bufsize', '10M'] };
+  }
+  if (/\bmpeg4\b/i.test(encoders)) {
+    return { name: 'mpeg4', options: ['-q:v', '3'] };
+  }
+  return null;
+}
+
+function videoCodecArgs(encoder) {
+  return ['-c:v', encoder.name, ...encoder.options, '-pix_fmt', 'yuv420p'];
+}
+
 async function ensureFfmpeg() {
   try {
     await run('ffmpeg', ['-version']);
     await run('ffprobe', ['-version']);
+    const listed = await run('ffmpeg', ['-hide_banner', '-encoders']);
+    const encoder = encoderFromList(`${listed.stdout}\n${listed.stderr}`);
+    if (!encoder) {
+      throw Object.assign(new Error('FFmpeg tersedia tetapi tidak memiliki encoder video yang didukung (libx264, libopenh264, atau mpeg4).'), { code: 'FFMPEG_ENCODER_MISSING' });
+    }
+    return encoder;
   } catch (error) {
-    throw Object.assign(new Error('FFmpeg belum tersedia di VPS. Install dengan: sudo apt update && sudo apt install -y ffmpeg'), { status: 503, code: 'FFMPEG_MISSING', cause: error });
+    if (error.code === 'FFMPEG_ENCODER_MISSING') {
+      throw Object.assign(error, { status: 503 });
+    }
+    throw Object.assign(new Error('FFmpeg/ffprobe belum siap di VPS. Pastikan paket FFmpeg terpasang dan memiliki encoder video.'), { status: 503, code: 'FFMPEG_MISSING', cause: error });
   }
 }
 
@@ -92,7 +119,7 @@ async function materializeJobVideo({ db, storage, jobId, dir, index }) {
   return target;
 }
 
-async function renderSegment({ slide, presenter, output, audioOnly, duration }) {
+async function renderSegment({ slide, presenter, output, audioOnly, duration, encoder }) {
   const durationArg = duration.toFixed(3);
   if (audioOnly) {
     const filter = `[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p[outv]`;
@@ -100,7 +127,7 @@ async function renderSegment({ slide, presenter, output, audioOnly, duration }) 
       '-y', '-loop', '1', '-framerate', '30', '-i', slide, '-i', presenter,
       '-filter_complex', filter,
       '-map', '[outv]', '-map', '1:a:0', '-t', durationArg, '-r', '30',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p',
+      ...videoCodecArgs(encoder),
       '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', output
     ]);
     return;
@@ -118,7 +145,7 @@ async function renderSegment({ slide, presenter, output, audioOnly, duration }) 
     '-y', '-loop', '1', '-framerate', '30', '-i', slide, '-i', presenter,
     '-filter_complex', filter,
     '-map', '[outv]', '-map', '1:a:0', '-t', durationArg, '-r', '30',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p',
+    ...videoCodecArgs(encoder),
     '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', output
   ]);
 }
@@ -127,7 +154,7 @@ function concatLine(file) {
   return `file '${String(file).replace(/'/g, "'\\''")}'`;
 }
 
-async function concatSegments(files, output, dir) {
+async function concatSegments(files, output, dir, encoder) {
   const list = path.join(dir, 'segments.txt');
   await fs.writeFile(list, `${files.map(concatLine).join('\n')}\n`);
   try {
@@ -135,7 +162,7 @@ async function concatSegments(files, output, dir) {
   } catch (_) {
     await run('ffmpeg', [
       '-y', '-f', 'concat', '-safe', '0', '-i', list,
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p',
+      ...videoCodecArgs(encoder),
       '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', output
     ]);
   }
@@ -152,7 +179,7 @@ async function compose({ db, contentId, jobIds, audioOnlySlides = [3] }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aiads-presenter-'));
 
   try {
-    await ensureFfmpeg();
+    const encoder = await ensureFfmpeg();
     const slideFiles = slides.map(slideFile);
     await Promise.all(slideFiles.map(file => fs.access(file)));
     const presenterFiles = [];
@@ -167,13 +194,14 @@ async function compose({ db, contentId, jobIds, audioOnlySlides = [3] }) {
         presenter: presenterFiles[index],
         output: segment,
         audioOnly: audioOnly.has(index + 1),
-        duration
+        duration,
+        encoder
       });
       segments.push(segment);
     }
 
     const finalPath = path.join(dir, `content-${content.id}-presenter.mp4`);
-    await concatSegments(segments, finalPath, dir);
+    await concatSegments(segments, finalPath, dir, encoder);
     const finalData = await fs.readFile(finalPath);
     const asset = await storage.upload({
       name: `content-${content.id}-presenter.mp4`,
@@ -188,6 +216,7 @@ async function compose({ db, contentId, jobIds, audioOnlySlides = [3] }) {
         sourceSlides: slides,
         presenterJobIds: jobIds.map(String),
         audioOnlySlides: [...audioOnly].sort((a, b) => a - b),
+        encoder: encoder.name,
         layout: { width: VIDEO_WIDTH, height: VIDEO_HEIGHT, slideHeight: SLIDE_HEIGHT_WITH_PRESENTER, presenterHeight: PRESENTER_HEIGHT }
       }
     });
@@ -196,7 +225,8 @@ async function compose({ db, contentId, jobIds, audioOnlySlides = [3] }) {
       resultUrl: `/api/assets/${encodeURIComponent(asset.id)}/preview`,
       downloadUrl: `/api/assets/${encodeURIComponent(asset.id)}/preview`,
       slideCount: slides.length,
-      audioOnlySlides: [...audioOnly].sort((a, b) => a - b)
+      audioOnlySlides: [...audioOnly].sort((a, b) => a - b),
+      encoder: encoder.name
     };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -222,4 +252,4 @@ function install({ app, db }) {
   });
 }
 
-module.exports = { install, compose, slideFile, generatedAssetId };
+module.exports = { install, compose, slideFile, generatedAssetId, encoderFromList };
