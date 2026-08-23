@@ -111,3 +111,13 @@
   enhancements.dataset.aiadsChatEnhancements='copy-pull-refresh';
   document.head.appendChild(enhancements);
 })();
+
+(function setupPresenterVideo(){
+  if(typeof window==='undefined'||typeof document==='undefined'||window.__AIADS_PRESENTER_VIDEO_LOADER__)return;
+  window.__AIADS_PRESENTER_VIDEO_LOADER__=true;
+  const script=document.createElement('script');
+  script.src='/presenter-video-addon.js';
+  script.defer=true;
+  script.dataset.aiadsPresenterVideo='automatic';
+  document.head.appendChild(script);
+})();
