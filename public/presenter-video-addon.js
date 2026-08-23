@@ -4,18 +4,22 @@
 
   const $ = selector => document.querySelector(selector);
   const terminal = new Set(['Completed', 'Failed', 'Cancelled']);
-  const providerPriority = ['google-veo', 'zark', 'vidu', '9router', 'orcarouter', 'google-flow', 'omni'];
+  const referenceProviders = new Set(['vidu', '9router', 'orcarouter', 'omni']);
+  const providerPriority = ['vidu', '9router', 'orcarouter', 'omni'];
+  const AUDIO_ONLY_SLIDE = 3;
+
   let activeContent = null;
   let presenterAsset = null;
-  let activeJobId = '';
-  let pollTimer = null;
   let installed = false;
+  let running = false;
 
   const safe = value => {
     const node = document.createElement('span');
     node.textContent = value == null ? '' : String(value);
     return node.innerHTML;
   };
+
+  const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
   const api = async (url, options = {}) => {
     const response = await fetch(url, {
@@ -36,55 +40,62 @@
       .trim();
   }
 
-  function buildNarration(item) {
-    const candidates = [item?.hook, item?.body, item?.cta]
+  function structuredSlides(item) {
+    const source = item?.render_source?.slides;
+    return Array.isArray(source) ? source : [];
+  }
+
+  function narrationForSlide(slide) {
+    const parts = [slide?.title, slide?.body, ...(Array.isArray(slide?.points) ? slide.points : [])]
       .map(normalizeSpokenText)
       .filter(Boolean);
-    const unique = [];
-    for (const text of candidates) {
-      if (!unique.some(previous => previous === text || previous.includes(text))) unique.push(text);
+    return parts.join('. ').replace(/\.{2,}/g, '.').trim();
+  }
+
+  function slideEntries() {
+    const images = Array.isArray(activeContent?.slides) ? activeContent.slides : [];
+    const source = structuredSlides(activeContent);
+    if (!images.length) throw new Error('Text Content belum memiliki slide hasil render.');
+    if (source.length !== images.length) {
+      throw new Error('Struktur isi per slide tidak lengkap. Video presenter tidak dibuat supaya isi slide tidak salah atau berubah.');
     }
-    return unique.join(' ').trim();
+    return images.map((image, index) => {
+      const narration = narrationForSlide(source[index]);
+      if (!narration) throw new Error(`Isi Slide ${index + 1} kosong sehingga belum bisa dibuat narasi.`);
+      return { index, image, source: source[index], narration, audioOnly: index + 1 === AUDIO_ONLY_SLIDE };
+    });
   }
 
   function styleInstruction(template) {
     return ({
-      clean: 'Clean contemporary vertical social-video look, soft natural light, uncluttered background, credible and realistic.',
-      news: 'Modern short-form news presenter look, confident framing, restrained newsroom-inspired visual treatment, credible and realistic.',
-      casual: 'Natural creator-style vertical video, relaxed but clear delivery, subtle handheld energy, realistic social-media aesthetic.',
-      cinematic: 'Cinematic vertical presenter video with natural dramatic lighting, polished depth, controlled camera movement, still realistic.'
-    })[template] || 'Clean contemporary vertical social-video look, credible and realistic.';
+      clean: 'Clean contemporary presenter framing, soft natural light, simple neutral background, credible and realistic.',
+      news: 'Professional short-form news presenter framing, clean neutral background, confident but restrained.',
+      casual: 'Natural creator-style presenter framing, relaxed social-video delivery, subtle realistic movement.',
+      cinematic: 'Polished cinematic presenter framing with natural dramatic light and controlled subtle motion.'
+    })[template] || 'Clean contemporary presenter framing, credible and realistic.';
   }
 
   function voiceInstruction(voice) {
     return ({
-      natural: 'Speak Indonesian naturally, conversationally, with human pacing, small pauses, and no announcer-like exaggeration.',
-      calm: 'Speak Indonesian calmly and warmly, with measured pacing and natural pauses.',
-      news: 'Speak Indonesian clearly in a professional news-explainer tone, confident but not theatrical.',
-      energetic: 'Speak Indonesian with lively social-video energy while keeping pronunciation natural and controlled.'
+      natural: 'Speak Indonesian naturally and conversationally with human pacing and small pauses.',
+      calm: 'Speak Indonesian calmly and warmly with measured pacing and natural pauses.',
+      news: 'Speak Indonesian clearly in a professional news-explainer tone without sounding theatrical.',
+      energetic: 'Speak Indonesian with lively but controlled social-video energy and natural pronunciation.'
     })[voice] || 'Speak Indonesian naturally with human pacing and clear pronunciation.';
   }
 
-  function buildVideoPrompt() {
-    const narration = buildNarration(activeContent);
+  function buildPresenterPrompt(entry) {
     const template = $('#presenter-video-template')?.value || 'clean';
     const voice = $('#presenter-video-voice')?.value || 'natural';
-    const broll = $('#presenter-video-broll')?.checked;
-    const subtitles = $('#presenter-video-subtitles')?.checked;
-    const music = $('#presenter-video-music')?.checked;
-    const exactSpeech = narration.slice(0, 3600);
-
+    const exactSpeech = entry.narration.slice(0, 3600);
     return [
-      'Create a polished 9:16 vertical AI presenter video using the supplied presenter image as the identity reference.',
-      'Keep the same face, hair, clothing identity, skin tone, and overall appearance throughout. Use subtle blinking, small head movement, restrained facial expression, and realistic mouth movement. Avoid exaggerated gestures and avoid identity drift.',
+      'Create only a talking-presenter clip from the supplied single presenter reference image.',
+      'The final slide artwork is composed later by AI Ads Lab, so do not recreate the slide, do not add B-roll, do not add captions, and do not add any on-screen text.',
+      'Keep exactly one presenter. Preserve the same face, hair, clothing identity, skin tone, and overall appearance. Use subtle blinking, small head movement, restrained facial expression, realistic mouth movement, and no exaggerated gestures.',
       styleInstruction(template),
       voiceInstruction(voice),
-      'The presenter must speak the supplied Indonesian narration. Preserve factual meaning and do not add claims, numbers, names, or conclusions that are not present in the narration.',
-      broll ? 'Use brief relevant B-roll or visual cutaways only where they genuinely clarify the spoken point, then return to the same presenter. Do not replace the presenter identity.' : 'Keep the presenter as the main visual for the whole clip; do not add unrelated B-roll.',
-      subtitles ? 'If the selected model supports reliable native captions, add clean readable Indonesian subtitles synchronized to the speech. Do not invent or paraphrase subtitle text.' : 'Do not render subtitles into the generated picture.',
-      music ? 'If the selected model supports native audio mixing, add very soft unobtrusive background music under the voice; speech must remain clearly dominant.' : 'Do not add background music.',
-      'Do not add logos, watermarks, labels, UI, fake headlines, or extra on-screen text. Keep camera movement gentle and suitable for TikTok/Reels.',
-      `Narration to speak exactly in Indonesian:\n"${exactSpeech.replace(/"/g, '\\"')}"`
+      'The presenter must speak the Indonesian narration below. Do not paraphrase, summarize, translate, add facts, add numbers, or add conclusions. Finish the full narration before the clip ends.',
+      `Exact narration for Slide ${entry.index + 1}:\n"${exactSpeech.replace(/"/g, '\\"')}"`
     ].join('\n\n');
   }
 
@@ -109,8 +120,9 @@
   }
 
   async function chooseVideoProvider(assetCount) {
-    const providers = (await api('/api/content-studio/providers')).filter(provider => provider.types?.includes('video'));
-    if (!providers.length) throw new Error('Belum ada provider video aktif. Text Content tetap bisa digunakan seperti biasa.');
+    const providers = (await api('/api/content-studio/providers'))
+      .filter(provider => provider.types?.includes('video') && referenceProviders.has(provider.id));
+    if (!providers.length) throw new Error('Belum ada provider video aktif yang dapat menerima foto presenter sebagai referensi.');
 
     providers.sort((a, b) => {
       const aDefault = a.defaultCapabilities?.includes('video') ? -100 : 0;
@@ -128,7 +140,7 @@
         console.warn('[Presenter Video] provider dilewati', provider.id, error);
       }
     }
-    throw new Error('Provider video aktif belum memiliki model video yang bisa dipakai.');
+    throw new Error('Provider video aktif belum memiliki model image-to-video yang bisa dipakai.');
   }
 
   function setStatus(message, error = false) {
@@ -156,9 +168,6 @@
     }
     const download = $('#presenter-video-download');
     if (download) download.removeAttribute('href');
-    activeJobId = '';
-    clearTimeout(pollTimer);
-    pollTimer = null;
     setProgress(0, 'Siap');
   }
 
@@ -166,10 +175,29 @@
     const host = $('#presenter-video-presenter');
     if (!host) return;
     if (!presenterAsset) {
-      host.innerHTML = '<span style="color:var(--muted)">Belum ada presenter dipilih.</span>';
+      host.innerHTML = '<span class="presenter-empty">Belum ada presenter dipilih.</span>';
       return;
     }
-    host.innerHTML = `<img src="${safe(presenterAsset.previewUrl || presenterAsset.preview_url || `/api/assets/${encodeURIComponent(presenterAsset.id)}/preview`)}" alt="Presenter" style="width:54px;height:54px;object-fit:cover;border-radius:12px;border:1px solid var(--border)"><div style="min-width:0"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${safe(presenterAsset.name)}</b><small style="color:var(--muted)">Presenter terpilih</small></div>`;
+    host.innerHTML = `<img src="${safe(presenterAsset.previewUrl || presenterAsset.preview_url || `/api/assets/${encodeURIComponent(presenterAsset.id)}/preview`)}" alt="Presenter"><div><b>${safe(presenterAsset.name)}</b><small>Presenter terpilih</small></div>`;
+  }
+
+  function renderSlidePlan() {
+    const host = $('#presenter-video-slides');
+    if (!host) return;
+    try {
+      const entries = slideEntries();
+      host.innerHTML = entries.map(entry => `
+        <article class="presenter-slide-card">
+          <img src="${safe(entry.image)}" alt="Slide ${entry.index + 1}">
+          <div><b>Slide ${entry.index + 1}</b><small>${entry.audioOnly ? 'Slide penuh + suara' : 'Slide + presenter di bawah'}</small></div>
+        </article>`).join('');
+      $('#presenter-video-plan-note').textContent = entries.length >= AUDIO_ONLY_SLIDE
+        ? `Slide asli tetap dipakai. Slide ${AUDIO_ONLY_SLIDE} tampil penuh dengan suara saja; slide lain memakai presenter di bagian bawah.`
+        : 'Slide asli tetap dipakai dan presenter ditempatkan di bagian bawah.';
+    } catch (error) {
+      host.innerHTML = `<p class="presenter-plan-error">${safe(error.message)}</p>`;
+      $('#presenter-video-plan-note').textContent = '';
+    }
   }
 
   async function pickPresenter() {
@@ -216,87 +244,105 @@
   function providerNotice(provider, model) {
     const node = $('#presenter-video-provider');
     if (!node) return;
-    node.textContent = `Mesin otomatis: ${provider.name || provider.id} · ${model}`;
+    node.textContent = `Mesin presenter: ${provider.name || provider.id} · ${model}. Model harus menghasilkan audio agar video final bisa dirender.`;
   }
 
-  async function pollJob(id) {
-    clearTimeout(pollTimer);
-    try {
+  async function waitForJob(id, entry, completedSlides, totalSlides) {
+    while (true) {
       const job = await api(`/api/content-studio/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' });
-      setProgress(job.progress ?? 35, job.status || 'Memproses…');
+      const fractional = Math.max(0, Math.min(100, Number(job.progress) || 0)) / 100;
+      const generationProgress = 8 + ((completedSlides + fractional) / totalSlides) * 72;
+      setProgress(generationProgress, `Slide ${entry.index + 1}/${totalSlides}: ${job.status || 'Memproses'}`);
       if (job.status === 'Completed') {
-        if (job.result_missing || !job.result_url) throw new Error('Provider selesai, tetapi file video hasil tidak tersedia.');
-        const video = $('#presenter-video-preview');
-        const result = $('#presenter-video-result');
-        const download = $('#presenter-video-download');
-        video.src = job.result_url;
-        result.classList.remove('hidden');
-        download.href = `/api/content-studio/jobs/${encodeURIComponent(id)}/download`;
-        setStatus('Video selesai. Hasil final langsung siap dipreview.');
-        setProgress(100, 'Selesai');
-        $('#presenter-video-generate').disabled = false;
-        return;
+        if (job.result_missing || !job.result_url) throw new Error(`Provider selesai untuk Slide ${entry.index + 1}, tetapi file video presenter tidak tersedia.`);
+        return job;
       }
-      if (terminal.has(job.status)) throw new Error(job.error_message || `Generate video ${String(job.status || '').toLowerCase()}.`);
-      pollTimer = setTimeout(() => pollJob(id), 1800);
-    } catch (error) {
-      setStatus(error.message, true);
-      setProgress(100, 'Gagal');
-      $('#presenter-video-generate').disabled = false;
+      if (terminal.has(job.status)) throw new Error(job.error_message || `Generate presenter Slide ${entry.index + 1} ${String(job.status || '').toLowerCase()}.`);
+      await sleep(1800);
     }
+  }
+
+  async function createPresenterJob(entry, selected) {
+    const response = await api('/api/content-studio/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: selected.provider.id,
+        model: selected.model,
+        prompt: buildPresenterPrompt(entry),
+        mediaType: 'video',
+        promptSource: 'manual',
+        assetIds: [presenterAsset.id],
+        resolution: '1080p',
+        aspectRatio: '9:16',
+        count: 1,
+        metadata: {
+          feature: 'slide-presenter-clip',
+          contentId: activeContent.id,
+          slideIndex: entry.index,
+          narration: entry.narration,
+          audioOnlyInFinal: entry.audioOnly,
+          template: $('#presenter-video-template')?.value || 'clean',
+          voiceStyle: $('#presenter-video-voice')?.value || 'natural'
+        }
+      })
+    });
+    const id = response.ids?.[0] || response.id || '';
+    if (!id) throw new Error(`Job presenter Slide ${entry.index + 1} tidak berhasil dibuat.`);
+    return id;
   }
 
   async function generateVideo() {
     const button = $('#presenter-video-generate');
+    if (running) return;
     try {
       if (!activeContent?.id) throw new Error('Pilih hasil Text Content terlebih dahulu.');
       if (!presenterAsset) throw new Error('Pilih satu foto presenter terlebih dahulu.');
       if (!$('#presenter-video-rights')?.checked) throw new Error('Konfirmasi hak penggunaan foto presenter terlebih dahulu.');
-      const narration = buildNarration(activeContent);
-      if (!narration) throw new Error('Text Content belum memiliki naskah yang bisa dijadikan narasi.');
+      const entries = slideEntries();
 
+      running = true;
       resetResult();
       button.disabled = true;
-      setStatus('Menyiapkan video otomatis…');
-      setProgress(5, 'Menyiapkan');
+      setStatus('Menyiapkan slide asli dan presenter…');
+      setProgress(4, 'Menyiapkan');
 
       const selected = await chooseVideoProvider(1);
       providerNotice(selected.provider, selected.model);
-      setStatus('Mengirim naskah dan presenter ke mesin video…');
-      setProgress(10, 'Mengirim');
+      const jobIds = [];
 
-      const response = await api('/api/content-studio/generate', {
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        setStatus(`Membuat presenter untuk Slide ${entry.index + 1} tanpa mengubah gambar slide…`);
+        const jobId = await createPresenterJob(entry, selected);
+        jobIds.push(jobId);
+        await waitForJob(jobId, entry, index, entries.length);
+      }
+
+      setStatus('Semua suara/presenter selesai. Menyusun slide asli menjadi video final…');
+      setProgress(84, 'Menyusun video');
+      const composed = await api('/api/presenter-video/compose', {
         method: 'POST',
         body: JSON.stringify({
-          provider: selected.provider.id,
-          model: selected.model,
-          prompt: buildVideoPrompt(),
-          mediaType: 'video',
-          promptSource: 'manual',
-          assetIds: [presenterAsset.id],
-          resolution: '1080p',
-          aspectRatio: '9:16',
-          count: 1,
-          metadata: {
-            feature: 'presenter-video',
-            contentId: activeContent.id,
-            narration,
-            template: $('#presenter-video-template')?.value || 'clean',
-            voiceStyle: $('#presenter-video-voice')?.value || 'natural',
-            autoBroll: Boolean($('#presenter-video-broll')?.checked),
-            autoSubtitles: Boolean($('#presenter-video-subtitles')?.checked),
-            autoMusic: Boolean($('#presenter-video-music')?.checked)
-          }
+          contentId: activeContent.id,
+          jobIds,
+          audioOnlySlides: entries.filter(entry => entry.audioOnly).map(entry => entry.index + 1)
         })
       });
-      activeJobId = response.ids?.[0] || response.id || '';
-      if (!activeJobId) throw new Error('Job video tidak berhasil dibuat.');
-      setStatus('Video sedang dibuat. Kamu tidak perlu mengedit scene satu per satu.');
-      await pollJob(activeJobId);
+
+      const video = $('#presenter-video-preview');
+      const result = $('#presenter-video-result');
+      const download = $('#presenter-video-download');
+      video.src = composed.resultUrl;
+      result.classList.remove('hidden');
+      download.href = composed.downloadUrl;
+      setProgress(100, 'Selesai');
+      setStatus('Video selesai. Gambar setiap slide tetap memakai hasil Text Content yang sama.');
     } catch (error) {
-      button.disabled = false;
       setStatus(error.message, true);
-      setProgress(0, 'Gagal memulai');
+      setProgress(0, 'Gagal');
+    } finally {
+      running = false;
+      button.disabled = false;
     }
   }
 
@@ -305,18 +351,15 @@
       setStatus('Pilih hasil Text Content terlebih dahulu.', true);
       return;
     }
-    const dialog = $('#presenter-video-dialog');
-    const narration = buildNarration(activeContent);
     $('#presenter-video-content-title').textContent = activeContent.topic || activeContent.main_topic || 'Text Content';
-    $('#presenter-video-narration').textContent = narration || 'Belum ada narasi.';
+    renderSlidePlan();
     renderPresenter();
     resetResult();
+    const dialog = $('#presenter-video-dialog');
     if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
   }
 
   function closeDialog() {
-    clearTimeout(pollTimer);
-    pollTimer = null;
     const dialog = $('#presenter-video-dialog');
     if (dialog?.open && typeof dialog.close === 'function') dialog.close(); else dialog?.removeAttribute('open');
   }
@@ -329,46 +372,50 @@
     dialog.setAttribute('aria-labelledby', 'presenter-video-title');
     dialog.innerHTML = `
       <div class="dialog-heading">
-        <div><span class="eyebrow">AUTOMATIC VIDEO</span><h2 id="presenter-video-title">Buat Video Presenter</h2></div>
+        <div><span class="eyebrow">AUTOMATIC VIDEO</span><h2 id="presenter-video-title">Buat Video dari Slide</h2></div>
         <button id="presenter-video-close" class="icon-button" type="button" aria-label="Tutup">✕</button>
       </div>
-      <div style="display:grid;gap:14px">
-        <div style="padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface)">
-          <small style="color:var(--muted)">TEXT CONTENT</small>
-          <b id="presenter-video-content-title" style="display:block;margin-top:3px"></b>
-          <p id="presenter-video-narration" style="margin:8px 0 0;max-height:92px;overflow:auto;color:var(--muted);font-size:.82rem;line-height:1.5"></p>
-        </div>
-        <div>
-          <label style="display:block;margin-bottom:7px;font-weight:700">Presenter</label>
-          <div id="presenter-video-presenter" style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="presenter-video-body">
+        <section class="presenter-slide-plan">
+          <small>TEXT CONTENT</small>
+          <b id="presenter-video-content-title"></b>
+          <p id="presenter-video-plan-note"></p>
+          <div id="presenter-video-slides"></div>
+        </section>
+
+        <section>
+          <label class="presenter-section-label">Presenter</label>
+          <div id="presenter-video-presenter" class="presenter-picked"></div>
+          <div class="presenter-picker-actions">
             <button id="presenter-video-pick" class="outline" type="button">Pilih dari Asset</button>
             <button id="presenter-video-upload" class="outline" type="button">Unggah dari perangkat</button>
             <input id="presenter-video-file" type="file" accept="image/*" hidden>
           </div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+          <small class="presenter-image-hint">Gunakan satu foto yang hanya berisi satu presenter/karakter. Jangan gunakan kolase banyak pose karena model dapat membuat banyak karakter sekaligus.</small>
+        </section>
+
+        <div class="presenter-options-grid">
           <label>Template<select id="presenter-video-template"><option value="clean">Clean</option><option value="news">News</option><option value="casual">Casual</option><option value="cinematic">Cinematic</option></select></label>
           <label>Gaya suara<select id="presenter-video-voice"><option value="natural">Natural Indonesia</option><option value="calm">Tenang</option><option value="news">News</option><option value="energetic">Energik</option></select></label>
         </div>
-        <div style="display:grid;gap:8px;padding:10px;border:1px solid var(--border);border-radius:12px">
-          <label style="display:flex;align-items:center;gap:8px"><input id="presenter-video-broll" type="checkbox" checked> B-roll otomatis</label>
-          <label style="display:flex;align-items:center;gap:8px"><input id="presenter-video-subtitles" type="checkbox" checked> Subtitle otomatis jika model mendukung</label>
-          <label style="display:flex;align-items:center;gap:8px"><input id="presenter-video-music" type="checkbox"> Musik otomatis jika model mendukung</label>
+
+        <div class="presenter-layout-info">
+          <b>Layout otomatis</b>
+          <span>Slide 1, 2, dan 4: slide tetap ditampilkan + presenter berbicara di bawah.</span>
+          <span>Slide 3: slide tampil penuh + suara saja.</span>
+          <span>Tidak ada B-roll atau gambar baru yang mengganti slide.</span>
         </div>
-        <label style="display:flex;align-items:flex-start;gap:8px;font-size:.8rem;color:var(--muted)"><input id="presenter-video-rights" type="checkbox" style="margin-top:2px"> Saya berhak menggunakan foto presenter ini dan, jika menampilkan orang nyata, presenter tersebut adalah orang dewasa. Saya memahami provider video dapat menggunakan kuota/biaya yang sudah terpasang di AI Ads Lab.</label>
-        <small id="presenter-video-provider" style="color:var(--muted)">Mesin video akan dipilih otomatis dari provider yang sudah aktif.</small>
-        <button id="presenter-video-generate" type="button" style="width:100%">✦ Generate Video</button>
-        <div style="display:grid;gap:6px">
-          <progress id="presenter-video-progress" max="100" value="0" style="width:100%"></progress>
-          <div style="display:flex;justify-content:space-between;gap:8px"><small id="presenter-video-progress-label" style="color:var(--muted)">Siap</small><small id="presenter-video-status" role="status" style="color:var(--muted);text-align:right"></small></div>
+
+        <label class="presenter-rights"><input id="presenter-video-rights" type="checkbox"> <span>Saya berhak menggunakan foto presenter ini dan, jika menampilkan orang nyata, presenter tersebut adalah orang dewasa. Saya memahami provider video dapat menggunakan kuota/biaya yang sudah terpasang di AI Ads Lab.</span></label>
+        <small id="presenter-video-provider">Mesin presenter akan dipilih otomatis dari provider video yang mendukung gambar referensi.</small>
+        <button id="presenter-video-generate" type="button">✦ Generate Video</button>
+        <div class="presenter-progress-wrap">
+          <progress id="presenter-video-progress" max="100" value="0"></progress>
+          <div><small id="presenter-video-progress-label">Siap</small><small id="presenter-video-status" role="status"></small></div>
         </div>
-        <div id="presenter-video-result" class="hidden" style="display:grid;gap:10px">
-          <video id="presenter-video-preview" controls playsinline preload="metadata" style="width:100%;max-height:58vh;background:#000;border-radius:14px"></video>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <a id="presenter-video-download" class="button" download>↓ Simpan MP4</a>
-            <button id="presenter-video-regenerate" class="outline" type="button">↻ Generate Ulang</button>
-          </div>
+        <div id="presenter-video-result" class="hidden presenter-result">
+          <video id="presenter-video-preview" controls playsinline preload="metadata"></video>
+          <div><a id="presenter-video-download" class="button" download>↓ Simpan MP4</a><button id="presenter-video-regenerate" class="outline" type="button">↻ Generate Ulang</button></div>
         </div>
       </div>`;
     document.body.appendChild(dialog);
@@ -383,8 +430,8 @@
     };
     $('#presenter-video-generate').onclick = generateVideo;
     $('#presenter-video-regenerate').onclick = generateVideo;
-    dialog.addEventListener('cancel', event => { event.preventDefault(); closeDialog(); });
-    dialog.addEventListener('click', event => { if (event.target === dialog) closeDialog(); });
+    dialog.addEventListener('cancel', event => { event.preventDefault(); if (!running) closeDialog(); });
+    dialog.addEventListener('click', event => { if (event.target === dialog && !running) closeDialog(); });
   }
 
   function installButton() {

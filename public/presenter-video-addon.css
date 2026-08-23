@@ -1,10 +1,9 @@
-/* Presenter Video — UI-only mobile polish.
-   This file intentionally does not change Text Content, narration, provider, or generation logic. */
+/* Presenter Video — slide-first automatic video flow. */
 
 #presenter-video-dialog {
-  width: min(92vw, 650px);
+  width: min(92vw, 700px);
   max-width: calc(100vw - 24px);
-  max-height: min(92dvh, 760px);
+  max-height: min(92dvh, 820px);
   margin: auto;
   padding: 22px;
   overflow-x: hidden;
@@ -22,18 +21,14 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin: -22px -22px 18px;
+  margin: -22px -22px 20px;
   padding: 22px 22px 15px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, var(--surface) 82%, rgba(17, 17, 19, .96));
 }
 
 #presenter-video-dialog .dialog-heading h2 {
-  margin-bottom: 0;
-}
-
-#presenter-video-dialog > .dialog-heading + div {
-  padding-bottom: 4px;
+  margin: 4px 0 0;
 }
 
 #presenter-video-dialog input[type="checkbox"] {
@@ -42,33 +37,232 @@
   height: 19px !important;
   min-height: 19px !important;
   flex: 0 0 19px;
-  margin: 0;
+  margin: 2px 0 0;
   padding: 0;
   accent-color: var(--accent-strong);
 }
 
-#presenter-video-dialog #presenter-video-rights {
-  margin-top: 2px;
+.presenter-video-body {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 4px;
 }
 
-#presenter-video-dialog #presenter-video-presenter {
-  padding: 12px !important;
+.presenter-slide-plan,
+.presenter-layout-info {
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface-2);
 }
 
-#presenter-video-dialog #presenter-video-pick,
-#presenter-video-dialog #presenter-video-upload {
-  padding-inline: 16px;
+.presenter-slide-plan > small {
+  color: var(--muted);
+  letter-spacing: .08em;
 }
 
-#presenter-video-dialog select {
+.presenter-slide-plan > b {
+  display: block;
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.presenter-slide-plan > p {
+  margin: 8px 0 12px;
+  font-size: .82rem;
+  line-height: 1.55;
+}
+
+#presenter-video-slides {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.presenter-slide-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.presenter-slide-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  background: #000;
+}
+
+.presenter-slide-card div {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
+.presenter-slide-card b {
+  font-size: .76rem;
+}
+
+.presenter-slide-card small {
+  color: var(--muted);
+  font-size: .64rem;
+  line-height: 1.35;
+}
+
+.presenter-plan-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--danger);
+}
+
+.presenter-section-label {
+  display: block;
+  margin-bottom: 7px;
+  font-weight: 700;
+}
+
+.presenter-picked {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.presenter-picked img {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.presenter-picked div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.presenter-picked b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presenter-picked small,
+.presenter-empty,
+.presenter-image-hint,
+#presenter-video-provider,
+#presenter-video-progress-label,
+#presenter-video-status {
+  color: var(--muted);
+}
+
+.presenter-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.presenter-image-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: .72rem;
+  line-height: 1.5;
+}
+
+.presenter-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.presenter-options-grid select {
   min-height: 48px;
 }
 
-#presenter-video-dialog progress {
+.presenter-layout-info {
+  display: grid;
+  gap: 6px;
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.presenter-layout-info b {
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.presenter-layout-info span {
+  color: var(--muted);
+}
+
+.presenter-rights {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 10px !important;
+  font-size: .78rem !important;
+  line-height: 1.5 !important;
+  color: var(--muted) !important;
+}
+
+#presenter-video-provider {
+  overflow-wrap: anywhere;
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
+#presenter-video-generate {
+  width: 100%;
+}
+
+.presenter-progress-wrap {
+  display: grid;
+  gap: 7px;
+}
+
+.presenter-progress-wrap progress {
+  width: 100%;
   min-height: 8px;
 }
 
-@media (max-width: 520px) {
+.presenter-progress-wrap > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#presenter-video-status {
+  max-width: 70%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.presenter-result {
+  display: grid;
+  gap: 10px;
+}
+
+.presenter-result video {
+  width: 100%;
+  max-height: 58vh;
+  border-radius: 14px;
+  background: #000;
+}
+
+.presenter-result > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 620px) {
   #presenter-video-dialog {
     width: calc(100vw - 20px);
     max-width: calc(100vw - 20px);
@@ -79,39 +273,44 @@
 
   #presenter-video-dialog .dialog-heading {
     top: -17px;
-    margin: -17px -17px 16px;
+    margin: -17px -17px 17px;
     padding: 17px 17px 13px;
   }
 
   #presenter-video-dialog .dialog-heading h2 {
-    font-size: 1.35rem;
+    font-size: 1.32rem;
   }
 
-  #presenter-video-dialog > .dialog-heading + div {
-    gap: 16px !important;
+  .presenter-video-body {
+    gap: 16px;
   }
 
-  #presenter-video-dialog div:has(> label > #presenter-video-template) {
-    grid-template-columns: 1fr !important;
-    gap: 12px !important;
+  .presenter-slide-plan,
+  .presenter-layout-info {
+    padding: 13px;
   }
 
-  #presenter-video-dialog #presenter-video-pick,
-  #presenter-video-dialog #presenter-video-upload {
+  #presenter-video-slides {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .presenter-options-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #presenter-video-pick,
+  #presenter-video-upload {
     flex: 1 1 100%;
     width: 100%;
   }
 
-  #presenter-video-dialog #presenter-video-presenter {
-    margin-bottom: 10px !important;
+  .presenter-progress-wrap > div {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
-  #presenter-video-dialog #presenter-video-narration {
-    max-height: 112px !important;
-  }
-
-  #presenter-video-dialog #presenter-video-provider,
-  #presenter-video-dialog #presenter-video-status {
-    overflow-wrap: anywhere;
+  #presenter-video-status {
+    max-width: 100%;
+    text-align: left;
   }
 }
