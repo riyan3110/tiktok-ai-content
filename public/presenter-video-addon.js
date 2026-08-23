@@ -244,14 +244,14 @@
   function providerNotice(provider, model) {
     const node = $('#presenter-video-provider');
     if (!node) return;
-    node.textContent = `Mesin presenter: ${provider.name || provider.id} · ${model}. Model harus menghasilkan audio agar video final bisa dirender.`;
+    node.textContent = `Mesin presenter: ${provider.name || provider.id} · ${model}. Clip lama yang identik akan dipakai ulang agar kredit provider tidak terbuang.`;
   }
 
   async function waitForJob(id, entry, completedSlides, totalSlides) {
     while (true) {
       const job = await api(`/api/content-studio/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' });
       const fractional = Math.max(0, Math.min(100, Number(job.progress) || 0)) / 100;
-      const generationProgress = 8 + ((completedSlides + fractional) / totalSlides) * 72;
+      const generationProgress = 12 + ((completedSlides + fractional) / totalSlides) * 68;
       setProgress(generationProgress, `Slide ${entry.index + 1}/${totalSlides}: ${job.status || 'Memproses'}`);
       if (job.status === 'Completed') {
         if (job.result_missing || !job.result_url) throw new Error(`Provider selesai untuk Slide ${entry.index + 1}, tetapi file video presenter tidak tersedia.`);
@@ -260,6 +260,22 @@
       if (terminal.has(job.status)) throw new Error(job.error_message || `Generate presenter Slide ${entry.index + 1} ${String(job.status || '').toLowerCase()}.`);
       await sleep(1800);
     }
+  }
+
+  function jobUsesPresenter(job) {
+    return Array.isArray(job?.assets) && job.assets.some(asset => String(asset?.id || '') === String(presenterAsset?.id || ''));
+  }
+
+  async function findReusablePresenterJob(entry, selected) {
+    const query = new URLSearchParams({ status: 'Completed', type: 'video', provider: selected.provider.id });
+    const jobs = await api(`/api/content-studio/jobs?${query}`);
+    const prompt = buildPresenterPrompt(entry);
+    return jobs.find(job =>
+      !job.result_missing && job.result_url &&
+      String(job.model || '') === String(selected.model || '') &&
+      String(job.prompt || '') === prompt &&
+      jobUsesPresenter(job)
+    ) || null;
   }
 
   async function createPresenterJob(entry, selected) {
@@ -279,6 +295,7 @@
           feature: 'slide-presenter-clip',
           contentId: activeContent.id,
           slideIndex: entry.index,
+          presenterAssetId: presenterAsset.id,
           narration: entry.narration,
           audioOnlyInFinal: entry.audioOnly,
           template: $('#presenter-video-template')?.value || 'clean',
@@ -303,8 +320,15 @@
       running = true;
       resetResult();
       button.disabled = true;
-      setStatus('Menyiapkan slide asli dan presenter…');
-      setProgress(4, 'Menyiapkan');
+      setStatus('Memeriksa renderer lokal lebih dulu. Belum memakai kredit provider…');
+      setProgress(3, 'Preflight lokal');
+
+      const preflight = await api('/api/presenter-video/preflight', {
+        method: 'POST',
+        body: JSON.stringify({ contentId: activeContent.id })
+      });
+      setProgress(8, `Renderer siap: ${preflight.encoder}`);
+      setStatus(`Renderer lokal siap (${preflight.encoder}). Baru sekarang provider presenter diperiksa.`);
 
       const selected = await chooseVideoProvider(1);
       providerNotice(selected.provider, selected.model);
@@ -312,13 +336,21 @@
 
       for (let index = 0; index < entries.length; index += 1) {
         const entry = entries[index];
-        setStatus(`Membuat presenter untuk Slide ${entry.index + 1} tanpa mengubah gambar slide…`);
+        const reusable = await findReusablePresenterJob(entry, selected);
+        if (reusable) {
+          jobIds.push(reusable.id);
+          setStatus(`Slide ${entry.index + 1}: memakai clip presenter yang sudah selesai sebelumnya — tidak memakai kredit baru.`);
+          setProgress(12 + ((index + 1) / entries.length) * 68, `Slide ${entry.index + 1}/${entries.length}: pakai ulang`);
+          continue;
+        }
+
+        setStatus(`Slide ${entry.index + 1}: tidak ada clip lama yang cocok. Baru sekarang meminta provider video…`);
         const jobId = await createPresenterJob(entry, selected);
         jobIds.push(jobId);
         await waitForJob(jobId, entry, index, entries.length);
       }
 
-      setStatus('Semua suara/presenter selesai. Menyusun slide asli menjadi video final…');
+      setStatus('Semua suara/presenter siap. Menyusun slide asli menjadi video final…');
       setProgress(84, 'Menyusun video');
       const composed = await api('/api/presenter-video/compose', {
         method: 'POST',
@@ -336,7 +368,7 @@
       result.classList.remove('hidden');
       download.href = composed.downloadUrl;
       setProgress(100, 'Selesai');
-      setStatus('Video selesai. Gambar setiap slide tetap memakai hasil Text Content yang sama.');
+      setStatus(`Video selesai. Renderer memakai ${composed.encoder}. Gambar setiap slide tetap memakai hasil Text Content yang sama.`);
     } catch (error) {
       setStatus(error.message, true);
       setProgress(0, 'Gagal');
@@ -404,6 +436,7 @@
           <span>Slide 1, 2, dan 4: slide tetap ditampilkan + presenter berbicara di bawah.</span>
           <span>Slide 3: slide tampil penuh + suara saja.</span>
           <span>Tidak ada B-roll atau gambar baru yang mengganti slide.</span>
+          <span>Renderer lokal dicek sebelum provider dipanggil. Clip presenter lama yang identik akan dipakai ulang.</span>
         </div>
 
         <label class="presenter-rights"><input id="presenter-video-rights" type="checkbox"> <span>Saya berhak menggunakan foto presenter ini dan, jika menampilkan orang nyata, presenter tersebut adalah orang dewasa. Saya memahami provider video dapat menggunakan kuota/biaya yang sudah terpasang di AI Ads Lab.</span></label>
