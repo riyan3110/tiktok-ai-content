@@ -115,6 +115,13 @@
 (function setupPresenterVideo(){
   if(typeof window==='undefined'||typeof document==='undefined'||window.__AIADS_PRESENTER_VIDEO_LOADER__)return;
   window.__AIADS_PRESENTER_VIDEO_LOADER__=true;
+  if(!document.querySelector('link[data-aiads-presenter-video-style]')){
+    const style=document.createElement('link');
+    style.rel='stylesheet';
+    style.href='/presenter-video-addon.css';
+    style.dataset.aiadsPresenterVideoStyle='mobile-polish';
+    document.head.appendChild(style);
+  }
   const script=document.createElement('script');
   script.src='/presenter-video-addon.js';
   script.defer=true;

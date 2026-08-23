@@ -1,0 +1,117 @@
+/* Presenter Video — UI-only mobile polish.
+   This file intentionally does not change Text Content, narration, provider, or generation logic. */
+
+#presenter-video-dialog {
+  width: min(92vw, 650px);
+  max-width: calc(100vw - 24px);
+  max-height: min(92dvh, 760px);
+  margin: auto;
+  padding: 22px;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+#presenter-video-dialog .dialog-heading {
+  position: sticky;
+  top: -22px;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -22px -22px 18px;
+  padding: 22px 22px 15px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--surface) 82%, rgba(17, 17, 19, .96));
+}
+
+#presenter-video-dialog .dialog-heading h2 {
+  margin-bottom: 0;
+}
+
+#presenter-video-dialog > .dialog-heading + div {
+  padding-bottom: 4px;
+}
+
+#presenter-video-dialog input[type="checkbox"] {
+  width: 19px !important;
+  min-width: 19px !important;
+  height: 19px !important;
+  min-height: 19px !important;
+  flex: 0 0 19px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent-strong);
+}
+
+#presenter-video-dialog #presenter-video-rights {
+  margin-top: 2px;
+}
+
+#presenter-video-dialog #presenter-video-presenter {
+  padding: 12px !important;
+}
+
+#presenter-video-dialog #presenter-video-pick,
+#presenter-video-dialog #presenter-video-upload {
+  padding-inline: 16px;
+}
+
+#presenter-video-dialog select {
+  min-height: 48px;
+}
+
+#presenter-video-dialog progress {
+  min-height: 8px;
+}
+
+@media (max-width: 520px) {
+  #presenter-video-dialog {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+    padding: 17px;
+    border-radius: 15px;
+  }
+
+  #presenter-video-dialog .dialog-heading {
+    top: -17px;
+    margin: -17px -17px 16px;
+    padding: 17px 17px 13px;
+  }
+
+  #presenter-video-dialog .dialog-heading h2 {
+    font-size: 1.35rem;
+  }
+
+  #presenter-video-dialog > .dialog-heading + div {
+    gap: 16px !important;
+  }
+
+  #presenter-video-dialog div:has(> label > #presenter-video-template) {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  #presenter-video-dialog #presenter-video-pick,
+  #presenter-video-dialog #presenter-video-upload {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  #presenter-video-dialog #presenter-video-presenter {
+    margin-bottom: 10px !important;
+  }
+
+  #presenter-video-dialog #presenter-video-narration {
+    max-height: 112px !important;
+  }
+
+  #presenter-video-dialog #presenter-video-provider,
+  #presenter-video-dialog #presenter-video-status {
+    overflow-wrap: anywhere;
+  }
+}
