@@ -107,9 +107,9 @@ async function renderSegment({ slide, presenter, output, audioOnly, duration }) 
   }
 
   const filter = [
-    `color=c=#09090b:s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:r=30:d=${durationArg}[base]`,
-    `[0:v]scale=-2:${SLIDE_HEIGHT_WITH_PRESENTER}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1[slide]`,
-    `[1:v]scale=${VIDEO_WIDTH}:${PRESENTER_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${VIDEO_WIDTH}:${PRESENTER_HEIGHT},setsar=1[presenter]`,
+    `color=c=0x09090b:s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:r=30:d=${durationArg}[base]`,
+    `[0:v]scale=${VIDEO_WIDTH}:${SLIDE_HEIGHT_WITH_PRESENTER}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1[slide]`,
+    `[1:v]scale=${VIDEO_WIDTH}:${PRESENTER_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${VIDEO_WIDTH}:${PRESENTER_HEIGHT}:0:0,setsar=1[presenter]`,
     `[base][slide]overlay=(W-w)/2:0:shortest=1[top]`,
     `[top][presenter]overlay=0:${SLIDE_HEIGHT_WITH_PRESENTER}:shortest=1,format=yuv420p[outv]`
   ].join(';');
