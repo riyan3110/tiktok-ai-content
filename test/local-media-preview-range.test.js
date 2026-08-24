@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const request = require('supertest');
 const { createDatabase } = require('../src/db');
 const { createApp } = require('../src/app');
@@ -61,4 +62,34 @@ test('local media preview still supports normal full responses and advertises ra
     await request(app).delete(`/api/assets/${asset.id}?permanent=true`).expect(200);
     db.close();
   }
+});
+
+test('video thumbnail endpoint returns a small cached JPEG without downloading the video to the client', async () => {
+  const db = createDatabase(':memory:');
+  db.prepare("UPDATE storage_settings SET provider='local' WHERE id=1").run();
+  const app = createApp({ db });
+  install({ app, db });
+
+  const { asset } = await createLocalVideo(app);
+  try {
+    const response = await request(app)
+      .get(`/api/assets/${asset.id}/thumbnail`)
+      .expect('Content-Type', /image\/jpeg/)
+      .expect(200);
+
+    assert.ok(response.body.length > 100);
+    assert.ok(response.body.length < 200000);
+    assert.equal(response.headers['cache-control'], 'private, max-age=86400');
+  } finally {
+    await request(app).delete(`/api/assets/${asset.id}?permanent=true`).expect(200);
+    db.close();
+  }
+});
+
+test('Asset Manager uses lightweight thumbnails and never preloads video metadata automatically', () => {
+  const source = fs.readFileSync(require.resolve('../public/assets.js'), 'utf8');
+  assert.match(source, /\/api\/assets\/\$\{encodeURIComponent\(asset\.id\)\}\/thumbnail/);
+  assert.match(source, /<video controls preload="none" poster=/);
+  assert.match(source, /<audio controls preload="none"/);
+  assert.doesNotMatch(source, /<video controls preload="metadata"/);
 });
