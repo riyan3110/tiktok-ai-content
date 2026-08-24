@@ -27,10 +27,12 @@ const { install: installAssetUploadPatch } = require('./services/assetUploadPatc
 const { install: installTikTokPullResiliencePatch } = require('./services/tiktokPullResiliencePatch');
 const { install: installFloatingChatPatch } = require('./services/floatingChatPatch');
 const { install: installPresenterVideoPatch } = require('./services/presenterVideoPatch');
+const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
 
 const db = createDatabase();
 useVpsLocalStorage(db);
 installVpsLocalStorageLock();
+installVpsStorageUiPatch();
 const temporaryStorage = new StorageService({ db });
 const innerApp = createApp({ db });
 installTikTokCancelPatch({ app: innerApp, db, tiktok });
