@@ -20,7 +20,7 @@ const trending = require('./services/trendingTopics');
 const { generateAndSave } = require('./services/generation');
 const automation = require('./services/automation');
 const { StorageService } = require('./storage/service');
-const { useVpsLocalStorage, cleanupTemporaryStorage } = require('./storage/vpsStorage');
+const { useVpsLocalStorage, installVpsLocalStorageLock, cleanupTemporaryStorage } = require('./storage/vpsStorage');
 const { install: installTikTokCancelPatch } = require('./services/tiktokCancelPatch');
 const { install: installInsertedImagePatch } = require('./services/insertedImagePatch');
 const { install: installAssetUploadPatch } = require('./services/assetUploadPatch');
@@ -30,6 +30,7 @@ const { install: installPresenterVideoPatch } = require('./services/presenterVid
 
 const db = createDatabase();
 useVpsLocalStorage(db);
+installVpsLocalStorageLock();
 const temporaryStorage = new StorageService({ db });
 const innerApp = createApp({ db });
 installTikTokCancelPatch({ app: innerApp, db, tiktok });
