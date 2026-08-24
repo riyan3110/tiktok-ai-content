@@ -207,3 +207,10 @@ test('one manual Upload can recover one stalled TikTok photo pull without creati
   assert.match(source, /body: JSON\.stringify\(lastUploadPayload\)/);
   assert.match(source, /Draft pertama ternyata berhasil masuk ke TikTok\. Retry otomatis dibatalkan/);
 });
+
+test('local TikTok slides survive SEND_TO_USER_INBOX and clean only after PUBLISH_COMPLETE', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/services/tiktokPullResiliencePatch.js'), 'utf8');
+  assert.match(source, /if \(data\.status === 'SEND_TO_USER_INBOX'\) \{[\s\S]*?contexts\.delete\(rootId\);[\s\S]*?return result;[\s\S]*?\}/);
+  assert.match(source, /if \(data\.status === 'PUBLISH_COMPLETE'\) \{[\s\S]*?await cleanupPulledImages\(imageUrls\);[\s\S]*?SET slides='\[\]'/);
+  assert.doesNotMatch(source, /data\.status === 'SEND_TO_USER_INBOX' \|\| data\.status === 'PUBLISH_COMPLETE'/);
+});
