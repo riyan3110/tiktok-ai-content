@@ -28,6 +28,7 @@ const { install: installTikTokPullResiliencePatch } = require('./services/tiktok
 const { install: installFloatingChatPatch } = require('./services/floatingChatPatch');
 const { install: installPresenterVideoPatch } = require('./services/presenterVideoPatch');
 const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
+const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
 
 const db = createDatabase();
 useVpsLocalStorage(db);
@@ -35,6 +36,7 @@ installVpsLocalStorageLock();
 installVpsStorageUiPatch();
 const temporaryStorage = new StorageService({ db });
 const innerApp = createApp({ db });
+installLocalMediaPreviewPatch({ app: innerApp, db });
 installTikTokCancelPatch({ app: innerApp, db, tiktok });
 installTikTokPullResiliencePatch({ tiktok, db });
 installInsertedImagePatch({ app: innerApp, db, images });
