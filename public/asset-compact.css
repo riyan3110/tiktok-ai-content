@@ -261,6 +261,7 @@
 #legacy-studio #content-generator > label:has(#automation-toggle),
 #legacy-studio #mode-help,
 #legacy-studio .background-heading,
+#legacy-studio #background-reset,
 #legacy-studio #background-remove{
   display:none!important;
 }
@@ -309,40 +310,9 @@
   grid-column:1;
   grid-row:2;
 }
-#legacy-studio #background-reset{
-  position:relative;
-  display:grid!important;
+#legacy-studio .background-black-option{
   grid-column:2;
   grid-row:2;
-  place-items:center;
-  width:100%;
-  min-width:0;
-  min-height:0;
-  aspect-ratio:1.45/1;
-  margin:0;
-  padding:0;
-  overflow:hidden;
-  border:2px solid var(--border);
-  border-radius:12px;
-  background:#0B0B0D;
-  color:#fff;
-  font-size:0;
-  box-shadow:none;
-}
-#legacy-studio #background-reset::after{
-  content:"Hitam";
-  position:absolute;
-  left:8px;
-  bottom:7px;
-  font-size:.68rem;
-  font-weight:700;
-  line-height:1;
-  color:#f4f4f5;
-}
-#legacy-studio #background-reset:hover{
-  border-color:#8b5cf6;
-  filter:none;
-  transform:none;
 }
 #legacy-studio .background-upload-option{
   grid-column:3;
@@ -487,8 +457,7 @@
     padding:8px 6px;
     font-size:.76rem;
   }
-  #legacy-studio .background-swatch,
-  #legacy-studio #background-reset{
+  #legacy-studio .background-swatch{
     border-radius:10px;
   }
 }
