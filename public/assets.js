@@ -1,5 +1,12 @@
 (() => {
   const $ = selector => document.querySelector(selector);
+  if (!document.querySelector('link[data-asset-compact]')) {
+    const stylesheet = document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = '/asset-compact.css?v=1';
+    stylesheet.dataset.assetCompact = 'true';
+    document.head.append(stylesheet);
+  }
   const api = async (url, options) => { const response = await fetch(url, options); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || 'Request gagal'); return body; };
   const safe = value => { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; };
   const size = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
