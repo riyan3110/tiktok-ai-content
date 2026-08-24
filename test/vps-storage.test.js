@@ -19,9 +19,10 @@ function insertAsset(db, { id, provider = 'local', generated = 1, createdAt }) {
   );
 }
 
-function insertContent(db, { topic, slides, status = 'generated', createdAt }) {
+function insertContent(db, { topic, slides, status = 'generated', createdAt, updatedAt }) {
   db.prepare(`INSERT INTO contents(topic,topic_source,hook,body,caption,hashtags,cta,slides,publish_status,created_at)
     VALUES(?,?,?,?,?,?,?,?,?,?)`).run(topic, 'manual', 'hook', 'body', 'caption', '[]', '', JSON.stringify(slides), status, createdAt);
+  if (updatedAt) db.prepare('UPDATE contents SET updated_at=? WHERE topic=?').run(updatedAt, topic);
 }
 
 test('generated VPS media expires after 24 hours while manual and COS assets stay untouched', async () => {
@@ -40,20 +41,28 @@ test('generated VPS media expires after 24 hours while manual and COS assets sta
   db.close();
 });
 
-test('Text Content slides expire after five hours, but an active TikTok pull is protected', async () => {
+test('Text Content keeps TikTok inbox handoff slides for five hours and protects active transfers', async () => {
   const db = createDatabase(':memory:');
   const now = Date.parse('2026-08-24T12:00:00Z');
   insertContent(db, { topic: 'expired', slides: ['/generated/1.jpg'], createdAt: '2026-08-24 06:59:00' });
   insertContent(db, { topic: 'active', slides: ['/generated/2.jpg'], status: 'PROCESSING_UPLOAD', createdAt: '2026-08-24 06:00:00' });
   insertContent(db, { topic: 'fresh', slides: ['/generated/3.jpg'], createdAt: '2026-08-24 11:00:00' });
-  insertContent(db, { topic: 'uploaded', slides: ['/generated/4.jpg'], status: 'PUBLISH_COMPLETE', createdAt: '2026-08-24 11:59:00' });
+  insertContent(db, { topic: 'completed', slides: ['/generated/4.jpg'], status: 'PUBLISH_COMPLETE', createdAt: '2026-08-24 11:59:00' });
+  insertContent(db, { topic: 'handoff-fresh', slides: ['/generated/5.jpg'], status: 'SEND_TO_USER_INBOX', createdAt: '2026-08-24 01:00:00', updatedAt: '2026-08-24 11:30:00' });
+  insertContent(db, { topic: 'handoff-expired', slides: ['/generated/6.jpg'], status: 'SEND_TO_USER_INBOX', createdAt: '2026-08-24 01:00:00', updatedAt: '2026-08-24 06:59:00' });
+  insertContent(db, { topic: 'cancel-pending', slides: ['/generated/7.jpg'], status: 'CANCEL_REQUESTED', createdAt: '2026-08-24 01:00:00', updatedAt: '2026-08-24 11:40:00' });
+
   const removed = [];
   const images = { cleanupSlides: async slides => removed.push(...slides) };
   const result = await cleanupTextContentSlides({ db, images, now });
+
   assert.equal(TEXT_CONTENT_TTL_MS, 5 * 60 * 60 * 1000);
-  assert.deepEqual(removed.sort(), ['/generated/1.jpg', '/generated/4.jpg']);
-  assert.equal(result.deletedContents, 2);
+  assert.deepEqual(removed.sort(), ['/generated/1.jpg', '/generated/4.jpg', '/generated/6.jpg']);
+  assert.equal(result.deletedContents, 3);
   assert.equal(db.prepare("SELECT slides FROM contents WHERE topic='active'").get().slides, '["/generated/2.jpg"]');
+  assert.equal(db.prepare("SELECT slides FROM contents WHERE topic='handoff-fresh'").get().slides, '["/generated/5.jpg"]');
+  assert.equal(db.prepare("SELECT slides FROM contents WHERE topic='cancel-pending'").get().slides, '["/generated/7.jpg"]');
+  assert.equal(db.prepare("SELECT slides FROM contents WHERE topic='handoff-expired'").get().slides, '[]');
   assert.equal(db.prepare("SELECT slides FROM contents WHERE topic='expired'").get().slides, '[]');
   db.close();
 });

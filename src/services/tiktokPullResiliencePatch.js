@@ -165,7 +165,17 @@ function install({ tiktok, db } = {}) {
       }
     }
 
-    if (data.status === 'SEND_TO_USER_INBOX' || data.status === 'PUBLISH_COMPLETE') {
+    // SEND_TO_USER_INBOX is only the handoff point. TikTok may still need the
+    // public JPEG URLs after reporting it, so never delete local slides here.
+    // The scheduled VPS cleanup keeps those files for the handoff grace period.
+    if (data.status === 'SEND_TO_USER_INBOX') {
+      contexts.delete(rootId);
+      return result;
+    }
+
+    // PUBLISH_COMPLETE is the only TikTok status where the pull lifecycle is
+    // fully finished and immediate local cleanup is safe.
+    if (data.status === 'PUBLISH_COMPLETE') {
       let imageUrls = context?.imageUrls || [];
       if (!imageUrls.length && db) {
         const row = db.prepare('SELECT slides FROM contents WHERE publish_id=?').get(rootId);
