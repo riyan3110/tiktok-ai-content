@@ -5,6 +5,7 @@ const GENERATED_MEDIA_TTL_MS = 24 * 60 * 60 * 1000;
 const TEXT_CONTENT_TTL_MS = 5 * 60 * 60 * 1000;
 const TIKTOK_SUCCESS_STATUSES = new Set(['SEND_TO_USER_INBOX', 'PUBLISH_COMPLETE']);
 const TIKTOK_ACTIVE_STATUSES = new Set(['PROCESSING_UPLOAD', 'PROCESSING_DOWNLOAD']);
+const VPS_LOCKED = Symbol.for('aiads.vpsLocalStorageLocked');
 
 function timestampMs(value) {
   const raw = String(value || '').trim();
@@ -16,6 +17,16 @@ function timestampMs(value) {
 function useVpsLocalStorage(db) {
   db.prepare("UPDATE storage_settings SET provider='local',updated_at=CURRENT_TIMESTAMP WHERE id=1").run();
   return db.prepare('SELECT provider,storage_quota,updated_at FROM storage_settings WHERE id=1').get();
+}
+
+function installVpsLocalStorageLock() {
+  const prototype = StorageService.prototype;
+  if (prototype[VPS_LOCKED]) return;
+  const originalSaveSettings = prototype.saveSettings;
+  prototype.saveSettings = function saveVpsOnlySettings(body = {}) {
+    return originalSaveSettings.call(this, { ...body, provider: 'local' });
+  };
+  Object.defineProperty(prototype, VPS_LOCKED, { value: true });
 }
 
 async function cleanupGeneratedAssets({ db, storage = new StorageService({ db }), now = Date.now() } = {}) {
@@ -146,6 +157,7 @@ module.exports = {
   TIKTOK_SUCCESS_STATUSES,
   TIKTOK_ACTIVE_STATUSES,
   useVpsLocalStorage,
+  installVpsLocalStorageLock,
   cleanupGeneratedAssets,
   cleanupTextContentSlides,
   cleanupTemporaryStorage,
