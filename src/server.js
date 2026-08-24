@@ -19,6 +19,8 @@ const tiktok = require('./services/tiktok');
 const trending = require('./services/trendingTopics');
 const { generateAndSave } = require('./services/generation');
 const automation = require('./services/automation');
+const { StorageService } = require('./storage/service');
+const { useVpsLocalStorage, cleanupTemporaryStorage } = require('./storage/vpsStorage');
 const { install: installTikTokCancelPatch } = require('./services/tiktokCancelPatch');
 const { install: installInsertedImagePatch } = require('./services/insertedImagePatch');
 const { install: installAssetUploadPatch } = require('./services/assetUploadPatch');
@@ -27,9 +29,11 @@ const { install: installFloatingChatPatch } = require('./services/floatingChatPa
 const { install: installPresenterVideoPatch } = require('./services/presenterVideoPatch');
 
 const db = createDatabase();
+useVpsLocalStorage(db);
+const temporaryStorage = new StorageService({ db });
 const innerApp = createApp({ db });
 installTikTokCancelPatch({ app: innerApp, db, tiktok });
-installTikTokPullResiliencePatch({ tiktok });
+installTikTokPullResiliencePatch({ tiktok, db });
 installInsertedImagePatch({ app: innerApp, db, images });
 installAssetUploadPatch({ app: innerApp, db });
 installFloatingChatPatch({ app: innerApp, db });
@@ -41,4 +45,23 @@ let automationRunning = false;
 async function runAutomation() { if (automationRunning) return; automationRunning = true; try { await automation.tick(db); } catch (e) { console.error('Scheduler otomatis gagal:', e); } finally { automationRunning = false; } }
 runAutomation();
 setInterval(runAutomation, 30 * 1000).unref();
+
+let storageCleanupRunning = false;
+async function runStorageCleanup() {
+  if (storageCleanupRunning) return;
+  storageCleanupRunning = true;
+  try {
+    const result = await cleanupTemporaryStorage({ db, storage: temporaryStorage, images });
+    const deleted = result.generated.deleted + result.textContent.deletedFiles;
+    const failed = result.generated.failed.length + result.textContent.failed.length;
+    if (deleted || failed) console.info('[VPS Storage Cleanup]', { deleted, failed });
+  } catch (e) {
+    console.error('Cleanup penyimpanan VPS gagal:', e);
+  } finally {
+    storageCleanupRunning = false;
+  }
+}
+runStorageCleanup();
+setInterval(runStorageCleanup, 15 * 60 * 1000).unref();
+
 app.listen(config.port, () => console.log(`TikTok AI Content aktif di http://localhost:${config.port}`));
