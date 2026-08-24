@@ -23,6 +23,30 @@ function freshUrls(imageUrls, attempt) {
   return imageUrls.map((url, index) => withPullToken(url, token, index));
 }
 
+function generatedFileFromUrl(imageUrl) {
+  let url;
+  let publicOrigin;
+  try {
+    url = new URL(imageUrl);
+    publicOrigin = new URL(config.publicBaseUrl).origin;
+  } catch {
+    return null;
+  }
+  if (url.origin !== publicOrigin) return null;
+  let pathname;
+  try { pathname = decodeURIComponent(url.pathname); } catch { return null; }
+  if (!/^\/generated\/[a-zA-Z0-9._-]+\.jpg$/i.test(pathname)) return null;
+  const root = path.resolve(config.root, 'public/generated');
+  const file = path.resolve(config.root, 'public', pathname.replace(/^\/+/, ''));
+  return file.startsWith(`${root}${path.sep}`) ? file : null;
+}
+
+async function cleanupPulledImages(imageUrls = []) {
+  const files = [...new Set(imageUrls.map(generatedFileFromUrl).filter(Boolean))];
+  await Promise.all(files.map(file => fs.rm(file, { force: true })));
+  return files.length;
+}
+
 async function validateGeneratedFileLocally(imageUrl, verifiedPrefix) {
   let url;
   let prefix;
@@ -76,7 +100,7 @@ async function validateGeneratedFileLocally(imageUrl, verifiedPrefix) {
   return stat.size;
 }
 
-function install({ tiktok } = {}) {
+function install({ tiktok, db } = {}) {
   if (!tiktok?.publishPhotos || !tiktok?.status || !tiktok?.validateImageUrls) {
     throw new Error('TikTok pull resilience patch membutuhkan TikTok service.');
   }
@@ -142,6 +166,20 @@ function install({ tiktok } = {}) {
     }
 
     if (data.status === 'SEND_TO_USER_INBOX' || data.status === 'PUBLISH_COMPLETE') {
+      let imageUrls = context?.imageUrls || [];
+      if (!imageUrls.length && db) {
+        const row = db.prepare('SELECT slides FROM contents WHERE publish_id=?').get(rootId);
+        try {
+          const slides = JSON.parse(row?.slides || '[]');
+          if (Array.isArray(slides)) imageUrls = slides.map(slide => `${config.publicBaseUrl}${slide}`);
+        } catch {}
+      }
+      try {
+        await cleanupPulledImages(imageUrls);
+        if (db) db.prepare("UPDATE contents SET slides='[]',updated_at=CURRENT_TIMESTAMP WHERE publish_id=?").run(rootId);
+      } catch (error) {
+        console.warn('[TikTok Pull] cleanup file lokal gagal, akan dicoba cleanup terjadwal:', error.message);
+      }
       contexts.delete(rootId);
       aliases.delete(rootId);
     }
@@ -155,4 +193,4 @@ function install({ tiktok } = {}) {
   Object.defineProperty(tiktok, PATCHED, { value: true });
 }
 
-module.exports = { install, MAX_PULL_RETRIES };
+module.exports = { install, MAX_PULL_RETRIES, cleanupPulledImages, generatedFileFromUrl };
