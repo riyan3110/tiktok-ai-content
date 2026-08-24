@@ -7,6 +7,14 @@
     stylesheet.dataset.assetCompact = 'true';
     document.head.append(stylesheet);
   }
+  const backgroundOptions = document.querySelector('#background-options');
+  if (backgroundOptions && !backgroundOptions.querySelector('input[name="carousel-background"][value="#0B0B0D"]')) {
+    const uploadOption = backgroundOptions.querySelector('.background-upload-option');
+    const blackOption = document.createElement('label');
+    blackOption.className = 'background-option background-black-option';
+    blackOption.innerHTML = '<input type="radio" name="carousel-background" value="#0B0B0D"><span class="background-swatch" style="--swatch:#0B0B0D"><i>✓</i></span><b>Hitam</b>';
+    if (uploadOption) uploadOption.before(blackOption); else backgroundOptions.append(blackOption);
+  }
   const api = async (url, options) => { const response = await fetch(url, options); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || 'Request gagal'); return body; };
   const safe = value => { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; };
   const size = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
