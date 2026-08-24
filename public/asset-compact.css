@@ -261,7 +261,6 @@
 #legacy-studio #content-generator > label:has(#automation-toggle),
 #legacy-studio #mode-help,
 #legacy-studio .background-heading,
-#legacy-studio #background-reset,
 #legacy-studio #background-remove{
   display:none!important;
 }
@@ -283,9 +282,9 @@
 #legacy-studio .carousel-background{
   position:relative;
   display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-columns:repeat(3,minmax(0,1fr));
   grid-template-rows:auto auto auto;
-  gap:7px 10px;
+  gap:7px 8px;
   min-width:0;
   margin:0;
   padding:0;
@@ -310,14 +309,49 @@
   grid-column:1;
   grid-row:2;
 }
-#legacy-studio .background-upload-option{
+#legacy-studio #background-reset{
+  position:relative;
+  display:grid!important;
   grid-column:2;
+  grid-row:2;
+  place-items:center;
+  width:100%;
+  min-width:0;
+  min-height:0;
+  aspect-ratio:1.45/1;
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  border:2px solid var(--border);
+  border-radius:12px;
+  background:#0B0B0D;
+  color:#fff;
+  font-size:0;
+  box-shadow:none;
+}
+#legacy-studio #background-reset::after{
+  content:"Hitam";
+  position:absolute;
+  left:8px;
+  bottom:7px;
+  font-size:.68rem;
+  font-weight:700;
+  line-height:1;
+  color:#f4f4f5;
+}
+#legacy-studio #background-reset:hover{
+  border-color:#8b5cf6;
+  filter:none;
+  transform:none;
+}
+#legacy-studio .background-upload-option{
+  grid-column:3;
   grid-row:2;
 }
 #legacy-studio .background-swatch{
   width:100%;
   min-height:0;
-  aspect-ratio:1/1;
+  aspect-ratio:1.45/1;
   border-radius:12px;
 }
 #legacy-studio .background-option>b{
@@ -333,7 +367,7 @@
   display:none;
 }
 #legacy-studio .carousel-background > label:has(#background-apply-all){
-  grid-column:2;
+  grid-column:3;
   grid-row:1;
   align-self:center;
   justify-self:start;
@@ -353,20 +387,20 @@
   transform:translateX(17px);
 }
 #legacy-studio #background-change{
-  grid-column:2;
+  grid-column:3;
   grid-row:2;
   z-index:4;
   align-self:end;
   justify-self:stretch;
-  min-height:34px;
-  margin:0 7px 7px;
-  padding:7px 8px;
+  min-height:31px;
+  margin:0 6px 6px;
+  padding:6px 7px;
   border:1px solid rgba(255,255,255,.22);
-  border-radius:8px;
-  background:rgba(17,9,34,.72);
+  border-radius:7px;
+  background:rgba(17,9,34,.76);
   backdrop-filter:blur(8px);
   color:#fff;
-  font-size:.72rem;
+  font-size:.68rem;
   line-height:1.1;
 }
 #legacy-studio #background-error{
@@ -388,9 +422,9 @@
 @media(max-width:767px){
   #legacy-studio #content-generator{
     display:grid;
-    grid-template-columns:minmax(92px,.8fr) repeat(2,minmax(0,1fr));
+    grid-template-columns:repeat(3,minmax(0,1fr));
     align-items:start;
-    column-gap:10px;
+    column-gap:8px;
     row-gap:7px;
     padding:16px 14px;
   }
@@ -408,6 +442,7 @@
     grid-column:1;
     grid-row:3;
     align-self:start;
+    z-index:2;
     margin:3px 0 0;
     gap:7px;
   }
@@ -424,7 +459,7 @@
     transform:translateX(17px);
   }
   #legacy-studio #content-generator > .carousel-background{
-    grid-column:2/4;
+    grid-column:1/4;
     grid-row:3;
   }
   #legacy-studio #manual-settings{
@@ -452,7 +487,8 @@
     padding:8px 6px;
     font-size:.76rem;
   }
-  #legacy-studio .background-swatch{
+  #legacy-studio .background-swatch,
+  #legacy-studio #background-reset{
     border-radius:10px;
   }
 }
@@ -462,7 +498,7 @@
     margin-bottom:10px;
   }
   #legacy-studio .carousel-background{
-    max-width:420px;
+    max-width:540px;
     margin-bottom:12px;
   }
 }
