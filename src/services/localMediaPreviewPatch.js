@@ -12,6 +12,7 @@ const PREVIEW_ROUTE = '/api/assets/:id/preview';
 const THUMBNAIL_ROOT = path.join(config.root, 'data', 'asset-thumbnails');
 const THUMBNAIL_WIDTH = 480;
 const THUMBNAIL_HEIGHT = 270;
+const thumbnailJobs = new Map();
 
 function routerStack(app) {
   return app?.router?.stack || app?._router?.stack || [];
@@ -85,6 +86,18 @@ async function createThumbnail(asset, storage) {
   throw Object.assign(new Error('Thumbnail hanya tersedia untuk image/video.'), { status: 415 });
 }
 
+async function ensureThumbnail(asset, storage) {
+  const key = String(asset.id);
+  if (thumbnailJobs.has(key)) return thumbnailJobs.get(key);
+  const job = createThumbnail(asset, storage);
+  thumbnailJobs.set(key, job);
+  try {
+    return await job;
+  } finally {
+    if (thumbnailJobs.get(key) === job) thumbnailJobs.delete(key);
+  }
+}
+
 function installThumbnailCleanup() {
   const prototype = StorageService.prototype;
   if (prototype[STORAGE_PATCHED]) return;
@@ -148,7 +161,7 @@ function install({ app, db } = {}) {
       const asset = storage.repository.get(req.params.id);
       if (!asset) return res.status(404).json({ error: 'Asset tidak ditemukan.' });
       if (asset.storage_provider !== 'local') return res.status(409).json({ error: 'Thumbnail ringan hanya tersedia untuk asset lokal VPS.' });
-      const file = await createThumbnail(asset, storage);
+      const file = await ensureThumbnail(asset, storage);
       res.set({
         'Content-Type': 'image/jpeg',
         'Cache-Control': 'private, max-age=86400',
@@ -168,6 +181,7 @@ module.exports = {
   install,
   previewRouteLayer,
   createThumbnail,
+  ensureThumbnail,
   thumbnailPath,
   PREVIEW_ROUTE,
   THUMBNAIL_WIDTH,
