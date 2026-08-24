@@ -3,8 +3,9 @@ const { StorageService } = require('./service');
 
 const GENERATED_MEDIA_TTL_MS = 24 * 60 * 60 * 1000;
 const TEXT_CONTENT_TTL_MS = 5 * 60 * 60 * 1000;
-const TIKTOK_SUCCESS_STATUSES = new Set(['SEND_TO_USER_INBOX', 'PUBLISH_COMPLETE']);
-const TIKTOK_ACTIVE_STATUSES = new Set(['PROCESSING_UPLOAD', 'PROCESSING_DOWNLOAD']);
+const TIKTOK_SUCCESS_STATUSES = new Set(['PUBLISH_COMPLETE']);
+const TIKTOK_HANDOFF_STATUSES = new Set(['SEND_TO_USER_INBOX']);
+const TIKTOK_ACTIVE_STATUSES = new Set(['PROCESSING_UPLOAD', 'PROCESSING_DOWNLOAD', 'CANCEL_REQUESTED']);
 const VPS_LOCKED = Symbol.for('aiads.vpsLocalStorageLocked');
 
 function timestampMs(value) {
@@ -59,20 +60,28 @@ function parseSlides(value) {
 
 async function cleanupTextContentSlides({ db, images, now = Date.now() } = {}) {
   if (!images?.cleanupSlides) throw new Error('Image cleanup service tidak tersedia.');
-  const rows = db.prepare("SELECT id,slides,publish_status,created_at FROM contents WHERE slides IS NOT NULL AND slides <> '[]'").all();
+  const rows = db.prepare("SELECT id,slides,publish_status,created_at,updated_at FROM contents WHERE slides IS NOT NULL AND slides <> '[]'").all();
   const result = { deletedContents: 0, deletedFiles: 0, skipped: 0, failed: [] };
   for (const row of rows) {
     const slides = parseSlides(row.slides);
     if (!slides.length) continue;
     const status = String(row.publish_status || '').trim();
     const createdAt = timestampMs(row.created_at);
-    const uploaded = TIKTOK_SUCCESS_STATUSES.has(status);
-    const expired = Number.isFinite(createdAt) && now - createdAt >= TEXT_CONTENT_TTL_MS;
+    const updatedAt = timestampMs(row.updated_at);
+    const published = TIKTOK_SUCCESS_STATUSES.has(status);
+    const handoff = TIKTOK_HANDOFF_STATUSES.has(status);
     const activeUpload = TIKTOK_ACTIVE_STATUSES.has(status);
-    if (!uploaded && (!expired || activeUpload)) {
+    const retentionStartedAt = handoff && Number.isFinite(updatedAt) ? updatedAt : createdAt;
+    const expired = Number.isFinite(retentionStartedAt) && now - retentionStartedAt >= TEXT_CONTENT_TTL_MS;
+
+    // Active TikTok transfers/cancellations are always protected. A
+    // SEND_TO_USER_INBOX handoff keeps its public files for five hours from the
+    // last TikTok status update because TikTok may still fetch those URLs.
+    if (!published && (!expired || activeUpload)) {
       result.skipped += 1;
       continue;
     }
+
     try {
       await images.cleanupSlides(slides);
       db.prepare("UPDATE contents SET slides='[]',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(row.id);
@@ -155,6 +164,7 @@ module.exports = {
   GENERATED_MEDIA_TTL_MS,
   TEXT_CONTENT_TTL_MS,
   TIKTOK_SUCCESS_STATUSES,
+  TIKTOK_HANDOFF_STATUSES,
   TIKTOK_ACTIVE_STATUSES,
   useVpsLocalStorage,
   installVpsLocalStorageLock,
