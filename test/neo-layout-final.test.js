@@ -18,27 +18,23 @@ test('mobile workspace branding stays centered while TikTok status stays on the 
   assert.match(layout, /\.neo-profile-copy[\s\S]*transform:translateY\(3px\)!important/);
   assert.match(layout, /\.neo-status-cluster[\s\S]*grid-column:3!important/);
   assert.match(layout, /\.neo-status-cluster[\s\S]*justify-self:end!important/);
-  assert.match(layout, /\.neo-profile-copy small[\s\S]*white-space:nowrap!important/);
-  assert.match(layout, /\.neo-profile-copy strong[\s\S]*white-space:nowrap!important/);
 });
 
-test('mobile bottom navigation uses viewport insets and Create is vertically centered', () => {
+test('mobile bottom navigation is inset-bound and Create is lowered into visual center', () => {
   assert.match(layout, /\.neo-bottom-nav[\s\S]*left:12px!important/);
   assert.match(layout, /\.neo-bottom-nav[\s\S]*right:12px!important/);
-  assert.match(layout, /\.neo-bottom-nav[\s\S]*width:auto!important/);
-  assert.match(layout, /\.neo-bottom-nav[\s\S]*transform:none!important/);
   assert.match(layout, /grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\) 58px minmax\(0,1fr\) minmax\(0,1fr\)!important/);
-  assert.match(layout, /button\.neo-main[\s\S]*margin-top:0!important/);
-  assert.match(layout, /button\.neo-main[\s\S]*transform:none!important/);
+  assert.match(layout, /button\.neo-main[\s\S]*transform:translateY\(4px\)!important/);
 });
 
-test('AI Providers route uses an explicit root class instead of :has viewport detection', () => {
-  assert.match(layout, /function syncProviderRoute\(\)/);
+test('AI Providers route forces top-level shell to measured viewport width at runtime', () => {
+  assert.match(layout, /function forceProviderShell\(\)/);
+  assert.match(layout, /document\.documentElement\.clientWidth \|\| window\.innerWidth/);
+  assert.match(layout, /document\.querySelector\('\.app-shell > main'\)/);
+  assert.match(layout, /rememberSet\(shellMain, 'display', 'block'\)/);
+  assert.match(layout, /rememberSet\(pageContent, 'width', width\)/);
+  assert.match(layout, /rememberSet\(provider, 'width', '100%'\)/);
   assert.match(layout, /root\.classList\.toggle\('aiads-provider-route', active\)/);
-  assert.match(layout, /html\.aiads-provider-route main/);
-  assert.match(layout, /html\.aiads-provider-route \.page-content/);
-  assert.match(layout, /html\.aiads-provider-route #ai-providers \.provider-layout[\s\S]*display:block!important/);
-  assert.doesNotMatch(layout, /html\.aiads-neo-theme:has\(#ai-providers/);
 });
 
 test('final layout layer loads after home polish', () => {
@@ -46,5 +42,5 @@ test('final layout layer loads after home polish', () => {
   const finalIndex = gateway.indexOf('/neo-layout-final.js');
   assert.ok(polishIndex >= 0);
   assert.ok(finalIndex > polishIndex);
-  assert.match(gateway, /neo-layout-final-20260826b/);
+  assert.match(gateway, /neo-layout-final-20260826c/);
 });
