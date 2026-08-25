@@ -20,10 +20,9 @@ test('floating chat schema and transcript builder keep multi-turn context', () =
     { role: 'assistant', content: 'Siap, proyeknya Atlas.' },
     { role: 'user', content: 'Apa nama proyek tadi?' }
   ]);
-  assert.match(prompt, /Nama proyek kita Atlas/);
-  assert.match(prompt, /Siap, proyeknya Atlas/);
-  assert.match(prompt, /Apa nama proyek tadi/);
-  assert.match(prompt, /Assistant:$/);
+  assert.match(prompt, /user: Nama proyek kita Atlas/);
+  assert.match(prompt, /assistant: Siap, proyeknya Atlas/);
+  assert.match(prompt, /user: Apa nama proyek tadi/);
 });
 
 test('floating chat API persists messages and sends previous turns through AgentRouter API gateway', async t => {
@@ -32,24 +31,27 @@ test('floating chat API persists messages and sends previous turns through Agent
   connector.save(db, 'agentrouter', {
     enabled: true,
     apiKey: 'agent-secret',
-    baseUrl: 'https://agentrouter.org',
+    baseUrl: 'https://api.bluesminds.com/v1',
     textModel: 'claude-opus-4-8'
   });
   connector.save(db, 'agentrouter', { isDefault: true, defaultCapability: 'text' });
 
   const requestBodies = [];
   const transport = async (url, options = {}) => {
-    assert.equal(url, 'https://co.agentrouter.org/v1/messages');
+    assert.equal(url, 'https://api.bluesminds.com/v1/chat/completions');
     assert.equal(options.headers.Authorization, 'Bearer agent-secret');
-    assert.equal(options.headers['anthropic-version'], '2023-06-01');
+    assert.equal(options.headers['anthropic-version'], undefined);
     const body = JSON.parse(options.body);
     requestBodies.push(body);
     const answer = requestBodies.length === 1 ? 'Halo juga.' : 'Namanya Atlas.';
     return jsonResponse({
-      id: `msg-${requestBodies.length}`,
-      content: [{ type: 'text', text: answer }],
-      stop_reason: 'end_turn',
-      usage: { input_tokens: 5, output_tokens: 3 }
+      id: `chatcmpl-${requestBodies.length}`,
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: answer },
+        finish_reason: 'stop'
+      }],
+      usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 }
     });
   };
 
@@ -79,9 +81,11 @@ test('floating chat API persists messages and sends previous turns through Agent
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Apa nama proyek tadi?' })
   }).then(response => response.json());
   assert.equal(second.assistant.content, 'Namanya Atlas.');
-  assert.match(requestBodies[1].messages[0].content, /Nama proyek kita Atlas/);
-  assert.match(requestBodies[1].messages[0].content, /Halo juga/);
-  assert.match(requestBodies[1].messages[0].content, /Apa nama proyek tadi/);
+  assert.deepEqual(requestBodies[1].messages.map(message => message.role), ['user', 'assistant', 'user']);
+  const secondTranscript = requestBodies[1].messages.map(message => `${message.role}: ${message.content}`).join('\n');
+  assert.match(secondTranscript, /Nama proyek kita Atlas/);
+  assert.match(secondTranscript, /Halo juga/);
+  assert.match(secondTranscript, /Apa nama proyek tadi/);
 
   const history = await fetch(`${base}/api/floating-chat/sessions/${session.id}/messages`).then(response => response.json());
   assert.equal(history.messages.length, 4);
