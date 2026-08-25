@@ -56,24 +56,30 @@ function createSiteAuthGateway(innerApp, config) {
       const file = `${config.root}/public/index.html`;
       let html = await fs.readFile(file, 'utf8');
 
-      // Move the classic app scripts into <head> as defer scripts so they can be
-      // discovered/downloaded in parallel. Their relative order is preserved.
-      const coreScripts = [];
+      // Only the shell/navigation and Text Content core are needed at startup.
+      // Everything else is loaded on first use by lazy-modules.js.
+      const eagerPaths = new Set([
+        '/backend-foundation.js',
+        '/workspace.js',
+        '/background-state.js',
+        '/app.js'
+      ]);
+      const eagerScripts = [];
       const externalScriptPattern = /<script(?:\s+defer)?\s+src="([^"]+\.js(?:\?[^"]*)?)"\s*><\/script>/g;
       html = html.replace(externalScriptPattern, (tag, src) => {
         const pathname = src.split('?')[0];
-        if (pathname === '/floating-chat-theme.js' || pathname === '/neo-home-polish.js') return '';
-        coreScripts.push(`<script defer src="${src}"></script>`);
+        if (pathname === '/floating-chat-theme.js' || pathname === '/neo-home-polish.js' || pathname === '/lazy-modules.js') return '';
+        if (eagerPaths.has(pathname)) eagerScripts.push(`<script defer src="${src}"></script>`);
         return '';
       });
 
-      // IMPORTANT: the redesign layers depend on the legacy app having booted.
-      // Keep them after the core scripts. Defer still allows all files to download
-      // in parallel, while execution follows this document order after parsing.
-      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825d"></script>';
-      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825d"></script>';
-      const earlyScripts = [...coreScripts, themeScript, polishScript].join('\n');
-      html = html.replace('</head>', `${earlyScripts}\n</head>`);
+      // The lazy loader is tiny and must exist before navigation handlers fire.
+      const lazyScript = '<script defer src="/lazy-modules.js?v=startup-lazy-20260825a"></script>';
+      // The redesign layers depend on the core shell having booted.
+      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825e"></script>';
+      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825e"></script>';
+      const startupScripts = [eagerScripts[0], lazyScript, ...eagerScripts.slice(1), themeScript, polishScript].filter(Boolean).join('\n');
+      html = html.replace('</head>', `${startupScripts}\n</head>`);
 
       res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
       res.type('html').send(html);
