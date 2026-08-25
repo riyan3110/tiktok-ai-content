@@ -51,6 +51,14 @@ function createSiteAuthGateway(innerApp, config) {
 
   gateway.use(auth.requireAuth);
 
+  // Automatic Text Content scheduling is temporarily suspended. Keep the
+  // underlying rows untouched, but do not expose live scheduling operations.
+  gateway.get('/automation/today', (req, res) => res.json([]));
+  const rejectSuspendedAutomation = (req, res) => res.status(503).json({ error: 'Jadwal otomatis sementara dinonaktifkan.' });
+  gateway.post('/automation/schedules', rejectSuspendedAutomation);
+  gateway.post('/automation/schedules/:id/:action', rejectSuspendedAutomation);
+  gateway.post('/automation/jobs/:id/:action', rejectSuspendedAutomation);
+
   const sendAppShell = async (req, res, next) => {
     try {
       const file = `${config.root}/public/index.html`;
@@ -84,6 +92,7 @@ function createSiteAuthGateway(innerApp, config) {
       const providerMobileHostFixScript = '<script defer src="/provider-mobile-host-fix.js?v=provider-host-20260826c"></script>';
       const providerLegalFixScript = '<script defer src="/provider-legal-fix.js?v=provider-legal-20260826a"></script>';
       const tiktokControlFixScript = '<script defer src="/tiktok-control-fix.js?v=tiktok-control-20260826a"></script>';
+      const automationSuspendScript = '<script defer src="/automation-suspend.js?v=automation-suspend-20260826a"></script>';
       const startupScripts = [
         compactStyles,
         stabilityStyles,
@@ -98,7 +107,8 @@ function createSiteAuthGateway(innerApp, config) {
         finalLayoutScript,
         providerMobileHostFixScript,
         providerLegalFixScript,
-        tiktokControlFixScript
+        tiktokControlFixScript,
+        automationSuspendScript
       ].filter(Boolean).join('\n');
       html = html.replace('</head>', `${startupScripts}\n</head>`);
 

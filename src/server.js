@@ -30,6 +30,10 @@ const { install: installPresenterVideoPatch } = require('./services/presenterVid
 const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
 const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
 
+// Temporary product decision: automatic Text Content scheduling is suspended.
+// Keep schedule/job rows intact so the feature can be restored later without data loss.
+const AUTOMATION_SUSPENDED = true;
+
 const db = createDatabase();
 useVpsLocalStorage(db);
 installVpsLocalStorageLock();
@@ -44,12 +48,24 @@ installAssetUploadPatch({ app: innerApp, db });
 installFloatingChatPatch({ app: innerApp, db });
 installPresenterVideoPatch({ app: innerApp, db });
 const app = createSiteAuthGateway(innerApp, config);
-automation.recoverInterruptedJobs(db);
+
 if (config.enableCron) cron.schedule(config.cronSchedule, async () => { try { await generateAndSave({ db, content, images, trending, mode: config.dailyTopicMode, requestedTopic: config.dailyManualTopic }); } catch (e) { console.error('Cron gagal:', e); } }, { timezone: config.cronTimezone });
-let automationRunning = false;
-async function runAutomation() { if (automationRunning) return; automationRunning = true; try { await automation.tick(db); } catch (e) { console.error('Scheduler otomatis gagal:', e); } finally { automationRunning = false; } }
-runAutomation();
-setInterval(runAutomation, 30 * 1000).unref();
+
+if (!AUTOMATION_SUSPENDED) {
+  automation.recoverInterruptedJobs(db);
+  let automationRunning = false;
+  async function runAutomation() {
+    if (automationRunning) return;
+    automationRunning = true;
+    try { await automation.tick(db); }
+    catch (e) { console.error('Scheduler otomatis gagal:', e); }
+    finally { automationRunning = false; }
+  }
+  runAutomation();
+  setInterval(runAutomation, 30 * 1000).unref();
+} else {
+  console.info('[Automation] Text Content scheduler suspended; existing schedule data preserved.');
+}
 
 let storageCleanupRunning = false;
 async function runStorageCleanup() {
