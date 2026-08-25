@@ -30,6 +30,16 @@
   }
   syncThemeButton();
 
+  function ensureBlackBackgroundOption() {
+    const options = $('#background-options');
+    if (!options || options.querySelector('input[name="carousel-background"][value="#0B0B0D"]')) return;
+    const upload = options.querySelector('.background-upload-option');
+    const black = document.createElement('label');
+    black.className = 'background-option background-black-option';
+    black.innerHTML = '<input type="radio" name="carousel-background" value="#0B0B0D"><span class="background-swatch" style="--swatch:#0B0B0D"><i>✓</i></span><b>Hitam</b>';
+    if (upload) upload.before(black); else options.appendChild(black);
+  }
+
   async function json(url, options) {
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
@@ -100,12 +110,19 @@
       }
     }
   }
-  optimizeMedia(document.body);
-  new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(optimizeMedia))).observe(document.body, { childList: true, subtree: true });
+
+  function initializeDomShell() {
+    ensureBlackBackgroundOption();
+    optimizeMedia(document.body);
+    new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(optimizeMedia))).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeDomShell, { once: true });
+  else initializeDomShell();
 
   // The service worker preserves the upload compatibility route and caches only
   // versioned/static GET assets. Registration itself must never block startup.
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js?v=global-perf-20260825a').catch(() => {}), { once: true });
+    window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js?v=global-perf-20260825b').catch(() => {}), { once: true });
   }
 })();
