@@ -74,12 +74,12 @@ function createSiteAuthGateway(innerApp, config) {
       // depend on opening a lazy feature first.
       const compactStyles = '<link rel="stylesheet" href="/asset-compact.css?v=compact-20260825b" data-asset-compact>';
       const stabilityStyles = '<link rel="stylesheet" href="/ui-stability.css?v=ui-stability-20260825a">';
-      const responsiveStyles = '<link rel="stylesheet" href="/responsive-professional.css?v=responsive-20260825b">';
+      const responsiveStyles = '<link rel="stylesheet" href="/responsive-professional.css?v=responsive-20260826c">';
       const performanceScript = '<script defer src="/performance-shell.js?v=global-perf-20260825b"></script>';
       const lazyScript = '<script defer src="/lazy-modules.js?v=global-perf-20260825b"></script>';
       const chatScript = '<script defer src="/floating-chat.js?v=floating-chat-20260825a"></script>';
       const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825g"></script>';
-      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825h"></script>';
+      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260826i"></script>';
       const startupScripts = [
         compactStyles,
         stabilityStyles,
