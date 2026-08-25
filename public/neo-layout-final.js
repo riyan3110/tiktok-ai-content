@@ -3,15 +3,15 @@
   if (window.__AIADS_NEO_LAYOUT_FINAL__) return;
   window.__AIADS_NEO_LAYOUT_FINAL__ = true;
 
+  const root = document.documentElement;
   const style = document.createElement('style');
-  style.dataset.aiadsNeoLayoutFinal = '20260826a';
+  style.dataset.aiadsNeoLayoutFinal = '20260826b';
   style.textContent = `
-    /* Final mobile workspace header alignment. Keep branding on the left and
-       TikTok state controls on the right without a second row. */
+    /* Stable mobile workspace header. */
     @media(max-width:767px){
       .aiads-neo-theme .neo-profile-top{
         display:grid!important;
-        grid-template-columns:44px minmax(105px,1fr) auto!important;
+        grid-template-columns:44px minmax(0,1fr) auto!important;
         align-items:center!important;
         column-gap:8px!important;
         row-gap:0!important;
@@ -100,7 +100,7 @@
 
     @media(max-width:420px){
       .aiads-neo-theme .neo-profile-top{
-        grid-template-columns:42px minmax(96px,1fr) auto!important;
+        grid-template-columns:42px minmax(0,1fr) auto!important;
         column-gap:6px!important;
         padding-inline:10px!important;
       }
@@ -114,20 +114,20 @@
       .aiads-neo-theme .neo-profile-chip{min-height:26px!important;padding:3px 5px!important;font-size:.54rem!important}
     }
 
-    /* Bottom navigation gets an explicit viewport-sized box. It must never
-       participate in content sizing, and the center Create button is truly centered. */
+    /* Fixed navigation must be anchored by inset, not viewport-width math.
+       This prevents it from changing the mobile layout width. */
     @media(max-width:767px){
       .aiads-neo-theme .neo-bottom-nav{
         position:fixed!important;
-        left:50%!important;
-        right:auto!important;
-        width:calc(100dvw - 24px)!important;
-        max-width:calc(100dvw - 24px)!important;
+        left:12px!important;
+        right:12px!important;
+        width:auto!important;
+        max-width:none!important;
         min-width:0!important;
-        transform:translateX(-50%)!important;
+        transform:none!important;
         grid-template-columns:minmax(0,1fr) minmax(0,1fr) 58px minmax(0,1fr) minmax(0,1fr)!important;
         overflow:visible!important;
-        contain:layout style!important;
+        contain:none!important;
         box-sizing:border-box!important;
       }
       .aiads-neo-theme .neo-bottom-nav>button{
@@ -148,8 +148,9 @@
         height:56px!important;
         min-height:56px!important;
         margin:0!important;
+        margin-top:0!important;
         padding:5px!important;
-        transform:translateY(-9px)!important;
+        transform:none!important;
         line-height:1!important;
       }
       .aiads-neo-theme .neo-bottom-nav>button.neo-main i,
@@ -162,68 +163,110 @@
       .aiads-neo-theme .neo-bottom-nav>button.neo-main span{font-size:.58rem!important;margin-top:2px!important}
     }
 
-    /* AI Providers was the only route whose entire app shell could collapse to
-       a narrow containing block. While Providers is visible, anchor the shell,
-       topbar, page content and bottom navigation directly to the dynamic viewport. */
+    /* AI Providers route: use an explicit JS-managed root class instead of :has().
+       Some Android browsers were not consistently applying the :has() viewport rule. */
     @media(max-width:767px){
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)),
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) body,
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) .app-shell{
-        width:100dvw!important;
-        max-width:100dvw!important;
-        min-width:100dvw!important;
-        overflow-x:clip!important;
-      }
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) main{
-        width:100dvw!important;
-        max-width:100dvw!important;
+      html.aiads-provider-route,
+      html.aiads-provider-route body,
+      html.aiads-provider-route .app-shell{
+        width:100%!important;
+        max-width:100%!important;
         min-width:0!important;
         margin-left:0!important;
-        overflow-x:clip!important;
+        overflow-x:hidden!important;
       }
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) .topbar{
-        width:100dvw!important;
-        max-width:100dvw!important;
+      html.aiads-provider-route main{
+        width:100%!important;
+        max-width:100%!important;
+        min-width:0!important;
+        margin-left:0!important;
+        overflow-x:hidden!important;
+      }
+      html.aiads-provider-route .topbar{
+        left:0!important;
+        right:0!important;
+        width:100%!important;
+        max-width:100%!important;
         min-width:0!important;
         box-sizing:border-box!important;
       }
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) .page-content{
-        width:100dvw!important;
-        max-width:100dvw!important;
+      html.aiads-provider-route .page-content{
+        width:100%!important;
+        max-width:100%!important;
         min-width:0!important;
         margin:0!important;
         padding-left:10px!important;
         padding-right:10px!important;
         box-sizing:border-box!important;
-        overflow-x:clip!important;
+        overflow-x:hidden!important;
       }
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers,
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-heading,
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-defaults,
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-layout,
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-sidebar,
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-detail{
+      html.aiads-provider-route #ai-providers,
+      html.aiads-provider-route #ai-providers .provider-heading,
+      html.aiads-provider-route #ai-providers .provider-defaults,
+      html.aiads-provider-route #ai-providers .provider-layout,
+      html.aiads-provider-route #ai-providers .provider-sidebar,
+      html.aiads-provider-route #ai-providers .provider-detail,
+      html.aiads-provider-route #ai-providers .provider-form,
+      html.aiads-provider-route #ai-providers .form-grid,
+      html.aiads-provider-route #ai-providers .pipeline-card{
         width:100%!important;
         max-width:100%!important;
         min-width:0!important;
         box-sizing:border-box!important;
       }
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-layout{
-        display:block!important;
+      html.aiads-provider-route #ai-providers{
+        margin:0!important;
+        padding:0!important;
+        overflow-x:hidden!important;
       }
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-list{
+      html.aiads-provider-route #ai-providers .provider-layout{display:block!important}
+      html.aiads-provider-route #ai-providers .provider-sidebar{
+        overflow:hidden!important;
+        border-right:0!important;
+      }
+      html.aiads-provider-route #ai-providers .provider-list{
         width:100%!important;
         max-width:100%!important;
+        min-width:0!important;
         display:flex!important;
         overflow-x:auto!important;
         overflow-y:hidden!important;
       }
-      html.aiads-neo-theme:has(#ai-providers:not(.hidden)) #ai-providers .provider-item{
-        flex:0 0 min(180px,48dvw)!important;
+      html.aiads-provider-route #ai-providers .provider-item{
+        flex:0 0 min(180px,58vw)!important;
+        width:auto!important;
         max-width:180px!important;
+        min-width:0!important;
+      }
+      html.aiads-provider-route #ai-providers input,
+      html.aiads-provider-route #ai-providers select,
+      html.aiads-provider-route #ai-providers textarea{
+        width:100%!important;
+        max-width:100%!important;
+        min-width:0!important;
       }
     }
   `;
 
   document.head.appendChild(style);
+
+  function syncProviderRoute() {
+    const provider = document.querySelector('#ai-providers');
+    const active = Boolean(provider && !provider.classList.contains('hidden'));
+    root.classList.toggle('aiads-provider-route', active);
+  }
+
+  function watchProviderRoute() {
+    const provider = document.querySelector('#ai-providers');
+    if (provider) {
+      const observer = new MutationObserver(syncProviderRoute);
+      observer.observe(provider, { attributes: true, attributeFilter: ['class'] });
+    }
+    window.addEventListener('hashchange', syncProviderRoute, { passive: true });
+    document.addEventListener('click', () => requestAnimationFrame(syncProviderRoute), true);
+    syncProviderRoute();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchProviderRoute, { once: true });
+  else watchProviderRoute();
 })();
