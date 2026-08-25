@@ -55,17 +55,26 @@ function createSiteAuthGateway(innerApp, config) {
     try {
       const file = `${config.root}/public/index.html`;
       let html = await fs.readFile(file, 'utf8');
-      // Start fetching the redesign scripts as soon as the browser parses <head>.
-      // `defer` keeps DOM-dependent code safe while avoiding the old late-load flash.
-      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825b"></script>';
-      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825b"></script>';
-      const earlyUiScripts = `${themeScript}\n${polishScript}`;
-      if (!html.includes('/floating-chat-theme.js') && !html.includes('/neo-home-polish.js')) {
-        html = html.replace('</head>', `${earlyUiScripts}\n</head>`);
-      } else {
-        if (!html.includes('/floating-chat-theme.js')) html = html.replace('</head>', `${themeScript}\n</head>`);
-        if (!html.includes('/neo-home-polish.js')) html = html.replace('</head>', `${polishScript}\n</head>`);
-      }
+
+      // The legacy shell keeps many classic scripts at the end of <body>. Without
+      // defer they become serial parser/execution blockers, which is especially
+      // noticeable on the VPS' limited public bandwidth. Move external app scripts
+      // into <head> with defer so the browser discovers/downloads them in parallel
+      // while preserving their original execution order after HTML parsing.
+      const coreScripts = [];
+      const externalScriptPattern = /<script(?:\s+defer)?\s+src="([^"]+\.js(?:\?[^"]*)?)"\s*><\/script>/g;
+      html = html.replace(externalScriptPattern, (tag, src) => {
+        const pathname = src.split('?')[0];
+        if (pathname === '/floating-chat-theme.js' || pathname === '/neo-home-polish.js') return '';
+        coreScripts.push(`<script defer src="${src}"></script>`);
+        return '';
+      });
+
+      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825c"></script>';
+      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825c"></script>';
+      const earlyScripts = [themeScript, polishScript, ...coreScripts].join('\n');
+      html = html.replace('</head>', `${earlyScripts}\n</head>`);
+
       res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
       res.type('html').send(html);
     } catch (error) { next(error); }
