@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'aiads-static-global-perf-20260825a';
+const STATIC_CACHE = 'aiads-static-global-perf-20260825b';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil((async () => {

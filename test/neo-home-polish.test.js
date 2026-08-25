@@ -45,6 +45,15 @@ test('TikTok status cluster moves connection and READY into the same header area
   assert.match(polish, /connect\.textContent = 'Connect TikTok'/);
 });
 
+test('provider page keeps global viewport scale and responsive layout', () => {
+  assert.match(polish, /main\{margin-left:0!important;width:100%!important/);
+  assert.match(polish, /#ai-providers \.provider-layout\{width:100%!important;grid-template-columns:minmax\(220px,260px\) minmax\(0,1fr\)!important/);
+  assert.match(polish, /@media\(max-width:767px\)/);
+  assert.match(polish, /#ai-providers \.provider-layout\{display:block!important;width:100%!important/);
+  assert.match(polish, /#ai-providers \.provider-form \.form-grid\{grid-template-columns:1fr!important/);
+  assert.match(polish, /@media\(min-width:1024px\)/);
+});
+
 test('home polish observes only Home/TikTok chrome and TikTok state changes', () => {
   assert.match(polish, /observer\.observe\(sidebar, \{ childList: true \}\)/);
   assert.match(polish, /observer\.observe\(card, \{ childList: true \}\)/);
