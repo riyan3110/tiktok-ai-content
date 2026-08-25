@@ -8,7 +8,7 @@ const gatewayPath = path.join(__dirname, '..', 'src', 'services', 'siteAuthGatew
 const script = fs.readFileSync(scriptPath, 'utf8');
 const gateway = fs.readFileSync(gatewayPath, 'utf8');
 
-test('mobile Providers host fix parses', () => {
+test('Providers host fix parses', () => {
   assert.doesNotThrow(() => new Function(script));
 });
 
@@ -26,14 +26,21 @@ test('direct Providers host bypasses page-content width on mobile', () => {
   assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*max-width:none!important/);
 });
 
-test('Create button uses midpoint offset between prior high and low positions', () => {
-  assert.match(script, /\.neo-bottom-nav>button\.neo-main[\s\S]*transform:translateY\(2px\)!important/);
+test('Providers desktop and tablet keep professional full-width two-column layout', () => {
+  assert.match(script, /@media\(min-width:768px\)[\s\S]*#ai-providers[\s\S]*width:100%!important/);
+  assert.match(script, /grid-template-columns:minmax\(210px,260px\) minmax\(0,1fr\)!important/);
+  assert.match(script, /@media\(min-width:1024px\)[\s\S]*grid-template-columns:260px minmax\(0,1fr\)!important/);
+  assert.match(script, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/);
 });
 
-test('mobile Providers host fix loads after final layout layer', () => {
+test('Create button has no vertical offset and sits at geometric center', () => {
+  assert.match(script, /\.neo-bottom-nav>button\.neo-main[\s\S]*transform:translateY\(0\)!important/);
+});
+
+test('Providers host fix loads after final layout layer with current cache version', () => {
   const finalIndex = gateway.indexOf('/neo-layout-final.js');
   const hostIndex = gateway.indexOf('/provider-mobile-host-fix.js');
   assert.ok(finalIndex >= 0);
   assert.ok(hostIndex > finalIndex);
-  assert.match(gateway, /provider-mobile-host-fix\.js\?v=provider-host-20260826a/);
+  assert.match(gateway, /provider-mobile-host-fix\.js\?v=provider-host-20260826b/);
 });
