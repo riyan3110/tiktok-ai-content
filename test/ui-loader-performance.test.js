@@ -6,21 +6,24 @@ const path = require('node:path');
 const gatewayPath = path.join(__dirname, '..', 'src', 'services', 'siteAuthGateway.js');
 const source = fs.readFileSync(gatewayPath, 'utf8');
 
-test('redesign scripts are cache-busted and loaded from head with defer', () => {
-  assert.match(source, /<script defer src=\"\/floating-chat-theme\.js\?v=neo-dashboard-20260825d\"><\/script>/);
-  assert.match(source, /<script defer src=\"\/neo-home-polish\.js\?v=home-polish-20260825d\"><\/script>/);
+test('redesign and lazy loader scripts are cache-busted and loaded from head with defer', () => {
+  assert.match(source, /<script defer src=\"\/lazy-modules\.js\?v=startup-lazy-20260825a\"><\/script>/);
+  assert.match(source, /<script defer src=\"\/floating-chat-theme\.js\?v=neo-dashboard-20260825e\"><\/script>/);
+  assert.match(source, /<script defer src=\"\/neo-home-polish\.js\?v=home-polish-20260825e\"><\/script>/);
   assert.match(source, /replace\('<\/head>'/);
   assert.doesNotMatch(source, /replace\('<\/body>'/);
 });
 
-test('legacy external app scripts are moved to head as defer scripts', () => {
-  assert.match(source, /externalScriptPattern/);
-  assert.match(source, /coreScripts\.push\(`<script defer src=/);
+test('startup keeps only shell and Text Content core eager', () => {
+  for (const script of ['/backend-foundation.js', '/workspace.js', '/background-state.js', '/app.js']) {
+    assert.match(source, new RegExp(script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(source, /eagerPaths\.has\(pathname\)/);
+  assert.doesNotMatch(source, /coreScripts\.push/);
 });
 
-test('core app executes before redesign layers', () => {
-  assert.match(source, /\[\.\.\.coreScripts, themeScript, polishScript\]/);
-  assert.doesNotMatch(source, /\[themeScript, polishScript, \.\.\.coreScripts\]/);
+test('lazy loader executes before workspace and redesign executes after core', () => {
+  assert.match(source, /\[eagerScripts\[0\], lazyScript, \.\.\.eagerScripts\.slice\(1\), themeScript, polishScript\]/);
 });
 
 test('app shell disables stale HTML caching', () => {
