@@ -1,0 +1,35 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const polishPath = path.join(__dirname, '..', 'public', 'neo-home-polish.js');
+const gatewayPath = path.join(__dirname, '..', 'src', 'services', 'siteAuthGateway.js');
+const polish = fs.readFileSync(polishPath, 'utf8');
+const gateway = fs.readFileSync(gatewayPath, 'utf8');
+
+test('neo home polish script parses', () => {
+  assert.doesNotThrow(() => new Function(polish));
+});
+
+test('home polish removes drawer, rehomes TikTok, mounts logo, and fixes history contrast', () => {
+  for (const marker of [
+    '.sidebar',
+    '.menu-button',
+    '.neo-home-tiktok',
+    '#tiktok-connection',
+    '.sidebar-brand img',
+    '.history-item',
+    'var(--neo-white)',
+    'has-home-tiktok'
+  ]) assert.match(polish, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(polish, /fetch\s*\(/);
+  assert.doesNotMatch(polish, /XMLHttpRequest/);
+});
+
+test('authenticated app shell loads polish after the neo theme', () => {
+  const themeIndex = gateway.indexOf('/floating-chat-theme.js');
+  const polishIndex = gateway.indexOf('/neo-home-polish.js');
+  assert.ok(themeIndex >= 0);
+  assert.ok(polishIndex > themeIndex);
+});
