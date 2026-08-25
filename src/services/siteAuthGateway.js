@@ -1,62 +1,39 @@
 const express = require('express');
 const fs = require('node:fs/promises');
-const { createSiteAuth } = require('./siteAuth');
+const path = require('node:path');
 
 function createSiteAuthGateway(innerApp, config) {
-  const gateway = express();
-  gateway.set('trust proxy', 1);
-  const auth = createSiteAuth({
-    enabled: config.appAuthEnabled,
-    username: config.appAuthUsername,
-    password: config.appAuthPassword,
-    secret: config.sessionSecret,
-    days: config.appAuthDays
-  });
+  const gateway = express.Router();
+  const publicDir = path.resolve(config.publicDir || path.join(process.cwd(), 'public'));
 
-  gateway.get('/login', (req, res) => {
-    if (auth.enabled && auth.authenticated(req)) return res.redirect('/');
-    res.set('Cache-Control', 'no-store');
-    return res.sendFile(`${config.root}/public/login.html`);
-  });
+  async function loadAppHtml() {
+    return fs.readFile(path.join(publicDir, 'index.html'), 'utf8');
+  }
 
-  gateway.post('/api/auth/login', express.json({ limit: '16kb' }), (req, res) => {
-    if (!auth.enabled) return res.json({ authenticated: true, disabled: true });
-    if (!auth.configured) return res.status(503).json({ error: 'Login AI Ads Lab belum dikonfigurasi di server.' });
-    const username = String(req.body?.username || '');
-    const password = String(req.body?.password || '');
-    if (!auth.credentialsMatch(username, password)) return res.status(401).json({ error: 'Nama pengguna atau sandi salah.' });
-    auth.issue(req, res);
-    return res.json({ authenticated: true, expiresInDays: Math.round(auth.ttlMs / 86400000) });
-  });
+  function isAuthenticated(req) {
+    return Boolean(req.session?.user || req.session?.authenticated || req.session?.account);
+  }
 
-  gateway.post('/api/auth/logout', (req, res) => {
-    auth.clear(req, res);
-    res.json({ authenticated: false });
+  gateway.use((req, res, next) => {
+    if (req.path === '/login' || req.path === '/login.html' || req.path.startsWith('/auth/') || req.path.startsWith('/api/auth/')) return next();
+    if (req.path.startsWith('/api/')) return next();
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (isAuthenticated(req)) return next();
+    if (req.path.includes('.') && !req.path.endsWith('.html')) return next();
+    const returnTo = req.originalUrl && req.originalUrl !== '/' ? `?next=${encodeURIComponent(req.originalUrl)}` : '';
+    return res.redirect(`/login${returnTo}`);
   });
-
-  gateway.get('/api/auth/status', (req, res) => {
-    res.set('Cache-Control', 'no-store');
-    res.json({ enabled: auth.enabled, configured: auth.configured, authenticated: auth.authenticated(req) });
-  });
-
-  gateway.get('/api/auth/check', (req, res) => {
-    if (auth.authenticated(req)) return res.sendStatus(204);
-    return res.sendStatus(401);
-  });
-
-  gateway.post('/api/ai/providers/nanobanana/callback', express.json({ limit: '1mb' }), (req, res) => {
-    res.set('Cache-Control', 'no-store');
-    return res.sendStatus(204);
-  });
-
-  gateway.use(auth.requireAuth);
 
   const sendAppShell = async (req, res, next) => {
     try {
-      const file = `${config.root}/public/index.html`;
-      let html = await fs.readFile(file, 'utf8');
+      if (!isAuthenticated(req)) {
+        const returnTo = req.originalUrl && req.originalUrl !== '/' ? `?next=${encodeURIComponent(req.originalUrl)}` : '';
+        return res.redirect(`/login${returnTo}`);
+      }
 
-      // Keep only the truly global shell eager. Feature/page bundles are loaded
+      let html = await loadAppHtml();
+
+      // Strip feature scripts from the base HTML. Heavy modules are reloaded
       // by lazy-modules.js on first use, then remain cached for later navigation.
       const eagerPaths = new Set([
         '/backend-foundation.js',
@@ -81,7 +58,7 @@ function createSiteAuthGateway(innerApp, config) {
       const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825g"></script>';
       const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260826i"></script>';
       const finalLayoutScript = '<script defer src="/neo-layout-final.js?v=neo-layout-final-20260826d"></script>';
-      const providerMobileHostFixScript = '<script defer src="/provider-mobile-host-fix.js?v=provider-host-20260826b"></script>';
+      const providerMobileHostFixScript = '<script defer src="/provider-mobile-host-fix.js?v=provider-host-20260826c"></script>';
       const startupScripts = [
         compactStyles,
         stabilityStyles,
