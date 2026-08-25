@@ -85,7 +85,27 @@
   }
 
   markExisting();
-  document.addEventListener('click', event => warm(groupFromTarget(event.target.closest('[data-workspace-view]'))), true);
+  document.addEventListener('click', async event => {
+    const assetPicker = event.target.closest('#studio-select-assets');
+    if (assetPicker && !window.AssetManager) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      try { await load('assets'); assetPicker.click(); }
+      catch (error) { console.error('[AI Ads Lab lazy module]', error); }
+      return;
+    }
+
+    const promptTab = event.target.closest('[data-project-tab="prompts"]');
+    if (promptTab && !window.PromptStudio) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      try { await load('prompt-studio'); promptTab.click(); }
+      catch (error) { console.error('[AI Ads Lab lazy module]', error); }
+      return;
+    }
+
+    warm(groupFromTarget(event.target.closest('[data-workspace-view]')));
+  }, true);
   window.addEventListener('hashchange', () => warm(groupFromHash()));
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => warm(groupFromHash()), { once: true });
   else warm(groupFromHash());
