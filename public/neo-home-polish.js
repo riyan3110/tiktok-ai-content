@@ -16,11 +16,11 @@
     .neo-profile-avatar{overflow:hidden;padding:0!important;background:var(--neo-white)!important}
     .neo-profile-avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:10px}
 
-    /* Real TikTok connection controls live on Home now. */
-    .neo-home-tiktok{margin:0 12px 12px!important;padding:10px 11px!important;background:var(--neo-white)!important;border:1.7px solid var(--neo-line)!important;border-radius:13px!important;color:var(--neo-ink)!important;display:flex!important;align-items:center!important;gap:10px!important;justify-content:space-between!important}
-    .neo-home-tiktok .tiktok-status{font-size:.78rem!important;font-weight:900!important;color:var(--neo-ink)!important;white-space:nowrap}
-    .neo-home-tiktok .tiktok-actions{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:6px!important;flex-wrap:wrap!important;margin:0!important}
-    .neo-home-tiktok .tiktok-actions a,.neo-home-tiktok .tiktok-actions button{min-height:34px!important;padding:6px 10px!important;font-size:.68rem!important;line-height:1!important;margin:0!important;box-shadow:none!important}
+    /* Real TikTok connection controls live on Home now, but stay compact. */
+    .neo-home-tiktok{margin:0 10px 8px!important;padding:6px 8px!important;min-height:40px!important;background:var(--neo-white)!important;border:1.7px solid var(--neo-line)!important;border-radius:12px!important;color:var(--neo-ink)!important;display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;gap:6px!important}
+    .neo-home-tiktok .tiktok-status{min-width:0!important;margin:0!important;font-size:.66rem!important;line-height:1.15!important;font-weight:900!important;color:var(--neo-ink)!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+    .neo-home-tiktok .tiktok-actions{width:auto!important;margin:0 0 0 auto!important;display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:4px!important;flex-wrap:nowrap!important}
+    .neo-home-tiktok .tiktok-actions a,.neo-home-tiktok .tiktok-actions button{width:auto!important;min-width:0!important;min-height:26px!important;height:26px!important;padding:2px 7px!important;font-size:.58rem!important;line-height:1!important;margin:0!important;border-width:1.5px!important;border-radius:8px!important;box-shadow:none!important;white-space:nowrap!important}
     .neo-home-tiktok[data-state="connected"]{background:var(--neo-mint)!important}
     .neo-home-tiktok[data-state="connecting"],.neo-home-tiktok[data-state="loading"]{background:var(--neo-blue)!important}
     .neo-home-tiktok[data-state="error"]{background:var(--neo-pink)!important}
@@ -39,8 +39,8 @@
 
     @media(max-width:767px){
       .aiads-neo-theme .topbar{justify-content:flex-end!important}
-      .neo-home-tiktok{align-items:flex-start!important;flex-direction:column!important;gap:8px!important}
-      .neo-home-tiktok .tiktok-actions{width:100%!important;justify-content:flex-start!important}
+      .neo-home-tiktok{grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important}
+      .neo-home-tiktok .tiktok-actions{width:auto!important;justify-content:flex-end!important}
       .aiads-neo-theme .history-item{grid-template-columns:1fr!important;padding:12px!important}
       .aiads-neo-theme .history-item .delete-item{justify-self:start!important}
     }
