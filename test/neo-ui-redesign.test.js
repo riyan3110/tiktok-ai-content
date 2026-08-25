@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const file = path.join(__dirname, '..', 'public', 'floating-chat-theme.js');
+const gatewayFile = path.join(__dirname, '..', 'src', 'services', 'siteAuthGateway.js');
 const source = fs.readFileSync(file, 'utf8');
+const gatewaySource = fs.readFileSync(gatewayFile, 'utf8');
 
 test('neo UI theme script parses', () => {
   assert.doesNotThrow(() => new Function(source));
@@ -29,4 +31,10 @@ test('redesign navigates through existing workspace links instead of duplicating
   assert.match(source, /data-workspace-view/);
   assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /XMLHttpRequest/);
+});
+
+test('authenticated app shell loads the redesign theme', () => {
+  assert.match(gatewaySource, /floating-chat-theme\.js\?v=neo-dashboard-20260825/);
+  assert.match(gatewaySource, /gateway\.get\('\/', sendAppShell\)/);
+  assert.match(gatewaySource, /gateway\.use\(auth\.requireAuth\)/);
 });
