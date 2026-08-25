@@ -56,11 +56,8 @@ function createSiteAuthGateway(innerApp, config) {
       const file = `${config.root}/public/index.html`;
       let html = await fs.readFile(file, 'utf8');
 
-      // The legacy shell keeps many classic scripts at the end of <body>. Without
-      // defer they become serial parser/execution blockers, which is especially
-      // noticeable on the VPS' limited public bandwidth. Move external app scripts
-      // into <head> with defer so the browser discovers/downloads them in parallel
-      // while preserving their original execution order after HTML parsing.
+      // Move the classic app scripts into <head> as defer scripts so they can be
+      // discovered/downloaded in parallel. Their relative order is preserved.
       const coreScripts = [];
       const externalScriptPattern = /<script(?:\s+defer)?\s+src="([^"]+\.js(?:\?[^"]*)?)"\s*><\/script>/g;
       html = html.replace(externalScriptPattern, (tag, src) => {
@@ -70,9 +67,12 @@ function createSiteAuthGateway(innerApp, config) {
         return '';
       });
 
-      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825c"></script>';
-      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825c"></script>';
-      const earlyScripts = [themeScript, polishScript, ...coreScripts].join('\n');
+      // IMPORTANT: the redesign layers depend on the legacy app having booted.
+      // Keep them after the core scripts. Defer still allows all files to download
+      // in parallel, while execution follows this document order after parsing.
+      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825d"></script>';
+      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825d"></script>';
+      const earlyScripts = [...coreScripts, themeScript, polishScript].join('\n');
       html = html.replace('</head>', `${earlyScripts}\n</head>`);
 
       res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
