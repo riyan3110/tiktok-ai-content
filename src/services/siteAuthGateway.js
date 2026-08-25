@@ -82,6 +82,8 @@ function createSiteAuthGateway(innerApp, config) {
       const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260826i"></script>';
       const finalLayoutScript = '<script defer src="/neo-layout-final.js?v=neo-layout-final-20260826d"></script>';
       const providerMobileHostFixScript = '<script defer src="/provider-mobile-host-fix.js?v=provider-host-20260826c"></script>';
+      const providerLegalFixScript = '<script defer src="/provider-legal-fix.js?v=provider-legal-20260826a"></script>';
+      const tiktokControlFixScript = '<script defer src="/tiktok-control-fix.js?v=tiktok-control-20260826a"></script>';
       const startupScripts = [
         compactStyles,
         stabilityStyles,
@@ -94,7 +96,9 @@ function createSiteAuthGateway(innerApp, config) {
         themeScript,
         polishScript,
         finalLayoutScript,
-        providerMobileHostFixScript
+        providerMobileHostFixScript,
+        providerLegalFixScript,
+        tiktokControlFixScript
       ].filter(Boolean).join('\n');
       html = html.replace('</head>', `${startupScripts}\n</head>`);
 
