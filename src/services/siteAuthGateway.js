@@ -55,11 +55,18 @@ function createSiteAuthGateway(innerApp, config) {
     try {
       const file = `${config.root}/public/index.html`;
       let html = await fs.readFile(file, 'utf8');
-      const themeScript = '<script src="/floating-chat-theme.js?v=neo-dashboard-20260825"></script>';
-      const polishScript = '<script src="/neo-home-polish.js?v=home-polish-20260825"></script>';
-      if (!html.includes('/floating-chat-theme.js')) html = html.replace('</body>', `${themeScript}\n</body>`);
-      if (!html.includes('/neo-home-polish.js')) html = html.replace('</body>', `${polishScript}\n</body>`);
-      res.set('Cache-Control', 'no-cache');
+      // Start fetching the redesign scripts as soon as the browser parses <head>.
+      // `defer` keeps DOM-dependent code safe while avoiding the old late-load flash.
+      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825b"></script>';
+      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260825b"></script>';
+      const earlyUiScripts = `${themeScript}\n${polishScript}`;
+      if (!html.includes('/floating-chat-theme.js') && !html.includes('/neo-home-polish.js')) {
+        html = html.replace('</head>', `${earlyUiScripts}\n</head>`);
+      } else {
+        if (!html.includes('/floating-chat-theme.js')) html = html.replace('</head>', `${themeScript}\n</head>`);
+        if (!html.includes('/neo-home-polish.js')) html = html.replace('</head>', `${polishScript}\n</head>`);
+      }
+      res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
       res.type('html').send(html);
     } catch (error) { next(error); }
   };
