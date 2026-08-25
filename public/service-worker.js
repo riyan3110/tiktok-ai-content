@@ -1,5 +1,11 @@
+const STATIC_CACHE = 'aiads-static-global-perf-20260825a';
+
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('activate', event => event.waitUntil((async () => {
+  const names = await caches.keys();
+  await Promise.all(names.filter(name => name.startsWith('aiads-static-') && name !== STATIC_CACHE).map(name => caches.delete(name)));
+  await self.clients.claim();
+})()));
 
 function decodeBase64(value) {
   const binary = atob(String(value || ''));
@@ -38,10 +44,27 @@ async function forwardAssetUpload(request) {
   }
 }
 
+function cacheableStatic(url, request) {
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return false;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.pathname.startsWith('/generated/')) return false;
+  return /\.(?:js|css|png|svg|webp|ico|woff2?)$/i.test(url.pathname);
+}
+
+async function staticResponse(request) {
+  const cache = await caches.open(STATIC_CACHE);
+  const hit = await cache.match(request);
+  if (hit) return hit;
+  const response = await fetch(request);
+  if (response.ok && response.type === 'basic') cache.put(request, response.clone()).catch(() => {});
+  return response;
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method === 'POST' && url.origin === self.location.origin && url.pathname === '/api/assets/upload') {
     event.respondWith(forwardAssetUpload(request));
+    return;
   }
+  if (cacheableStatic(url, request)) event.respondWith(staticResponse(request));
 });

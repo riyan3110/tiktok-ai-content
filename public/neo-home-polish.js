@@ -94,9 +94,31 @@
     moveTikTokHome();
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply, { once: true });
-  else apply();
+  let applyQueued = false;
+  function queueApply() {
+    if (applyQueued) return;
+    applyQueued = true;
+    requestAnimationFrame(() => {
+      applyQueued = false;
+      apply();
+    });
+  }
 
-  window.addEventListener('resize', () => setTimeout(apply, 0), { passive: true });
-  new MutationObserver(apply).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  function observeOnlyHomeChrome() {
+    const sidebar = document.querySelector('#sidebar');
+    const card = document.querySelector('.neo-profile-card');
+    const observer = new MutationObserver(queueApply);
+    if (sidebar) observer.observe(sidebar, { childList: true });
+    if (card) observer.observe(card, { childList: true });
+  }
+
+  function start() {
+    apply();
+    observeOnlyHomeChrome();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
+
+  window.addEventListener('resize', queueApply, { passive: true });
 })();
