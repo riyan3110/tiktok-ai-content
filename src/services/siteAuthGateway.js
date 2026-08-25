@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
 function createSiteAuthGateway(innerApp, config) {
@@ -49,6 +50,20 @@ function createSiteAuthGateway(innerApp, config) {
   });
 
   gateway.use(auth.requireAuth);
+
+  const sendAppShell = async (req, res, next) => {
+    try {
+      const file = `${config.root}/public/index.html`;
+      let html = await fs.readFile(file, 'utf8');
+      const themeScript = '<script src="/floating-chat-theme.js?v=neo-dashboard-20260825"></script>';
+      if (!html.includes('/floating-chat-theme.js')) html = html.replace('</body>', `${themeScript}\n</body>`);
+      res.set('Cache-Control', 'no-cache');
+      res.type('html').send(html);
+    } catch (error) { next(error); }
+  };
+
+  gateway.get('/', sendAppShell);
+  gateway.get('/index.html', sendAppShell);
   gateway.use(innerApp);
   return gateway;
 }
