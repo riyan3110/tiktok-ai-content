@@ -20,10 +20,11 @@ test('mobile Providers is moved outside page-content and restored after navigati
   assert.match(script, /root\.classList\.remove\('aiads-provider-direct-host'\)/);
 });
 
-test('direct Providers host bypasses page-content width on mobile', () => {
+test('mobile Providers route is pinned to the visual viewport, not a narrow percentage parent', () => {
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main[\s\S]*width:100dvw!important/);
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.topbar[\s\S]*width:100dvw!important/);
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*width:100dvw!important/);
   assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.page-content[\s\S]*display:none!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*width:100%!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*max-width:none!important/);
 });
 
 test('Providers desktop and tablet keep professional full-width two-column layout', () => {
@@ -33,8 +34,8 @@ test('Providers desktop and tablet keep professional full-width two-column layou
   assert.match(script, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/);
 });
 
-test('Create button has no vertical offset and sits at geometric center', () => {
-  assert.match(script, /\.neo-bottom-nav>button\.neo-main[\s\S]*transform:translateY\(0\)!important/);
+test('Create button is nudged upward into visual center', () => {
+  assert.match(script, /\.neo-bottom-nav>button\.neo-main[\s\S]*transform:translateY\(-2px\)!important/);
 });
 
 test('Providers host fix loads after final layout layer with current cache version', () => {
@@ -42,5 +43,5 @@ test('Providers host fix loads after final layout layer with current cache versi
   const hostIndex = gateway.indexOf('/provider-mobile-host-fix.js');
   assert.ok(finalIndex >= 0);
   assert.ok(hostIndex > finalIndex);
-  assert.match(gateway, /provider-mobile-host-fix\.js\?v=provider-host-20260826b/);
+  assert.match(gateway, /provider-mobile-host-fix\.js\?v=provider-host-20260826c/);
 });
