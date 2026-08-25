@@ -19,7 +19,7 @@ test('global shell, lazy loader and redesign are cache-busted and deferred from 
 test('stable responsive styles are loaded on every fresh app shell', () => {
   assert.match(source, /<link rel=\"stylesheet\" href=\"\/asset-compact\.css\?v=compact-20260825b\" data-asset-compact>/);
   assert.match(source, /<link rel=\"stylesheet\" href=\"\/ui-stability\.css\?v=ui-stability-20260825a\">/);
-  assert.match(source, /<link rel=\"stylesheet\" href=\"\/responsive-professional\.css\?v=responsive-20260825a\">/);
+  assert.match(source, /<link rel=\"stylesheet\" href=\"\/responsive-professional\.css\?v=responsive-20260825b\">/);
 });
 
 test('startup keeps only backend foundation and workspace navigation eager', () => {
