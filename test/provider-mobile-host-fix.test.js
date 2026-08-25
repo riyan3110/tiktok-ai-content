@@ -20,10 +20,13 @@ test('mobile Providers is moved outside page-content and restored after navigati
   assert.match(script, /root\.classList\.remove\('aiads-provider-direct-host'\)/);
 });
 
-test('direct Providers host bypasses page-content width on mobile', () => {
+test('mobile Providers and topbar are anchored to viewport edges rather than inherited width', () => {
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.topbar[\s\S]*position:fixed!important/);
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.topbar[\s\S]*left:0!important[\s\S]*right:0!important/);
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*position:fixed!important/);
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*left:0!important[\s\S]*right:0!important[\s\S]*bottom:0!important/);
   assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.page-content[\s\S]*display:none!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*width:100%!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*max-width:none!important/);
+  assert.doesNotMatch(script, /100dvw/);
 });
 
 test('Providers desktop and tablet keep professional full-width two-column layout', () => {
@@ -33,8 +36,11 @@ test('Providers desktop and tablet keep professional full-width two-column layou
   assert.match(script, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/);
 });
 
-test('Create button has no vertical offset and sits at geometric center', () => {
-  assert.match(script, /\.neo-bottom-nav>button\.neo-main[\s\S]*transform:translateY\(0\)!important/);
+test('Create button is mathematically centered in bottom navigation', () => {
+  assert.match(script, /button\.neo-main[\s\S]*position:absolute!important/);
+  assert.match(script, /button\.neo-main[\s\S]*left:50%!important/);
+  assert.match(script, /button\.neo-main[\s\S]*top:50%!important/);
+  assert.match(script, /button\.neo-main[\s\S]*transform:translate\(-50%,-50%\)!important/);
 });
 
 test('Providers host fix loads after final layout layer with current cache version', () => {
@@ -42,5 +48,5 @@ test('Providers host fix loads after final layout layer with current cache versi
   const hostIndex = gateway.indexOf('/provider-mobile-host-fix.js');
   assert.ok(finalIndex >= 0);
   assert.ok(hostIndex > finalIndex);
-  assert.match(gateway, /provider-mobile-host-fix\.js\?v=provider-host-20260826b/);
+  assert.match(gateway, /provider-mobile-host-fix\.js\?v=provider-host-20260826c/);
 });
