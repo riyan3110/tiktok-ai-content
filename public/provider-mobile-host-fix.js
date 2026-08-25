@@ -11,7 +11,7 @@
   let queued = false;
 
   const style = document.createElement('style');
-  style.dataset.aiadsProviderMobileHostFix = '20260826b';
+  style.dataset.aiadsProviderMobileHostFix = '20260826c';
   style.textContent = `
     /* Providers desktop/tablet stays inside the normal page container. */
     @media(min-width:768px){
@@ -43,15 +43,38 @@
     }
 
     @media(max-width:767px){
+      /*
+       * Do not use percentage width here. A stale/legacy parent can be narrower
+       * than the visual viewport, making width:100% inherit the same bad width.
+       * Pin the Providers route shell to the actual viewport instead.
+       */
       html.aiads-provider-direct-host,
       html.aiads-provider-direct-host body,
       html.aiads-provider-direct-host .app-shell,
       html.aiads-provider-direct-host .app-shell>main{
-        width:100%!important;
-        max-width:100%!important;
-        min-width:0!important;
+        width:100vw!important;
+        width:100dvw!important;
+        max-width:100vw!important;
+        max-width:100dvw!important;
+        min-width:100vw!important;
+        min-width:100dvw!important;
         margin:0!important;
+        padding-left:0!important;
+        padding-right:0!important;
         overflow-x:hidden!important;
+        box-sizing:border-box!important;
+      }
+
+      html.aiads-provider-direct-host .app-shell>main>.topbar{
+        width:100vw!important;
+        width:100dvw!important;
+        max-width:100vw!important;
+        max-width:100dvw!important;
+        min-width:100vw!important;
+        min-width:100dvw!important;
+        margin:0!important;
+        left:0!important;
+        right:auto!important;
         box-sizing:border-box!important;
       }
 
@@ -61,8 +84,10 @@
 
       html.aiads-provider-direct-host .app-shell>main>#ai-providers{
         display:block!important;
-        width:100%!important;
-        max-width:none!important;
+        width:100vw!important;
+        width:100dvw!important;
+        max-width:100vw!important;
+        max-width:100dvw!important;
         min-width:0!important;
         margin:0!important;
         padding:16px 10px 104px!important;
@@ -120,9 +145,9 @@
         min-width:0!important;
       }
 
-      /* Geometric center: no vertical translation. */
+      /* Visual center: the previous 0px position still reads slightly low. */
       .aiads-neo-theme .neo-bottom-nav>button.neo-main{
-        transform:translateY(0)!important;
+        transform:translateY(-2px)!important;
       }
     }
   `;
