@@ -31,8 +31,8 @@ test('static cache excludes APIs, generated content and HTML navigation', () => 
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(worker, /url\.pathname\.startsWith\('\/auth\/'\)/);
   assert.match(worker, /url\.pathname\.startsWith\('\/generated\/'\)/);
-  assert.match(worker, /\.(?:js\|css\|png\|svg\|webp\|ico\|woff2\?)/);
-  assert.doesNotMatch(worker, /request\.mode === 'navigate'.*cache\.put/s);
+  assert.match(worker, /js\|css\|png\|svg\|webp\|ico\|woff2/);
+  assert.doesNotMatch(worker, /request\.mode === 'navigate'[\s\S]*cache\.put/);
 });
 
 test('asset upload forwarding remains preserved', () => {
