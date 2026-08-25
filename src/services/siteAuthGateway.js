@@ -81,6 +81,7 @@ function createSiteAuthGateway(innerApp, config) {
       const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825g"></script>';
       const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260826i"></script>';
       const finalLayoutScript = '<script defer src="/neo-layout-final.js?v=neo-layout-final-20260826c"></script>';
+      const providerMobileHostFixScript = '<script defer src="/provider-mobile-host-fix.js?v=provider-host-20260826a"></script>';
       const startupScripts = [
         compactStyles,
         stabilityStyles,
@@ -92,7 +93,8 @@ function createSiteAuthGateway(innerApp, config) {
         chatScript,
         themeScript,
         polishScript,
-        finalLayoutScript
+        finalLayoutScript,
+        providerMobileHostFixScript
       ].filter(Boolean).join('\n');
       html = html.replace('</head>', `${startupScripts}\n</head>`);
 
