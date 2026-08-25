@@ -11,8 +11,37 @@
   let queued = false;
 
   const style = document.createElement('style');
-  style.dataset.aiadsProviderMobileHostFix = '20260826a';
+  style.dataset.aiadsProviderMobileHostFix = '20260826b';
   style.textContent = `
+    /* Providers desktop/tablet stays inside the normal page container. */
+    @media(min-width:768px){
+      .aiads-neo-theme #ai-providers,
+      .aiads-neo-theme #ai-providers .provider-heading,
+      .aiads-neo-theme #ai-providers .provider-defaults,
+      .aiads-neo-theme #ai-providers .provider-layout,
+      .aiads-neo-theme #ai-providers .provider-detail,
+      .aiads-neo-theme #ai-providers .pipeline-card{
+        width:100%!important;
+        max-width:100%!important;
+        min-width:0!important;
+        box-sizing:border-box!important;
+      }
+      .aiads-neo-theme #ai-providers{margin:0!important}
+      .aiads-neo-theme #ai-providers .provider-layout{
+        grid-template-columns:minmax(210px,260px) minmax(0,1fr)!important;
+      }
+      .aiads-neo-theme #ai-providers .provider-detail{min-width:0!important}
+    }
+
+    @media(min-width:1024px){
+      .aiads-neo-theme #ai-providers .provider-layout{
+        grid-template-columns:260px minmax(0,1fr)!important;
+      }
+      .aiads-neo-theme #ai-providers .provider-defaults{
+        grid-template-columns:repeat(3,minmax(0,1fr))!important;
+      }
+    }
+
     @media(max-width:767px){
       html.aiads-provider-direct-host,
       html.aiads-provider-direct-host body,
@@ -91,8 +120,9 @@
         min-width:0!important;
       }
 
+      /* Geometric center: no vertical translation. */
       .aiads-neo-theme .neo-bottom-nav>button.neo-main{
-        transform:translateY(2px)!important;
+        transform:translateY(0)!important;
       }
     }
   `;

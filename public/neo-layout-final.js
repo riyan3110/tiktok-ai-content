@@ -3,10 +3,8 @@
   if (window.__AIADS_NEO_LAYOUT_FINAL__) return;
   window.__AIADS_NEO_LAYOUT_FINAL__ = true;
 
-  const root = document.documentElement;
-  const managedInline = new Map();
   const style = document.createElement('style');
-  style.dataset.aiadsNeoLayoutFinal = '20260826c';
+  style.dataset.aiadsNeoLayoutFinal = '20260826d';
   style.textContent = `
     @media(max-width:767px){
       .aiads-neo-theme .neo-profile-top{
@@ -70,42 +68,13 @@
         display:grid!important;grid-template-rows:auto auto!important;place-items:center!important;
         justify-self:center!important;align-self:center!important;width:56px!important;min-width:56px!important;
         max-width:56px!important;height:56px!important;min-height:56px!important;margin:0!important;
-        padding:5px!important;transform:translateY(4px)!important;line-height:1!important;
+        padding:5px!important;transform:translateY(0)!important;line-height:1!important;
       }
       .aiads-neo-theme .neo-bottom-nav>button.neo-main i,
       .aiads-neo-theme .neo-bottom-nav>button.neo-main span{
         display:block!important;margin:0!important;line-height:1!important;text-align:center!important;
       }
       .aiads-neo-theme .neo-bottom-nav>button.neo-main span{font-size:.58rem!important;margin-top:2px!important}
-
-      html.aiads-provider-route #ai-providers,
-      html.aiads-provider-route #ai-providers .provider-heading,
-      html.aiads-provider-route #ai-providers .provider-defaults,
-      html.aiads-provider-route #ai-providers .provider-layout,
-      html.aiads-provider-route #ai-providers .provider-sidebar,
-      html.aiads-provider-route #ai-providers .provider-detail,
-      html.aiads-provider-route #ai-providers .provider-form,
-      html.aiads-provider-route #ai-providers .form-grid,
-      html.aiads-provider-route #ai-providers .pipeline-card{
-        width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important;
-      }
-      html.aiads-provider-route #ai-providers{margin:0!important;padding:0!important;overflow-x:hidden!important}
-      html.aiads-provider-route #ai-providers .provider-layout{display:block!important;min-height:0!important}
-      html.aiads-provider-route #ai-providers .provider-sidebar{
-        overflow:hidden!important;border-right:0!important;border-bottom:2px solid var(--neo-line)!important;
-      }
-      html.aiads-provider-route #ai-providers .provider-list{
-        width:100%!important;max-width:100%!important;min-width:0!important;display:flex!important;
-        overflow-x:auto!important;overflow-y:hidden!important;gap:7px!important;
-      }
-      html.aiads-provider-route #ai-providers .provider-item{
-        flex:0 0 min(180px,58vw)!important;width:auto!important;max-width:180px!important;min-width:0!important;
-      }
-      html.aiads-provider-route #ai-providers input,
-      html.aiads-provider-route #ai-providers select,
-      html.aiads-provider-route #ai-providers textarea{
-        width:100%!important;max-width:100%!important;min-width:0!important;
-      }
     }
 
     @media(max-width:420px){
@@ -126,113 +95,4 @@
     }
   `;
   document.head.appendChild(style);
-
-  function rememberSet(element, property, value) {
-    if (!element) return;
-    let saved = managedInline.get(element);
-    if (!saved) {
-      saved = new Map();
-      managedInline.set(element, saved);
-    }
-    if (!saved.has(property)) {
-      saved.set(property, {
-        value: element.style.getPropertyValue(property),
-        priority: element.style.getPropertyPriority(property)
-      });
-    }
-    element.style.setProperty(property, value, 'important');
-  }
-
-  function restoreManagedInline() {
-    for (const [element, properties] of managedInline.entries()) {
-      for (const [property, previous] of properties.entries()) {
-        if (previous.value) element.style.setProperty(property, previous.value, previous.priority || '');
-        else element.style.removeProperty(property);
-      }
-    }
-    managedInline.clear();
-  }
-
-  function providerIsActive() {
-    const provider = document.querySelector('#ai-providers');
-    return Boolean(provider && !provider.classList.contains('hidden'));
-  }
-
-  function forceProviderShell() {
-    const active = providerIsActive();
-    root.classList.toggle('aiads-provider-route', active);
-    restoreManagedInline();
-    if (!active || window.innerWidth > 767) return;
-
-    const viewport = Math.round(document.documentElement.clientWidth || window.innerWidth || 0);
-    if (!viewport) return;
-
-    const body = document.body;
-    const appShell = document.querySelector('.app-shell');
-    const shellMain = document.querySelector('.app-shell > main');
-    const topbar = shellMain?.querySelector(':scope > .topbar') || document.querySelector('.topbar');
-    const pageContent = shellMain?.querySelector(':scope > .page-content') || document.querySelector('.page-content');
-    const provider = document.querySelector('#ai-providers');
-    const width = `${viewport}px`;
-
-    [root, body, appShell, shellMain].forEach(element => {
-      rememberSet(element, 'width', width);
-      rememberSet(element, 'max-width', width);
-      rememberSet(element, 'min-width', '0');
-      rememberSet(element, 'margin-left', '0');
-      rememberSet(element, 'margin-right', '0');
-      rememberSet(element, 'overflow-x', 'hidden');
-      rememberSet(element, 'box-sizing', 'border-box');
-    });
-
-    rememberSet(shellMain, 'display', 'block');
-    rememberSet(topbar, 'left', '0');
-    rememberSet(topbar, 'right', 'auto');
-    rememberSet(topbar, 'width', width);
-    rememberSet(topbar, 'max-width', width);
-    rememberSet(topbar, 'box-sizing', 'border-box');
-
-    rememberSet(pageContent, 'width', width);
-    rememberSet(pageContent, 'max-width', width);
-    rememberSet(pageContent, 'min-width', '0');
-    rememberSet(pageContent, 'margin-left', '0');
-    rememberSet(pageContent, 'margin-right', '0');
-    rememberSet(pageContent, 'padding-left', '10px');
-    rememberSet(pageContent, 'padding-right', '10px');
-    rememberSet(pageContent, 'box-sizing', 'border-box');
-    rememberSet(pageContent, 'overflow-x', 'hidden');
-
-    rememberSet(provider, 'width', '100%');
-    rememberSet(provider, 'max-width', '100%');
-    rememberSet(provider, 'min-width', '0');
-    rememberSet(provider, 'margin-left', '0');
-    rememberSet(provider, 'margin-right', '0');
-    rememberSet(provider, 'box-sizing', 'border-box');
-  }
-
-  let syncQueued = false;
-  function queueProviderShell() {
-    if (syncQueued) return;
-    syncQueued = true;
-    requestAnimationFrame(() => {
-      syncQueued = false;
-      forceProviderShell();
-    });
-  }
-
-  function watchProviderRoute() {
-    const provider = document.querySelector('#ai-providers');
-    if (provider) {
-      const observer = new MutationObserver(queueProviderShell);
-      observer.observe(provider, { attributes: true, attributeFilter: ['class'] });
-    }
-    window.addEventListener('hashchange', queueProviderShell, { passive: true });
-    window.addEventListener('resize', queueProviderShell, { passive: true });
-    window.visualViewport?.addEventListener('resize', queueProviderShell, { passive: true });
-    document.addEventListener('click', queueProviderShell, true);
-    forceProviderShell();
-  }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchProviderRoute, { once: true });
-  else watchProviderRoute();
 })();
