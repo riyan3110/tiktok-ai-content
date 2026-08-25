@@ -1,0 +1,111 @@
+/* Stable UI layer for the mobile neo dashboard.
+   Loaded eagerly by the authenticated app shell so refreshes do not depend on lazy modules. */
+
+/* Compact TikTok controls on Home */
+.neo-home-tiktok{
+  margin:0 10px 8px!important;
+  min-height:40px!important;
+  padding:6px 8px!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  align-items:center!important;
+  gap:6px!important;
+  border-radius:12px!important;
+}
+.neo-home-tiktok #tiktok-status{
+  min-width:0!important;
+  margin:0!important;
+  font-size:.66rem!important;
+  line-height:1.15!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+.neo-home-tiktok .tiktok-actions{
+  width:auto!important;
+  margin:0 0 0 auto!important;
+  display:flex!important;
+  align-items:center!important;
+  flex-wrap:nowrap!important;
+  gap:4px!important;
+}
+.neo-home-tiktok .tiktok-actions a,
+.neo-home-tiktok .tiktok-actions button{
+  width:auto!important;
+  min-width:0!important;
+  min-height:26px!important;
+  height:26px!important;
+  padding:2px 7px!important;
+  border-width:1.5px!important;
+  border-radius:8px!important;
+  font-size:.58rem!important;
+  line-height:1!important;
+  box-shadow:none!important;
+  white-space:nowrap!important;
+}
+@media(max-width:560px){
+  .neo-home-tiktok{grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important}
+  .neo-home-tiktok .tiktok-actions{width:auto!important}
+}
+
+/* Content Studio: remove legacy dark form surfaces */
+.aiads-neo-theme #content-studio .studio-card,
+.aiads-neo-theme #content-studio .form-section,
+.aiads-neo-theme #content-studio .form-section>summary,
+.aiads-neo-theme #content-studio .form-section-body,
+.aiads-neo-theme #content-studio .prompt-source,
+.aiads-neo-theme #content-studio .studio-assets,
+.aiads-neo-theme #content-studio .active-job,
+.aiads-neo-theme #content-studio .result-card,
+.aiads-neo-theme #content-studio .result-card-body{
+  background:#fffefa!important;
+  background-image:none!important;
+  color:#151b2b!important;
+}
+.aiads-neo-theme #content-studio .form-section{
+  border:1.6px solid #1b2435!important;
+  border-radius:12px!important;
+  overflow:hidden!important;
+  margin-bottom:10px!important;
+}
+.aiads-neo-theme #content-studio .form-section>summary{
+  border:0!important;
+  color:#151b2b!important;
+}
+.aiads-neo-theme #content-studio .form-section[open]>summary{
+  border-bottom:1px solid #d8dde3!important;
+}
+.aiads-neo-theme #content-studio .form-section small,
+.aiads-neo-theme #content-studio .studio-assets small,
+.aiads-neo-theme #content-studio .active-job p{
+  color:#667085!important;
+}
+.aiads-neo-theme #content-studio .provider-empty-warning{
+  background:#fff5d8!important;
+  color:#151b2b!important;
+  border:1.5px solid #1b2435!important;
+}
+.aiads-neo-theme #content-studio .result-preview,
+.aiads-neo-theme #content-studio .viewer-preview{
+  background:#eef1f3!important;
+}
+.aiads-neo-theme #content-studio .studio-tabs button{
+  background:#fffefa!important;
+  color:#151b2b!important;
+}
+.aiads-neo-theme #content-studio .studio-tabs button.active{
+  background:#ffe666!important;
+  color:#151b2b!important;
+}
+
+/* Keep the floating chat launcher above sticky mobile navigation. */
+.aiads-chat-launcher{
+  position:fixed!important;
+  right:16px!important;
+  bottom:calc(82px + env(safe-area-inset-bottom))!important;
+  z-index:2147483000!important;
+  display:grid!important;
+  visibility:visible!important;
+  opacity:1!important;
+}
+.aiads-chat-panel{z-index:2147482999!important}

@@ -27,6 +27,15 @@ test('home polish removes drawer, rehomes TikTok, mounts logo, and fixes history
   assert.doesNotMatch(polish, /XMLHttpRequest/);
 });
 
+test('TikTok Home connection controls stay compact on mobile', () => {
+  assert.match(polish, /min-height:40px!important/);
+  assert.match(polish, /grid-template-columns:minmax\(0,1fr\) auto!important/);
+  assert.match(polish, /min-height:26px!important/);
+  assert.match(polish, /font-size:\.58rem!important/);
+  assert.match(polish, /flex-wrap:nowrap!important/);
+  assert.doesNotMatch(polish, /flex-direction:column!important/);
+});
+
 test('home polish observes only Home/TikTok chrome instead of the whole document', () => {
   assert.match(polish, /observer\.observe\(sidebar, \{ childList: true \}\)/);
   assert.match(polish, /observer\.observe\(card, \{ childList: true \}\)/);
