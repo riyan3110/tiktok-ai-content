@@ -56,7 +56,9 @@ function createSiteAuthGateway(innerApp, config) {
       const file = `${config.root}/public/index.html`;
       let html = await fs.readFile(file, 'utf8');
       const themeScript = '<script src="/floating-chat-theme.js?v=neo-dashboard-20260825"></script>';
+      const polishScript = '<script src="/neo-home-polish.js?v=home-polish-20260825"></script>';
       if (!html.includes('/floating-chat-theme.js')) html = html.replace('</body>', `${themeScript}\n</body>`);
+      if (!html.includes('/neo-home-polish.js')) html = html.replace('</body>', `${polishScript}\n</body>`);
       res.set('Cache-Control', 'no-cache');
       res.type('html').send(html);
     } catch (error) { next(error); }
