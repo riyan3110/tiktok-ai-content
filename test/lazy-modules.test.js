@@ -19,7 +19,7 @@ test('Text Content asset picker loads Assets before retrying click', () => {
 });
 
 test('project prompt tab loads Prompt Studio before retrying click', () => {
-  assert.match(loader, /\[data-project-tab=\\"prompts\\"\]/);
+  assert.match(loader, /\[data-project-tab="prompts"\]/);
   assert.match(loader, /await load\('prompt-studio'\); promptTab\.click\(\)/);
 });
 
