@@ -27,6 +27,13 @@ test('home polish removes drawer, rehomes TikTok, mounts logo, and fixes history
   assert.doesNotMatch(polish, /XMLHttpRequest/);
 });
 
+test('home polish observes only Home/TikTok chrome instead of the whole document', () => {
+  assert.match(polish, /observer\.observe\(sidebar, \{ childList: true \}\)/);
+  assert.match(polish, /observer\.observe\(card, \{ childList: true \}\)/);
+  assert.doesNotMatch(polish, /observe\(document\.documentElement/);
+  assert.doesNotMatch(polish, /attributes:\s*true/);
+});
+
 test('authenticated app shell loads polish after the neo theme', () => {
   const themeIndex = gateway.indexOf('/floating-chat-theme.js');
   const polishIndex = gateway.indexOf('/neo-home-polish.js');
