@@ -1,0 +1,57 @@
+/* Professional responsive overrides for the neo UI. */
+html.aiads-neo-theme{-webkit-text-size-adjust:100%!important;text-size-adjust:100%!important}
+html.aiads-neo-theme main{margin-left:0!important;width:100%!important;max-width:100vw!important;min-width:0!important}
+.aiads-neo-theme .page-content{width:min(calc(100% - 40px),1280px)!important;max-width:1280px!important;min-width:0!important;margin-inline:auto!important}
+
+/* TikTok controls belong next to READY, not in a full-width row. */
+.neo-status-cluster{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:6px!important;min-width:0!important}
+.neo-home-tiktok{margin:0!important;padding:0!important;min-height:0!important;display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:4px!important;border:0!important;background:transparent!important}
+.neo-home-tiktok .tiktok-status{display:none!important}
+.neo-home-tiktok .tiktok-actions{width:auto!important;margin:0!important;display:flex!important;align-items:center!important;flex-wrap:nowrap!important;gap:4px!important}
+.neo-home-tiktok .tiktok-actions a,.neo-home-tiktok .tiktok-actions button{width:auto!important;min-width:0!important;min-height:25px!important;height:25px!important;padding:2px 7px!important;border-width:1.4px!important;border-radius:8px!important;font-size:.57rem!important;line-height:1!important;box-shadow:none!important;white-space:nowrap!important}
+.neo-profile-chip[data-tiktok-state="connected"]{background:#c9f7d7!important;color:#0a5b2c!important;border-color:#168448!important}
+
+/* AI Providers must retain the same viewport scale as all other pages. */
+.aiads-neo-theme #ai-providers,.aiads-neo-theme #ai-providers .provider-heading,.aiads-neo-theme #ai-providers .provider-defaults,.aiads-neo-theme #ai-providers .provider-layout,.aiads-neo-theme #ai-providers .provider-sidebar,.aiads-neo-theme #ai-providers .provider-detail{width:100%!important;max-width:100%!important;min-width:0!important}
+.aiads-neo-theme #ai-providers{overflow-x:clip!important}
+.aiads-neo-theme #ai-providers .provider-layout{grid-template-columns:minmax(220px,260px) minmax(0,1fr)!important;min-height:0!important}
+.aiads-neo-theme #ai-providers .provider-detail{padding:22px!important}
+.aiads-neo-theme #ai-providers .provider-form .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.aiads-neo-theme #ai-providers .provider-form input,.aiads-neo-theme #ai-providers .provider-form select,.aiads-neo-theme #ai-providers .provider-form textarea,.aiads-neo-theme #ai-providers .provider-search input,.aiads-neo-theme #ai-providers .provider-defaults select{max-width:100%!important}
+
+@media(min-width:1024px){
+  .aiads-neo-theme .topbar{padding-left:max(24px,calc((100vw - 1280px)/2 + 20px))!important;padding-right:max(24px,calc((100vw - 1280px)/2 + 20px))!important}
+  .aiads-neo-theme .page-content{width:min(calc(100% - 64px),1280px)!important;padding-top:32px!important}
+  .aiads-neo-theme .neo-home-dashboard{max-width:1180px!important;margin-inline:auto!important}
+  .aiads-neo-theme #ai-providers .provider-defaults{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .aiads-neo-theme #ai-providers .provider-layout{grid-template-columns:260px minmax(0,1fr)!important}
+  .aiads-neo-theme #ai-providers .provider-detail{padding:26px 28px!important}
+}
+
+@media(min-width:768px) and (max-width:1023px){
+  .aiads-neo-theme .page-content{width:calc(100% - 32px)!important}
+  .aiads-neo-theme #ai-providers .provider-layout{grid-template-columns:210px minmax(0,1fr)!important}
+  .aiads-neo-theme #ai-providers .provider-detail{padding:18px!important}
+}
+
+@media(max-width:767px){
+  .aiads-neo-theme .page-content{width:calc(100% - 20px)!important;max-width:none!important}
+  .neo-profile-top{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto!important;gap:9px!important;align-items:center!important}
+  .neo-home-tiktok .tiktok-actions a,.neo-home-tiktok .tiktok-actions button{min-height:24px!important;height:24px!important;padding:2px 6px!important;font-size:.54rem!important}
+  .aiads-neo-theme #ai-providers .provider-heading h1{font-size:1.8rem!important;line-height:1.05!important}
+  .aiads-neo-theme #ai-providers .provider-defaults{grid-template-columns:1fr!important}
+  .aiads-neo-theme #ai-providers .provider-layout{display:block!important;min-height:0!important}
+  .aiads-neo-theme #ai-providers .provider-sidebar{padding:10px!important;border-right:0!important;border-bottom:2px solid var(--neo-line)!important}
+  .aiads-neo-theme #ai-providers .provider-list{display:flex!important;gap:7px!important;overflow-x:auto!important;overscroll-behavior-inline:contain!important;scrollbar-width:thin!important}
+  .aiads-neo-theme #ai-providers .provider-item{flex:0 0 min(180px,68vw)!important;width:auto!important}
+  .aiads-neo-theme #ai-providers .provider-detail{padding:14px!important}
+  .aiads-neo-theme #ai-providers .provider-form .form-grid{grid-template-columns:1fr!important}
+  .aiads-neo-theme #ai-providers .secret-field{grid-template-columns:1fr 1fr!important}
+  .aiads-neo-theme #ai-providers .secret-field input{grid-column:1/-1!important}
+  .aiads-neo-theme #ai-providers input,.aiads-neo-theme #ai-providers select,.aiads-neo-theme #ai-providers textarea{font-size:16px!important}
+}
+
+@media(max-width:430px){
+  .neo-profile-top{grid-template-columns:auto minmax(0,1fr)!important}
+  .neo-status-cluster{grid-column:1/-1!important;justify-content:flex-end!important;margin-top:-2px!important}
+}
