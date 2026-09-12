@@ -2,6 +2,8 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
+const CACHE_BUST_VERSION = 'cache-20260912b';
+
 function createSiteAuthGateway(innerApp, config) {
   const gateway = express();
   gateway.set('trust proxy', 1);
@@ -51,6 +53,18 @@ function createSiteAuthGateway(innerApp, config) {
 
   gateway.use(auth.requireAuth);
 
+  // During active UI development, never let HTML/JS/CSS responses become a
+  // stale browser cache. Query-string versioning below handles already-cached
+  // asset URLs; these headers keep future responses fresh as well.
+  gateway.use((req, res, next) => {
+    if (req.method === 'GET' && /\.(?:html|js|css)$/.test(req.path)) {
+      res.set('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
+    }
+    next();
+  });
+
   // Automatic Text Content scheduling is temporarily suspended. Keep the
   // underlying rows untouched, but do not expose live scheduling operations.
   gateway.get('/automation/today', (req, res) => res.json([]));
@@ -63,6 +77,10 @@ function createSiteAuthGateway(innerApp, config) {
     try {
       const file = `${config.root}/public/index.html`;
       let html = await fs.readFile(file, 'utf8');
+
+      // Give every JS/CSS reference in the shell a fresh URL. This immediately
+      // bypasses any old browser/proxy cache without requiring users to clear data.
+      html = html.replace(/((?:src|href)=\")(\/[^\"]+\.(?:js|css))(?:\?[^\"]*)?(\")/g, `$1$2?v=${CACHE_BUST_VERSION}$3`);
 
       // Keep only the truly global shell eager. Feature/page bundles are loaded
       // by lazy-modules.js on first use, then remain cached for later navigation.
@@ -81,19 +99,19 @@ function createSiteAuthGateway(innerApp, config) {
 
       // Stable UI layers are eager so refreshes and responsive breakpoints do not
       // depend on opening a lazy feature first.
-      const compactStyles = '<link rel="stylesheet" href="/asset-compact.css?v=compact-20260825b" data-asset-compact>';
-      const stabilityStyles = '<link rel="stylesheet" href="/ui-stability.css?v=ui-stability-20260825a">';
-      const responsiveStyles = '<link rel="stylesheet" href="/responsive-professional.css?v=responsive-20260826c">';
-      const performanceScript = '<script defer src="/performance-shell.js?v=global-perf-20260825b"></script>';
-      const lazyScript = '<script defer src="/lazy-modules.js?v=global-perf-20260825b"></script>';
-      const chatScript = '<script defer src="/floating-chat.js?v=floating-chat-20260825a"></script>';
-      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825g"></script>';
-      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260826i"></script>';
-      const finalLayoutScript = '<script defer src="/neo-layout-final.js?v=neo-layout-final-20260826d"></script>';
-      const providerMobileHostFixScript = '<script defer src="/provider-mobile-host-fix.js?v=provider-host-20260826c"></script>';
-      const providerLegalFixScript = '<script defer src="/provider-legal-fix.js?v=provider-legal-20260826a"></script>';
-      const tiktokControlFixScript = '<script defer src="/tiktok-control-fix.js?v=tiktok-control-20260826a"></script>';
-      const automationSuspendScript = '<script defer src="/automation-suspend.js?v=automation-suspend-20260826a"></script>';
+      const compactStyles = `<link rel="stylesheet" href="/asset-compact.css?v=${CACHE_BUST_VERSION}" data-asset-compact>`;
+      const stabilityStyles = `<link rel="stylesheet" href="/ui-stability.css?v=${CACHE_BUST_VERSION}">`;
+      const responsiveStyles = `<link rel="stylesheet" href="/responsive-professional.css?v=${CACHE_BUST_VERSION}">`;
+      const performanceScript = `<script defer src="/performance-shell.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const lazyScript = `<script defer src="/lazy-modules.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const chatScript = `<script defer src="/floating-chat.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const themeScript = `<script defer src="/floating-chat-theme.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const polishScript = `<script defer src="/neo-home-polish.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const finalLayoutScript = `<script defer src="/neo-layout-final.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const providerMobileHostFixScript = `<script defer src="/provider-mobile-host-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const providerLegalFixScript = `<script defer src="/provider-legal-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const tiktokControlFixScript = `<script defer src="/tiktok-control-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const automationSuspendScript = `<script defer src="/automation-suspend.js?v=${CACHE_BUST_VERSION}"></script>`;
       const startupScripts = [
         compactStyles,
         stabilityStyles,
@@ -114,7 +132,9 @@ function createSiteAuthGateway(innerApp, config) {
       ].filter(Boolean).join('\n');
       html = html.replace('</head>', `${startupScripts}\n</head>`);
 
-      res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+      res.set('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
       res.type('html').send(html);
     } catch (error) { next(error); }
   };
