@@ -1,10 +1,10 @@
 (() => {
   'use strict';
-  if (window.__AIADS_NEO_LAYOUT_FINAL__) return;
-  window.__AIADS_NEO_LAYOUT_FINAL__ = true;
+  if (window.__AIADS_NEO_LAYOUT_FINAL_ICONS_V2__) return;
+  window.__AIADS_NEO_LAYOUT_FINAL_ICONS_V2__ = true;
 
   const style = document.createElement('style');
-  style.dataset.aiadsNeoLayoutFinal = '20260912-icons-v1';
+  style.dataset.aiadsNeoLayoutFinal = '20260912-icons-v2-force';
   style.textContent = `
     @media(max-width:767px){
       .aiads-neo-theme .neo-profile-top{
@@ -90,7 +90,7 @@
       stroke-linecap:round!important;
       stroke-linejoin:round!important;
     }
-    .aiads-neo-theme .neo-shortcut i{width:27px!important;height:27px!important}
+    .aiads-neo-theme .neo-shortcut i{width:27px!important;height:27px!important;display:grid!important;place-items:center!important}
     .aiads-neo-theme .neo-bottom-nav i{width:22px!important;height:22px!important;display:grid!important;place-items:center!important}
     .aiads-neo-theme .neo-bottom-nav .neo-main i{width:23px!important;height:23px!important}
     .aiads-neo-theme .neo-coach-art svg{width:30px!important;height:30px!important}
@@ -114,7 +114,7 @@
   `;
   document.head.appendChild(style);
 
-  const ICON_VERSION = '20260912-v1';
+  const ICON_VERSION = '20260912-v2-force';
   const svg = paths => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
   const icons = {
     assets: svg('<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'),
@@ -127,33 +127,43 @@
     text: svg('<path d="M6 2h9l4 4v16H6z"/><path d="M14 2v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/><path d="M9 9h2"/>'),
     create: svg('<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-5.76-1.49a.6.6 0 0 1 0-1.14L8.5 9.94A2 2 0 0 0 9.94 8.5l1.49-5.76a.6.6 0 0 1 1.14 0l1.49 5.76a2 2 0 0 0 1.44 1.44l5.76 1.49a.6.6 0 0 1 0 1.14l-5.76 1.49a2 2 0 0 0-1.44 1.44l-1.49 5.76a.6.6 0 0 1-1.14 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>'),
     account: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
-    coach: svg('<path d="M12 3v18"/><path d="M3 12h18"/><path d="m5 5 14 14"/><path d="m19 5-14 14"/>'),
     studio: svg('<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.5-4.5L5 21"/>')
   };
 
-  function paint(target, html) {
-    if (!target || target.dataset.neoIconVersion === ICON_VERSION) return;
+  function paint(target, html, key) {
+    if (!target) return false;
+    if (target.dataset.neoIconVersion === ICON_VERSION && target.dataset.neoIconKey === key && target.querySelector('svg')) return true;
     target.innerHTML = html;
     target.dataset.neoIconVersion = ICON_VERSION;
+    target.dataset.neoIconKey = key;
+    return true;
+  }
+
+  function shortcutByLabel(label) {
+    return [...document.querySelectorAll('.neo-shortcut')].find(node => node.querySelector('b')?.textContent?.trim().toLowerCase() === label.toLowerCase())?.querySelector('i') || null;
+  }
+
+  function navByLabel(label) {
+    return [...document.querySelectorAll('.neo-bottom-nav button')].find(node => node.querySelector('span')?.textContent?.trim().toLowerCase() === label.toLowerCase())?.querySelector('i') || null;
   }
 
   function applyIconPolish() {
-    paint(document.querySelector('.neo-shortcut[data-neo-target="assets"] i'), icons.assets);
-    paint(document.querySelector('.neo-shortcut[data-neo-target="generator"] i'), icons.prompt);
-    paint(document.querySelector('.neo-shortcut[data-neo-target="providers"] i'), icons.providers);
-    paint(document.querySelector('.neo-shortcut[data-neo-target="templates"] i'), icons.templates);
-    paint(document.querySelector('.neo-shortcut[data-neo-target="schedule"] i'), icons.schedule);
-    paint(document.querySelector('.neo-shortcut[data-neo-target="history"] i'), icons.history);
+    paint(document.querySelector('.neo-shortcut[data-neo-target="assets"] i') || shortcutByLabel('Assets'), icons.assets, 'assets');
+    paint(document.querySelector('.neo-shortcut[data-neo-target="generator"] i') || shortcutByLabel('Prompt'), icons.prompt, 'prompt');
+    paint(document.querySelector('.neo-shortcut[data-neo-target="providers"] i') || shortcutByLabel('Providers'), icons.providers, 'providers');
+    paint(document.querySelector('.neo-shortcut[data-neo-target="templates"] i') || shortcutByLabel('Templates'), icons.templates, 'templates');
+    paint(document.querySelector('.neo-shortcut[data-neo-target="schedule"] i') || shortcutByLabel('Jadwal'), icons.schedule, 'schedule');
+    paint(document.querySelector('.neo-shortcut[data-neo-target="history"] i') || shortcutByLabel('Riwayat'), icons.history, 'history');
 
-    paint(document.querySelector('.neo-bottom-nav [data-neo-target="home"] i'), icons.home);
-    paint(document.querySelector('.neo-bottom-nav [data-neo-target="text"] i'), icons.text);
-    paint(document.querySelector('.neo-bottom-nav [data-neo-target="studio"] i'), icons.create);
-    paint(document.querySelector('.neo-bottom-nav [data-neo-target="assets"] i'), icons.assets);
-    paint(document.querySelector('.neo-bottom-nav [data-neo-target="profile"] i'), icons.account);
+    paint(document.querySelector('.neo-bottom-nav [data-neo-target="home"] i') || navByLabel('Beranda'), icons.home, 'home');
+    paint(document.querySelector('.neo-bottom-nav [data-neo-target="text"] i') || navByLabel('Text'), icons.text, 'text');
+    paint(document.querySelector('.neo-bottom-nav [data-neo-target="studio"] i') || navByLabel('Buat'), icons.create, 'create');
+    paint(document.querySelector('.neo-bottom-nav [data-neo-target="assets"] i') || navByLabel('Assets'), icons.assets, 'assets');
+    paint(document.querySelector('.neo-bottom-nav [data-neo-target="profile"] i') || navByLabel('Akun'), icons.account, 'account');
 
-    paint(document.querySelector('.neo-coach-art'), icons.create);
-    paint(document.querySelector('.neo-feature-card[data-neo-target="text"] .neo-feature-art'), icons.text);
-    paint(document.querySelector('.neo-feature-card[data-neo-target="studio"] .neo-feature-art'), icons.studio);
+    paint(document.querySelector('.neo-coach-art'), icons.create, 'create');
+    paint(document.querySelector('.neo-feature-card[data-neo-target="text"] .neo-feature-art'), icons.text, 'text');
+    paint(document.querySelector('.neo-feature-card[data-neo-target="studio"] .neo-feature-art'), icons.studio, 'studio');
   }
 
   let queued = false;
@@ -166,9 +176,13 @@
     });
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', queuePaint, { once: true });
-  else queuePaint();
+  const start = () => {
+    applyIconPolish();
+    [50, 150, 400, 1000, 2000, 5000].forEach(delay => setTimeout(applyIconPolish, delay));
+    const root = document.body || document.documentElement;
+    if (root) new MutationObserver(queuePaint).observe(root, { childList: true, subtree: true });
+  };
 
-  const observer = new MutationObserver(queuePaint);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
 })();
