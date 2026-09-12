@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260912g-provider-simple';
+const CACHE_BUST_VERSION = 'cache-20260912h-provider-simple-eager';
 
 function createSiteAuthGateway(innerApp, config) {
   const gateway = express();
@@ -92,6 +92,7 @@ function createSiteAuthGateway(innerApp, config) {
       const responsiveStyles = `<link rel="stylesheet" href="/responsive-professional.css?v=${CACHE_BUST_VERSION}">`;
       const performanceScript = `<script defer src="/performance-shell.js?v=${CACHE_BUST_VERSION}"></script>`;
       const lazyScript = `<script defer src="/lazy-modules.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const providerSimpleScript = `<script defer src="/ai-providers-simple.js?v=${CACHE_BUST_VERSION}"></script>`;
       const chatScript = `<script defer src="/floating-chat.js?v=${CACHE_BUST_VERSION}"></script>`;
       const themeScript = `<script defer src="/floating-chat-theme.js?v=${CACHE_BUST_VERSION}"></script>`;
       const pullRefreshScript = `<script defer src="/chat-copy-pull-refresh.js?v=${CACHE_BUST_VERSION}"></script>`;
@@ -110,6 +111,7 @@ function createSiteAuthGateway(innerApp, config) {
         performanceScript,
         lazyScript,
         eagerScripts.get('/workspace.js'),
+        providerSimpleScript,
         chatScript,
         themeScript,
         pullRefreshScript,
