@@ -124,6 +124,10 @@
   // The service worker preserves the upload compatibility route and caches only
   // versioned/static GET assets. Registration itself must never block startup.
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js?v=global-perf-20260825b').catch(() => {}), { once: true });
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js?v=pullrefresh-20260912d')
+        .then(registration => registration.update().catch(() => {}))
+        .catch(() => {});
+    }, { once: true });
   }
 })();
