@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260912e-ui-final';
+const CACHE_BUST_VERSION = 'cache-20260912g-provider-simple';
 
 function createSiteAuthGateway(innerApp, config) {
   const gateway = express();
@@ -53,9 +53,6 @@ function createSiteAuthGateway(innerApp, config) {
 
   gateway.use(auth.requireAuth);
 
-  // During active UI development, never let HTML/JS/CSS responses become a
-  // stale browser cache. Query-string versioning below handles already-cached
-  // asset URLs; these headers keep future responses fresh as well.
   gateway.use((req, res, next) => {
     if (req.method === 'GET' && /\.(?:html|js|css)$/.test(req.path)) {
       res.set('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
@@ -65,8 +62,6 @@ function createSiteAuthGateway(innerApp, config) {
     next();
   });
 
-  // Automatic Text Content scheduling is temporarily suspended. Keep the
-  // underlying rows untouched, but do not expose live scheduling operations.
   gateway.get('/automation/today', (req, res) => res.json([]));
   const rejectSuspendedAutomation = (req, res) => res.status(503).json({ error: 'Jadwal otomatis sementara dinonaktifkan.' });
   gateway.post('/automation/schedules', rejectSuspendedAutomation);
@@ -77,13 +72,8 @@ function createSiteAuthGateway(innerApp, config) {
     try {
       const file = `${config.root}/public/index.html`;
       let html = await fs.readFile(file, 'utf8');
-
-      // Give every JS/CSS reference in the shell a fresh URL. This immediately
-      // bypasses any old browser/proxy cache without requiring users to clear data.
       html = html.replace(/((?:src|href)=\")(\/[^\"]+\.(?:js|css))(?:\?[^\"]*)?(\")/g, `$1$2?v=${CACHE_BUST_VERSION}$3`);
 
-      // Keep only the truly global shell eager. Feature/page bundles are loaded
-      // by lazy-modules.js on first use, then remain cached for later navigation.
       const eagerPaths = new Set([
         '/icons.js',
         '/backend-foundation.js',
@@ -97,8 +87,6 @@ function createSiteAuthGateway(innerApp, config) {
         return '';
       });
 
-      // Stable UI layers are eager so refreshes and responsive breakpoints do not
-      // depend on opening a lazy feature first.
       const compactStyles = `<link rel="stylesheet" href="/asset-compact.css?v=${CACHE_BUST_VERSION}" data-asset-compact>`;
       const stabilityStyles = `<link rel="stylesheet" href="/ui-stability.css?v=${CACHE_BUST_VERSION}">`;
       const responsiveStyles = `<link rel="stylesheet" href="/responsive-professional.css?v=${CACHE_BUST_VERSION}">`;
