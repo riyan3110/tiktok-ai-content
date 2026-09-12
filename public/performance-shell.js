@@ -121,11 +121,11 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeDomShell, { once: true });
   else initializeDomShell();
 
-  // The service worker preserves the upload compatibility route and caches only
-  // versioned/static GET assets. Registration itself must never block startup.
+  // The service worker keeps upload compatibility and caches media/fonts only.
+  // A versioned registration URL forces browsers to install the current worker.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/service-worker.js?v=pullrefresh-20260912d')
+      navigator.serviceWorker.register('/service-worker.js?v=ui-20260912e')
         .then(registration => registration.update().catch(() => {}))
         .catch(() => {});
     }, { once: true });
