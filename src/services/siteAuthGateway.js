@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260912d-pullrefresh';
+const CACHE_BUST_VERSION = 'cache-20260912e-ui-final';
 
 function createSiteAuthGateway(innerApp, config) {
   const gateway = express();
