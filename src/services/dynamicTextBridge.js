@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const { StorageService } = require('../storage/service');
 const sourceFetcher = require('./sourceFetcher');
 const floatingChat = require('./floatingChatPatch');
@@ -35,6 +36,18 @@ async function prepareVisionParts(storage, assetIds = []) {
     parts.push({ type: 'image_url', image_url: { url: `data:${preview.mimeType};base64,${preview.data.toString('base64')}` } });
   }
   return { ids, parts };
+}
+
+function sessionJson(row) {
+  return row && {
+    id: row.id,
+    title: row.title,
+    provider: row.provider,
+    model: row.model,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    sharedTextDefault: true
+  };
 }
 
 function binding(dynamicAi, db) {
@@ -101,10 +114,9 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
   app.post('/api/floating-chat/sessions', (req, res) => {
     try {
       const { provider, model } = binding(dynamicAi, db);
-      const id = require('node:crypto').randomUUID();
+      const id = crypto.randomUUID();
       db.prepare('INSERT INTO floating_chat_sessions(id,title,provider,model) VALUES(?,?,?,?)').run(id, 'New chat', provider.id, model);
-      const row = db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(id);
-      res.status(201).json({ id: row.id, title: row.title, provider: row.provider, model: row.model, createdAt: row.created_at, updatedAt: row.updated_at, sharedTextDefault: true });
+      res.status(201).json(sessionJson(db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(id)));
     } catch (error) { floatingChat.sendError(res, error); }
   });
 
@@ -151,10 +163,7 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
         .run(result.providerId || provider.id, result.model || model, session.id);
 
       res.json({
-        session: {
-          ...db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(session.id),
-          sharedTextDefault: true
-        },
+        session: sessionJson(db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(session.id)),
         user: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(userResult.lastInsertRowid)),
         assistant: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(assistantResult.lastInsertRowid))
       });
