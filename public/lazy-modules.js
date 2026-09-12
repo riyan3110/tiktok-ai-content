@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'global-perf-20260825a';
+  const VERSION = 'cache-20260912b';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
