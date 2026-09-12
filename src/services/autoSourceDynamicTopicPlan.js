@@ -197,7 +197,7 @@ async function createPlan(topic = '', { client } = {}) {
   const cleanTopic = clean(topic);
   if (!cleanTopic) return fallbackPlan(cleanTopic);
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   try {
     const response = await openai.chat.completions.create({
       model: config.aiModel,

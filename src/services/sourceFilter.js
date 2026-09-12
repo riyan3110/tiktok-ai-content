@@ -676,7 +676,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
   const bank = extractFactBank(sources, topic);
   if (!bank.length) throw Object.assign(new Error('Sumber tidak memiliki fakta yang layak untuk memverifikasi konten.'), { status: 422 });
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let errors = [];
   let draft = base;
   for (let attempt = 1; attempt <= MAX_VERIFY_ATTEMPTS; attempt += 1) {

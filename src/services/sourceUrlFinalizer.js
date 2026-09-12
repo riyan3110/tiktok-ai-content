@@ -689,7 +689,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
   const effectiveFormat = generated?.effectiveContentFormat || format || 'Fakta singkat';
   const resolvedTopic = String(topic || generated?.topic || sources?.[0]?.title || 'Ringkasan sumber').trim();
   const sections = targetSections(generated, effectiveFormat, seedFacts, sources, resolvedTopic);
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let draft = { ...generated, topic: resolvedTopic };
   let lastErrors = [];
 

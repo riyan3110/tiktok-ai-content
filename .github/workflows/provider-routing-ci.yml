@@ -1,0 +1,30 @@
+name: Provider Routing CI
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'test/**'
+      - 'package*.json'
+      - '.github/workflows/provider-routing-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  provider-routing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax check
+        run: npm run check
+      - name: Full test suite
+        run: npm test

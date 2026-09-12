@@ -151,7 +151,7 @@ async function compose({ options = {}, sources = [], discovery = null, client } 
     });
   }
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let writerRaw;
   try {
     writerRaw = await callJson(openai, 'Anda penulis carousel Indonesia yang wajib menjaga identitas model/versi topik.', writerPrompt({ topic, format, packets }));

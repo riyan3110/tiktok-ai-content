@@ -34,7 +34,7 @@ test('generate memakai Chat Completions dan mempertahankan struktur JSON', async
   const result = await generateContent([], client);
 
   assert.deepEqual(result, expected);
-  assert.equal(request.model, 'gemini-2.5-flash-lite');
+  assert.equal(request.model, undefined); // Retired environment model is never forwarded; the shared client resolves the selected model.
   assert.equal(request.response_format.type, 'json_object');
   assert.match(request.messages[1].content, /"required":\["focus","topic","hook","body","caption","hashtags","cta","trendKeywordsUsed"\]/);
 });

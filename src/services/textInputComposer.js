@@ -560,8 +560,7 @@ function buildContent(parsed, slides) {
 async function compose({ text, client } = {}) {
   const sourceText = validateInputText(text);
   const requestedSlideCount = targetSlideCount(sourceText);
-  if (!client) config.validateAiConfig();
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   const messages = [
     { role: 'system', content: 'Anda editor layout carousel Indonesia dalam mode transform-only. Fakta hanya boleh berasal dari teks pengguna yang diberikan.' },
     { role: 'user', content: promptFor(sourceText, requestedSlideCount) }

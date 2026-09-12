@@ -580,8 +580,7 @@ function parseOutput(response) {
 
 async function generateContent(previousTopics, options = {}, client) {
   if (options?.chat) { client = options; options = {}; }
-  if (!client) config.validateAiConfig();
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   const factBank = options.useSources ? extractVerifiedFacts(options.sources, { topic: options.requestedTopic || options.mainTopic || '' }) : [];
   if (options.useSources && !factBank.length) throw sourceUnavailableError();
   const category = options.contentCategory || 'Iklan & UGC';
@@ -684,8 +683,7 @@ async function generateContent(previousTopics, options = {}, client) {
 }
 
 async function generateAngles(mainTopic, count, options = {}, client) {
-  if (!client) config.validateAiConfig();
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   const response = await openai.chat.completions.create({
     model: config.aiModel,
     messages: [{ role: 'system', content: 'Anda adalah perencana konten TikTok Indonesia.' }, { role: 'user', content: `Buat tepat ${count} sudut pembahasan yang jelas berbeda untuk topik utama "${mainTopic}", kategori "${options.category}", format "${options.format}". Pastikan judul, hook, bahasan, caption, dan CTA nantinya dapat berbeda serta kemiripan isi di bawah 60%. Kembalikan hanya JSON {"angles":["..."]}.` }],
