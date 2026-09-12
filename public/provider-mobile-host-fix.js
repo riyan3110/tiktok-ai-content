@@ -11,8 +11,13 @@
   let queued = false;
 
   const style = document.createElement('style');
-  style.dataset.aiadsProviderMobileHostFix = '20260826c';
+  style.dataset.aiadsProviderMobileHostFix = '20260913a';
   style.textContent = `
+    /* The simplified provider manager exposes only the requested five management buttons. */
+    #ai-providers #simple-provider-root .simple-provider-fallback{
+      display:none!important;
+    }
+
     /* Providers desktop/tablet stays inside the normal page container. */
     @media(min-width:768px){
       .aiads-neo-theme #ai-providers,
@@ -44,10 +49,20 @@
 
     @media(max-width:767px){
       /*
-       * The Providers route must not inherit a stale narrow shell. Both the
-       * topbar and Providers surface are anchored directly to the viewport with
-       * fixed left/right edges, exactly like the already-correct bottom nav.
+       * The legacy provider screen used a fixed direct-to-viewport host. The
+       * simplified Text/Image manager must stay in the normal page flow so the
+       * workspace router can hide it again and every page keeps normal scrolling.
        */
+      .aiads-neo-theme #ai-providers #simple-provider-root,
+      .aiads-neo-theme #ai-providers #simple-provider-root .simple-provider-shell,
+      .aiads-neo-theme #ai-providers #simple-provider-root .provider-detail,
+      .aiads-neo-theme #ai-providers #simple-provider-root .provider-form{
+        width:100%!important;
+        max-width:100%!important;
+        min-width:0!important;
+        box-sizing:border-box!important;
+      }
+
       html.aiads-provider-direct-host body{
         overflow:hidden!important;
       }
@@ -169,11 +184,15 @@
     return Boolean(provider && !provider.classList.contains('hidden'));
   }
 
+  function simpleProviderActive() {
+    return Boolean(provider?.querySelector('#simple-provider-root'));
+  }
+
   function sync() {
     queued = false;
     if (!ensureRefs()) return;
     const mobile = window.matchMedia('(max-width: 767px)').matches;
-    const direct = mobile && providerActive();
+    const direct = mobile && providerActive() && !simpleProviderActive();
 
     if (direct) {
       if (provider.parentNode !== shellMain) shellMain.insertBefore(provider, pageContent);
@@ -195,7 +214,12 @@
 
   function start() {
     if (!ensureRefs()) return;
-    new MutationObserver(queueSync).observe(provider, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(queueSync).observe(provider, {
+      attributes: true,
+      attributeFilter: ['class'],
+      childList: true,
+      subtree: true
+    });
     window.addEventListener('hashchange', queueSync, { passive: true });
     window.addEventListener('resize', queueSync, { passive: true });
     window.visualViewport?.addEventListener('resize', queueSync, { passive: true });
