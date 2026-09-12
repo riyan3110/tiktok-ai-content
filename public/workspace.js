@@ -3,6 +3,7 @@
   // Milestone 10 delegates that operation to LocalStorageAdapter instead.
   const storageKey = 'ai-ads-lab-projects-v1';
   const $ = selector => document.querySelector(selector);
+  const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
   const workspace = $('#project-workspace');
   const detail = $('#project-detail');
   const placeholder = $('#workspace-placeholder');
@@ -48,7 +49,7 @@
   function projectCard(project) {
     return `<article class="project-card" data-project-id="${project.id}" tabindex="0">
       <div class="project-thumbnail" aria-hidden="true"><span>${safe(initials(project.name))}</span><i></i><i></i></div>
-      <div class="project-card-body"><div class="project-card-top"><span class="status-pill status-${safe(project.status.toLowerCase())}"><i></i>${safe(project.status)}</span><div class="project-menu-wrap"><button class="project-menu" type="button" aria-label="Opsi untuk ${safe(project.name)}" aria-expanded="false">•••</button><div class="project-card-menu hidden"><button type="button" data-edit-project>Edit project</button><button type="button" class="danger-text" data-delete-project>Delete project</button></div></div></div>
+      <div class="project-card-body"><div class="project-card-top"><span class="status-pill status-${safe(project.status.toLowerCase())}"><i></i>${safe(project.status)}</span><div class="project-menu-wrap"><button class="project-menu" type="button" aria-label="Opsi untuk ${safe(project.name)}" aria-expanded="false">${ic('ellipsis')}</button><div class="project-card-menu hidden"><button type="button" data-edit-project>Edit project</button><button type="button" class="danger-text" data-delete-project>Delete project</button></div></div></div>
       <h2>${safe(project.name)}</h2><p class="project-product"><strong>${safe(project.brand)}</strong> · ${safe(project.product)}</p>
       <span class="category-label">${safe(project.category)}</span>
       <div class="project-counts"><span><b>${project.promptCount || 0}</b> Prompt</span><span><b>${project.storyboardCount || 0}</b> Storyboard</span></div>
@@ -77,9 +78,9 @@
     });
     $('#project-results-label').textContent = projects.length ? `${visible.length} dari ${projects.length} project` : '';
     if (!projects.length) {
-      $('#project-list').innerHTML = `<div class="project-empty"><div class="empty-illustration" aria-hidden="true"><span>✦</span><i></i><i></i><i></i></div><h2>Mulai workspace pertama Anda</h2><p>Buat project untuk mengumpulkan prompt, storyboard, aset, dan ide konten dalam satu tempat.</p><button type="button" data-create-project>＋ Create Project</button></div>`;
+      $('#project-list').innerHTML = `<div class="project-empty"><div class="empty-illustration" aria-hidden="true"><span>${ic('sparkles')}</span><i></i><i></i><i></i></div><h2>Mulai workspace pertama Anda</h2><p>Buat project untuk mengumpulkan prompt, storyboard, aset, dan ide konten dalam satu tempat.</p><button type="button" data-create-project>${ic('plus')} Create Project</button></div>`;
     } else if (!visible.length) {
-      $('#project-list').innerHTML = `<div class="project-empty compact"><div class="empty-illustration small" aria-hidden="true"><span>⌕</span></div><h2>Project tidak ditemukan</h2><p>Coba kata kunci lain atau reset filter yang aktif.</p><button class="outline" type="button" data-reset-projects>Reset pencarian</button></div>`;
+      $('#project-list').innerHTML = `<div class="project-empty compact"><div class="empty-illustration small" aria-hidden="true"><span>${ic('search')}</span></div><h2>Project tidak ditemukan</h2><p>Coba kata kunci lain atau reset filter yang aktif.</p><button class="outline" type="button" data-reset-projects>Reset pencarian</button></div>`;
     } else $('#project-list').innerHTML = visible.map(projectCard).join('');
     document.querySelectorAll('[data-create-project]').forEach(button => button.onclick = openDialog);
     document.querySelectorAll('[data-reset-projects]').forEach(button => button.onclick = resetFilters);
@@ -126,12 +127,12 @@
   function resetFilters() { $('#project-search').value = ''; filters.forEach(input => { input.value = ''; }); renderProjects(); }
   function openProject(id) {
     const project = projects.find(item => item.id === id); if (!project) return;
-    const modules = [['▤','Storyboards'],['⌘','Prompt'],['♙','Character'],['◇','Product'],['▧','Image'],['▶','Video'],['◉','Voice'],['□','Assets'],['≡','Notes'],['↺','Riwayat']];
-    $('#project-detail-content').innerHTML = `<div class="detail-hero"><div class="detail-thumbnail">${safe(initials(project.name))}</div><div><span class="status-pill status-${safe(project.status.toLowerCase())}"><i></i>${safe(project.status)}</span><h1 id="project-detail-title">${safe(project.name)}</h1><p><strong>${safe(project.brand)}</strong> · ${safe(project.product)} · ${safe(project.category)}</p></div><button class="outline" type="button" data-open-studio>✦ Buka Content Studio</button></div>
+    const modules = [['rows-3','Storyboards'],['terminal','Prompt'],['user-round','Character'],['gem','Product'],['image','Image'],['play','Video'],['mic','Voice'],['folder','Assets'],['notebook-pen','Notes'],['history','Riwayat']];
+    $('#project-detail-content').innerHTML = `<div class="detail-hero"><div class="detail-thumbnail">${safe(initials(project.name))}</div><div><span class="status-pill status-${safe(project.status.toLowerCase())}"><i></i>${safe(project.status)}</span><h1 id="project-detail-title">${safe(project.name)}</h1><p><strong>${safe(project.brand)}</strong> · ${safe(project.product)} · ${safe(project.category)}</p></div><button class="outline" type="button" data-open-studio>${ic('sparkles')} Buka Content Studio</button></div>
       <div class="project-tabs" role="tablist" aria-label="Navigasi project"><button class="project-tab active" role="tab" aria-selected="true" data-project-tab="overview">Overview</button><button class="project-tab" role="tab" aria-selected="false" data-project-tab="prompts">Prompt Studio</button></div>
       <div id="project-overview-panel"><div class="project-overview"><div><small>DESKRIPSI</small><p>${safe(project.description) || 'Belum ada deskripsi untuk project ini.'}</p></div><div class="overview-dates"><span><small>DIBUAT</small>${dateLabel(project.createdAt)}</span><span><small>TERAKHIR DIUBAH</small>${relativeLabel(project.updatedAt)}</span></div></div>
       <div class="module-heading"><div><span class="eyebrow">PROJECT SPACE</span><h2>Ruang Kerja</h2></div><p>Semua kebutuhan produksi konten project ini akan tersedia di sini.</p></div>
-      <div class="module-grid">${modules.map(([icon, name]) => `<article class="module-card"><span aria-hidden="true">${icon}</span><div><h3>${name}</h3><p>Siap untuk milestone berikutnya</p></div><small>0</small></article>`).join('')}</div></div><div id="prompt-studio-panel" class="hidden"></div>`;
+      <div class="module-grid">${modules.map(([icon, name]) => `<article class="module-card"><span aria-hidden="true">${ic(icon)}</span><div><h3>${name}</h3><p>Siap untuk milestone berikutnya</p></div><small>0</small></article>`).join('')}</div></div><div id="prompt-studio-panel" class="hidden"></div>`;
     $('[data-open-studio]').onclick = () => { showView('studio'); location.hash = 'studio'; };
     document.querySelectorAll('[data-project-tab]').forEach(tab => tab.onclick = () => {
       const prompts = tab.dataset.projectTab === 'prompts';

@@ -1,3 +1,4 @@
+const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
 const STATUS_LABELS = Object.freeze({
   PROCESSING_UPLOAD: 'Mengirim draft ke TikTok…',
   PROCESSING_DOWNLOAD: 'TikTok sedang memproses draft…',
@@ -260,7 +261,7 @@ function installInsertedImageUi() {
   const helper = attachment.querySelector('small');
   if (heading) heading.textContent = 'Sisipkan gambar';
   if (helper) helper.textContent = 'Opsional — gambar hanya tampil di slide 1, di bawah Hook.';
-  selectButton.textContent = '□ Pilih gambar';
+  selectButton.innerHTML = `${ic('image')} Pilih gambar`;
 
   let dialog = document.querySelector('#inserted-image-source-dialog');
   if (!dialog) {
@@ -268,7 +269,7 @@ function installInsertedImageUi() {
     dialog.id = 'inserted-image-source-dialog';
     dialog.className = 'project-dialog';
     dialog.setAttribute('aria-labelledby', 'inserted-image-source-title');
-    dialog.innerHTML = `<div class="dialog-heading"><div><span class="eyebrow">SISIPKAN GAMBAR</span><h2 id="inserted-image-source-title">Pilih Sumber Gambar</h2></div><button id="inserted-image-source-close" class="icon-button" type="button" aria-label="Tutup">✕</button></div><p style="margin:0 0 16px;color:var(--muted);font-size:.85rem">Pilih gambar untuk disisipkan pada slide 1 di bawah Hook.</p><div style="display:grid;gap:10px"><button id="choose-from-assets-btn" type="button" class="outline" style="display:flex;align-items:center;gap:12px;padding:14px;text-align:left;border-radius:12px;cursor:pointer;width:100%"><span style="font-size:1.4rem;line-height:1">📁</span><div style="display:grid;gap:2px"><b style="font-size:.92rem;color:var(--text)">Pilih dari Asset</b><small style="color:var(--muted);font-size:.75rem">Pilih satu gambar dari library Assets yang tersimpan</small></div></button><button id="upload-from-device-btn" type="button" class="outline" style="display:flex;align-items:center;gap:12px;padding:14px;text-align:left;border-radius:12px;cursor:pointer;width:100%"><span style="font-size:1.4rem;line-height:1">📱</span><div style="display:grid;gap:2px"><b style="font-size:.92rem;color:var(--text)">Unggah dari perangkat</b><small style="color:var(--muted);font-size:.75rem">Pilih file gambar langsung dari HP atau komputer</small></div></button></div><div class="dialog-actions" style="margin-top:16px;display:flex;justify-content:flex-end"><button id="cancel-source-choice-btn" type="button" class="outline">Batal</button></div>`;
+    dialog.innerHTML = `<div class="dialog-heading"><div><span class="eyebrow">SISIPKAN GAMBAR</span><h2 id="inserted-image-source-title">Pilih Sumber Gambar</h2></div><button id="inserted-image-source-close" class="icon-button" type="button" aria-label="Tutup">${ic('x')}</button></div><p style="margin:0 0 16px;color:var(--muted);font-size:.85rem">Pilih gambar untuk disisipkan pada slide 1 di bawah Hook.</p><div style="display:grid;gap:10px"><button id="choose-from-assets-btn" type="button" class="outline" style="display:flex;align-items:center;gap:12px;padding:14px;text-align:left;border-radius:12px;cursor:pointer;width:100%"><span style="font-size:1.4rem;line-height:1;display:grid;place-items:center">${ic('folder')}</span><div style="display:grid;gap:2px"><b style="font-size:.92rem;color:var(--text)">Pilih dari Asset</b><small style="color:var(--muted);font-size:.75rem">Pilih satu gambar dari library Assets yang tersimpan</small></div></button><button id="upload-from-device-btn" type="button" class="outline" style="display:flex;align-items:center;gap:12px;padding:14px;text-align:left;border-radius:12px;cursor:pointer;width:100%"><span style="font-size:1.4rem;line-height:1;display:grid;place-items:center">${ic('smartphone')}</span><div style="display:grid;gap:2px"><b style="font-size:.92rem;color:var(--text)">Unggah dari perangkat</b><small style="color:var(--muted);font-size:.75rem">Pilih file gambar langsung dari HP atau komputer</small></div></button></div><div class="dialog-actions" style="margin-top:16px;display:flex;justify-content:flex-end"><button id="cancel-source-choice-btn" type="button" class="outline">Batal</button></div>`;
     document.body.appendChild(dialog);
   }
 

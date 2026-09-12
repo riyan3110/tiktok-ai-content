@@ -1,10 +1,11 @@
+const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
 const root = document.documentElement;
 const savedTheme = localStorage.getItem('ai-ads-lab-theme');
 root.dataset.theme = savedTheme === 'light' ? 'light' : 'dark';
 const themeToggle = document.querySelector('#theme-toggle');
 const syncThemeButton = () => {
   const light = root.dataset.theme === 'light';
-  themeToggle.innerHTML = `<span aria-hidden="true">${light ? '☾' : '☀'}</span>`;
+  themeToggle.innerHTML = `<span aria-hidden="true">${light ? ic('moon') : ic('sun')}</span>`;
   themeToggle.setAttribute('aria-label', light ? 'Gunakan tema gelap' : 'Gunakan tema terang');
 };
 themeToggle.onclick = () => {
@@ -49,8 +50,8 @@ document.addEventListener('touchend', event => {
 setMenu(drawerMedia.matches && localStorage.getItem(drawerStorageKey) === 'true', false);
 document.querySelectorAll('.side-nav a').forEach(link => link.onclick = () => { document.querySelectorAll('.side-nav a').forEach(item => item.classList.remove('active')); link.classList.add('active'); closeMenu(); });
 const loadingState = label => `<div class="loading-state"><span class="spinner" aria-hidden="true"></span><p>${label}</p></div>`;
-const emptyState = (title, detail) => `<div class="empty-state"><span class="state-icon" aria-hidden="true">✦</span><strong>${title}</strong><p>${detail}</p></div>`;
-const errorState = message => `<div class="error-state"><span class="state-icon" aria-hidden="true">!</span><strong>Data gagal dimuat</strong><p>${escapeHtml(message)}</p></div>`;
+const emptyState = (title, detail) => `<div class="empty-state"><span class="state-icon" aria-hidden="true">${ic('sparkles')}</span><strong>${title}</strong><p>${detail}</p></div>`;
+const errorState = message => `<div class="error-state"><span class="state-icon" aria-hidden="true">${ic('circle-alert')}</span><strong>Data gagal dimuat</strong><p>${escapeHtml(message)}</p></div>`;
 
 document.querySelector('#history').innerHTML = loadingState('Memuat riwayat…');
 let current;
@@ -107,7 +108,7 @@ $('#slide-preview').onclick = event => { if (event.target === $('#slide-preview'
 async function history() {
   const rows = await api('/history');
   $('#delete-all').classList.toggle('hidden', !rows.length);
-  $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><div class="history-content"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span>${x.trend_reference_id ? ` <span class="badge trend-badge">Tren Manual</span> ${x.trend_keywords_used.map(k => `<span class="badge">${escapeHtml(k)}</span>`).join('')} <small>Referensi ${new Date(x.created_at).toLocaleDateString('id-ID')}</small>` : ''}</div><button class="delete-item danger" aria-label="Hapus ${escapeHtml(x.topic)}">🗑 Hapus</button></article>`).join('') : emptyState('Belum ada konten', 'Konten yang Anda buat akan tersimpan dan tampil di sini.');
+  $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><div class="history-content"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span>${x.trend_reference_id ? ` <span class="badge trend-badge">Tren Manual</span> ${x.trend_keywords_used.map(k => `<span class="badge">${escapeHtml(k)}</span>`).join('')} <small>Referensi ${new Date(x.created_at).toLocaleDateString('id-ID')}</small>` : ''}</div><button class="delete-item danger" aria-label="Hapus ${escapeHtml(x.topic)}">${ic('trash-2')} Hapus</button></article>`).join('') : emptyState('Belum ada konten', 'Konten yang Anda buat akan tersimpan dan tampil di sini.');
   document.querySelectorAll('.history-content').forEach((el, i) => { el.onclick = () => show(rows[i]); });
   document.querySelectorAll('.delete-item').forEach((button, i) => { button.onclick = async () => {
     if (!window.confirm('Hapus konten ini beserta seluruh gambar slide-nya?')) return;
@@ -199,7 +200,7 @@ document.querySelectorAll('input[name="topic-source"]').forEach((input) => input
 document.querySelectorAll('input[name="source-mode"]').forEach(input => input.onchange = renderSourceUrlFields); $('#add-source-url').onclick = () => { if (sourceUrls.length < 3) sourceUrls.push(''); renderSourceUrlFields(); }; renderSourceUrlFields();
 let lastGenerationRequest;
 let studioAssets = [];
-function renderStudioAssets() { $('#studio-assets').innerHTML = studioAssets.length ? studioAssets.map(asset => `<span class="selected-asset"><img src="${escapeHtml(asset.previewUrl)}" alt=""><b>${escapeHtml(asset.name)}</b><button type="button" data-remove-studio-asset="${escapeHtml(asset.id)}">×</button></span>`).join('') : '<small>No reference assets attached</small>'; document.querySelectorAll('[data-remove-studio-asset]').forEach(button => button.onclick = () => { studioAssets = studioAssets.filter(asset => asset.id !== button.dataset.removeStudioAsset); renderStudioAssets(); }); }
+function renderStudioAssets() { $('#studio-assets').innerHTML = studioAssets.length ? studioAssets.map(asset => `<span class="selected-asset"><img src="${escapeHtml(asset.previewUrl)}" alt=""><b>${escapeHtml(asset.name)}</b><button type="button" data-remove-studio-asset="${escapeHtml(asset.id)}" aria-label="Hapus asset">${ic('x')}</button></span>`).join('') : '<small>No reference assets attached</small>'; document.querySelectorAll('[data-remove-studio-asset]').forEach(button => button.onclick = () => { studioAssets = studioAssets.filter(asset => asset.id !== button.dataset.removeStudioAsset); renderStudioAssets(); }); }
 $('#studio-select-assets').onclick = async () => { const chosen = await window.AssetManager.select({ selectedIds: studioAssets.map(asset => asset.id), multiple: true }); if (chosen) { studioAssets = chosen; renderStudioAssets(); } };
 renderStudioAssets();
 const BACKGROUND_DRAFT_KEY = 'content-studio-carousel-background';

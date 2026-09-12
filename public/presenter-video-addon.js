@@ -3,6 +3,7 @@
   window.__AIADS_PRESENTER_VIDEO_ADDON__ = true;
 
   const $ = selector => document.querySelector(selector);
+  const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
   const terminal = new Set(['Completed', 'Failed', 'Cancelled']);
   const referenceProviders = new Set(['vidu', '9router', 'orcarouter', 'omni']);
   const providerPriority = ['vidu', '9router', 'orcarouter', 'omni'];
@@ -405,7 +406,7 @@
     dialog.innerHTML = `
       <div class="dialog-heading">
         <div><span class="eyebrow">AUTOMATIC VIDEO</span><h2 id="presenter-video-title">Buat Video dari Slide</h2></div>
-        <button id="presenter-video-close" class="icon-button" type="button" aria-label="Tutup">✕</button>
+        <button id="presenter-video-close" class="icon-button" type="button" aria-label="Tutup">${ic('x')}</button>
       </div>
       <div class="presenter-video-body">
         <section class="presenter-slide-plan">
@@ -441,14 +442,14 @@
 
         <label class="presenter-rights"><input id="presenter-video-rights" type="checkbox"> <span>Saya berhak menggunakan foto presenter ini dan, jika menampilkan orang nyata, presenter tersebut adalah orang dewasa. Saya memahami provider video dapat menggunakan kuota/biaya yang sudah terpasang di AI Ads Lab.</span></label>
         <small id="presenter-video-provider">Mesin presenter akan dipilih otomatis dari provider video yang mendukung gambar referensi.</small>
-        <button id="presenter-video-generate" type="button">✦ Generate Video</button>
+        <button id="presenter-video-generate" type="button">${ic('sparkles')} Generate Video</button>
         <div class="presenter-progress-wrap">
           <progress id="presenter-video-progress" max="100" value="0"></progress>
           <div><small id="presenter-video-progress-label">Siap</small><small id="presenter-video-status" role="status"></small></div>
         </div>
         <div id="presenter-video-result" class="hidden presenter-result">
           <video id="presenter-video-preview" controls playsinline preload="metadata"></video>
-          <div><a id="presenter-video-download" class="button" download>↓ Simpan MP4</a><button id="presenter-video-regenerate" class="outline" type="button">↻ Generate Ulang</button></div>
+          <div><a id="presenter-video-download" class="button" download>${ic('download')} Simpan MP4</a><button id="presenter-video-regenerate" class="outline" type="button">${ic('refresh-cw')} Generate Ulang</button></div>
         </div>
       </div>`;
     document.body.appendChild(dialog);
@@ -474,7 +475,7 @@
     const button = document.createElement('button');
     button.id = 'presenter-video-open';
     button.type = 'button';
-    button.textContent = '🎬 Buat Video';
+    button.innerHTML = `${ic('clapperboard')} Buat Video`;
     button.style.width = '100%';
     button.style.marginBottom = '10px';
     button.onclick = openDialog;
