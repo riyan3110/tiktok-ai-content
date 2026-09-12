@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260912b';
+  const VERSION = 'cache-20260912f-provider-simple';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
@@ -15,7 +15,7 @@
     'prompt-studio': ['/prompt-studio.js'],
     consistency: ['/consistency.js'],
     generator: ['/prompt-generator.js'],
-    providers: ['/ai-providers.js'],
+    providers: ['/ai-providers-simple.js'],
     queue: ['/generation-queue.js'],
     integration: ['/ai-integration.js'],
     profile: ['/account-workspace.js'],
