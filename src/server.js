@@ -29,6 +29,7 @@ const { install: installFloatingChatPatch } = require('./services/floatingChatPa
 const { install: installPresenterVideoPatch } = require('./services/presenterVideoPatch');
 const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
 const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
+const { install: installDynamicAiProviders } = require('./services/dynamicAiProviders');
 
 // Temporary product decision: automatic Text Content scheduling is suspended.
 // Keep schedule/job rows intact so the feature can be restored later without data loss.
@@ -40,6 +41,7 @@ installVpsLocalStorageLock();
 installVpsStorageUiPatch();
 const temporaryStorage = new StorageService({ db });
 const innerApp = createApp({ db });
+installDynamicAiProviders({ app: innerApp, db });
 installLocalMediaPreviewPatch({ app: innerApp, db });
 installTikTokCancelPatch({ app: innerApp, db, tiktok });
 installTikTokPullResiliencePatch({ tiktok, db });
