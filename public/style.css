@@ -374,3 +374,16 @@ body:has(#legacy-studio:not(.hidden)) .topbar {
     animation: none !important;
   }
 }
+/* --- Modern SVG icon layer (public/icons.js, Lucide ISC) --- */
+svg.icon{display:inline-block;width:1.06em;height:1.06em;flex:none;vertical-align:-0.14em;overflow:visible}
+.icon-button svg.icon{width:20px;height:20px}
+.state-icon svg.icon,.status-icon svg.icon{width:19px;height:19px}
+.complete-mark svg.icon{width:12px;height:12px}
+.confirm-icon svg.icon{width:22px;height:22px}
+.factory-selected-icon svg.icon,.factory-template-icon svg.icon{width:17px;height:17px}
+.account-avatar svg.icon{width:15px;height:15px}
+.empty-illustration svg.icon,.consistency-empty>span svg.icon,.factory-empty>span svg.icon,.mini-empty span svg.icon,.state-icon svg.icon{width:1.3em;height:1.3em}
+.background-swatch svg.icon{width:14px;height:14px}
+.side-nav a>span:first-child svg.icon,.neo-bottom-nav svg.icon{width:1.25em;height:1.25em}
+.local-badge svg.icon,.status-pill svg.icon{width:1.05em;height:1.05em;vertical-align:-0.12em}
+.pipeline-flow svg.icon{width:14px;height:14px}

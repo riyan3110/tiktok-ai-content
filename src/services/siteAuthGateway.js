@@ -67,6 +67,7 @@ function createSiteAuthGateway(innerApp, config) {
       // Keep only the truly global shell eager. Feature/page bundles are loaded
       // by lazy-modules.js on first use, then remain cached for later navigation.
       const eagerPaths = new Set([
+        '/icons.js',
         '/backend-foundation.js',
         '/workspace.js'
       ]);
@@ -97,6 +98,7 @@ function createSiteAuthGateway(innerApp, config) {
         compactStyles,
         stabilityStyles,
         responsiveStyles,
+        eagerScripts.get('/icons.js'),
         eagerScripts.get('/backend-foundation.js'),
         performanceScript,
         lazyScript,

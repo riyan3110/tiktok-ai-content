@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
+  const Icons = window.Icons || {}; const ic = (name, cls) => Icons.svg ? Icons.svg(name, cls) : '';
   const dialog = $('#template-dialog'), previewDialog = $('#template-preview-dialog'), form = $('#template-form');
   let templates = [], editing = null, previewing = null, folder = '';
   const safe = value => { const node = document.createElement('span'); node.textContent = value == null ? '' : String(value); return node.innerHTML; };
@@ -17,12 +18,12 @@
     const categories = [...new Set(templates.map(item => item.category))].sort(), current = $('#template-category').value;
     $('#template-category').innerHTML = '<option value="">Semua kategori</option>' + categories.map(value => `<option>${safe(value)}</option>`).join(''); $('#template-category').value = current;
     const folders = [...new Set(templates.map(item => item.folder).filter(Boolean))].sort();
-    $('#template-folders').innerHTML = `<button class="text-button" data-folder="">Semua folder</button>` + folders.map(value => `<button class="text-button" data-folder="${safe(value)}">▱ ${safe(value)}</button>`).join('');
+    $('#template-folders').innerHTML = `<button class="text-button" data-folder="">Semua folder</button>` + folders.map(value => `<button class="text-button" data-folder="${safe(value)}">${ic('folder')} ${safe(value)}</button>`).join('');
     report(`${templates.length} template`); $('#template-list').innerHTML = templates.map(card).join('') || '<div class="project-empty"><h2>Belum ada template</h2><p>Ubah filter atau buat template baru.</p></div>';
   }
   function card(item) {
     const customActions = item.preset ? '<button data-action="duplicate">Duplicate to Custom</button>' : '<button data-action="edit">Edit</button><button data-action="duplicate">Duplicate</button><button data-action="move">Move to Folder</button><button data-action="delete" class="danger">Delete</button>';
-    return `<article class="template-card" data-id="${item.id}"><div class="template-card-top"><span class="status-pill">${safe(item.target_ai)}</span><div><button data-action="favorite" title="Favorite" aria-pressed="${item.favorite}">${item.favorite ? '★' : '☆'}</button><button data-action="menu" title="Actions">•••</button></div></div><h2>${safe(item.name)}</h2><p>${safe(item.description || item.prompt.slice(0, 100))}</p><div class="template-tags">${item.tags.map(tag => `<span>${safe(tag)}</span>`).join('')}</div><dl><div><dt>Provider</dt><dd>${safe(item.provider)}</dd></div><div><dt>Model</dt><dd>${safe(item.model)}</dd></div><div><dt>Version</dt><dd>v${item.version}</dd></div></dl><div class="template-actions"><button data-action="preview" class="outline">Preview</button><button data-action="use">✦ Generate</button></div><div class="template-menu hidden"><button data-action="preview">Preview</button><button data-action="use">Use</button>${customActions}<button data-action="export">Export JSON</button></div></article>`;
+    return `<article class="template-card" data-id="${item.id}"><div class="template-card-top"><span class="status-pill">${safe(item.target_ai)}</span><div><button data-action="favorite" title="Favorite" aria-pressed="${item.favorite}">${item.favorite ? ic('star', 'icon-filled') : ic('star')}</button><button data-action="menu" title="Actions">${ic('ellipsis')}</button></div></div><h2>${safe(item.name)}</h2><p>${safe(item.description || item.prompt.slice(0, 100))}</p><div class="template-tags">${item.tags.map(tag => `<span>${safe(tag)}</span>`).join('')}</div><dl><div><dt>Provider</dt><dd>${safe(item.provider)}</dd></div><div><dt>Model</dt><dd>${safe(item.model)}</dd></div><div><dt>Version</dt><dd>v${item.version}</dd></div></dl><div class="template-actions"><button data-action="preview" class="outline">Preview</button><button data-action="use">${ic('sparkles')} Generate</button></div><div class="template-menu hidden"><button data-action="preview">Preview</button><button data-action="use">Use</button>${customActions}<button data-action="export">Export JSON</button></div></article>`;
   }
   const itemFor = target => templates.find(item => item.id === Number(target.closest('.template-card')?.dataset.id));
   $('#template-manager').addEventListener('click', async event => {

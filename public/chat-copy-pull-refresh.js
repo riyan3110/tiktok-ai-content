@@ -65,20 +65,20 @@
       button.type = 'button';
       button.className = 'aiads-chat-copy';
       button.dataset.aiadsCopy = '1';
-      button.textContent = 'Copy';
+      button.innerHTML = `${window.Icons?.svg ? window.Icons.svg('copy') : ''} Copy`;
       button.setAttribute('aria-label', 'Copy teks');
       button.addEventListener('click', async event => {
         event.stopPropagation();
         const text = cleanBubbleText(bubble);
         if (!text) return;
-        const original = button.textContent;
+        const original = button.innerHTML;
         try {
           await copyText(text);
-          button.textContent = 'Copied ✓';
+          button.innerHTML = `${window.Icons?.svg ? window.Icons.svg('check') : ''} Copied`;
         } catch (_) {
           button.textContent = 'Gagal copy';
         }
-        setTimeout(() => { button.textContent = original; }, 1400);
+        setTimeout(() => { button.innerHTML = original; }, 1400);
       });
       bubble.appendChild(button);
     });
