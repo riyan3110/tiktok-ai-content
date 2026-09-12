@@ -1,3 +1,4 @@
+const dynamicAi = require('../services/dynamicAiProviders');
 const crypto = require('node:crypto');
 const config = require('../config');
 const { ProviderFactory } = require('../providers');
@@ -13,23 +14,35 @@ const publicSetting = (row, defaults = []) => ({ provider: row.provider, name: D
 const CAPABILITIES = Object.freeze({ '9router': ['text', 'image', 'video'], orcarouter: ['text', 'image', 'video'], agentrouter: ['text'], 'google-flow': ['image', 'video'], 'google-veo': ['video'], 'google-imagen': ['image'], 'google-gemini': ['image'], 'openai-images': ['image'], vidu: ['image', 'video'], zark: ['image', 'video'], nanobanana: ['image'], omni: ['image', 'video'] });
 const PLACEHOLDER_HOSTS = /(^|\.)(example\.(com|org|net)|localhost|invalid)$/i;
 
-function seed(db) { db.transaction(() => { for (const provider of ProviderFactory.names()) { const defaults = ProviderFactory.defaults(provider); const timeout = provider === 'nanobanana' ? 300000 : 30000; db.prepare('INSERT OR IGNORE INTO ai_provider_settings(provider,base_url,default_model,timeout_ms) VALUES(?,?,?,?)').run(provider, defaults.baseUrl, defaults.model, timeout); }
-  db.prepare("UPDATE ai_provider_settings SET text_model=COALESCE(text_model,'orcarouter/auto'),image_model=COALESCE(image_model,'openai/gpt-image-1'),video_model=COALESCE(video_model,'kling/kling-v2-6') WHERE provider='orcarouter'").run();
-  db.prepare("UPDATE ai_provider_settings SET base_url='https://api.bluesminds.com/v1',default_model=CASE WHEN default_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR default_model IS NULL OR TRIM(default_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE default_model END,text_model=CASE WHEN text_model IN ('gpt-5.5','claude-opus-4-8','claude-opus-4-7','claude-opus-4-6','kimi-k2.6','glm-5.2','glm-5.1') OR text_model IS NULL OR TRIM(text_model)='' THEN 'deepseek-ai/deepseek-v4-flash' ELSE text_model END WHERE provider='agentrouter' AND base_url IN ('https://co.agentrouter.org','https://co.agentrouter.org/v1','https://agentrouter.org','https://agentrouter.org/v1','https://agentrouter.org/v1/responses')").run();
-  const target = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='orcarouter'").get(); const legacy = db.prepare("SELECT * FROM ai_provider_settings WHERE provider='openai'").get();
-  if (!target.api_key_encrypted && legacy?.api_key_encrypted) db.prepare("UPDATE ai_provider_settings SET api_key_encrypted=?,base_url='https://api.orcarouter.ai',default_model='orcarouter/auto',timeout_ms=?,retry_count=?,enabled=? WHERE provider='orcarouter' AND (api_key_encrypted IS NULL OR api_key_encrypted='')").run(legacy.api_key_encrypted, legacy.timeout_ms, legacy.retry_count, legacy.enabled);
-})(); }
+function seed(db) { dynamicAi.ensureSchema(db); }
 function setting(db, provider) { seed(db); const row = db.prepare('SELECT * FROM ai_provider_settings WHERE provider=?').get(provider); if (!row) throw Object.assign(new Error('Provider not found'), { status: 404 }); return row; }
 function configured(row) { return { ...row, api_key: decrypt(row.api_key_encrypted) }; }
 function validBaseUrl(value) { try { const url = new URL(String(value || '')); return /^https?:$/.test(url.protocol) && !PLACEHOLDER_HOSTS.test(url.hostname) && !/(placeholder|your[-_.]?api|change[-_.]?me)/i.test(url.href); } catch { return false; } }
 function configuredProviders(db) {
   seed(db);
-  const registered = new Set(ProviderFactory.names());
-  const valid = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 AND default_model IS NOT NULL AND TRIM(default_model)<>\'\'').all().filter(row => registered.has(row.provider) && Boolean(row.api_key_encrypted) && validBaseUrl(row.base_url) && !(row.provider === 'google-flow' && row.base_url === ProviderFactory.defaults('google-flow').baseUrl));
-  return valid;
+  const current = dynamicAi.publicState(db);
+  const dynamic = current.providers.filter(row => row.roles.length).map(row => ({
+    provider: row.id, name: row.name, roles: row.roles, base_url: row.baseUrl,
+    default_model: row.textModel || row.imageModel, text_model: row.textModel, image_model: row.imageModel,
+    defaults: ['text', 'image'].filter(role => current.defaults[role].providerId === row.id)
+  }));
+  const video = db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1').all()
+    .filter(row => CAPABILITIES[row.provider]?.includes('video') && row.api_key_encrypted && validBaseUrl(row.base_url));
+  return [...dynamic, ...video];
 }
 function validationError(message, status = 422, extra = {}) { return Object.assign(new Error(message), { status, ...extra }); }
 function validateGeneration(db, body = {}) {
+  if (body.mediaType !== 'video') {
+    const mediaType = body.mediaType === 'image' ? 'image' : 'text';
+    const row = dynamicAi.selectedProfile(db, mediaType);
+    if (!row) throw validationError(`Default ${mediaType === 'text' ? 'Text' : 'Image'} AI belum dipilih`, 409);
+    const model = row[`selected_${mediaType}_model`];
+    if (!model) throw validationError('Model aktif belum dipilih', 409);
+    if (!String(body.prompt || '').trim()) throw validationError('Prompt wajib diisi');
+    const count = body.count === undefined ? 1 : Number(body.count);
+    if (!Number.isInteger(count) || count < 1 || count > 10) throw validationError('Jumlah batch harus antara 1 dan 10');
+    return { provider: row.id, row: { ...row, provider: row.id, default_model: model }, mediaType, count, dynamic: true };
+  }
   seed(db); const textDefaultProvider = body.provider === 'orcarouter' || body.provider === 'agentrouter'; const mediaType = ['text', 'image', 'video'].includes(body.mediaType) ? body.mediaType : (textDefaultProvider ? 'text' : 'image');
   const valid = configuredProviders(db); const defaultId = db.prepare('SELECT provider FROM ai_provider_defaults WHERE capability=?').get(mediaType)?.provider; const defaultRow = valid.find(row => row.provider === defaultId) || (valid.length === 1 ? valid[0] : null);
   const provider = body.provider || defaultRow?.provider;
@@ -49,7 +62,7 @@ function validateGeneration(db, body = {}) {
   buildGenerationRequest({ ...body, mediaType }, row);
   return { provider, row, mediaType, count };
 }
-function save(db, provider, body) { const old = setting(db, provider); const encrypted = body.apiKey === undefined ? old.api_key_encrypted : encrypt(String(body.apiKey || '')); if (body.isDefault) { const capability = body.defaultCapability || CAPABILITIES[provider]?.[0]; if (!CAPABILITIES[provider]?.includes(capability)) throw validationError('Provider tidak mendukung capability default tersebut'); db.prepare('INSERT INTO ai_provider_defaults(capability,provider) VALUES(?,?) ON CONFLICT(capability) DO UPDATE SET provider=excluded.provider').run(capability, provider); }
+function save(db, provider, body) { if (body.apiKey || body.isDefault || body.baseUrl) throw validationError('Gunakan halaman Provider AI untuk menyimpan dan memvalidasi provider.', 410); const old = setting(db, provider); const encrypted = body.apiKey === undefined ? old.api_key_encrypted : encrypt(String(body.apiKey || '')); if (body.isDefault) { const capability = body.defaultCapability || CAPABILITIES[provider]?.[0]; if (!CAPABILITIES[provider]?.includes(capability)) throw validationError('Provider tidak mendukung capability default tersebut'); db.prepare('INSERT INTO ai_provider_defaults(capability,provider) VALUES(?,?) ON CONFLICT(capability) DO UPDATE SET provider=excluded.provider').run(capability, provider); }
   db.prepare(`UPDATE ai_provider_settings SET api_key_encrypted=?,base_url=?,organization_id=?,region=?,default_model=?,text_model=?,image_model=?,video_model=?,timeout_ms=?,retry_count=?,enabled=?,updated_at=CURRENT_TIMESTAMP WHERE provider=?`).run(encrypted, String(body.baseUrl ?? old.base_url), body.organizationId ?? old.organization_id, body.region ?? old.region, body.defaultModel ?? old.default_model, body.textModel ?? old.text_model, body.imageModel ?? old.image_model, body.videoModel ?? old.video_model, clamp(body.timeout ?? old.timeout_ms, 1000, 300000), clamp(body.retry ?? old.retry_count, 0, 10), body.enabled === undefined ? old.enabled : Number(Boolean(body.enabled)), provider); return publicSetting(setting(db, provider), defaultCapabilities(db, provider)); }
 function defaultCapabilities(db, provider) { return db.prepare('SELECT capability FROM ai_provider_defaults WHERE provider=? ORDER BY capability').all(provider).map(row => row.capability); }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, Number(value) || min)); }
@@ -101,7 +114,7 @@ function enrichFloatingMediaBody(db, body = {}) {
   } catch (_) { return body; }
 }
 
-async function execute(db, body, transport, progress = () => {}, suppliedId) { body = enrichFloatingMediaBody(db, body); const validated = validateGeneration(db, body); const requestedProvider = validated.provider; const row = validated.row;
+async function execute(db, body, transport, progress = () => {}, suppliedId) { body = enrichFloatingMediaBody(db, body); const validated = validateGeneration(db, body); if (validated.dynamic) return executeDynamic(db, body, validated, transport, progress, suppliedId); const requestedProvider = validated.provider; const row = validated.row;
   const id = suppliedId || body.id || crypto.randomUUID(); const started = new Date(); const request = buildGenerationRequest(body, row); const prompt = request.prompt;
   db.prepare('INSERT OR IGNORE INTO ai_generations(id,provider,model,prompt,status,prompt_size,request_time,media_type,assets,metadata) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id, requestedProvider, request.model, prompt, 'Preparing', Buffer.byteLength(prompt), started.toISOString(), request.mediaType, JSON.stringify(request.assets), JSON.stringify(request.metadata));
   const controller = new AbortController(); active.set(id, controller); const timeout = setTimeout(() => controller.abort(), row.timeout_ms); const adapter = ProviderFactory.create(configured(row), transport);
@@ -111,6 +124,35 @@ async function execute(db, body, transport, progress = () => {}, suppliedId) { b
   } catch (caught) { const error = normalizeError(caught); const cancelled = controller.signal.aborted && active.get(id)?.cancelled; const status = cancelled ? 'Cancelled' : 'Failed'; const endpoint = caught.endpoint || adapter.endpoint(adapter.requestPath(request)); db.prepare('UPDATE ai_generations SET status=?,error_type=?,error_code=?,error_message=?,provider_status=?,provider_request_id=?,endpoint=?,response_time=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status, cancelled ? null : error.type, cancelled ? null : (caught.code || error.code || null), error.message, caught.status || error.status || null, caught.providerRequestId || null, endpoint, new Date().toISOString(), id); progress(status, id); updateHealth(db, requestedProvider, false); if (cancelled) return generation(db, id); throw Object.assign(error, { generationId: id });
   } finally { clearTimeout(timeout); active.delete(id); }
 }
+async function executeDynamic(db, body, validated, transport, progress, suppliedId) {
+  const id = suppliedId || body.id || crypto.randomUUID();
+  const started = Date.now();
+  const controller = new AbortController();
+  active.set(id, controller);
+  const prompt = String(body.prompt || '').trim();
+  db.prepare("INSERT OR IGNORE INTO ai_generations(id,provider,model,prompt,status,media_type,assets,metadata) VALUES(?,?,?,?,'Preparing',?,?,?)")
+    .run(id, validated.provider, validated.row.default_model, prompt, validated.mediaType, JSON.stringify(body.assets || []), JSON.stringify(body.metadata || {}));
+  try {
+    progress('Generating', id);
+    const result = validated.mediaType === 'text'
+      ? await dynamicAi.executeMessages(db, body.messages || [{ role: 'user', content: prompt }], transport, { signal: controller.signal })
+      : await dynamicAi.executeImage(db, prompt, { size: body.size, assets: body.assets || body.referenceAssets, signal: controller.signal }, transport);
+    if (controller.signal.aborted) throw new Error('Generation dibatalkan.');
+    const media = validated.mediaType === 'image' ? [{ url: result.url, b64_json: result.b64Json, mime_type: 'image/png' }] : [];
+    const metadata = { ...JSON.parse(generation(db, id).metadata || '{}'), provider: result.provider, providerId: result.providerId, model: result.model, responseTime: result.responseTime };
+    db.prepare("UPDATE ai_generations SET provider=?,model=?,status='Completed',output=?,media=?,metadata=?,duration_ms=?,response_time=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(result.providerId, result.model, result.text || '', JSON.stringify(media), JSON.stringify(metadata), Date.now() - started, new Date().toISOString(), id);
+    progress('Completed', id);
+    return generation(db, id);
+  } catch (error) {
+    const status = controller.cancelled ? 'Cancelled' : 'Failed';
+    db.prepare("UPDATE ai_generations SET status=?,error_message=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(status, error.message, id);
+    progress(status, id);
+    if (controller.cancelled) return generation(db, id);
+    throw error;
+  } finally { active.delete(id); }
+}
+
 function updateStatus(db, id, status) { db.prepare('UPDATE ai_generations SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status, id); }
 function generation(db, id) { return db.prepare('SELECT * FROM ai_generations WHERE id=?').get(id); }
 function estimate(provider, usage) { const perMillion = { openai: 0.6, claude: 3, gemini: 0.35 }[provider] || 0; return Number(((usage.totalTokens / 1e6) * perMillion).toFixed(8)); }

@@ -1057,7 +1057,7 @@ async function compose({ options = {}, sources = [], discovery = null, client } 
     throw Object.assign(new Error('Auto Source belum menemukan fakta yang cukup untuk membentuk 4 slide.'), { status: 422 });
   }
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let writerRaw;
   try {
     writerRaw = await callJson(

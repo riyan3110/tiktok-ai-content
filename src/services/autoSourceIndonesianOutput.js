@@ -272,7 +272,7 @@ async function ensureIndonesian({ result, topic = '', format = 'Fakta singkat', 
   if (packets.length !== simple.SLIDE_COUNT) return result;
   if (!needsVisibleRepair(result, packets)) return result;
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let current = result;
 
   // Normally one pass is enough. The second pass is only a fail-safe when the

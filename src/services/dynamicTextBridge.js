@@ -67,7 +67,7 @@ function installContentBridge({ db, content, dynamicAi, transport }) {
     const original = content.generateContent.bind(content);
     content.generateContent = (previousTopics, options = {}, client) => {
       if (client) return original(previousTopics, options, client);
-      return original(previousTopics, options, dynamicAi.createTextClient(db, transport));
+      return original(previousTopics, options, require('./textProviderRuntime').client());
     };
   }
 
@@ -75,7 +75,7 @@ function installContentBridge({ db, content, dynamicAi, transport }) {
     const original = content.generateAngles.bind(content);
     content.generateAngles = (mainTopic, count, options = {}, client) => {
       if (client) return original(mainTopic, count, options, client);
-      return original(mainTopic, count, options, dynamicAi.createTextClient(db, transport));
+      return original(mainTopic, count, options, require('./textProviderRuntime').client());
     };
   }
 }
@@ -163,6 +163,7 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
         .run(result.providerId || provider.id, result.model || model, session.id);
 
       res.json({
+        aiMetadata: { provider: result.provider, providerId: result.providerId, model: result.model, responseTime: result.responseTime },
         session: sessionJson(db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(session.id)),
         user: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(userResult.lastInsertRowid)),
         assistant: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(assistantResult.lastInsertRowid))
@@ -173,6 +174,7 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
 
 function install({ app, db, content, dynamicAi, transport } = {}) {
   if (!app || !db || !content || !dynamicAi) throw new Error('Dynamic Text bridge membutuhkan app, db, content, dan dynamicAi.');
+  require('./textProviderRuntime').bind(db, transport);
   installContentBridge({ db, content, dynamicAi, transport });
   installChatBridge({ app, db, dynamicAi, transport });
 }

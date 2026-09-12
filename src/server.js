@@ -1,3 +1,4 @@
+require('./services/legacyTextEnvironment').retire({ root: require('node:path').resolve(__dirname, '..') });
 const { install: installSlideSpacingPatch } = require('./services/slideSpacingPatch');
 installSlideSpacingPatch();
 const cron = require('node-cron');

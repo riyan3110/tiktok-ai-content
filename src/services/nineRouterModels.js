@@ -70,6 +70,7 @@ class NineRouterModels {
   }
 
   async get({ refresh = false } = {}) {
+    if (!this.db.prepare('SELECT provider FROM ai_provider_settings WHERE provider=?').get('9router')) { this.cached = null; throw Object.assign(new Error('Provider sudah dihapus atau belum disimpan.'), { status: 404 }); }
     if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value;
     const row = this.connector.setting(this.db, '9router');
     if (!row.api_key_encrypted) throw Object.assign(new Error('API key is required'), { status: 422 });

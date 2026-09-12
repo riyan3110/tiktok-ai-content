@@ -348,7 +348,7 @@ async function repairManualSourceDuplicates({ contentService, generated, options
   const topic = options.requestedTopic || generated?.topic || '';
   const bank = sourceFilter.extractFactBank(sources, topic);
   if (!bank.length) return generated;
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
 
   if (needsRoleAudit) {
     draft = await repairManualTutorialRoles({ contentService, generated: draft, options, sources, bank, openai });

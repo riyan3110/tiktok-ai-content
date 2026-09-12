@@ -15,6 +15,7 @@ function normalize(payload) {
 class OrcaRouterModels {
   constructor({ db, connector, transport = fetch, ttl = CACHE_TTL }) { this.db = db; this.connector = connector; this.transport = transport; this.ttl = ttl; this.cached = null; }
   async get({ refresh = false } = {}) {
+    if (!this.db.prepare('SELECT provider FROM ai_provider_settings WHERE provider=?').get('orcarouter')) { this.cached = null; throw Object.assign(new Error('Provider sudah dihapus atau belum disimpan.'), { status: 404 }); }
     if (!refresh && this.cached && Date.now() - this.cached.at < this.ttl) return this.cached.value;
     try { const row = this.connector.setting(this.db, 'orcarouter'); if (!row.api_key_encrypted) throw new Error('API key OrcaRouter belum tersedia'); const config = this.connector.configured(row); const response = await this.transport(`${String(config.base_url).replace(/\/$/, '')}/v1/models`, { headers: { Authorization: `Bearer ${config.api_key}`, Accept: 'application/json' } }); if (!response.ok) throw new Error(`HTTP ${response.status}`); const value = { ...normalize(await response.json()), fallback: false, error: null }; this.cached = { at: Date.now(), value }; return value; }
     catch { const value = { text: [...FALLBACK.text], image: [...FALLBACK.image], video: [...FALLBACK.video], fallback: true, error: 'Daftar model OrcaRouter gagal dimuat.' }; this.cached = { at: Date.now(), value }; return value; }

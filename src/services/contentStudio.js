@@ -13,7 +13,7 @@ const wait = milliseconds => new Promise(resolve => setTimeout(resolve, millisec
 
 class ContentStudioService {
   constructor({ db, storage, fetcher = fetch } = {}) { this.db = db; this.storage = storage; this.fetcher = fetcher; }
-  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: PROVIDER_NAMES[row.provider], types: connector.CAPABILITIES[row.provider], defaultCapabilities: connector.defaultCapabilities(this.db, row.provider), models: { text: row.text_model || row.default_model, image: row.image_model || row.default_model, video: row.video_model || row.default_model } })); }
+  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: row.name || PROVIDER_NAMES[row.provider], types: row.roles || ['video'], defaultCapabilities: row.defaults || connector.defaultCapabilities(this.db, row.provider), models: { text: row.text_model || row.default_model, image: row.image_model || row.default_model, video: row.video_model || row.default_model } })); }
   generatedAssetIndex() {
     const index = new Map();
     for (const asset of this.storage.repository.list()) {

@@ -181,7 +181,7 @@ async function repairManualSourceRoles({contentService,generated,options={},sour
   if(!bank.length)throw Object.assign(new Error('URL berhasil dibaca tetapi tidak menghasilkan fakta artikel utama yang dapat diverifikasi.'),{status:422});
   const expectedListicleCount=fmt(requested)==='listicle'?inferListicleCount(sources,topic):null;
   const explicitListicleSupported=Boolean(expectedListicleCount&&bank.length>=expectedListicleCount);
-  const openai=client||new OpenAI({apiKey:config.aiApiKey,baseURL:config.aiBaseUrl});let draft={...generated,slides:(generated?.slides||[]).map(x=>({...x}))};delete draft.effectiveContentFormat;delete draft.__manualGuardFallback;let fallback=false,last=[];
+  const openai=client||require('./textProviderRuntime').client();let draft={...generated,slides:(generated?.slides||[]).map(x=>({...x}))};delete draft.effectiveContentFormat;delete draft.__manualGuardFallback;let fallback=false,last=[];
   for(let attempt=0;attempt<=MAX_ROLE_REPAIR_ATTEMPTS;attempt++){
     const format=fallback?'Fakta singkat':requested,expected=fallback?null:expectedListicleCount;
     const role=deterministicRoleErrors(draft,format,{fallbackMode:fallback,bank,expectedListicleCount:expected}),density=contentDensityErrors(draft,bank),dup=manualSourceDedupe.manualCrossSlideDuplicateErrors(draft),audit=await auditRoles(openai,draft,bank,format,topic,sources,fallback,expected),auditErr=audit.invalid.map(x=>`slide:${x.slideIndex}:audit: ${x.reason||'isi tidak sesuai artikel utama/format.'}`);

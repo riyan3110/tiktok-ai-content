@@ -1,3 +1,5 @@
+// HTTP contract tests use the existing injected transport; these are not live acceptance tests.
+process.env.SESSION_SECRET ||= require('node:crypto').randomBytes(32).toString('hex');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
@@ -18,6 +20,7 @@ function fixture() {
   const transport = async (url, options = {}) => {
     const target = String(url);
     calls.push({ url: target, method: options.method || 'GET' });
+    if (String(options.headers?.Authorization || '').startsWith('Bearer invalid-')) return jsonResponse({ error: 'invalid key' }, 401);
 
     if (target.endsWith('/models')) {
       if (target.includes('one.local')) return jsonResponse({ data: [{ id: 'one-a' }, { id: 'one-b' }] });
@@ -97,4 +100,27 @@ test('fallback off uses only selected provider; fallback on uses only remaining 
   assert.equal(generatedAfterDelete.body.providerId, two.id);
   const newCalls = calls.slice(before).filter(call => call.url.endsWith('/chat/completions'));
   assert.equal(newCalls.some(call => call.url.includes('one.local')), false);
+});
+
+test('the same URL stores independent Text and Image credentials, models and selections', async () => {
+  const { app, db } = fixture();
+  const text = (await request(app).post('/api/dynamic-ai/providers').send({ role: 'text', baseUrl: 'https://two.local/v1', apiKey: 'text-only-key' }).expect(201)).body.saved;
+  await request(app).put('/api/dynamic-ai/defaults/text').send({ providerId: text.id, model: 'two-b' }).expect(200);
+  const before = db.prepare('SELECT * FROM ai_dynamic_provider_profiles WHERE id=?').get(text.id);
+  const image = (await request(app).post('/api/dynamic-ai/providers').send({ role: 'image', baseUrl: 'https://two.local/v1', apiKey: 'image-only-key' }).expect(201)).body.saved;
+  assert.notEqual(text.id, image.id);
+  const textRow = db.prepare('SELECT * FROM ai_dynamic_provider_profiles WHERE id=?').get(text.id);
+  const imageRow = db.prepare('SELECT * FROM ai_dynamic_provider_profiles WHERE id=?').get(image.id);
+  assert.equal(textRow.api_key_encrypted, before.api_key_encrypted);
+  assert.notEqual(textRow.api_key_encrypted, imageRow.api_key_encrypted);
+  assert.match(textRow.api_key_encrypted, /^v2\./);
+  assert.equal(textRow.selected_text_model, 'two-b');
+  const state = (await request(app).get('/api/dynamic-ai/providers').expect(200)).body;
+  assert.equal(state.defaults.text.providerId, text.id);
+  assert.equal(state.defaults.image.providerId, image.id);
+  await request(app).delete(`/api/dynamic-ai/providers/${image.id}`).expect(200);
+  const remaining = (await request(app).get('/api/dynamic-ai/providers').expect(200)).body;
+  assert.equal(remaining.defaults.text.providerId, text.id);
+  assert.equal(remaining.defaults.text.model, 'two-b');
+  assert.equal(remaining.defaults.image.providerId, null);
 });

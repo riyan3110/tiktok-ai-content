@@ -257,7 +257,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
   const resolvedTopic = String(topic || generated?.topic || sources?.[0]?.title || 'Topik sumber').trim();
   const effectiveFormat = generated?.effectiveContentFormat || format || 'Fakta singkat';
   const sections = sourceUrlFinalizer.targetSections(generated, effectiveFormat, facts, sources, resolvedTopic);
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let draft = { ...generated, topic: resolvedTopic };
   let lastErrors = [];
 
