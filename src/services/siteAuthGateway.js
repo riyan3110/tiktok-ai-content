@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260912b';
+const CACHE_BUST_VERSION = 'cache-20260912d-pullrefresh';
 
 function createSiteAuthGateway(innerApp, config) {
   const gateway = express();
@@ -106,6 +106,7 @@ function createSiteAuthGateway(innerApp, config) {
       const lazyScript = `<script defer src="/lazy-modules.js?v=${CACHE_BUST_VERSION}"></script>`;
       const chatScript = `<script defer src="/floating-chat.js?v=${CACHE_BUST_VERSION}"></script>`;
       const themeScript = `<script defer src="/floating-chat-theme.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const pullRefreshScript = `<script defer src="/chat-copy-pull-refresh.js?v=${CACHE_BUST_VERSION}"></script>`;
       const polishScript = `<script defer src="/neo-home-polish.js?v=${CACHE_BUST_VERSION}"></script>`;
       const finalLayoutScript = `<script defer src="/neo-layout-final.js?v=${CACHE_BUST_VERSION}"></script>`;
       const providerMobileHostFixScript = `<script defer src="/provider-mobile-host-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
@@ -123,6 +124,7 @@ function createSiteAuthGateway(innerApp, config) {
         eagerScripts.get('/workspace.js'),
         chatScript,
         themeScript,
+        pullRefreshScript,
         polishScript,
         finalLayoutScript,
         providerMobileHostFixScript,
