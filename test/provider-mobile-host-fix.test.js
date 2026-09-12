@@ -12,21 +12,27 @@ test('Providers host fix parses', () => {
   assert.doesNotThrow(() => new Function(script));
 });
 
-test('mobile Providers is moved outside page-content and restored after navigation', () => {
-  assert.match(script, /ai-providers-original-position/);
-  assert.match(script, /shellMain\.insertBefore\(provider, pageContent\)/);
-  assert.match(script, /anchor\.parentNode\.insertBefore\(provider, anchor\.nextSibling\)/);
-  assert.match(script, /root\.classList\.add\('aiads-provider-direct-host'\)/);
+test('simple Provider UI stays in normal mobile page flow', () => {
+  assert.match(script, /function simpleProviderActive\(\)/);
+  assert.match(script, /providerActive\(\)\s*&&\s*!simpleProviderActive\(\)/);
   assert.match(script, /root\.classList\.remove\('aiads-provider-direct-host'\)/);
+  assert.match(script, /anchor\.parentNode\.insertBefore\(provider, anchor\.nextSibling\)/);
 });
 
-test('mobile Providers and topbar are anchored to viewport edges rather than inherited width', () => {
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.topbar[\s\S]*position:fixed!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.topbar[\s\S]*left:0!important[\s\S]*right:0!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*position:fixed!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*left:0!important[\s\S]*right:0!important[\s\S]*bottom:0!important/);
-  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>\.page-content[\s\S]*display:none!important/);
-  assert.doesNotMatch(script, /100dvw/);
+test('simple Provider UI hides oversized fallback control', () => {
+  assert.match(script, /#ai-providers #simple-provider-root \.simple-provider-fallback\s*\{[\s\S]*?display:none!important/);
+});
+
+test('legacy Provider host behavior remains available for non-simple UI', () => {
+  assert.match(script, /shellMain\.insertBefore\(provider, pageContent\)/);
+  assert.match(script, /root\.classList\.add\('aiads-provider-direct-host'\)/);
+  assert.match(script, /html\.aiads-provider-direct-host body[\s\S]*overflow:hidden!important/);
+  assert.match(script, /html\.aiads-provider-direct-host \.app-shell>main>#ai-providers[\s\S]*overflow-y:auto!important/);
+});
+
+test('provider observer reacts when simple UI mounts after startup', () => {
+  assert.match(script, /childList:\s*true/);
+  assert.match(script, /subtree:\s*true/);
 });
 
 test('Providers desktop and tablet keep professional full-width two-column layout', () => {
@@ -43,10 +49,10 @@ test('Create button is mathematically centered in bottom navigation', () => {
   assert.match(script, /button\.neo-main[\s\S]*transform:translate\(-50%,-50%\)!important/);
 });
 
-test('Providers host fix loads after final layout layer with current cache version', () => {
+test('Providers host fix loads after final layout layer', () => {
   const finalIndex = gateway.indexOf('/neo-layout-final.js');
   const hostIndex = gateway.indexOf('/provider-mobile-host-fix.js');
   assert.ok(finalIndex >= 0);
   assert.ok(hostIndex > finalIndex);
-  assert.match(gateway, /provider-mobile-host-fix\.js\?v=provider-host-20260826c/);
+  assert.match(gateway, /provider-mobile-host-fix\.js\?v=\$\{CACHE_BUST_VERSION\}/);
 });
