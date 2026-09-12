@@ -2,7 +2,17 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260912h-provider-simple-eager';
+const CACHE_BUST_VERSION = 'cache-20260912i-provider-role-split';
+
+function stripLegacyProviderUi(html) {
+  let output = String(html || '');
+  output = output.replace(
+    /<section id="ai-providers"[\s\S]*?(?=<section id="generation-queue")/,
+    '<section id="ai-providers" class="page-view hidden"></section>\n'
+  );
+  output = output.replace(/\s*<script\s+src="\/ai-providers\.js(?:\?[^\"]*)?"\s*><\/script>/g, '');
+  return output;
+}
 
 function createSiteAuthGateway(innerApp, config) {
   const gateway = express();
@@ -71,7 +81,7 @@ function createSiteAuthGateway(innerApp, config) {
   const sendAppShell = async (req, res, next) => {
     try {
       const file = `${config.root}/public/index.html`;
-      let html = await fs.readFile(file, 'utf8');
+      let html = stripLegacyProviderUi(await fs.readFile(file, 'utf8'));
       html = html.replace(/((?:src|href)=\")(\/[^\"]+\.(?:js|css))(?:\?[^\"]*)?(\")/g, `$1$2?v=${CACHE_BUST_VERSION}$3`);
 
       const eagerPaths = new Set([
@@ -137,4 +147,4 @@ function createSiteAuthGateway(innerApp, config) {
   return gateway;
 }
 
-module.exports = { createSiteAuthGateway };
+module.exports = { createSiteAuthGateway, stripLegacyProviderUi };
