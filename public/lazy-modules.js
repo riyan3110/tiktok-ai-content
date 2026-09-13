@@ -2,14 +2,14 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260914-google-studio-preserved';
+  const VERSION = 'cache-20260914-manual-provider-runtime';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
   const groups = {
     text: ['/background-state.js', '/app.js'],
     assets: ['/assets.js'],
-    studio: ['/assets.js', '/content-studio-vidu-models.js', '/content-studio.js'],
+    studio: ['/assets.js', '/content-studio.js'],
     workflow: ['/workflow-history.js', '/workflow.js'],
     factory: ['/content-factory.js'],
     'prompt-studio': ['/prompt-studio.js'],

@@ -96,10 +96,9 @@ test('fallback off uses only selected provider; fallback on uses only remaining 
 
   await request(app).delete(`/api/dynamic-ai/providers/${one.id}`).expect(200);
   const before = calls.length;
-  const generatedAfterDelete = await request(app).post('/api/dynamic-ai/generate').send({ prompt: 'setelah hapus' }).expect(200);
-  assert.equal(generatedAfterDelete.body.providerId, two.id);
+  await request(app).post('/api/dynamic-ai/generate').send({ prompt: 'setelah hapus' }).expect(409);
   const newCalls = calls.slice(before).filter(call => call.url.endsWith('/chat/completions'));
-  assert.equal(newCalls.some(call => call.url.includes('one.local')), false);
+  assert.deepEqual(newCalls, []);
 });
 
 test('the same URL stores independent Text and Image credentials, models and selections', async () => {

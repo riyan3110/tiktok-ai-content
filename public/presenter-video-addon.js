@@ -5,8 +5,6 @@
   const $ = selector => document.querySelector(selector);
   const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
   const terminal = new Set(['Completed', 'Failed', 'Cancelled']);
-  const referenceProviders = new Set(['vidu', '9router', 'orcarouter', 'omni']);
-  const providerPriority = ['vidu', '9router', 'orcarouter', 'omni'];
   const AUDIO_ONLY_SLIDE = 3;
 
   let activeContent = null;
@@ -100,48 +98,11 @@
     ].join('\n\n');
   }
 
-  async function resolveVideoModel(provider, assetCount) {
-    const configured = provider?.models?.video || '';
-    if (provider.id === 'vidu' && window.ContentStudioViduModels) {
-      const state = window.ContentStudioViduModels.stateFor({ media: 'video', assetCount, configured });
-      if (state.valid) return state.choice;
-    }
-    if (provider.id === '9router') {
-      const catalog = await api('/api/ai/providers/9router/models');
-      const group = catalog?.video || {};
-      const models = [...(group.combos || []), ...(group.directModels || [])];
-      return models.includes(configured) ? configured : models[0] || '';
-    }
-    if (provider.id === 'orcarouter') {
-      const catalog = await api('/api/ai/providers/orcarouter/models');
-      const models = catalog?.video || [];
-      return models.includes(configured) ? configured : models[0] || '';
-    }
-    return configured;
-  }
-
-  async function chooseVideoProvider(assetCount) {
-    const providers = (await api('/api/content-studio/providers'))
-      .filter(provider => provider.types?.includes('video') && referenceProviders.has(provider.id));
-    if (!providers.length) throw new Error('Belum ada provider video aktif yang dapat menerima foto presenter sebagai referensi.');
-
-    providers.sort((a, b) => {
-      const aDefault = a.defaultCapabilities?.includes('video') ? -100 : 0;
-      const bDefault = b.defaultCapabilities?.includes('video') ? -100 : 0;
-      const aRank = providerPriority.indexOf(a.id);
-      const bRank = providerPriority.indexOf(b.id);
-      return aDefault + (aRank < 0 ? 99 : aRank) - (bDefault + (bRank < 0 ? 99 : bRank));
-    });
-
-    for (const provider of providers) {
-      try {
-        const model = await resolveVideoModel(provider, assetCount);
-        if (model) return { provider, model };
-      } catch (error) {
-        console.warn('[Presenter Video] provider dilewati', provider.id, error);
-      }
-    }
-    throw new Error('Provider video aktif belum memiliki model image-to-video yang bisa dipakai.');
+  async function chooseVideoProvider() {
+    const providers = await api('/api/content-studio/providers');
+    const provider = providers.find(provider => provider.types?.includes('video') && provider.defaultCapabilities?.includes('video'));
+    if (!provider?.models?.video) throw new Error('Belum ada provider video manual aktif yang dapat menerima foto presenter.');
+    return { provider, model: provider.models.video };
   }
 
   function setStatus(message, error = false) {

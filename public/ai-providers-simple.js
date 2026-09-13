@@ -165,6 +165,7 @@
   }
 
   function render() {
+    window.dispatchEvent(new Event('ai-provider-state-changed'));
     for (const role of ['text', 'image']) {
       const provider = selectedProvider(role);
       const current = defaultFor(role);
