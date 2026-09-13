@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260912i-provider-role-split';
+const CACHE_BUST_VERSION = 'cache-20260914-google-studio-preserved';
 
 function stripLegacyProviderUi(html) {
   let output = String(html || '');
@@ -84,6 +84,11 @@ function createSiteAuthGateway(innerApp, config) {
       let html = stripLegacyProviderUi(await fs.readFile(file, 'utf8'));
       html = html.replace(/((?:src|href)=\")(\/[^\"]+\.(?:js|css))(?:\?[^\"]*)?(\")/g, `$1$2?v=${CACHE_BUST_VERSION}$3`);
 
+      // Preserved from the Google Studio/ZCode checkpoint: start in the neo theme
+      // before deferred assets execute, preventing the old/dark shell from flashing.
+      html = html.replace('<html lang="id">', '<html lang="id" class="aiads-neo-theme">');
+      const criticalThemeStyles = '<style>html.aiads-neo-theme{background:#f7f7f2}html.aiads-neo-theme body{background:#f7f7f2;color:#151b2b}</style>';
+
       const eagerPaths = new Set([
         '/icons.js',
         '/backend-foundation.js',
@@ -100,6 +105,7 @@ function createSiteAuthGateway(innerApp, config) {
       const compactStyles = `<link rel="stylesheet" href="/asset-compact.css?v=${CACHE_BUST_VERSION}" data-asset-compact>`;
       const stabilityStyles = `<link rel="stylesheet" href="/ui-stability.css?v=${CACHE_BUST_VERSION}">`;
       const responsiveStyles = `<link rel="stylesheet" href="/responsive-professional.css?v=${CACHE_BUST_VERSION}">`;
+      const preservedStyles = `<link rel="stylesheet" href="/google-studio-preserved.css?v=${CACHE_BUST_VERSION}">`;
       const performanceScript = `<script defer src="/performance-shell.js?v=${CACHE_BUST_VERSION}"></script>`;
       const lazyScript = `<script defer src="/lazy-modules.js?v=${CACHE_BUST_VERSION}"></script>`;
       const providerSimpleScript = `<script defer src="/ai-providers-simple.js?v=${CACHE_BUST_VERSION}"></script>`;
@@ -111,11 +117,14 @@ function createSiteAuthGateway(innerApp, config) {
       const providerMobileHostFixScript = `<script defer src="/provider-mobile-host-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
       const providerLegalFixScript = `<script defer src="/provider-legal-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
       const tiktokControlFixScript = `<script defer src="/tiktok-control-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const preservedScript = `<script defer src="/google-studio-preserved.js?v=${CACHE_BUST_VERSION}"></script>`;
       const automationSuspendScript = `<script defer src="/automation-suspend.js?v=${CACHE_BUST_VERSION}"></script>`;
       const startupScripts = [
+        criticalThemeStyles,
         compactStyles,
         stabilityStyles,
         responsiveStyles,
+        preservedStyles,
         eagerScripts.get('/icons.js'),
         eagerScripts.get('/backend-foundation.js'),
         performanceScript,
@@ -130,6 +139,7 @@ function createSiteAuthGateway(innerApp, config) {
         providerMobileHostFixScript,
         providerLegalFixScript,
         tiktokControlFixScript,
+        preservedScript,
         automationSuspendScript
       ].filter(Boolean).join('\n');
       html = html.replace('</head>', `${startupScripts}\n</head>`);
