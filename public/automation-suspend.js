@@ -52,5 +52,6 @@
   else applySuspendedUi();
 
   window.addEventListener('hashchange', applySuspendedUi);
-  new MutationObserver(applySuspendedUi).observe(document.documentElement, { childList: true, subtree: true });
+  // Observer dokumen-dokumen penuh dihapus: seksi yang disembunyikan statik,
+  // penerapan awal + hashchange sudah cukup menutup suspensi UI.
 })();
