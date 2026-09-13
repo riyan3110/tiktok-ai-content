@@ -101,7 +101,7 @@ test('version 1 to 2 purges returned legacy providers while preserving manually 
   assert.equal(state.text_fallback_enabled, 1, 'explicit fallback switch must not be changed by v2 cleanup');
 });
 
-test('cleanup is one-time so provider saved after migration survives restart checks', t => {
+test('cleanup keeps a provider saved after migration across restart checks', t => {
   const { db, keyFile } = fixture(t);
   assert.equal(cleanup.run(db, { keyFile }).migrated, true);
 
@@ -116,4 +116,22 @@ test('cleanup is one-time so provider saved after migration survives restart che
   assert.equal(profile.name, 'Fresh Provider');
   assert.deepEqual(JSON.parse(profile.models_json), ['fresh-model']);
   assert.equal(db.prepare('SELECT selected_text_provider_id FROM ai_dynamic_provider_state WHERE id=1').get().selected_text_provider_id, 'fresh-provider');
+});
+
+test('legacy provider rows are purged on every startup even after storage version 2', t => {
+  const { db, keyFile } = fixture(t);
+  cleanup.run(db, { keyFile });
+  addDynamic(db, 'manual-provider');
+  db.prepare('UPDATE ai_dynamic_provider_profiles SET name=?,models_json=?,selected_model=?,selected_text_model=? WHERE id=?')
+    .run('Manual Provider', JSON.stringify(['manual-model']), 'manual-model', 'manual-model', 'manual-provider');
+  addLegacy(db, '9router');
+
+  const result = cleanup.run(db, { keyFile });
+  assert.equal(result.migrated, false);
+  assert.ok(result.clearedRows >= 4, 'repeatable guard should remove legacy provider rows');
+  for (const table of cleanup.LEGACY_TABLES) {
+    assert.equal(db.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get().total, 0, `${table} should stay empty`);
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS total FROM ai_dynamic_provider_profiles WHERE id=?').get('manual-provider').total, 1);
+  assert.equal(db.prepare('SELECT selected_text_provider_id FROM ai_dynamic_provider_state WHERE id=1').get().selected_text_provider_id, 'manual-provider');
 });
