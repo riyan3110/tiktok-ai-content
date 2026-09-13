@@ -31,6 +31,7 @@ const { install: installPresenterVideoPatch } = require('./services/presenterVid
 const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
 const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
 const dynamicAiProviders = require('./services/dynamicAiProviders');
+const providerStorageCleanup = require('./services/providerStorageCleanup');
 const { install: installDynamicTextBridge } = require('./services/dynamicTextBridge');
 
 // Temporary product decision: automatic Text Content scheduling is suspended.
@@ -38,6 +39,15 @@ const { install: installDynamicTextBridge } = require('./services/dynamicTextBri
 const AUTOMATION_SUSPENDED = true;
 
 const db = createDatabase();
+dynamicAiProviders.ensureSchema(db);
+const providerCleanup = providerStorageCleanup.run(db);
+if (providerCleanup.migrated) {
+  console.info('[Provider Cleanup] Konfigurasi/provider/model lama dibersihkan.', {
+    rows: providerCleanup.clearedRows,
+    encryptionKeyRemoved: providerCleanup.encryptionKeyRemoved,
+    storageVersion: providerCleanup.version
+  });
+}
 useVpsLocalStorage(db);
 installVpsLocalStorageLock();
 installVpsStorageUiPatch();
