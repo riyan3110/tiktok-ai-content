@@ -62,15 +62,15 @@ test('delete clears legacy credentials, model cache, defaults and survives a new
   assert.equal(state.defaults.text.providerId, null); assert.equal(state.defaults.image.providerId, null);
 });
 
-test('deleting active provider selects only a remaining provider enrolled in the same category', t => {
+test('deleting active provider clears both roles without selecting a replacement', t => {
   const db = setup(t); add(db, 'both', ['text', 'image']); add(db, 'image-b', ['image']); add(db, 'text-b', ['text']);
   providers.setDefault(db, 'text', 'both'); providers.setDefault(db, 'image', 'both');
   db.prepare('UPDATE ai_dynamic_provider_state SET text_fallback_enabled=1,image_fallback_enabled=1').run();
   providers.removeProvider(db, 'both');
-  assert.equal(providers.publicState(db).defaults.text.providerId, 'text-b');
-  assert.equal(providers.publicState(db).defaults.image.providerId, 'image-b');
-  assert.deepEqual(providers.orderedRows(db, 'text').map(x => x.id), ['text-b']);
-  assert.deepEqual(providers.orderedRows(db, 'image').map(x => x.id), ['image-b']);
+  assert.equal(providers.publicState(db).defaults.text.providerId, null);
+  assert.equal(providers.publicState(db).defaults.image.providerId, null);
+  assert.deepEqual(providers.orderedRows(db, 'text').map(x => x.id), []);
+  assert.deepEqual(providers.orderedRows(db, 'image').map(x => x.id), []);
 });
 
 test('public state never exposes stored encrypted or plaintext keys', t => {

@@ -1,6 +1,6 @@
 const crypto = require('node:crypto');
 const aiConnector = require('../ai/connector');
-const { ProviderFactory } = require('../providers');
+const dynamicAi = require('./dynamicAiProviders');
 const { StorageService } = require('../storage/service');
 const sourceFetcher = require('./sourceFetcher');
 
@@ -9,7 +9,6 @@ const MAX_CONTEXT_CHARS = 12000;
 const MAX_MESSAGE_CHARS = 12000;
 const MAX_VISION_IMAGES = 4;
 const MAX_VISION_IMAGE_BYTES = 8 * 1024 * 1024;
-const MODEL_CACHE_MS = 5 * 60 * 1000;
 
 function ensureColumn(db, table, name, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
@@ -48,25 +47,19 @@ function ensureSchema(db) {
 }
 
 function textProviders(db) {
-  return db.prepare('SELECT * FROM ai_provider_settings WHERE enabled=1 ORDER BY provider').all()
-    .filter(row => (aiConnector.CAPABILITIES[row.provider] || []).includes('text'))
-    .filter(row => Boolean(row.api_key_encrypted) && aiConnector.validBaseUrl(row.base_url))
-    .map(row => aiConnector.publicSetting(row, aiConnector.defaultCapabilities(db, row.provider)));
+  const state = dynamicAi.publicState(db);
+  return state.providers.filter(row => row.roles.includes('text') && row.id === state.defaults.text.providerId)
+    .map(row => ({ provider: row.id, name: row.name, textModel: row.textModel, defaultModel: row.textModel, models: row.models, enabled: true, hasApiKey: row.hasApiKey }));
 }
-
 function pickProvider(db, requested) {
-  const providers = textProviders(db);
-  if (!providers.length) throw Object.assign(new Error('Belum ada Text AI provider yang aktif dan memiliki API key.'), { status: 409 });
-  if (requested) {
-    const exact = providers.find(item => item.provider === requested);
-    if (!exact) throw Object.assign(new Error('Text AI provider yang dipilih belum siap digunakan.'), { status: 409 });
-    return exact;
-  }
-  const defaultId = db.prepare("SELECT provider FROM ai_provider_defaults WHERE capability='text'").get()?.provider;
-  return providers.find(item => item.provider === defaultId) || providers[0];
+  const provider = textProviders(db)[0];
+  if (!provider || (requested && requested !== provider.provider)) throw Object.assign(new Error('Pilih Default Text AI melalui Provider AI.'), { status: 409 });
+  return provider;
 }
-
-const modelFor = (provider, requested) => String(requested || provider.textModel || provider.defaultModel || '').trim();
+const modelFor = (provider, requested) => {
+  if (requested && requested !== provider.textModel) throw Object.assign(new Error('Model berubah. Pilih model melalui Provider AI.'), { status: 409 });
+  return provider.textModel;
+};
 const getSession = (db, id) => db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(id);
 
 function sessionJson(row) {
@@ -167,33 +160,11 @@ async function webContextFor(content, transport) {
 }
 
 async function executeTextProvider(db, providerId, model, messages, transport, assets = []) {
-  const row = aiConnector.setting(db, providerId);
-  const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
-  const timeoutMs = Math.max(1000, Number(row.timeout_ms) || 30000);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const started = Date.now();
-  const fallbackPrompt = (Array.isArray(messages) ? messages : [])
-    .map(message => `${message.role}: ${typeof message.content === 'string' ? message.content : ''}`)
-    .join('\n\n');
-
-  try {
-    const result = await adapter.execute({
-      mediaType: 'text',
-      model,
-      messages: providerId === 'agentrouter' ? messages : undefined,
-      prompt: fallbackPrompt,
-      assets: providerId === 'agentrouter' ? assets : [],
-      parameters: {}
-    }, { signal: controller.signal });
-    aiConnector.updateHealth(db, providerId, true, { responseTime: Date.now() - started });
-    return result;
-  } catch (error) {
-    aiConnector.updateHealth(db, providerId, false, { responseTime: Date.now() - started });
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+  modelFor(pickProvider(db, providerId), model);
+  const parts = assets.map(asset => ({ type: 'image_url', image_url: { url: `data:${asset.mimeType};base64,${asset.data}` } }));
+  if (parts.length) messages = messages.map((message, index) => index === messages.length - 1 ? { ...message, content: [{ type: 'text', text: String(message.content || '') }, ...parts] } : message);
+  const result = await dynamicAi.executeMessages(db, messages, transport);
+  return { ...result, content: result.text };
 }
 
 function updateSessionFromUser(db, session, content, provider, model) {
@@ -206,31 +177,17 @@ function install({ app, db, transport } = {}) {
   if (!app || !db) throw new Error('Floating chat patch membutuhkan app dan db.');
   ensureSchema(db);
   const storage = new StorageService({ db });
-  const modelCache = new Map();
 
   app.get('/api/floating-chat/providers', (req, res) => {
     const providers = textProviders(db);
-    const defaultId = db.prepare("SELECT provider FROM ai_provider_defaults WHERE capability='text'").get()?.provider || null;
+    const defaultId = dynamicAi.publicState(db).defaults.text.providerId;
     res.json({ providers, defaultProvider: defaultId });
   });
 
   app.get('/api/floating-chat/providers/:provider/models', async (req, res) => {
     try {
       const provider = pickProvider(db, req.params.provider);
-      const cached = modelCache.get(provider.provider);
-      if (cached && Date.now() - cached.at < MODEL_CACHE_MS) return res.json({ provider: provider.provider, models: cached.models, cached: true });
-      const row = aiConnector.setting(db, provider.provider);
-      const adapter = ProviderFactory.create(aiConnector.configured(row), transport);
-      let models = [];
-      if (typeof adapter.discoverModels === 'function') {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 15000);
-        try { models = await adapter.discoverModels(controller.signal); }
-        finally { clearTimeout(timer); }
-      }
-      models = [...new Set([...(Array.isArray(models) ? models : []), provider.textModel, provider.defaultModel].map(value => String(value || '').trim()).filter(Boolean))];
-      modelCache.set(provider.provider, { at: Date.now(), models });
-      res.json({ provider: provider.provider, models });
+      res.json({ provider: provider.provider, models: provider.models, selectedModel: provider.textModel });
     } catch (error) { sendError(res, error); }
   });
 

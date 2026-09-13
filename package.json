@@ -4,7 +4,9 @@
   "private": true,
   "description": "Generator carousel TikTok berbahasa Indonesia dengan beberapa penyedia AI",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "npm run check",
     "start": "node src/server.js",
@@ -13,7 +15,7 @@
     "check": "find src public test scripts -name '*.js' -print0 | xargs -0 -n1 node --check",
     "lint": "npm run check",
     "test": "node --test",
-    "test:provider-manual": "node --test test/dynamicAiProviders.test.js test/dynamic-provider-state.test.js test/provider-manual-regression.test.js test/provider-storage-cleanup.test.js test/content-studio-legacy-provider-purge.test.js test/strict-provider-delete.test.js test/legacy-text-environment.test.js test/provider-mobile-host-fix.test.js test/google-studio-preserved.test.js"
+    "test:provider-manual": "node --test test/dynamicAiProviders.test.js test/dynamic-provider-state.test.js test/provider-manual-regression.test.js test/provider-storage-cleanup.test.js test/content-studio-legacy-provider-purge.test.js test/strict-provider-delete.test.js test/legacy-text-environment.test.js test/provider-mobile-host-fix.test.js test/google-studio-preserved.test.js test/manual-provider-runtime.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
@@ -24,5 +26,7 @@
     "openai": "^4.104.0",
     "sharp": "^0.33.5"
   },
-  "devDependencies": { "supertest": "^7.1.1" }
+  "devDependencies": {
+    "supertest": "^7.1.1"
+  }
 }

@@ -59,17 +59,6 @@ function normalizeBaseUrl(raw) {
 function inferName(baseUrl) {
   const url = new URL(baseUrl);
   const host = url.hostname.toLowerCase();
-  const exact = [
-    [/api\.b\.ai$/, 'B.AI'],
-    [/openrouter\.ai$/, 'OpenRouter'],
-    [/orcarouter\.ai$/, 'OrcaRouter'],
-    [/bluesminds\.com$/, 'BluesMinds'],
-    [/vyceai\.com$/, 'VyceAI'],
-    [/seekai\.cc$/, 'SeekAI'],
-    [/anymodel\.org$/, 'Anymodel']
-  ].find(([pattern]) => pattern.test(host));
-  if (exact) return exact[1];
-  if (host === '43.159.50.231' && url.port === '20130') return '9Router';
   const first = host.replace(/^api\./, '').split('.')[0] || 'Provider';
   return first.replace(/[-_]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
 }
@@ -242,10 +231,7 @@ function removeProvider(db, id) {
     }
     db.prepare('DELETE FROM ai_dynamic_provider_profiles WHERE id=?').run(id);
     for (const role of ROLES) {
-      const replacement = db.prepare('SELECT * FROM ai_dynamic_provider_profiles ORDER BY created_at,id').all()
-        .find(item => safeModels(item.roles_json).includes(role));
-      db.prepare(`UPDATE ai_dynamic_provider_state SET selected_${role}_provider_id=?,updated_at=CURRENT_TIMESTAMP WHERE selected_${role}_provider_id=?`)
-        .run(replacement?.id || null, id);
+      db.prepare(`UPDATE ai_dynamic_provider_state SET selected_${role}_provider_id=NULL,updated_at=CURRENT_TIMESTAMP WHERE selected_${role}_provider_id=?`).run(id);
     }
     db.prepare('UPDATE ai_dynamic_provider_state SET selected_provider_id=NULL,migration_done=1 WHERE id=1').run();
     invalidate(db, id);
@@ -435,7 +421,7 @@ async function executeMessages(db, messages, transport = fetch, options = {}) {
     try { return await withRequest(db, row, signal => callTextProvider(row, { ...options, messages, signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal }, transport)); }
     catch (error) {
       lastError = new Error(`${row.name}: ${error.status ? error.message : 'Provider gagal merespons atau konfigurasi berubah.'}`);
-      if (!fallbackEnabled(db, 'text')) break;
+      if (options.signal?.aborted || !selectedProfile(db, 'text') || !fallbackEnabled(db, 'text')) break;
     }
   }
   throw Object.assign(lastError || new Error('Semua provider Text AI gagal.'), { status: 502 });
@@ -459,7 +445,7 @@ async function executeImage(db, prompt, options = {}, transport = fetch) {
     try { return await withRequest(db, row, signal => callImageProvider(row, value, { ...options, db, signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal }, transport)); }
     catch (error) {
       lastError = new Error(`${row.name}: ${error.status ? error.message : 'Provider image gagal merespons atau konfigurasi berubah.'}`);
-      if (!fallbackEnabled(db, 'image')) break;
+      if (options.signal?.aborted || !selectedProfile(db, 'image') || !fallbackEnabled(db, 'image')) break;
     }
   }
   throw Object.assign(lastError || new Error('Semua provider Image AI gagal.'), { status: 502 });

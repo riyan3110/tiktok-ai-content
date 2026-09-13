@@ -112,3 +112,48 @@ test('deleting a non-selected provider does not change the selected provider, mo
   assert.equal(deleted.body.defaults.text.model, 'one-b');
   assert.equal(deleted.body.defaults.text.fallbackEnabled, true);
 });
+
+test('deleting a failing primary during its request cannot activate fallback', async t => {
+  const db=createDatabase(':memory:'); t.after(()=>db.close());
+  const app=express();app.use(express.json());
+  let release,started;const ready=new Promise(resolve=>{started=resolve;});const calls=[];
+  const transport=async(url,options={})=>{
+    if(String(options.headers?.Authorization).startsWith('Bearer invalid-'))return jsonResponse({},401);
+    if(url.endsWith('/models'))return jsonResponse({data:[{id:'model'}]});
+    calls.push(url);
+    if(url.includes('one.local')){started();await new Promise(resolve=>{release=resolve;});return jsonResponse({},500);}
+    return jsonResponse({choices:[{message:{content:'must not run'}}]});
+  };
+  dynamicAi.install({app,db,transport});
+  const one=await saveText(app,'https://one.local/v1','one');
+  await saveText(app,'https://two.local/v1','two');
+  await request(app).put('/api/dynamic-ai/defaults/text').send({providerId:one.id,model:'model'}).expect(200);
+  await request(app).put('/api/dynamic-ai/fallback').send({role:'text',enabled:true}).expect(200);
+  const pending=dynamicAi.execute(db,'test',transport);
+  await ready; dynamicAi.removeProvider(db,one.id);release();
+  await assert.rejects(pending);
+  assert.equal(calls.length,1);
+});
+
+test('Image fallback ON tries saved image provider and OFF stops after the primary failure', async t=>{
+  const db=createDatabase(':memory:');t.after(()=>db.close());
+  const app=express();app.use(express.json());const calls=[];
+  const transport=async(url,options={})=>{
+    if(String(options.headers?.Authorization).startsWith('Bearer invalid-'))return jsonResponse({},401);
+    if(url.endsWith('/models'))return jsonResponse({data:[{id:'image-model'}]});
+    calls.push(url);
+    return url.includes('one.local')?jsonResponse({},500):jsonResponse({data:[{url:'https://result.invalid/image.png'}]});
+  };
+  dynamicAi.install({app,db,transport});
+  let one;
+  for(const name of ['one','two']){
+    const saved=(await request(app).post('/api/dynamic-ai/providers').send({role:'image',baseUrl:`https://${name}.local/v1`,apiKey:name}).expect(201)).body.saved;
+    if(name==='one')one=saved;
+  }
+  await request(app).put('/api/dynamic-ai/defaults/image').send({providerId:one.id,model:'image-model'}).expect(200);
+  await assert.rejects(dynamicAi.executeImage(db,'test',{},transport));assert.equal(calls.length,1);
+  await request(app).put('/api/dynamic-ai/fallback').send({role:'image',enabled:true}).expect(200);
+  const result=await dynamicAi.executeImage(db,'test',{},transport);assert.notEqual(result.providerId,one.id);assert.equal(calls.length,3);
+  await request(app).put('/api/dynamic-ai/fallback').send({role:'image',enabled:false}).expect(200);
+  await assert.rejects(dynamicAi.executeImage(db,'test',{},transport));assert.equal(calls.length,4);
+});
