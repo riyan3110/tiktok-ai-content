@@ -63,15 +63,14 @@ function resetDynamicState(db) {
 function run(db, { keyFile = encryptionKeyFile() } = {}) {
   ensureMeta(db);
   const before = Number(db.prepare('SELECT version FROM ai_provider_storage_meta WHERE id=1').get()?.version || 0);
-  if (before >= STORAGE_VERSION) return { migrated: false, version: before, clearedRows: 0, encryptionKeyRemoved: false };
-
   let version = before;
   let clearedRows = 0;
   let encryptionKeyRemoved = false;
+  let migrated = false;
 
-  // Version 1 was the destructive, one-time reset used to remove every provider
-  // that existed before the manual Base URL + API Key flow. Keep that behavior
-  // only for databases that never received the v1 migration.
+  // Version 1 is the destructive one-time reset for databases that never
+  // completed the manual-provider migration. It intentionally removes every
+  // provider/profile that predates the manual Base URL + API Key flow.
   if (version < 1) {
     db.transaction(() => {
       clearedRows += clearTables(db, PROVIDER_TABLES);
@@ -88,12 +87,13 @@ function run(db, { keyFile = encryptionKeyFile() } = {}) {
       }
     }
     version = 1;
+    migrated = true;
   }
 
   // Version 2 fixes VPSes that had already completed v1 but still retained or
-  // later regained rows from the old provider system. Purge only legacy tables:
-  // manually saved dynamic providers, their encrypted API keys, selected models,
-  // fallback switches, and the current encryption key MUST survive this step.
+  // later regained rows from the old provider system. Keep manually saved
+  // dynamic providers, selected models, fallback switches, and their encryption
+  // key untouched.
   if (version < 2) {
     db.transaction(() => {
       clearedRows += clearTables(db, LEGACY_TABLES);
@@ -109,9 +109,17 @@ function run(db, { keyFile = encryptionKeyFile() } = {}) {
       db.prepare('UPDATE ai_provider_storage_meta SET version=2,updated_at=CURRENT_TIMESTAMP WHERE id=1').run();
     })();
     version = 2;
+    migrated = true;
   }
 
-  return { migrated: true, version, clearedRows, encryptionKeyRemoved };
+  // Permanent guard: the retired provider tables are not allowed to repopulate.
+  // This executes on every process start, so OrcaRouter/9Router/Vidu/OpenAI
+  // Images/Zark/NanoBanana rows from the old system can never silently return.
+  db.transaction(() => {
+    clearedRows += clearTables(db, LEGACY_TABLES);
+  })();
+
+  return { migrated, version, clearedRows, encryptionKeyRemoved };
 }
 
 module.exports = { run, STORAGE_VERSION, PROVIDER_TABLES, LEGACY_TABLES, encryptionKeyFile };
