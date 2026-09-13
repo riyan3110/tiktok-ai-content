@@ -38,15 +38,19 @@ function addDynamic(db, id = 'old-provider') {
     WHERE id=1`).run(id, id);
 }
 
-test('storage version 0 removes legacy provider credentials, cached models, defaults and old encryption key', t => {
+function addLegacy(db, provider = 'orcarouter') {
+  db.prepare('INSERT INTO ai_provider_settings(provider,base_url,api_key_encrypted,default_model,image_model,video_model,enabled) VALUES(?,?,?,?,?,?,?)')
+    .run(provider, `https://${provider}.legacy.invalid/v1`, 'legacy-key', 'legacy-model', 'legacy-image', 'legacy-video', 1);
+  db.prepare('INSERT INTO ai_provider_defaults(capability,provider) VALUES(?,?)').run('image', provider);
+  db.prepare('INSERT INTO ai_provider_health(provider,status) VALUES(?,?)').run(provider, 'Online');
+  db.prepare('INSERT INTO ai_provider_model_capabilities(provider,model_id,capability) VALUES(?,?,?)').run(provider, 'legacy-image', 'image');
+}
+
+test('storage version 0 removes every pre-manual provider and the pre-manual encryption key', t => {
   const { db, keyFile } = fixture(t);
   addDynamic(db);
   db.prepare('INSERT INTO ai_dynamic_provider_revisions(id,revision) VALUES(?,?)').run('old-provider', 7);
-  db.prepare('INSERT INTO ai_provider_settings(provider,base_url,api_key_encrypted,default_model,enabled) VALUES(?,?,?,?,?)')
-    .run('xkiro', 'https://old-xkiro.invalid/v1', 'legacy-key', 'legacy-model', 1);
-  db.prepare('INSERT INTO ai_provider_defaults(capability,provider) VALUES(?,?)').run('text', 'xkiro');
-  db.prepare('INSERT INTO ai_provider_health(provider,status) VALUES(?,?)').run('xkiro', 'Online');
-  db.prepare('INSERT INTO ai_provider_model_capabilities(provider,model_id,capability) VALUES(?,?,?)').run('xkiro', 'legacy-model', 'text');
+  addLegacy(db, 'xkiro');
   fs.writeFileSync(keyFile, Buffer.alloc(32, 1));
 
   const result = cleanup.run(db, { keyFile });
@@ -66,6 +70,35 @@ test('storage version 0 removes legacy provider credentials, cached models, defa
   assert.equal(state.text_fallback_enabled, 0);
   assert.equal(state.image_fallback_enabled, 0);
   assert.equal(db.prepare('SELECT version FROM ai_provider_storage_meta WHERE id=1').get().version, cleanup.STORAGE_VERSION);
+});
+
+test('version 1 to 2 purges returned legacy providers while preserving manually saved provider state', t => {
+  const { db, keyFile } = fixture(t);
+  db.exec(`CREATE TABLE IF NOT EXISTS ai_provider_storage_meta (
+    id INTEGER PRIMARY KEY CHECK(id = 1), version INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ); INSERT OR REPLACE INTO ai_provider_storage_meta(id,version) VALUES(1,1);`);
+
+  addDynamic(db, 'manual-provider');
+  db.prepare('UPDATE ai_dynamic_provider_profiles SET name=?,models_json=?,selected_model=?,selected_text_model=? WHERE id=?')
+    .run('Manual Provider', JSON.stringify(['manual-model']), 'manual-model', 'manual-model', 'manual-provider');
+  addLegacy(db, 'orcarouter');
+  fs.writeFileSync(keyFile, Buffer.alloc(32, 7));
+
+  const result = cleanup.run(db, { keyFile });
+  assert.equal(result.migrated, true);
+  assert.equal(result.version, 2);
+  assert.equal(result.encryptionKeyRemoved, false);
+  assert.equal(fs.existsSync(keyFile), true, 'current manual-provider encryption key must survive v2 cleanup');
+
+  for (const table of cleanup.LEGACY_TABLES) {
+    assert.equal(db.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get().total, 0, `${table} should be empty after v2`);
+  }
+  const profile = db.prepare('SELECT * FROM ai_dynamic_provider_profiles WHERE id=?').get('manual-provider');
+  assert.equal(profile.name, 'Manual Provider');
+  assert.deepEqual(JSON.parse(profile.models_json), ['manual-model']);
+  const state = db.prepare('SELECT * FROM ai_dynamic_provider_state WHERE id=1').get();
+  assert.equal(state.selected_text_provider_id, 'manual-provider');
+  assert.equal(state.text_fallback_enabled, 1, 'explicit fallback switch must not be changed by v2 cleanup');
 });
 
 test('cleanup is one-time so provider saved after migration survives restart checks', t => {
