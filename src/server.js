@@ -32,6 +32,7 @@ const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPa
 const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
 const dynamicAiProviders = require('./services/dynamicAiProviders');
 const providerStorageCleanup = require('./services/providerStorageCleanup');
+const { install: installStrictProviderDelete } = require('./services/strictProviderDelete');
 const { install: installDynamicTextBridge } = require('./services/dynamicTextBridge');
 
 // Temporary product decision: automatic Text Content scheduling is suspended.
@@ -53,6 +54,7 @@ installVpsLocalStorageLock();
 installVpsStorageUiPatch();
 const temporaryStorage = new StorageService({ db });
 const innerApp = createApp({ db });
+installStrictProviderDelete({ app: innerApp, db, dynamicAi: dynamicAiProviders });
 dynamicAiProviders.install({ app: innerApp, db });
 innerApp.use('/api/dynamic-ai', (error, req, res, next) => {
   if (res.headersSent) return next(error);
