@@ -1,0 +1,11 @@
+.aiads-neo-theme #prompt-simple-form{padding:16px 18px!important}
+.aiads-neo-theme .provider-empty-warning{padding:14px 16px!important}
+.aiads-chat-header{padding:10px 14px!important}
+.prompt-ref-preview img{max-width:180px;max-height:120px;border-radius:10px;border:1px solid var(--border);display:block;margin-top:8px;object-fit:cover}
+.aiads-chat-panel:not(.fullscreen){height:min(380px,44vh)!important}
+.aiads-chat-messages{padding:9px 10px!important;gap:8px!important}
+.aiads-neo-theme #legacy-studio .trend-use{background:var(--neo-white)!important;border:2px solid var(--neo-line)!important;border-radius:13px!important;padding:14px 16px!important}
+.aiads-neo-theme #legacy-studio .trend-use p,.aiads-neo-theme #legacy-studio .trend-use label,.aiads-neo-theme #legacy-studio .trend-use b{color:var(--neo-ink)!important}
+.aiads-neo-theme .neo-profile-top{flex-wrap:wrap!important}
+.aiads-neo-theme .neo-profile-copy{flex:1 1 auto!important;min-width:0!important}
+.aiads-neo-theme .neo-status-cluster{flex-shrink:0!important}
