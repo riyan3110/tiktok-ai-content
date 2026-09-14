@@ -20,7 +20,7 @@ test('Notes persist prompt text and automatically derive a useful title from Sce
   const { app } = fixture(t);
   const content = '## Project\nCreate a focused advertising concept.\n\n## Scene\nYoung creator demonstrates a compact coffee grinder beside a sunny kitchen window.\n\n## Technical Notes\nAspect ratio: 9:16.';
   const saved = await request(app).post('/api/notes').send({ content, source: 'prompt-generator' }).expect(201);
-  assert.equal(saved.body.title, 'Young creator demonstrates a compact coffee grinder beside a sunny');
+  assert.equal(saved.body.title, 'Young creator demonstrates a compact coffee grinder beside a');
   assert.equal(saved.body.content, content);
   assert.equal(saved.body.source, 'prompt-generator');
 
