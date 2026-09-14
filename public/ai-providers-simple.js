@@ -7,6 +7,7 @@
   const safe = value => { const span = document.createElement('span'); span.textContent = String(value ?? ''); return span.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
   const request = async (url, options = {}) => {
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(30000),
       credentials: 'include',
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -74,6 +75,10 @@
       .simple-provider-option.active{outline:3px solid var(--ink,var(--text,#1f2937));outline-offset:-3px}
       .simple-provider-empty{padding:10px 2px;opacity:.72}
       .simple-provider-fallback{display:flex!important;align-items:center;gap:12px;padding:14px;border:2px solid var(--ink,var(--border,#252b3a));border-radius:18px;font-weight:inherit!important}
+      html #ai-providers #simple-provider-root .simple-provider-fallback{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:10px!important;width:100%!important;min-width:0!important;min-height:44px!important;height:auto!important;max-height:none!important;padding:8px 0!important;margin:12px 0 0!important;border:0!important;box-shadow:none!important;background:transparent!important;box-sizing:border-box!important}
+      html #ai-providers #simple-provider-root .simple-provider-fallback input[type="checkbox"]{appearance:auto!important;-webkit-appearance:checkbox!important;position:static!important;width:20px!important;min-width:20px!important;max-width:20px!important;height:20px!important;min-height:20px!important;max-height:20px!important;flex:0 0 20px!important;padding:0!important;margin:0!important;transform:none!important;accent-color:var(--neo-purple,#a78bfa)}
+      html #ai-providers #simple-provider-root .simple-provider-fallback span{display:block!important;min-width:0!important;white-space:normal!important;font-size:14px!important;line-height:1.4!important}
+      #simple-provider-root .provider-form input{pointer-events:auto!important;user-select:text!important;-webkit-user-select:text!important;font-size:16px!important}
       .simple-provider-fallback input{width:21px;height:21px;flex:0 0 auto}.simple-provider-fallback span{display:grid;gap:3px}.simple-provider-fallback small{opacity:.7;font-weight:400}
       .simple-provider-playground{display:grid;gap:12px}.simple-provider-playground textarea{width:100%;resize:vertical}
       .simple-provider-result{white-space:pre-wrap;overflow-wrap:anywhere;min-height:54px;padding:14px;border:2px solid var(--ink,var(--border,#252b3a));border-radius:16px}
@@ -180,7 +185,7 @@
     const host = openPanel === 'delete' ? $('#simple-delete-host') : $(`#simple-${activeRole}-panel-host`);
     if (panel && host && panel.parentElement !== host) host.appendChild(panel);
     renderPanel();
-    document.querySelectorAll('#simple-provider-root button, #simple-provider-root input').forEach(node => { node.disabled = busy; });
+    document.querySelectorAll('#simple-provider-root button, #simple-provider-root input[type="checkbox"]').forEach(node => { node.disabled = busy; });
   }
 
   function roleCard(role) {
@@ -188,8 +193,8 @@
       <h2 id="simple-${role}-title">Default ${roleLabel(role)}</h2>
       <form class="provider-form" data-provider-form="${role}">
         <div class="simple-provider-fields">
-          <label>Base URL ${roleLabel(role)}<input id="simple-${role}-base-url" type="url" autocomplete="off" required placeholder="https://api.provider.com/v1"></label>
-          <label>API Key ${roleLabel(role)}<input id="simple-${role}-api-key" type="password" autocomplete="new-password" required placeholder="Masukkan API key ${roleLabel(role)}"></label>
+          <label>Base URL ${roleLabel(role)}<input id="simple-${role}-base-url" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" required placeholder="https://api.provider.com/v1"></label>
+          <label>API Key ${roleLabel(role)}<input id="simple-${role}-api-key" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="new-password" required placeholder="Masukkan API key ${roleLabel(role)}"></label>
         </div>
         <button class="simple-provider-save" type="submit">Simpan ${roleLabel(role)}</button>
       </form>
@@ -199,7 +204,7 @@
       </div>
       <div id="simple-${role}-summary" class="simple-provider-active" role="status">Memuat…</div>
       <div id="simple-${role}-panel-host"></div>
-      <label class="simple-provider-fallback"><input id="simple-${role}-fallback" type="checkbox" data-fallback-role="${role}"><span>Aktifkan Fallback Penyedia ${roleLabel(role)}</span></label>
+      <label class="simple-provider-fallback"><input id="simple-${role}-fallback" type="checkbox" data-fallback-role="${role}"><span>Fallback ${roleLabel(role)}</span></label>
     </section>`;
   }
 
@@ -232,8 +237,11 @@
         try {
           const result = await request('/api/dynamic-ai/providers', { method: 'POST', body: JSON.stringify({ baseUrl, apiKey, role }) });
           state = normalizeState(result);
-          $(`#simple-${role}-api-key`).value = '';
-          $(`#simple-${role}-base-url`).value = '';
+          // Do not erase edits made while validation was pending.
+          const keyInput = $(`#simple-${role}-api-key`);
+          const urlInput = $(`#simple-${role}-base-url`);
+          if (keyInput.value.trim() === apiKey) keyInput.value = '';
+          if (urlInput.value.trim() === baseUrl) urlInput.value = '';
           openPanel = null;
           toast(`${result.saved.name} tersimpan untuk ${roleLabel(role)} · ${result.saved.models.length} model ditemukan.`);
         } catch (error) { toast(`Gagal menyimpan: ${error.message}`, true); }
