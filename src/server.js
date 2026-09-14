@@ -29,6 +29,7 @@ const { install: installTikTokPullResiliencePatch } = require('./services/tiktok
 const { install: installFloatingChatPatch } = require('./services/floatingChatPatch');
 const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
 const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
+const { install: installPromptNotes } = require('./services/promptNotes');
 const dynamicAiProviders = require('./services/dynamicAiProviders');
 const providerTransport = require('./services/providerTransportCompatibility');
 const providerStorageCleanup = require('./services/providerStorageCleanup');
@@ -68,6 +69,7 @@ installTikTokPullResiliencePatch({ tiktok, db });
 installInsertedImagePatch({ app: innerApp, db, images });
 installAssetUploadPatch({ app: innerApp, db });
 installFloatingChatPatch({ app: innerApp, db });
+installPromptNotes({ app: innerApp, db });
 const app = createSiteAuthGateway(innerApp, config);
 
 if (config.enableCron) cron.schedule(config.cronSchedule, async () => { try { await generateAndSave({ db, content, images, trending, mode: config.dailyTopicMode, requestedTopic: config.dailyManualTopic }); } catch (e) { console.error('Cron gagal:', e); } }, { timezone: config.cronTimezone });
