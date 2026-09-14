@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260914-hook-gallery-image-orientation';
+  const VERSION = 'cache-20260915-prompt-actions-notes';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
@@ -16,6 +16,7 @@
     'prompt-studio': ['/prompt-studio.js'],
     consistency: ['/consistency.js'],
     generator: [],
+    notes: ['/notes.js'],
     providers: ['/ai-providers-simple.js'],
     queue: ['/generation-queue.js'],
     integration: ['/ai-integration.js'],
@@ -88,6 +89,7 @@
     if (target.matches('[data-workspace-view="factory"]')) return 'factory';
     if (target.matches('[data-workspace-view="consistency"]')) return 'consistency';
     if (target.matches('[data-workspace-view="generator"]')) return 'generator';
+    if (target.matches('[data-workspace-view="notes"]')) return 'notes';
     if (target.matches('[data-workspace-view="providers"]')) return 'providers';
     if (target.matches('[data-workspace-view="queue"]')) return 'queue';
     if (target.matches('[data-workspace-view="integration"]')) return 'integration';
@@ -108,6 +110,7 @@
       case '#content-factory': return 'factory';
       case '#consistency': return 'consistency';
       case '#prompt-generator': return 'generator';
+      case '#notes': return 'notes';
       case '#ai-providers': return 'providers';
       case '#generation-queue': return 'queue';
       case '#ai-integration': return 'integration';
@@ -123,10 +126,33 @@
     load(name).catch(error => console.error('[AI Ads Lab lazy module]', error));
   }
 
+  function patchNotesShortcut() {
+    const shortcuts = [...document.querySelectorAll('.neo-shortcut')];
+    const shortcut = document.querySelector('.neo-shortcut[data-neo-target="schedule"]') || shortcuts.find(item => /^jadwal$/i.test(String(item.querySelector('b,strong')?.textContent || item.textContent || '').trim()));
+    if (!shortcut) return false;
+    shortcut.dataset.neoTarget = 'notes';
+    shortcut.setAttribute('aria-label', 'Notes');
+    shortcut.title = 'Notes';
+    const label = [...shortcut.querySelectorAll('b,strong,span,p,small')].find(node => /^jadwal$/i.test(String(node.textContent || '').trim()));
+    if (label) label.textContent = 'Notes';
+    const icon = shortcut.querySelector('i');
+    if (icon) {
+      icon.dataset.neoIcon = 'notes';
+      icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v14H7a4 4 0 0 1-4-4V6a2 2 0 0 1 2-2Z"/><path d="M7 4v16"/><path d="M10 8h7"/><path d="M10 12h7"/></svg>';
+    }
+    return true;
+  }
+
+  function watchNotesShortcut() {
+    patchNotesShortcut();
+    const observer = new MutationObserver(() => patchNotesShortcut());
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
   function scheduleIdlePrefetch() {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     if (connection?.saveData) return;
-    const order = ['text-content', 'studio', 'assets', 'workflow', 'generator', 'providers', 'templates', 'factory', 'consistency', 'profile', 'queue', 'integration'];
+    const order = ['text-content', 'studio', 'notes', 'assets', 'workflow', 'generator', 'providers', 'templates', 'factory', 'consistency', 'profile', 'queue', 'integration'];
     let index = 0;
     const next = () => {
       if (document.visibilityState === 'hidden' || index >= order.length) return;
@@ -144,6 +170,16 @@
 
   markExisting();
   document.addEventListener('click', async event => {
+    const notesShortcut = event.target.closest('.neo-shortcut[data-neo-target="notes"]');
+    if (notesShortcut) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      location.hash = '#notes';
+      try { await load('notes'); window.PromptNotes?.open(); }
+      catch (error) { console.error('[AI Ads Lab Notes]', error); }
+      return;
+    }
+
     const assetPicker = event.target.closest('#studio-select-assets');
     if (assetPicker && !window.AssetManager) {
       event.preventDefault();
@@ -167,8 +203,8 @@
 
   window.addEventListener('hashchange', () => warm(groupFromHash()));
   window.addEventListener('load', scheduleIdlePrefetch, { once: true });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => warm(groupFromHash()), { once: true });
-  else warm(groupFromHash());
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { watchNotesShortcut(); warm(groupFromHash()); }, { once: true });
+  else { watchNotesShortcut(); warm(groupFromHash()); }
 
   window.AIAdsLazyModules = {
     load,
