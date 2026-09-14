@@ -196,6 +196,8 @@
           <label>Base URL ${roleLabel(role)}<input id="simple-${role}-base-url" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" required placeholder="https://api.provider.com/v1"></label>
           <label>API Key ${roleLabel(role)}<input id="simple-${role}-api-key" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="new-password" required placeholder="Masukkan API key ${roleLabel(role)}"></label>
         </div>
+        ${role === 'image' ? `<label>Format Image API<select id="simple-image-protocol"><option value="openai">Images API (OpenAI-compatible)</option><option value="router-images">OpenRouter Images API</option><option value="chat">Chat Completions dengan output gambar</option><option value="gemini">Gemini generateContent</option><option value="vidu">Vidu Reference to Image</option></select></label><label>ID model gambar (opsional untuk katalog otomatis)<input id="simple-image-model-id" type="text" autocapitalize="none" autocomplete="off" placeholder="Salin ID model dari dashboard provider"></label><p>Jika ID model diisi, Simpan menguji satu gambar memakai kuota provider. Model disimpan hanya jika API menghasilkan gambar. Tanpa ID model, sistem mengambil katalog otomatis.</p>` : ''}
+        <div id="simple-${role}-save-status" role="status" aria-live="polite"></div>
         <button class="simple-provider-save" type="submit">Simpan ${roleLabel(role)}</button>
       </form>
       <div class="simple-provider-actions" style="grid-template-columns:1fr 1fr">
@@ -231,11 +233,15 @@
         const baseUrl = $(`#simple-${role}-base-url`).value.trim();
         const apiKey = $(`#simple-${role}-api-key`).value.trim();
         if (!baseUrl || !apiKey) return toast('Base URL dan API Key wajib diisi.', true);
+        const imageModel = role === 'image' ? $('#simple-image-model-id').value.trim() : '';
+        const imageProtocol = role === 'image' ? $('#simple-image-protocol').value : undefined;
+        const status = $(`#simple-${role}-save-status`);
+        status.textContent = imageModel ? 'Menguji generasi gambar di provider…' : 'Mengambil katalog provider…';
         busy = true; render();
         const button = form.querySelector('button[type="submit"]');
         button.textContent = 'Mengecek provider…';
         try {
-          const result = await request('/api/dynamic-ai/providers', { method: 'POST', body: JSON.stringify({ baseUrl, apiKey, role }) });
+          const result = await request('/api/dynamic-ai/providers', { method: 'POST', signal: AbortSignal.timeout(150000), body: JSON.stringify({ baseUrl, apiKey, role, imageModel, imageProtocol, testImage: Boolean(imageModel) }) });
           state = normalizeState(result);
           // Do not erase edits made while validation was pending.
           const keyInput = $(`#simple-${role}-api-key`);
@@ -243,8 +249,9 @@
           if (keyInput.value.trim() === apiKey) keyInput.value = '';
           if (urlInput.value.trim() === baseUrl) urlInput.value = '';
           openPanel = null;
+          status.textContent = imageModel ? 'Provider tersimpan. Uji generasi gambar berhasil.' : 'Provider tersimpan. Pilih model gambar yang sesuai.';
           toast(`${result.saved.name} tersimpan untuk ${roleLabel(role)} · ${result.saved.models.length} model ditemukan.`);
-        } catch (error) { toast(`Gagal menyimpan: ${error.message}`, true); }
+        } catch (error) { status.textContent = `Gagal menyimpan: ${error.message}`; toast(status.textContent, true); }
         finally { busy = false; button.textContent = `Simpan ${roleLabel(role)}`; render(); }
       };
     });
