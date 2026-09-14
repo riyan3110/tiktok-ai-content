@@ -1,6 +1,7 @@
 'use strict';
 const { setTimeout: delay } = require('node:timers/promises');
 const protocols = new Set(['openai', 'chat', 'gemini', 'vidu', 'router-images']);
+const OPENAI_SIZES = new Set(['256x256', '512x512', '1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024']);
 function protocol(value = 'openai') {
   if (!protocols.has(value)) throw Object.assign(new Error('Format Image API tidak didukung.'), { status: 422 });
   return value;
@@ -21,11 +22,13 @@ function outputSettings(value = '', model = '') {
   if (!orientation) return { aspectRatio: null, openAiSize: null, imageSize: null };
   const aspectRatio = orientation === 'square' ? '1:1' : orientation === 'portrait' ? '9:16' : '16:9';
   const dalle3 = /dall[._ -]?e[._ -]?3/i.test(String(model || ''));
-  const openAiSize = orientation === 'square'
-    ? '1024x1024'
-    : orientation === 'portrait'
-      ? (dalle3 ? '1024x1792' : '1024x1536')
-      : (dalle3 ? '1792x1024' : '1536x1024');
+  const openAiSize = OPENAI_SIZES.has(normalized)
+    ? normalized
+    : orientation === 'square'
+      ? '1024x1024'
+      : orientation === 'portrait'
+        ? (dalle3 ? '1024x1792' : '1024x1536')
+        : (dalle3 ? '1792x1024' : '1536x1024');
   return { aspectRatio, openAiSize, imageSize: normalized === '4k' ? '4K' : null };
 }
 async function generate({ baseUrl, apiKey, model, format, prompt, images = [], size, signal }, transport) {
