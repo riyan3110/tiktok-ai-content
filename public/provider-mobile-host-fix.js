@@ -152,7 +152,7 @@
         min-width:0!important;
       }
 
-      html.aiads-provider-page-flow #ai-providers input,
+      html.aiads-provider-page-flow #ai-providers input:not([type="checkbox"]),
       html.aiads-provider-page-flow #ai-providers select,
       html.aiads-provider-page-flow #ai-providers textarea{
         width:100%!important;

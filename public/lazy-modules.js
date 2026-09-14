@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260914-manual-provider-runtime';
+  const VERSION = 'cache-20260914-provider-input-image-only';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();

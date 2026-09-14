@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260914-google-studio-preserved';
+const CACHE_BUST_VERSION = 'cache-20260914-provider-input-image-only';
 
 function stripLegacyProviderUi(html) {
   let output = String(html || '');
