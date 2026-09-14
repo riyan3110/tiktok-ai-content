@@ -217,7 +217,6 @@ async function withRequest(db, row, operation) {
     return result;
   } finally { requests.get(row.id)?.delete(controller); }
 }
-
 function removeProvider(db, id) {
   ensureSchema(db);
   db.transaction(() => {
@@ -358,6 +357,7 @@ async function callImageProvider(row, prompt, options = {}, transport = fetch) {
   const apiKey = decrypt(row.api_key_encrypted);
   const model = roleModel(row, 'image');
   if (!model || !safeModels(row.models_json).includes(model)) throw Object.assign(new Error('Model Image AI belum dipilih atau tidak tersedia pada katalog terbaru.'), { status: 409 });
+  const output = imageProtocol.outputSettings(options.size, model);
   const controller = new AbortController();
   const started = Date.now();
   const abort = () => controller.abort();
@@ -378,7 +378,7 @@ async function callImageProvider(row, prompt, options = {}, transport = fetch) {
           images.push(`data:${preview.mimeType};base64,${Buffer.from(preview.data).toString('base64')}`);
         }
       }
-      const result = await imageProtocol.generate({ baseUrl: row.base_url, apiKey, model, format: row.image_protocol, prompt, images, signal: controller.signal }, transport);
+      const result = await imageProtocol.generate({ baseUrl: row.base_url, apiKey, model, format: row.image_protocol, prompt, images, size: options.size, signal: controller.signal }, transport);
       if (!result.url && !result.b64Json) throw Object.assign(new Error('Provider tidak mengembalikan gambar. Model belum terbukti mendukung output image.'), { status: 502 });
       return { ...result, provider: row.name, providerId: row.id, model, requestedModel: model, responseTime: Date.now() - started };
     }
@@ -386,7 +386,7 @@ async function callImageProvider(row, prompt, options = {}, transport = fetch) {
       model,
       prompt,
       n: 1,
-      ...(options.size ? { size: options.size } : {}),
+      ...(output.openAiSize ? { size: output.openAiSize } : {}),
       ...(options.responseFormat ? { response_format: options.responseFormat } : {})
     };
     let path = 'images/generations';
