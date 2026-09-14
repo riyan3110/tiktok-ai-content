@@ -4,6 +4,25 @@
   window.__AIADS_GOOGLE_STUDIO_PRESERVED__ = true;
 
   const $ = selector => document.querySelector(selector);
+  const HANDOFF_KEY = 'aiads-image-generator-prompt';
+
+  async function copyText(text) {
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+    const input = document.createElement('textarea');
+    input.value = text;
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    input.remove();
+  }
+
+  async function ensureNotesModule() {
+    if (!window.PromptNotes) await window.AIAdsLazyModules?.load('notes');
+    if (!window.PromptNotes?.save) throw new Error('Notes belum siap. Muat ulang halaman lalu coba lagi.');
+    return window.PromptNotes;
+  }
 
   function mountPromptGenerator() {
     const section = $('#prompt-generator');
@@ -26,12 +45,56 @@
           <button id="prompt-buat" type="submit">Buat</button>
           <p id="prompt-buat-status" role="status"></p>
           <label>Hasil Prompt<textarea id="prompt-hasil" rows="8" readonly placeholder="Hasil prompt otomatis akan tampil di sini"></textarea></label>
+          <div id="prompt-result-actions" class="prompt-result-actions" aria-label="Aksi hasil prompt">
+            <button id="prompt-simpan" class="outline" type="button" disabled>Simpan</button>
+            <button id="prompt-generate" type="button" disabled>Generate</button>
+            <button id="prompt-copy" class="outline" type="button" disabled>Copy</button>
+          </div>
         </div>
       </form>`;
 
     let refDataUrl = '';
+    let actionBusy = false;
     const refInput = $('#prompt-ref');
     const preview = $('#prompt-ref-preview');
+    const status = $('#prompt-buat-status');
+    const output = $('#prompt-hasil');
+    const createButton = $('#prompt-buat');
+    const resultButtons = [$('#prompt-simpan'), $('#prompt-generate'), $('#prompt-copy')].filter(Boolean);
+
+    const setResultActions = enabled => {
+      resultButtons.forEach(button => { button.disabled = !enabled || actionBusy; });
+    };
+    const currentPrompt = () => String(output?.value || '').trim();
+    const clearResult = message => {
+      if (output) output.value = '';
+      setResultActions(false);
+      if (status) status.textContent = message || '';
+      if (message) {
+        const shown = message;
+        setTimeout(() => { if (status?.textContent === shown) status.textContent = ''; }, 2200);
+      }
+    };
+    const runAction = async task => {
+      if (actionBusy) return;
+      const prompt = currentPrompt();
+      if (!prompt) {
+        if (status) status.textContent = 'Belum ada hasil prompt.';
+        setResultActions(false);
+        return;
+      }
+      actionBusy = true;
+      setResultActions(false);
+      try { await task(prompt); }
+      catch (error) {
+        if (status) status.textContent = `Gagal: ${error.message}`;
+        actionBusy = false;
+        setResultActions(Boolean(currentPrompt()));
+        return;
+      }
+      actionBusy = false;
+    };
+
     refInput?.addEventListener('change', () => {
       const file = refInput.files?.[0];
       if (!file) {
@@ -47,11 +110,28 @@
       reader.readAsDataURL(file);
     });
 
+    $('#prompt-simpan')?.addEventListener('click', () => runAction(async prompt => {
+      if (status) status.textContent = 'Menyimpan prompt ke Notes…';
+      const notes = await ensureNotesModule();
+      await notes.save(prompt, 'prompt-generator');
+      clearResult('Prompt tersimpan di Notes.');
+    }));
+
+    $('#prompt-copy')?.addEventListener('click', () => runAction(async prompt => {
+      await copyText(prompt);
+      clearResult('Prompt berhasil disalin.');
+    }));
+
+    $('#prompt-generate')?.addEventListener('click', () => runAction(async prompt => {
+      sessionStorage.setItem(HANDOFF_KEY, prompt);
+      window.dispatchEvent(new CustomEvent('aiads:image-prompt-handoff', { detail: { prompt } }));
+      clearResult('Prompt dipindahkan ke Image Generator.');
+      location.hash = '#studio';
+      window.AIAdsLazyModules?.load('studio').catch(() => {});
+    }));
+
     $('#prompt-simple-form')?.addEventListener('submit', async event => {
       event.preventDefault();
-      const status = $('#prompt-buat-status');
-      const output = $('#prompt-hasil');
-      const button = $('#prompt-buat');
       const permintaan = $('#prompt-permintaan')?.value.trim() || '';
       if (!permintaan) {
         if (status) status.textContent = 'Isi kolom Permintaan terlebih dahulu.';
@@ -75,9 +155,10 @@
           : instruction
       }];
 
-      if (button) button.disabled = true;
+      if (createButton) createButton.disabled = true;
       if (status) status.textContent = 'Menyusun prompt dengan Text AI…';
       if (output) output.value = '';
+      setResultActions(false);
       try {
         const response = await fetch('/api/ai/generations', {
           method: 'POST',
@@ -90,10 +171,12 @@
         if (!result) throw new Error('Provider tidak mengembalikan teks.');
         if (output) output.value = result;
         if (status) status.textContent = 'Prompt siap.';
+        setResultActions(true);
       } catch (error) {
         if (status) status.textContent = `Gagal: ${error.message}`;
+        setResultActions(false);
       } finally {
-        if (button) button.disabled = false;
+        if (createButton) createButton.disabled = false;
       }
     });
   }

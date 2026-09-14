@@ -33,14 +33,16 @@
       .note-card{display:flex;flex-direction:column;min-width:0;padding:16px;border:2px solid var(--neo-line,#20263a);border-radius:18px;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
       .note-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
       .note-card h3{margin:0;min-width:0;font-size:1rem;line-height:1.35;overflow-wrap:anywhere}
-      .note-card time{flex:0 0 auto;color:var(--neo-muted,#687386);font-size:.72rem;white-space:nowrap}
+      .note-card-head-tools{display:flex;align-items:flex-end;gap:7px;flex:0 0 auto;flex-direction:column}
+      .note-card time{color:var(--neo-muted,#687386);font-size:.72rem;white-space:nowrap}
+      .note-card-delete{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:34px!important;padding:6px 11px!important;border-radius:10px!important;font-size:.75rem!important;font-weight:900!important;white-space:nowrap!important}
       .note-card pre{margin:13px 0 16px;max-height:230px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.84rem;line-height:1.5;color:var(--neo-muted,#566174);background:var(--neo-soft,#f6f3ea);border:1.5px solid var(--neo-line,#20263a);border-radius:13px;padding:12px}
       .note-card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}
       .note-card-actions button{flex:1 1 auto;min-width:78px;padding:9px 10px}
       .notes-empty{grid-column:1/-1;padding:32px 18px;text-align:center;border:2px dashed var(--neo-line,#20263a);border-radius:18px;color:var(--neo-muted,#687386);background:var(--neo-white,#fff)}
       .notes-status{min-height:20px;font-size:.78rem;font-weight:800;color:var(--neo-muted,#687386)}
       .notes-status.error{color:#b42318}
-      @media(max-width:720px){.notes-heading{align-items:flex-start;padding:16px}.notes-heading p{font-size:.86rem}.notes-grid{grid-template-columns:1fr}.note-card{padding:13px}.note-card pre{max-height:190px}.notes-count{min-width:auto}.notes-toolbar{align-items:stretch}.notes-toolbar button{width:auto}}
+      @media(max-width:720px){.notes-heading{align-items:flex-start;padding:16px}.notes-heading p{font-size:.86rem}.notes-grid{grid-template-columns:1fr}.note-card{padding:13px}.note-card pre{max-height:190px}.notes-count{min-width:auto}.notes-toolbar{align-items:stretch}.notes-toolbar button{width:auto}.note-card-head-tools{align-items:flex-end}.note-card-delete{min-width:72px!important}}
     `;
     document.head.appendChild(style);
   }
@@ -102,12 +104,17 @@
     $('#notes-count').textContent = `${notes.length} Notes`;
     $('#notes-grid').innerHTML = list.length ? list.map(note => `
       <article class="note-card" data-note-id="${safe(note.id)}">
-        <div class="note-card-head"><h3>${safe(note.title)}</h3><time datetime="${safe(note.createdAt)}">${safe(date(note.createdAt))}</time></div>
+        <div class="note-card-head">
+          <h3>${safe(note.title)}</h3>
+          <div class="note-card-head-tools">
+            <time datetime="${safe(note.createdAt)}">${safe(date(note.createdAt))}</time>
+            <button class="danger note-card-delete" type="button" data-note-action="delete" data-note-id="${safe(note.id)}">Hapus</button>
+          </div>
+        </div>
         <pre>${safe(note.content)}</pre>
         <div class="note-card-actions">
           <button class="outline" type="button" data-note-action="copy" data-note-id="${safe(note.id)}">Copy</button>
           <button type="button" data-note-action="generate" data-note-id="${safe(note.id)}">Generate</button>
-          <button class="danger" type="button" data-note-action="delete" data-note-id="${safe(note.id)}">Hapus</button>
         </div>
       </article>`).join('') : '<div class="notes-empty">Belum ada prompt tersimpan di Notes.</div>';
     document.querySelectorAll('[data-note-action]').forEach(button => button.onclick = () => action(button.dataset.noteAction, button.dataset.noteId));

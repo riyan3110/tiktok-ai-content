@@ -42,10 +42,12 @@ test('Notes reject empty prompts, support search, and can be deleted', async t =
   assert.deepEqual((await request(app).get('/api/notes').expect(200)).body, []);
 });
 
-test('Notes frontend renders saved prompts with copy, generate, delete, search, and VPS API wiring', () => {
+test('Notes frontend renders saved prompts with copy, generate, and an always-visible delete button', () => {
   const script = fs.readFileSync(path.join(__dirname, '../public/notes.js'), 'utf8');
   for (const value of ['PROMPT NOTES', 'notes-search', 'Copy', 'Generate', 'Hapus', '/api/notes', 'aiads-image-generator-prompt', "location.hash = '#studio'"]) assert.ok(script.includes(value), value);
   assert.match(script, /data-note-action="copy"/);
   assert.match(script, /data-note-action="generate"/);
-  assert.match(script, /data-note-action="delete"/);
+  assert.match(script, /class="danger note-card-delete"[^>]+data-note-action="delete"/);
+  assert.match(script, /\.note-card-delete\{display:inline-flex!important/);
+  assert.match(script, /method: 'DELETE'/);
 });
