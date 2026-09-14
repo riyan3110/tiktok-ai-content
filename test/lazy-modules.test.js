@@ -8,7 +8,7 @@ const loader = fs.readFileSync(path.join(__dirname, '..', 'public', 'lazy-module
 test('every heavy workspace bundle is grouped for first-use loading', () => {
   for (const script of [
     '/background-state.js', '/app.js', '/assets.js', '/legacy-carousel-addon.js', '/content-studio.js', '/workflow.js', '/content-factory.js',
-    '/prompt-studio.js', '/consistency.js', '/prompt-generator.js', '/ai-providers.js',
+    '/prompt-studio.js', '/consistency.js', '/notes.js', '/ai-providers-simple.js',
     '/generation-queue.js', '/ai-integration.js', '/account-workspace.js', '/templates.js'
   ]) assert.match(loader, new RegExp(script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
@@ -35,6 +35,16 @@ test('Text Content asset picker loads Assets before retrying click', () => {
 test('project prompt tab loads Prompt Studio before retrying click', () => {
   assert.match(loader, /\[data-project-tab="prompts"\]/);
   assert.match(loader, /await load\('prompt-studio'\); promptTab\.click\(\)/);
+});
+
+test('Jadwal home shortcut is repurposed as persistent Notes workspace', () => {
+  assert.match(loader, /notes:\s*\['\/notes\.js'\]/);
+  assert.match(loader, /case '#notes': return 'notes'/);
+  assert.match(loader, /data-neo-target="schedule"/);
+  assert.match(loader, /shortcut\.dataset\.neoTarget = 'notes'/);
+  assert.match(loader, /label\.textContent = 'Notes'/);
+  assert.match(loader, /neo-shortcut\[data-neo-target="notes"\]/);
+  assert.match(loader, /location\.hash = '#notes'/);
 });
 
 test('idle prefetch warms modules without executing them and respects data saver', () => {
