@@ -96,7 +96,7 @@ async function executeDynamic(db, body, validated, transport, progress, supplied
     progress('Generating', id);
     const result = validated.mediaType === 'text'
       ? await dynamicAi.executeMessages(db, body.messages || [{ role: 'user', content: prompt }], transport, { signal: controller.signal })
-      : await dynamicAi.executeImage(db, prompt, { size: body.size, assets: body.assets || body.referenceAssets, signal: controller.signal }, transport);
+      : await dynamicAi.executeImage(db, prompt, { size: body.size || body.resolution || body.metadata?.resolution, assets: body.assets || body.referenceAssets, signal: controller.signal }, transport);
     if (controller.signal.aborted) throw new Error('Generation dibatalkan.');
     const media = validated.mediaType === 'image' ? [{ url: result.url, b64_json: result.b64Json, mime_type: 'image/png' }] : [];
     const metadata = { ...JSON.parse(generation(db, id).metadata || '{}'), provider: result.provider, providerId: result.providerId, model: result.model, responseTime: result.responseTime };
