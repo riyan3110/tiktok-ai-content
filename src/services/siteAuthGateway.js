@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260914-runtime-ui-provider-compat';
+const CACHE_BUST_VERSION = 'cache-20260914-image-protocol-contrast';
 
 function stripLegacyProviderUi(html) {
   let output = String(html || '');

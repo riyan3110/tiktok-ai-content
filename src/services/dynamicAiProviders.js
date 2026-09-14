@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const config = require('../config');
+const imageProtocol = require('./manualImageProtocol');
 
 const cipherKey = crypto.createHash('sha256').update(config.sessionSecret).digest();
 const ROLES = new Set(['text', 'image']);
@@ -109,6 +110,8 @@ function ensureSchema(db) {
   ensureColumn(db, 'ai_dynamic_provider_profiles', 'selected_image_model', 'TEXT');
   ensureColumn(db, 'ai_dynamic_provider_state', 'selected_text_provider_id', 'TEXT');
   ensureColumn(db, 'ai_dynamic_provider_state', 'selected_image_provider_id', 'TEXT');
+  ensureColumn(db, 'ai_dynamic_provider_profiles', 'image_protocol', "TEXT NOT NULL DEFAULT 'openai'");
+  ensureColumn(db, 'ai_dynamic_provider_profiles', 'manual_image_model', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'ai_dynamic_provider_profiles', 'roles_json', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, 'ai_dynamic_provider_state', 'text_fallback_enabled', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'ai_dynamic_provider_state', 'image_fallback_enabled', 'INTEGER NOT NULL DEFAULT 0');
@@ -169,6 +172,7 @@ function profiles(db) {
     model: roleModel(row, 'text'),
     textModel: roleModel(row, 'text'),
     imageModel: roleModel(row, 'image'),
+    imageProtocol: row.image_protocol || 'openai',
     models: safeModels(row.models_json),
     roles: safeModels(row.roles_json),
     hasApiKey: Boolean(row.api_key_encrypted),
@@ -361,6 +365,23 @@ async function callImageProvider(row, prompt, options = {}, transport = fetch) {
   if (options.signal?.aborted) abort();
   const timer = setTimeout(abort, 120000);
   try {
+    if (row.image_protocol && row.image_protocol !== 'openai') {
+      const images = [];
+      if (options.assets?.length) {
+        const { StorageService } = require('../storage/service');
+        const storage = new StorageService({ db: options.db });
+        for (const reference of options.assets) {
+          const asset = storage.repository.get(reference.id);
+          if (!asset) throw Object.assign(new Error('Asset referensi tidak ditemukan.'), { status: 422 });
+          const preview = await storage.preview(asset);
+          if (!preview.mimeType.startsWith('image/')) throw Object.assign(new Error('Referensi harus gambar.'), { status: 422 });
+          images.push(`data:${preview.mimeType};base64,${Buffer.from(preview.data).toString('base64')}`);
+        }
+      }
+      const result = await imageProtocol.generate({ baseUrl: row.base_url, apiKey, model, format: row.image_protocol, prompt, images, signal: controller.signal }, transport);
+      if (!result.url && !result.b64Json) throw Object.assign(new Error('Provider tidak mengembalikan gambar. Model belum terbukti mendukung output image.'), { status: 502 });
+      return { ...result, provider: row.name, providerId: row.id, model, requestedModel: model, responseTime: Date.now() - started };
+    }
     const body = {
       model,
       prompt,
@@ -528,7 +549,18 @@ function install({ app, db, transport = fetch }) {
       if (!apiKey) throw Object.assign(new Error('API Key wajib diisi.'), { status: 422 });
       const id = providerId(baseUrl, role);
       const version = revision(db, id);
-      const models = await fetchModels(baseUrl, apiKey, transport);
+      const format = role === 'image' ? imageProtocol.protocol(req.body?.imageProtocol || 'openai') : 'openai';
+      const manualModel = role === 'image' ? String(req.body?.imageModel || '').trim() : '';
+      if (role === 'image' && format !== 'openai' && !manualModel) throw Object.assign(new Error('Isi ID model gambar dari dashboard provider untuk format API ini.'), { status: 422 });
+      let models;
+      if (manualModel) {
+        if (manualModel.length > 256) throw Object.assign(new Error('ID model terlalu panjang.'), { status: 422 });
+        if (req.body?.testImage !== true) throw Object.assign(new Error('Pilih Simpan dan uji gambar untuk memvalidasi model. Tes memakai kuota provider.'), { status: 422 });
+        await callImageProvider({ id, name: inferName(baseUrl), base_url: baseUrl, api_key_encrypted: encrypt(apiKey), selected_image_model: manualModel, models_json: JSON.stringify([manualModel]), image_protocol: format }, 'Create a simple blue circle on a white background.', {}, transport);
+        models = [manualModel];
+      } else {
+        models = await fetchModels(baseUrl, apiKey, transport);
+      }
       if (version !== revision(db, id)) throw Object.assign(new Error('Provider berubah selama validasi. Silakan simpan ulang.'), { status: 409 });
       const existing = db.prepare('SELECT * FROM ai_dynamic_provider_profiles WHERE id=?').get(id);
       const name = existing?.name || inferName(baseUrl);
@@ -541,6 +573,7 @@ function install({ app, db, transport = fetch }) {
         ON CONFLICT(id) DO UPDATE SET name=excluded.name,base_url=excluded.base_url,api_key_encrypted=excluded.api_key_encrypted,selected_model=excluded.selected_model,selected_text_model=excluded.selected_text_model,selected_image_model=excluded.selected_image_model,models_json=excluded.models_json,updated_at=CURRENT_TIMESTAMP`)
         .run(id, name, baseUrl, encrypt(apiKey), textModel, textModel, imageModel, JSON.stringify(models));
       db.prepare('UPDATE ai_dynamic_provider_profiles SET roles_json=? WHERE id=?').run(JSON.stringify([role]), id);
+      db.prepare('UPDATE ai_dynamic_provider_profiles SET image_protocol=?,manual_image_model=? WHERE id=?').run(format, Number(Boolean(manualModel)), id);
       setDefault(db, role, id, role === 'image' ? imageModel : textModel);
       invalidate(db, id);
       })();
@@ -569,6 +602,7 @@ function install({ app, db, transport = fetch }) {
       const row = db.prepare('SELECT * FROM ai_dynamic_provider_profiles WHERE id=?').get(req.params.id);
       if (!row) throw Object.assign(new Error('Provider tidak ditemukan.'), { status: 404 });
       const version = revision(db, row.id);
+      if (row.manual_image_model) throw Object.assign(new Error('Model diisi manual. Simpan dan uji kembali untuk mengganti model; provider ini tidak memakai katalog otomatis.'), { status: 422 });
       const models = await fetchModels(row.base_url, decrypt(row.api_key_encrypted), transport);
       if (version !== revision(db, row.id) || !db.prepare('SELECT id FROM ai_dynamic_provider_profiles WHERE id=?').get(row.id)) throw Object.assign(new Error('Provider berubah selama refresh.'), { status: 409 });
       const textModel = models.includes(row.selected_text_model) ? row.selected_text_model : null;

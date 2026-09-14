@@ -55,17 +55,6 @@ function createProviderTransport(nativeFetch = fetch) {
     let pathname = '';
     try { pathname = new URL(rawUrl).pathname; } catch {}
 
-    // dynamicAiProviders intentionally sends an invalid credential after a
-    // successful catalog request. Some providers expose /models publicly, so
-    // that probe must still prove a credential boundary instead of rejecting
-    // an otherwise valid manually configured provider.
-    if (token.startsWith('invalid-') && /(?:^|\/)(?:models|key|auth\/key)\/?$/.test(pathname)) {
-      return new Response(JSON.stringify({ error: 'invalid api key probe' }), {
-        status: 401,
-        headers: { 'content-type': 'application/json' }
-      });
-    }
-
     const urls = endpointVariants(rawUrl);
     const authModes = token ? ['bearer', 'x-api-key', 'x-goog-api-key', 'query-key'] : ['none'];
     let lastResponse = null;
@@ -98,7 +87,8 @@ function createProviderTransport(nativeFetch = fetch) {
           // the next common API prefix instead of firing needless auth probes.
           if (RETRYABLE_PATH.has(response.status)) break;
         } catch (error) {
-          lastError = error;
+          if (init.signal?.aborted || error.name === 'AbortError') throw error;
+          throw error; // Never repeat a potentially accepted generation after a network error.
         }
       }
     }

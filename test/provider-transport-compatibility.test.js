@@ -16,7 +16,7 @@ test('does not duplicate v1 when Base URL already includes it', () => {
   ]);
 });
 
-test('invalid credential verification probe fails even for public model catalogs', async () => {
+test('credential verification always reaches the upstream provider', async () => {
   let calls = 0;
   const transport = createProviderTransport(async () => {
     calls += 1;
@@ -25,8 +25,8 @@ test('invalid credential verification probe fails even for public model catalogs
   const response = await transport('https://api.example.com/v1/models', {
     headers: { Authorization: 'Bearer invalid-test-value' }
   });
-  assert.equal(response.status, 401);
-  assert.equal(calls, 0);
+  assert.equal(response.status, 200);
+  assert.equal(calls, 1);
 });
 
 test('falls back from root endpoint to /v1 and preserves Bearer auth', async () => {
