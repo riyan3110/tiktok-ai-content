@@ -29,3 +29,25 @@ test('generator provides quality checks and all export formats', () => {
   assert.match(script, /download\('json'/);
   assert.ok(read('PROMPT_GENERATOR.md').includes('Future AI Integration'));
 });
+
+test('prompt result has Save Generate Copy actions and each successful action clears the result', () => {
+  const script = read('public/prompt-generator.js');
+  assert.match(script, /class="prompt-result-actions"/);
+  assert.match(script, /data-generator-action="save">Simpan/);
+  assert.match(script, /data-generator-action="generate">Generate/);
+  assert.match(script, /data-generator-action="copy">Copy/);
+  assert.match(script, /fetch\('\/api\/notes'/);
+  assert.match(script, /resetResult\(\); toast\('Prompt tersimpan di Notes\.'/);
+  assert.match(script, /handoffPrompt\(text\); resetResult\(\)/);
+  assert.match(script, /await copyPrompt\(text\); resetResult\(\)/);
+});
+
+test('Generate hands exact prompt to Image Generator without creating a generic text generation job', () => {
+  const script = read('public/prompt-generator.js');
+  assert.match(script, /aiads-image-generator-prompt/);
+  assert.match(script, /sessionStorage\.setItem\(HANDOFF_KEY, text\)/);
+  assert.match(script, /location\.hash = '#studio'/);
+  assert.match(script, /aiads:image-prompt-handoff/);
+  assert.doesNotMatch(script, /GenerationQueue\?\.enqueue/);
+  assert.doesNotMatch(script, /AIProviderConnector\?\.execute/);
+});

@@ -49,7 +49,7 @@ class ContentStudioService {
     return { metadata: nextMetadata, media: nextMedia };
   }
   list(query = {}) {
-    const rows = this.db.prepare('SELECT * FROM ai_generations ORDER BY created_at DESC LIMIT 500').all();
+    const rows = this.db.prepare("SELECT * FROM ai_generations WHERE media_type IN ('image','video') ORDER BY created_at DESC LIMIT 500").all();
     const generatedByJob = this.generatedAssetIndex();
     const search = String(query.search || '').trim().toLowerCase(); const type = String(query.type || ''); const status = String(query.status || ''); const provider = String(query.provider || '');
     return rows.map(row => this.serialize(row, generatedByJob)).filter(item => (!search || `${item.prompt} ${item.provider} ${item.model}`.toLowerCase().includes(search)) && (!type || item.media_type === type) && (!status || item.status === status) && (!provider || item.provider === provider));
@@ -60,7 +60,7 @@ class ContentStudioService {
     const asset = this.resolveResultAsset(row, metadata, media, generatedByJob);
     ({ metadata, media } = this.linkResultAsset(row, metadata, media, asset));
     const status = ['Queued', 'Completed', 'Failed', 'Cancelled'].includes(row.status) ? row.status : 'Running';
-    const resultMissing = row.status === 'Completed' && !asset;
+    const resultMissing = ['image','video'].includes(row.media_type) && row.status === 'Completed' && !asset;
     const resultUrl = resultMissing ? '' : (row.media_type === 'image' && asset ? this.previewUrl(asset.id) : metadata.resultUrl || media[0]?.url || '');
     return { ...row, status, provider_stage: row.status, assets: JSON.parse(row.assets || '[]'), media, metadata, negative_prompt: metadata.negativePrompt || '', resolution: metadata.resolution || '', progress: this.progress(row.status), asset_id: asset?.id || null, file_size: metadata.fileSize || asset?.size || 0, result_url: resultUrl, result_missing: resultMissing, error_type: resultMissing ? (row.error_type || 'ResultAssetMissing') : row.error_type, error_code: resultMissing ? (row.error_code || 'RESULT_ASSET_MISSING') : row.error_code, error_message: resultMissing ? (row.error_message || 'File hasil tidak ditemukan di Asset Manager.') : row.error_message };
   }

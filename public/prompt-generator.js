@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const KEYS = { generator: 'prompt.generator', presets: 'prompt.presets', history: 'prompt.history' };
+  const HANDOFF_KEY = 'aiads-image-generator-prompt';
   const LIBRARIES = { character: 'consistency.characters', product: 'consistency.products', style: 'consistency.styles', voice: 'consistency.voice' };
   const PROJECTS = 'ai-ads-lab-projects-v1';
   const targets = ['Google Flow','Google Veo','Google Omni','Vidu','Kling','Hailuo','Runway','Pika','ChatGPT','Gemini','Claude','Custom'];
@@ -66,7 +67,51 @@
   function download(ext, type, content) { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([content], { type })); link.download = `prompt-${Date.now()}.${ext}`; link.click(); URL.revokeObjectURL(link.href); toast(`Export ${ext.toUpperCase()} siap.`); }
   function toast(message, error = false) { const el = $('#consistency-toast'); el.textContent = message; el.className = `consistency-toast show${error ? ' error' : ''}`; setTimeout(() => el.className = 'consistency-toast', 2400); }
   function presets() { const list = read(KEYS.presets, []); $('#preset-count').textContent = list.length; $('#preset-list').innerHTML = list.length ? list.map(p => `<button class="preset-chip" data-preset-id="${p.id}"><span>${ic('wand-sparkles')}</span><b>${safe(p.name)}</b><small>${safe(p.target)} · ${safe(p.type)}</small><i data-delete-preset="${p.id}" title="Delete">${ic('x')}</i></button>`).join('') : '<p class="preset-empty">Belum ada preset. Simpan konfigurasi favorit Anda.</p>'; document.querySelectorAll('[data-preset-id]').forEach(button => button.onclick = event => { if (event.target.matches('[data-delete-preset]')) { localStorage.setItem(KEYS.presets, JSON.stringify(list.filter(p => p.id !== button.dataset.presetId))); presets(); toast('Preset dihapus.'); return; } Object.assign(state, list.find(p => p.id === button.dataset.presetId).config); fields(); toggles(); generate(); toast('Preset diterapkan.'); }); }
-  function action(name) { const editor = $('#generated-prompt'); if (name === 'generate') { if (!editor.value.trim()) return toast('Prompt is empty.'); const detail={ prompt:editor.value, provider:state.target || 'Custom Provider', projectId:state.project, assetIds:[...state.assetIds], outputType:/video/i.test(state.type)?'video':'image', createdAt:new Date().toISOString() }; window.dispatchEvent(new CustomEvent('aiads:prompt-generated',{detail})); window.GenerationQueue?.enqueue({ prompt:editor.value, project:selected('projects',state.project)?.name, provider:detail.provider, model:`${state.target || 'Custom'} Default`, promptType:state.type || 'General', assetIds:detail.assetIds }); const aliases={'Google Flow':'google-flow','Google Omni':'google-omni','ChatGPT':'openai','Gemini':'gemini','Claude':'claude','Vidu':'vidu','Runway':'runway','Kling':'kling','Pika':'pika','Hailuo':'hailuo','Custom':'custom'}; window.AIProviderConnector?.execute(editor.value,aliases[state.target]||'custom').then(result=>toast(`Generation ${result.status}.`)).catch(error=>toast(`Provider: ${error.message}`,true)); toast('Job queued and sent to the configured provider.'); } else if (name === 'fold') { folded = !folded; editor.closest('.syntax-editor').classList.toggle('folded', folded); const button = document.querySelector('[data-generator-action="fold"]'); button.textContent = folded ? 'Unfold' : 'Fold'; button.setAttribute('aria-pressed', String(folded)); render(editor.value); } else if (name === 'copy') navigator.clipboard?.writeText(editor.value).then(() => toast('Prompt copied.')).catch(() => { editor.select(); document.execCommand('copy'); toast('Prompt copied.'); }); else if (name === 'clear') { undo.push(editor.value); editor.value = ''; persist(''); render(''); } else if (name === 'undo' && undo.length) { redo.push(editor.value); editor.value = undo.pop(); persist(editor.value); render(editor.value); } else if (name === 'redo' && redo.length) { undo.push(editor.value); editor.value = redo.pop(); persist(editor.value); render(editor.value); } else if (name === 'txt') download('txt','text/plain',editor.value); else if (name === 'markdown') download('md','text/markdown',editor.value); else if (name === 'json') download('json','application/json',JSON.stringify({ config: state, prompt: editor.value, analysis: analyze(editor.value) }, null, 2)); else if (name === 'preset') { const nameValue = window.prompt('Preset name', `${state.target} ${state.type}`); if (!nameValue?.trim()) return; const list = read(KEYS.presets, []); list.unshift({ id: crypto.randomUUID?.() || String(Date.now()), name:nameValue.trim(), target:state.target, type:state.type, config:{...state, content:undefined}, createdAt:new Date().toISOString() }); localStorage.setItem(KEYS.presets, JSON.stringify(list)); presets(); toast('Preset disimpan.'); } }
-  function init() { fields(); toggles(); const editor = $('#generated-prompt'); editor.value = state.content || assemble(); render(editor.value); renderAssets(); presets(); $('#generator-select-assets').onclick = async () => { const chosen = await window.AssetManager.select({ selectedIds: state.assetIds, multiple: true }); if (!chosen) return; state.assetIds = chosen.map(asset => asset.id); state.assetLabels = chosen; persist(editor.value); renderAssets(); }; document.querySelectorAll('[data-generator-action]').forEach(button => button.onclick = () => action(button.dataset.generatorAction)); editor.oninput = () => { persist(editor.value); render(editor.value); }; editor.onscroll = () => { $('#prompt-highlight').scrollTop = editor.scrollTop; $('#prompt-highlight').scrollLeft = editor.scrollLeft; }; window.addEventListener('beforeunload', () => { const history = read(KEYS.history, []); if (editor.value.trim() && history[0]?.prompt !== editor.value) { history.unshift({ prompt:editor.value, target:state.target, type:state.type, createdAt:new Date().toISOString() }); localStorage.setItem(KEYS.history, JSON.stringify(history.slice(0, 30))); } }); }
+  function resetResult() { const editor = $('#generated-prompt'); if (editor.value) { undo.push(editor.value); if (undo.length > 50) undo.shift(); } redo = []; editor.value = ''; persist(''); render(''); }
+  async function copyPrompt(text) {
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+    const helper = document.createElement('textarea'); helper.value = text; helper.style.position = 'fixed'; helper.style.opacity = '0'; document.body.appendChild(helper); helper.select(); document.execCommand('copy'); helper.remove();
+  }
+  async function savePrompt(text) {
+    const response = await fetch('/api/notes', { method:'POST', cache:'no-store', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ content:text, source:'prompt-generator' }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || result.message || `HTTP ${response.status}`);
+    return result;
+  }
+  function handoffPrompt(text) {
+    sessionStorage.setItem(HANDOFF_KEY, text);
+    window.dispatchEvent(new CustomEvent('aiads:image-prompt-handoff', { detail:{ prompt:text } }));
+    location.hash = '#studio';
+    window.AIAdsLazyModules?.load('studio').catch(() => {});
+  }
+  function installResultActions() {
+    const editor = $('#generated-prompt'); const canvas = editor.closest('.prompt-canvas'); if (!canvas || canvas.querySelector('.prompt-result-actions')) return;
+    const style = document.createElement('style'); style.dataset.promptResultActions = 'true'; style.textContent = '.prompt-result-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:12px 0}.prompt-result-actions button{width:100%;min-width:0}.prompt-result-actions [data-generator-action="save"]{background:var(--neo-mint,#bff3dd)}@media(max-width:520px){.prompt-result-actions{gap:7px}.prompt-result-actions button{padding-inline:8px;font-size:.76rem}}'; document.head.appendChild(style);
+    const bar = document.createElement('div'); bar.className = 'prompt-result-actions'; bar.setAttribute('aria-label','Aksi hasil prompt'); bar.innerHTML = '<button class="outline" type="button" data-generator-action="save">Simpan</button><button type="button" data-generator-action="generate">Generate</button><button class="outline" type="button" data-generator-action="copy">Copy</button>';
+    const footer = canvas.querySelector('.canvas-footer'); if (footer) footer.before(bar); else canvas.appendChild(bar);
+    canvas.querySelectorAll('[data-generator-action="copy"],[data-generator-action="generate"]').forEach(button => { if (!button.closest('.prompt-result-actions')) button.hidden = true; });
+  }
+  async function action(name) {
+    const editor = $('#generated-prompt');
+    if (name === 'save') {
+      const text = editor.value.trim(); if (!text) return toast('Prompt masih kosong.', true);
+      try { await savePrompt(text); resetResult(); toast('Prompt tersimpan di Notes.'); } catch (error) { toast(`Notes: ${error.message}`, true); }
+    } else if (name === 'generate') {
+      const text = editor.value.trim(); if (!text) return toast('Prompt masih kosong.', true);
+      handoffPrompt(text); resetResult();
+    } else if (name === 'fold') {
+      folded = !folded; editor.closest('.syntax-editor').classList.toggle('folded', folded); const button = document.querySelector('[data-generator-action="fold"]'); button.textContent = folded ? 'Unfold' : 'Fold'; button.setAttribute('aria-pressed', String(folded)); render(editor.value);
+    } else if (name === 'copy') {
+      const text = editor.value.trim(); if (!text) return toast('Prompt masih kosong.', true);
+      try { await copyPrompt(text); resetResult(); toast('Prompt berhasil disalin.'); } catch (error) { toast(`Copy gagal: ${error.message}`, true); }
+    } else if (name === 'clear') { undo.push(editor.value); editor.value = ''; persist(''); render(''); }
+    else if (name === 'undo' && undo.length) { redo.push(editor.value); editor.value = undo.pop(); persist(editor.value); render(editor.value); }
+    else if (name === 'redo' && redo.length) { undo.push(editor.value); editor.value = redo.pop(); persist(editor.value); render(editor.value); }
+    else if (name === 'txt') download('txt','text/plain',editor.value);
+    else if (name === 'markdown') download('md','text/markdown',editor.value);
+    else if (name === 'json') download('json','application/json',JSON.stringify({ config: state, prompt: editor.value, analysis: analyze(editor.value) }, null, 2));
+    else if (name === 'preset') { const nameValue = window.prompt('Preset name', `${state.target} ${state.type}`); if (!nameValue?.trim()) return; const list = read(KEYS.presets, []); list.unshift({ id: crypto.randomUUID?.() || String(Date.now()), name:nameValue.trim(), target:state.target, type:state.type, config:{...state, content:undefined}, createdAt:new Date().toISOString() }); localStorage.setItem(KEYS.presets, JSON.stringify(list)); presets(); toast('Preset disimpan.'); }
+  }
+  function init() { fields(); toggles(); const editor = $('#generated-prompt'); editor.value = Object.prototype.hasOwnProperty.call(state, 'content') ? state.content : assemble(); render(editor.value); renderAssets(); presets(); installResultActions(); $('#generator-select-assets').onclick = async () => { const chosen = await window.AssetManager.select({ selectedIds: state.assetIds, multiple: true }); if (!chosen) return; state.assetIds = chosen.map(asset => asset.id); state.assetLabels = chosen; persist(editor.value); renderAssets(); }; document.querySelectorAll('[data-generator-action]').forEach(button => button.onclick = () => { void action(button.dataset.generatorAction); }); editor.oninput = () => { persist(editor.value); render(editor.value); }; editor.onscroll = () => { $('#prompt-highlight').scrollTop = editor.scrollTop; $('#prompt-highlight').scrollLeft = editor.scrollLeft; }; window.addEventListener('beforeunload', () => { const history = read(KEYS.history, []); if (editor.value.trim() && history[0]?.prompt !== editor.value) { history.unshift({ prompt:editor.value, target:state.target, type:state.type, createdAt:new Date().toISOString() }); localStorage.setItem(KEYS.history, JSON.stringify(history.slice(0, 30))); } }); }
   init();
 })();
