@@ -5,7 +5,7 @@ const express = require('express');
 const request = require('supertest');
 const { createDatabase } = require('../src/db');
 const dynamic = require('../src/services/dynamicAiProviders');
-const { generate } = require('../src/services/manualImageProtocol');
+const { generate, outputSettings } = require('../src/services/manualImageProtocol');
 const json = (body, status=200) => new Response(JSON.stringify(body), {status});
 
 for (const format of ['openai','chat','gemini','vidu','router-images']) {
@@ -43,6 +43,33 @@ for (const format of ['openai','chat','gemini','vidu','router-images']) {
     assert.equal(calls.length,before);
   });
 }
+
+test('portrait and landscape UI resolutions normalize to provider-safe image settings', () => {
+  assert.deepEqual(outputSettings('1080×1920', 'gpt-image-1'), { aspectRatio: '9:16', openAiSize: '1024x1536', imageSize: null });
+  assert.deepEqual(outputSettings('1920×1080', 'gpt-image-1'), { aspectRatio: '16:9', openAiSize: '1536x1024', imageSize: null });
+  assert.deepEqual(outputSettings('1024×1024', 'gpt-image-1'), { aspectRatio: '1:1', openAiSize: '1024x1024', imageSize: null });
+  assert.deepEqual(outputSettings('1080×1920', 'dall-e-3'), { aspectRatio: '9:16', openAiSize: '1024x1792', imageSize: null });
+  assert.deepEqual(outputSettings('4K', 'gemini-image'), { aspectRatio: '16:9', openAiSize: '1536x1024', imageSize: '4K' });
+});
+
+test('manual image API formats receive portrait orientation instead of silently ignoring resolution', async () => {
+  for (const format of ['router-images', 'chat', 'gemini', 'vidu']) {
+    let firstBody = null;
+    const transport = async (url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : null;
+      if (body && !firstBody) firstBody = body;
+      if (format === 'vidu') return json(body ? { task_id: 'portrait-task' } : { state: 'success', creations: [{ url: 'https://cdn.example/portrait.png' }] });
+      if (format === 'gemini') return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1hZ2U=' } }] } }] });
+      if (format === 'chat') return json({ choices: [{ message: { images: [{ image_url: { url: 'data:image/png;base64,aW1hZ2U=' } }] } }] });
+      return json({ data: [{ b64_json: 'aW1hZ2U=' }] });
+    };
+    await generate({ baseUrl: 'https://custom.example/v1', apiKey: 'key', model: 'image-model', format, prompt: 'portrait ad', size: '1080×1920' }, transport);
+    if (format === 'router-images') assert.equal(firstBody.size, '1024x1536');
+    if (format === 'chat') assert.equal(firstBody.image_config.aspect_ratio, '9:16');
+    if (format === 'gemini') assert.equal(firstBody.generationConfig.imageConfig.aspectRatio, '9:16');
+    if (format === 'vidu') assert.equal(firstBody.aspect_ratio, '9:16');
+  }
+});
 
 test('failed image validation never saves a provider or selects a model', async t=>{
   const db=createDatabase(':memory:');t.after(()=>db.close());
