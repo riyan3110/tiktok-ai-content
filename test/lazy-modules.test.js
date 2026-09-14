@@ -7,16 +7,19 @@ const loader = fs.readFileSync(path.join(__dirname, '..', 'public', 'lazy-module
 
 test('every heavy workspace bundle is grouped for first-use loading', () => {
   for (const script of [
-    '/background-state.js', '/app.js', '/assets.js', '/content-studio.js', '/workflow.js', '/content-factory.js',
+    '/background-state.js', '/app.js', '/assets.js', '/legacy-carousel-addon.js', '/content-studio.js', '/workflow.js', '/content-factory.js',
     '/prompt-studio.js', '/consistency.js', '/prompt-generator.js', '/ai-providers.js',
     '/generation-queue.js', '/ai-integration.js', '/account-workspace.js', '/templates.js'
   ]) assert.match(loader, new RegExp(script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('legacy Text, Schedule and History routes load the Text bundle only on first use', () => {
+test('Text Content loads its image picker dependencies while Schedule and History keep the smaller Text bundle', () => {
   assert.match(loader, /text:\s*\['\/background-state\.js', '\/app\.js'\]/);
+  assert.match(loader, /'text-content':\s*\['\/background-state\.js', '\/app\.js', '\/assets\.js', '\/legacy-carousel-addon\.js'\]/);
+  assert.match(loader, /data-workspace-view="legacy"\]\[data-legacy-section="trend-reference"\].*return 'text-content'/);
   assert.match(loader, /matches\('\[data-workspace-view="legacy"\]'\).*return 'text'/);
-  for (const hash of ['#trend-reference', '#schedule-dashboard', '#history-section']) assert.match(loader, new RegExp(hash.replace('#', '\\#')));
+  assert.match(loader, /case '#trend-reference': return 'text-content'/);
+  for (const hash of ['#schedule-dashboard', '#history-section']) assert.match(loader, new RegExp(hash.replace('#', '\\#')));
 });
 
 test('Assets and Storage share the Assets bundle', () => {
