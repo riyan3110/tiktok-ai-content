@@ -15,6 +15,25 @@ test('preserved prompt generator uses configured Text AI endpoint', () => {
   assert.match(source, /prompt-ref/);
 });
 
+test('the actually rendered simple prompt generator exposes Save, Generate and Copy actions', () => {
+  const source = read('public/google-studio-preserved.js');
+  for (const id of ['prompt-simpan', 'prompt-generate', 'prompt-copy']) assert.match(source, new RegExp(`id=\\"${id}\\"`));
+  for (const label of ['Simpan', 'Generate', 'Copy']) assert.ok(source.includes(`>${label}</button>`), label);
+  assert.match(source, /AIAdsLazyModules\?\.load\('notes'\)/);
+  assert.match(source, /notes\.save\(prompt, 'prompt-generator'\)/);
+  assert.match(source, /aiads-image-generator-prompt/);
+  assert.match(source, /location\.hash = '#studio'/);
+  assert.match(source, /clearResult\('Prompt tersimpan di Notes\.'\)/);
+  assert.match(source, /clearResult\('Prompt berhasil disalin\.'\)/);
+  assert.match(source, /clearResult\('Prompt dipindahkan ke Image Generator\.'\)/);
+});
+
+test('simple prompt result actions are styled as an always visible three-button row', () => {
+  const source = read('public/google-studio-preserved.css');
+  assert.match(source, /\.prompt-result-actions/);
+  assert.match(source, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+});
+
 test('app shell applies neo theme before deferred UI scripts', () => {
   const source = read('src/services/siteAuthGateway.js');
   assert.match(source, /class=\"aiads-neo-theme\"/);
