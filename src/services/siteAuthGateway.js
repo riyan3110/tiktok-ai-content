@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
-const CACHE_BUST_VERSION = 'cache-20260914-provider-input-image-only';
+const CACHE_BUST_VERSION = 'cache-20260914-runtime-ui-provider-compat';
 
 function stripLegacyProviderUi(html) {
   let output = String(html || '');
@@ -56,7 +56,6 @@ function createSiteAuthGateway(innerApp, config) {
     return res.sendStatus(401);
   });
 
-
   gateway.use(auth.requireAuth);
 
   gateway.use((req, res, next) => {
@@ -80,10 +79,11 @@ function createSiteAuthGateway(innerApp, config) {
       let html = stripLegacyProviderUi(await fs.readFile(file, 'utf8'));
       html = html.replace(/((?:src|href)=\")(\/[^\"]+\.(?:js|css))(?:\?[^\"]*)?(\")/g, `$1$2?v=${CACHE_BUST_VERSION}$3`);
 
-      // Preserved from the Google Studio/ZCode checkpoint: start in the neo theme
-      // before deferred assets execute, preventing the old/dark shell from flashing.
+      // Keep the new shell, but restore the user's saved light/dark choice before
+      // deferred theme assets run so the old light shell cannot flash over it.
       html = html.replace('<html lang="id">', '<html lang="id" class="aiads-neo-theme">');
-      const criticalThemeStyles = '<style>html.aiads-neo-theme{background:#f7f7f2}html.aiads-neo-theme body{background:#f7f7f2;color:#151b2b}</style>';
+      const criticalThemeScript = '<script>(()=>{try{const t=localStorage.getItem("ai-ads-lab-theme");document.documentElement.dataset.theme=t==="light"?"light":"dark"}catch{document.documentElement.dataset.theme="dark"}})()</script>';
+      const criticalThemeStyles = '<style>html.aiads-neo-theme[data-theme="light"]{background:#f7f7f2}html.aiads-neo-theme[data-theme="light"] body{background:#f7f7f2;color:#151b2b}html.aiads-neo-theme[data-theme="dark"]{background:#0b0e14}html.aiads-neo-theme[data-theme="dark"] body{background:#0b0e14;color:#eef2f8}</style>';
 
       const eagerPaths = new Set([
         '/icons.js',
@@ -115,7 +115,9 @@ function createSiteAuthGateway(innerApp, config) {
       const tiktokControlFixScript = `<script defer src="/tiktok-control-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
       const preservedScript = `<script defer src="/google-studio-preserved.js?v=${CACHE_BUST_VERSION}"></script>`;
       const automationSuspendScript = `<script defer src="/automation-suspend.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const runtimeUiFixScript = `<script defer src="/runtime-ui-fixes.js?v=${CACHE_BUST_VERSION}"></script>`;
       const startupScripts = [
+        criticalThemeScript,
         criticalThemeStyles,
         compactStyles,
         stabilityStyles,
@@ -136,7 +138,8 @@ function createSiteAuthGateway(innerApp, config) {
         providerLegalFixScript,
         tiktokControlFixScript,
         preservedScript,
-        automationSuspendScript
+        automationSuspendScript,
+        runtimeUiFixScript
       ].filter(Boolean).join('\n');
       html = html.replace('</head>', `${startupScripts}\n</head>`);
 
