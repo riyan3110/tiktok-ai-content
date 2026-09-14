@@ -5,6 +5,7 @@ const express = require('express');
 const request = require('supertest');
 const { createDatabase } = require('../src/db');
 const dynamic = require('../src/services/dynamicAiProviders');
+const aiConnector = require('../src/ai/connector');
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } });
@@ -39,7 +40,7 @@ function fixture(t) {
   dynamic.install({ app, db, transport });
   app.use((error, req, res, next) => res.status(error.status || 500).json({ error: error.message }));
   t.after(() => db.close());
-  return { db, app, calls, setCatalog: models => { catalog = [...models]; } };
+  return { db, app, calls, transport, setCatalog: models => { catalog = [...models]; } };
 }
 
 test('rejected API key never creates a provider or cached model', async t => {
@@ -103,4 +104,24 @@ test('image generation keeps an independent provider credential and selected ima
   const generation = calls.filter(call => call.url.endsWith('/images/generations')).at(-1);
   assert.equal(JSON.parse(generation.body).model, 'image-b');
   assert.equal(generation.authorization, 'Bearer image-key');
+});
+
+test('Content Studio resolution reaches the live image request as a portrait-safe provider size', async t => {
+  const { app, db, calls, transport, setCatalog } = fixture(t);
+  setCatalog(['image-a', 'image-b']);
+  const saved = (await request(app).post('/api/dynamic-ai/providers').send({
+    role: 'image', baseUrl: 'https://manual.local/v1', apiKey: 'image-key'
+  }).expect(201)).body.saved;
+  await request(app).put('/api/dynamic-ai/defaults/image').send({ providerId: saved.id, model: 'image-b' }).expect(200);
+
+  const result = await aiConnector.execute(db, {
+    provider: saved.id,
+    model: 'image-b',
+    prompt: 'portrait product photo',
+    mediaType: 'image',
+    resolution: '1080×1920'
+  }, transport);
+  assert.equal(result.status, 'Completed');
+  const generation = calls.filter(call => call.url.endsWith('/images/generations')).at(-1);
+  assert.equal(JSON.parse(generation.body).size, '1024x1536');
 });
