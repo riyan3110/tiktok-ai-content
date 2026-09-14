@@ -1,5 +1,6 @@
 (() => {
   const $ = s => document.querySelector(s), terminal = new Set(['Completed','Failed','Cancelled']);
+  const HANDOFF_KEY='aiads-image-generator-prompt';
   const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
   let mode='image', jobs=[], providers=[], selectedAssets=[], providerState={providers:[],defaults:{}}, providerLoad=0, selecting=false;
   // Retired model selections are never used to repopulate the active catalog.
@@ -9,6 +10,16 @@
   const date=v=>v?new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v)):'—';
   const toast=(message,error=false)=>{const el=$('#studio-generate-message');el.textContent=message;el.classList.toggle('error',error);clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.textContent='',3500)};
   const mediaForMode=()=>'image';
+  function applyPromptHandoff(value){
+    let prompt=String(value||'').trim();
+    if(!prompt){try{prompt=String(sessionStorage.getItem(HANDOFF_KEY)||'').trim()}catch(_){}}
+    if(!prompt||!$('#studio-prompt'))return false;
+    $('#studio-prompt').value=prompt;
+    const manual=document.querySelector('[name="studio-prompt-source"][value="manual"]');if(manual)manual.checked=true;
+    try{sessionStorage.removeItem(HANDOFF_KEY)}catch(_){}
+    $('#studio-prompt').dispatchEvent(new Event('input',{bubbles:true}));
+    return true;
+  }
   function renderModel(media, selectedProvider){
     const input=$('#studio-model'),status=$('#studio-model-status');
     const models=selectedProvider?.models||[], selected=providerState.defaults?.[media]?.model;
@@ -68,6 +79,7 @@
   }
   $('#studio-model-retry').onclick=loadProviders;
   window.addEventListener('ai-provider-state-changed',loadProviders);
+  window.addEventListener('aiads:image-prompt-handoff',event=>applyPromptHandoff(event.detail?.prompt));
   async function loadStorage(){const badge=$('#studio-storage-badge'),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);try{const storage=await api('/api/storage/settings',{signal:controller.signal});badge.innerHTML=storage.provider==='tencent-cos'?`${ic('cloud')} Tencent COS`:`${ic('database')} Local Storage`}catch(e){badge.textContent='Storage unavailable';badge.title='Storage tidak dapat diperiksa';toast('Storage tidak dapat diperiksa',true)}finally{clearTimeout(timer)}}
-  $('#studio-open-providers').onclick=()=>{location.hash='ai-providers'};window.addEventListener('hashchange',()=>{if(location.hash==='#studio')loadProviders()});window.addEventListener('pageshow',()=>{if(location.hash==='#studio')loadProviders()});configureMode('image');loadProviders();loadStorage();refresh();setInterval(()=>{if(!document.hidden&&jobs.some(j=>!terminal.has(j.status)))refresh()},1500);
+  $('#studio-open-providers').onclick=()=>{location.hash='ai-providers'};window.addEventListener('hashchange',()=>{if(location.hash==='#studio'){applyPromptHandoff();loadProviders()}});window.addEventListener('pageshow',()=>{if(location.hash==='#studio'){applyPromptHandoff();loadProviders()}});configureMode('image');applyPromptHandoff();loadProviders();loadStorage();refresh();setInterval(()=>{if(!document.hidden&&jobs.some(j=>!terminal.has(j.status)))refresh()},1500);
 })();
