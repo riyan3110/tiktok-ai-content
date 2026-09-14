@@ -2,12 +2,13 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260914-provider-input-image-only';
+  const VERSION = 'cache-20260914-hook-gallery-image-orientation';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
   const groups = {
     text: ['/background-state.js', '/app.js'],
+    'text-content': ['/background-state.js', '/app.js', '/assets.js', '/legacy-carousel-addon.js'],
     assets: ['/assets.js'],
     studio: ['/assets.js', '/content-studio.js'],
     workflow: ['/workflow-history.js', '/workflow.js'],
@@ -79,6 +80,7 @@
 
   function groupFromTarget(target) {
     if (!target) return null;
+    if (target.matches('[data-workspace-view="legacy"][data-legacy-section="trend-reference"]')) return 'text-content';
     if (target.matches('[data-workspace-view="legacy"]')) return 'text';
     if (target.matches('[data-workspace-view="assets"],[data-workspace-view="storage"]')) return 'assets';
     if (target.matches('[data-workspace-view="studio"]')) return 'studio';
@@ -96,7 +98,7 @@
 
   function groupFromHash() {
     switch (location.hash) {
-      case '#trend-reference':
+      case '#trend-reference': return 'text-content';
       case '#schedule-dashboard':
       case '#history-section': return 'text';
       case '#assets':
@@ -124,7 +126,7 @@
   function scheduleIdlePrefetch() {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     if (connection?.saveData) return;
-    const order = ['text', 'studio', 'assets', 'workflow', 'generator', 'providers', 'templates', 'factory', 'consistency', 'profile', 'queue', 'integration'];
+    const order = ['text-content', 'studio', 'assets', 'workflow', 'generator', 'providers', 'templates', 'factory', 'consistency', 'profile', 'queue', 'integration'];
     let index = 0;
     const next = () => {
       if (document.visibilityState === 'hidden' || index >= order.length) return;
