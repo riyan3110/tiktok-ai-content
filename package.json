@@ -9,8 +9,8 @@
   },
   "scripts": {
     "build": "npm run check",
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "PORT=3000 node src/server.js",
+    "dev": "PORT=3000 node --watch src/server.js",
     "migrate:cos-to-local": "node scripts/migrate-cos-to-local.js",
     "check": "find src public test scripts -name '*.js' -print0 | xargs -0 -n1 node --check",
     "lint": "npm run check",
