@@ -32,21 +32,25 @@ test('Notes persist prompt text and derive a short natural title from Scene', as
   assert.equal(listed.body[0].content, content);
 });
 
-test('Auto-title strips filler verbs and produces natural short phrases', t => {
+test('Auto-title produces natural short phrases, not keyword dumps', t => {
   const cases = [
-    { input: 'Buat headshot yang bersih dan profesional dari foto saya', expect: /headshot/i },
-    { input: 'Create a cinematic storyboard of an elegant adult woman walking', expect: /cinematic|storyboard/i },
-    { input: 'Buatkan tampilan golden hour outdoor untuk katalog produk', expect: /golden hour/i },
-    { input: 'Generate a DSLR-style portrait with bokeh background', expect: /DSLR|portrait/i },
-    { input: 'Tolong buatkan visual editorial mewah untuk brand fashion', expect: /editorial|mewah/i },
+    { input: 'Buat headshot yang bersih dan profesional dari foto saya', expect: /Headshot Bersih Profesional/i },
+    { input: 'Create a cinematic storyboard of an elegant adult woman walking', expect: /Cinematic Storyboard Elegant/i },
+    { input: 'Buatkan tampilan golden hour outdoor untuk katalog produk', expect: /Golden Hour/i },
+    { input: 'Generate a DSLR-style portrait with bokeh background', expect: /DSLR-Style Portrait Bokeh/i },
+    { input: 'Tolong buatkan visual editorial mewah untuk brand fashion', expect: /Visual Editorial Mewah/i },
+    { input: 'Buat foto produk skincare premium dengan latar belakang marmer', expect: /Produk Skincare Premium/i },
+    { input: 'Create a moody noir scene with dramatic shadows and rain', expect: /Moody Noir Scene/i },
+    { input: 'Buat visual iklan TikTok yang eye-catching untuk brand sneakers', expect: /Visual Iklan TikTok/i },
   ];
   for (const { input, expect: pattern } of cases) {
     const title = promptNotes.autoTitle(input);
     const words = title.split(/\s+/);
-    assert.ok(words.length >= 2 && words.length <= 7, `"${title}" should be 2-7 words`);
+    assert.ok(words.length >= 2 && words.length <= 5, `"${title}" should be 2-5 words (got ${words.length})`);
     assert.ok(!title.includes('…'), `"${title}" should not use ellipsis`);
-    assert.ok(!/^(buat|create|generate|tolong|make)/i.test(title), `"${title}" should not start with a filler verb`);
+    assert.ok(!/^(buat|create|generate|tolong|make)\b/i.test(title), `"${title}" should not start with a filler verb`);
     assert.match(title, pattern, `"${title}" should match ${pattern}`);
+    assert.match(title, /^[A-Z]/, `"${title}" should start with an uppercase letter (Title Case)`);
   }
 });
 

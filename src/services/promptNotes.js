@@ -22,11 +22,14 @@ function clean(value) {
 
 const FILLER_RE = /^(buat(?:kan|lah)?|tolong\s+buat(?:kan|lah)?|coba\s+buat(?:kan|lah)?|create|generate|make|design|produce|write|compose|craft|render|draw|illustrate|please)\s+/i;
 const SECTION_HEADER_RE = /^(project|character|product|scene|camera|lighting|voice|style|negative prompt|technical notes)$/i;
-const STOP_WORDS = new Set([
+const DROP_WORDS = new Set([
   'yang', 'dan', 'dari', 'untuk', 'dengan', 'di', 'ke', 'pada', 'ini', 'itu',
-  'saya', 'foto', 'seorang', 'sebuah', 'suatu', 'tentang', 'seperti',
-  'a', 'an', 'the', 'of', 'for', 'with', 'in', 'on', 'my', 'about', 'like', 'that', 'this',
+  'saya', 'seorang', 'sebuah', 'suatu', 'tentang', 'seperti', 'adalah', 'sangat',
+  'foto', 'gambar', 'image', 'picture', 'photo',
+  'a', 'an', 'the', 'of', 'for', 'with', 'in', 'on', 'at', 'my', 'about',
+  'like', 'that', 'this', 'very', 'really', 'some', 'just', 'through', 'beside',
 ]);
+const TITLECASE_SMALL = new Set(['dan', 'di', 'ke', 'and', 'or', 'the', 'a', 'an', 'in', 'on', 'of', 'for', 'to']);
 
 function titleSource(content) {
   const sections = ['Scene', 'Product', 'Project'];
@@ -37,25 +40,50 @@ function titleSource(content) {
   return content.split('\n').map(line => line.replace(/^#+\s*/, '').trim()).find(line => line && !SECTION_HEADER_RE.test(line)) || '';
 }
 
-function condenseLine(line) {
-  let text = clean(line).replace(/^[-–—:]+|[-–—:]+$/g, '').trim();
-  while (FILLER_RE.test(text)) text = text.replace(FILLER_RE, '').trim();
-  const words = text.split(/\s+/);
-  const kept = [];
+function hasMixedCase(w) { return w !== w.toLowerCase() && w !== w.toUpperCase() && /[A-Z]/.test(w.slice(1)); }
+
+function titleCaseWord(w, isFirst) {
+  if (w.includes('-')) return w.split('-').map((p, j) => titleCaseWord(p, isFirst && j === 0)).join('-');
+  if (w === w.toUpperCase() && w.length > 1) return w;
+  if (hasMixedCase(w)) return w;
+  if (!isFirst && TITLECASE_SMALL.has(w.toLowerCase())) return w.toLowerCase();
+  return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+}
+
+function toTitleCase(words) {
+  return words.map((w, i) => titleCaseWord(w, i === 0)).join(' ');
+}
+
+function pickCorePhrase(text) {
+  let s = clean(text).replace(/^[-–—:]+|[-–—:]+$/g, '').trim();
+  while (FILLER_RE.test(s)) s = s.replace(FILLER_RE, '').trim();
+  const words = s.split(/\s+/);
+  const content = [];
+  let total = 0;
+  const MAX_CONTENT = 3;
+  const MAX_TOTAL = 4;
   for (const word of words) {
-    if (kept.length >= 7) break;
-    if (STOP_WORDS.has(word.toLowerCase())) continue;
-    kept.push(word);
+    if (total >= MAX_TOTAL) break;
+    const low = word.toLowerCase();
+    if (DROP_WORDS.has(low)) continue;
+    const isDuplicate = content.some(prev => {
+      const a = prev.toLowerCase(), b = low;
+      return a === b || a.startsWith(b) || b.startsWith(a);
+    });
+    if (isDuplicate) continue;
+    content.push(word);
+    total++;
+    if (content.length >= MAX_CONTENT) break;
   }
-  let title = kept.join(' ').replace(/[.,;:!?…]+$/, '').trim();
-  if (title) title = title[0].toUpperCase() + title.slice(1);
-  return title;
+  return content;
 }
 
 function autoTitle(content, now = new Date()) {
   const source = titleSource(String(content || ''));
-  const title = condenseLine(source);
-  if (title) return title;
+  const words = pickCorePhrase(source);
+  if (words.length >= 2) {
+    return toTitleCase(words).replace(/[.,;:!?…]+$/, '').trim();
+  }
   const stamp = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(now);
   return `Prompt ${stamp}`;
 }
