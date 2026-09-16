@@ -108,4 +108,4 @@ async function runStorageCleanup() {
 runStorageCleanup();
 setInterval(runStorageCleanup, 15 * 60 * 1000).unref();
 
-app.listen(config.port, () => console.log(`TikTok AI Content aktif di http://localhost:${config.port}`));
+app.listen(config.port, config.host, () => console.log(`TikTok AI Content aktif di http://${config.host}:${config.port}`));

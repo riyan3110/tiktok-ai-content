@@ -26,6 +26,7 @@ function validateAiConfig(config) {
 
 const config = {
   root,
+  host: process.env.HOST || '0.0.0.0',
   port: Number(process.env.PORT || 3000),
   databasePath: process.env.DATABASE_PATH || path.join(root, 'data', 'app.db'),
   aiProvider: '', // Text AI is selected exclusively through the provider service.
