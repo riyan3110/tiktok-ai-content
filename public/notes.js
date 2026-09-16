@@ -13,6 +13,7 @@
   const safe = value => { const span = document.createElement('span'); span.textContent = String(value ?? ''); return span.innerHTML; };
   let notes = [];
   let mounted = false;
+  let activeNoteId = null;
 
   function installStyle() {
     if (document.querySelector('style[data-prompt-notes]')) return;
@@ -29,20 +30,29 @@
       .notes-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       .notes-toolbar input{flex:1 1 240px;min-width:0;padding:12px 14px;border:2px solid var(--neo-line,#20263a);border-radius:13px;background:var(--neo-white,#fff);color:inherit;font:inherit}
       .notes-toolbar button{min-height:44px}
-      .notes-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-      .note-card{display:flex;flex-direction:column;min-width:0;padding:16px;border:2px solid var(--neo-line,#20263a);border-radius:18px;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
-      .note-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-      .note-card h3{margin:0;min-width:0;font-size:1rem;line-height:1.35;overflow-wrap:anywhere}
-      .note-card-head-tools{display:flex;align-items:flex-end;gap:7px;flex:0 0 auto;flex-direction:column}
-      .note-card time{color:var(--neo-muted,#687386);font-size:.72rem;white-space:nowrap}
-      .note-card-delete{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:34px!important;padding:6px 11px!important;border-radius:10px!important;font-size:.75rem!important;font-weight:900!important;white-space:nowrap!important}
-      .note-card pre{margin:13px 0 16px;max-height:230px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.84rem;line-height:1.5;color:var(--neo-muted,#566174);background:var(--neo-soft,#f6f3ea);border:1.5px solid var(--neo-line,#20263a);border-radius:13px;padding:12px}
-      .note-card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}
-      .note-card-actions button{flex:1 1 auto;min-width:78px;padding:9px 10px}
-      .notes-empty{grid-column:1/-1;padding:32px 18px;text-align:center;border:2px dashed var(--neo-line,#20263a);border-radius:18px;color:var(--neo-muted,#687386);background:var(--neo-white,#fff)}
+      .notes-list{display:grid;gap:0;border:2px solid var(--neo-line,#20263a);border-radius:18px;overflow:hidden;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
+      .notes-list-item{display:flex;align-items:center;padding:14px 18px;cursor:pointer;border-bottom:1.5px solid var(--neo-line,#e5e7eb);transition:background .15s}
+      .notes-list-item:last-child{border-bottom:none}
+      .notes-list-item:hover,.notes-list-item:focus-visible{background:var(--neo-soft,#f6f3ea)}
+      .notes-list-item h3{margin:0;font-size:.95rem;font-weight:700;line-height:1.4;overflow-wrap:anywhere;flex:1 1 auto}
+      .notes-list-item .notes-list-arrow{flex:0 0 auto;margin-left:12px;color:var(--neo-muted,#687386);font-size:1.1rem}
+      .notes-empty{padding:32px 18px;text-align:center;border:2px dashed var(--neo-line,#20263a);border-radius:18px;color:var(--neo-muted,#687386);background:var(--neo-white,#fff)}
       .notes-status{min-height:20px;font-size:.78rem;font-weight:800;color:var(--neo-muted,#687386)}
       .notes-status.error{color:#b42318}
-      @media(max-width:720px){.notes-heading{align-items:flex-start;padding:16px}.notes-heading p{font-size:.86rem}.notes-grid{grid-template-columns:1fr}.note-card{padding:13px}.note-card pre{max-height:190px}.notes-count{min-width:auto}.notes-toolbar{align-items:stretch}.notes-toolbar button{width:auto}.note-card-head-tools{align-items:flex-end}.note-card-delete{min-width:72px!important}}
+      .notes-detail{display:grid;gap:16px;width:100%;min-width:0}
+      .notes-detail-header{display:flex;align-items:center;gap:12px;padding:16px 20px;border:2px solid var(--neo-line,#20263a);border-radius:20px;background:var(--neo-white,#fff);box-shadow:4px 5px 0 rgba(21,27,43,.12)}
+      .notes-detail-back{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border:2px solid var(--neo-line,#20263a);border-radius:12px;background:var(--neo-white,#fff);cursor:pointer;flex:0 0 auto;font-size:1.2rem;transition:background .15s}
+      .notes-detail-back:hover{background:var(--neo-soft,#f6f3ea)}
+      .notes-detail-title-group{flex:1 1 auto;min-width:0}
+      .notes-detail-title-group h1{margin:0;font-size:clamp(1.2rem,3vw,1.6rem);line-height:1.2;overflow-wrap:anywhere}
+      .notes-detail-title-group time{display:block;margin-top:4px;color:var(--neo-muted,#687386);font-size:.78rem}
+      .notes-detail-content{padding:18px;border:2px solid var(--neo-line,#20263a);border-radius:18px;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
+      .notes-detail-content pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.88rem;line-height:1.6;color:var(--neo-muted,#566174);background:var(--neo-soft,#f6f3ea);border:1.5px solid var(--neo-line,#20263a);border-radius:13px;padding:14px}
+      .notes-detail-actions{display:flex;gap:10px;flex-wrap:wrap}
+      .notes-detail-actions button{flex:1 1 auto;min-width:90px;padding:12px 16px;min-height:48px}
+      .notes-detail-delete{margin-top:8px}
+      .notes-detail-delete button{min-height:44px;padding:10px 16px}
+      @media(max-width:720px){.notes-heading{align-items:flex-start;padding:16px}.notes-heading p{font-size:.86rem}.notes-count{min-width:auto}.notes-toolbar{align-items:stretch}.notes-toolbar button{width:auto}.notes-list-item{padding:12px 14px}.notes-detail-header{padding:14px 16px}.notes-detail-content pre{font-size:.84rem;padding:12px}}
     `;
     document.head.appendChild(style);
   }
@@ -56,18 +66,21 @@
     section.className = 'hidden';
     section.setAttribute('aria-labelledby', 'notes-title');
     section.innerHTML = `
-      <header class="notes-heading">
-        <div><span class="eyebrow">PROMPT NOTES</span><h1 id="notes-title">Notes</h1><p>Prompt yang disimpan tersusun rapi di VPS dan tetap tersedia setelah halaman dimuat ulang.</p></div>
-        <span class="notes-count" id="notes-count">0 Notes</span>
-      </header>
-      <div class="notes-toolbar">
-        <input id="notes-search" type="search" autocomplete="off" placeholder="Cari judul atau isi prompt…" aria-label="Cari Notes">
-        <button id="notes-refresh" class="outline" type="button">Muat ulang</button>
+      <div id="notes-list-view">
+        <header class="notes-heading">
+          <div><span class="eyebrow">PROMPT NOTES</span><h1 id="notes-title">Notes</h1><p>Prompt yang disimpan tersusun rapi di VPS dan tetap tersedia setelah halaman dimuat ulang.</p></div>
+          <span class="notes-count" id="notes-count">0 Notes</span>
+        </header>
+        <div class="notes-toolbar">
+          <input id="notes-search" type="search" autocomplete="off" placeholder="Cari judul atau isi prompt…" aria-label="Cari Notes">
+          <button id="notes-refresh" class="outline" type="button">Muat ulang</button>
+        </div>
+        <div id="notes-status" class="notes-status" role="status"></div>
+        <div id="notes-grid" class="notes-list"></div>
       </div>
-      <div id="notes-status" class="notes-status" role="status"></div>
-      <div id="notes-grid" class="notes-grid"></div>`;
+      <div id="notes-detail-view" class="notes-detail" style="display:none"></div>`;
     host.appendChild(section);
-    $('#notes-search').addEventListener('input', render);
+    $('#notes-search').addEventListener('input', renderList);
     $('#notes-refresh').addEventListener('click', load);
     mounted = true;
     return section;
@@ -98,26 +111,70 @@
     return notes.filter(note => !query || `${note.title} ${note.content}`.toLowerCase().includes(query));
   }
 
-  function render() {
+  function showListView() {
+    activeNoteId = null;
+    const listView = $('#notes-list-view');
+    const detailView = $('#notes-detail-view');
+    if (listView) listView.style.display = '';
+    if (detailView) { detailView.style.display = 'none'; detailView.innerHTML = ''; }
+  }
+
+  function renderList() {
     mount();
+    showListView();
     const list = filteredNotes();
     $('#notes-count').textContent = `${notes.length} Notes`;
-    $('#notes-grid').innerHTML = list.length ? list.map(note => `
-      <article class="note-card" data-note-id="${safe(note.id)}">
-        <div class="note-card-head">
-          <h3>${safe(note.title)}</h3>
-          <div class="note-card-head-tools">
-            <time datetime="${safe(note.createdAt)}">${safe(date(note.createdAt))}</time>
-            <button class="danger note-card-delete" type="button" data-note-action="delete" data-note-id="${safe(note.id)}">Hapus</button>
-          </div>
+    const grid = $('#notes-grid');
+    grid.innerHTML = list.length ? list.map(note => `
+      <div class="notes-list-item" tabindex="0" role="button" data-note-open="${safe(note.id)}" aria-label="${safe(note.title)}">
+        <h3>${safe(note.title)}</h3>
+        <span class="notes-list-arrow" aria-hidden="true">&rsaquo;</span>
+      </div>`).join('') : '<div class="notes-empty">Belum ada prompt tersimpan di Notes.</div>';
+    grid.querySelectorAll('[data-note-open]').forEach(item => {
+      const handler = () => openDetail(item.dataset.noteOpen);
+      item.addEventListener('click', handler);
+      item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); } });
+    });
+  }
+
+  function openDetail(id) {
+    const note = notes.find(n => n.id === id);
+    if (!note) return;
+    activeNoteId = id;
+    const listView = $('#notes-list-view');
+    const detailView = $('#notes-detail-view');
+    if (listView) listView.style.display = 'none';
+    detailView.style.display = '';
+    detailView.innerHTML = `
+      <header class="notes-detail-header">
+        <button class="notes-detail-back" id="notes-back" type="button" aria-label="Kembali ke daftar Notes">&larr;</button>
+        <div class="notes-detail-title-group">
+          <h1>${safe(note.title)}</h1>
+          ${note.createdAt ? `<time datetime="${safe(note.createdAt)}">${safe(date(note.createdAt))}</time>` : ''}
         </div>
+      </header>
+      <div class="notes-detail-content">
         <pre>${safe(note.content)}</pre>
-        <div class="note-card-actions">
-          <button class="outline" type="button" data-note-action="copy" data-note-id="${safe(note.id)}">Copy</button>
-          <button type="button" data-note-action="generate" data-note-id="${safe(note.id)}">Generate</button>
-        </div>
-      </article>`).join('') : '<div class="notes-empty">Belum ada prompt tersimpan di Notes.</div>';
-    document.querySelectorAll('[data-note-action]').forEach(button => button.onclick = () => action(button.dataset.noteAction, button.dataset.noteId));
+      </div>
+      <div id="notes-detail-status" class="notes-status" role="status"></div>
+      <div class="notes-detail-actions">
+        <button class="outline" type="button" id="notes-detail-copy">Copy</button>
+        <button type="button" id="notes-detail-generate">Generate</button>
+      </div>
+      <div class="notes-detail-delete">
+        <button class="danger outline" type="button" id="notes-detail-delete">Hapus</button>
+      </div>`;
+    $('#notes-back').addEventListener('click', renderList);
+    $('#notes-detail-copy').addEventListener('click', () => detailAction('copy', note));
+    $('#notes-detail-generate').addEventListener('click', () => detailAction('generate', note));
+    $('#notes-detail-delete').addEventListener('click', () => detailAction('delete', note));
+  }
+
+  function detailStatus(message = '', error = false) {
+    const node = $('#notes-detail-status');
+    if (!node) return;
+    node.textContent = message;
+    node.classList.toggle('error', error);
   }
 
   async function copyText(text) {
@@ -142,23 +199,21 @@
     return true;
   }
 
-  async function action(name, id) {
-    const note = notes.find(item => item.id === id);
-    if (!note) return;
+  async function detailAction(name, note) {
     try {
       if (name === 'copy') {
         await copyText(note.content);
-        status('Prompt berhasil disalin.');
+        detailStatus('Prompt berhasil disalin.');
       } else if (name === 'generate') {
         handoffToStudio(note.content);
       } else if (name === 'delete') {
-        if (!confirm(`Hapus catatan “${note.title}”?`)) return;
+        if (!confirm(`Hapus catatan "${note.title}"?`)) return;
         await api(`/api/notes/${encodeURIComponent(note.id)}`, { method: 'DELETE' });
         notes = notes.filter(item => item.id !== note.id);
-        render();
+        renderList();
         status('Catatan dihapus.');
       }
-    } catch (error) { status(error.message, true); }
+    } catch (error) { detailStatus(error.message, true); }
   }
 
   async function load() {
@@ -166,7 +221,7 @@
     status('Memuat Notes…');
     try {
       notes = await api('/api/notes');
-      render();
+      renderList();
       status(notes.length ? 'Notes tersinkron dengan VPS.' : 'Belum ada prompt tersimpan.');
     } catch (error) { status(error.message, true); }
   }
@@ -176,7 +231,7 @@
     if (!prompt) throw new Error('Prompt tidak boleh kosong.');
     const note = await api('/api/notes', { method: 'POST', body: JSON.stringify({ content: prompt, source }) });
     notes = [note, ...notes.filter(item => item.id !== note.id)];
-    if (location.hash === '#notes') render();
+    if (location.hash === '#notes' && !activeNoteId) renderList();
     return note;
   }
 
@@ -192,7 +247,7 @@
   function syncHash() {
     const section = mount();
     if (location.hash === '#notes') show();
-    else section.classList.add('hidden');
+    else { section.classList.add('hidden'); showListView(); }
   }
 
   window.PromptNotes = { save, load, open: () => { location.hash = '#notes'; show(); }, handoffToStudio };

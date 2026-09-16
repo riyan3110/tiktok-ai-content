@@ -20,21 +20,42 @@ function clean(value) {
   return String(value || '').replace(/\r/g, '').replace(/[\t ]+/g, ' ').trim();
 }
 
+const FILLER_RE = /^(buat(?:kan|lah)?|tolong\s+buat(?:kan|lah)?|coba\s+buat(?:kan|lah)?|create|generate|make|design|produce|write|compose|craft|render|draw|illustrate|please)\s+/i;
+const SECTION_HEADER_RE = /^(project|character|product|scene|camera|lighting|voice|style|negative prompt|technical notes)$/i;
+const STOP_WORDS = new Set([
+  'yang', 'dan', 'dari', 'untuk', 'dengan', 'di', 'ke', 'pada', 'ini', 'itu',
+  'saya', 'foto', 'seorang', 'sebuah', 'suatu', 'tentang', 'seperti',
+  'a', 'an', 'the', 'of', 'for', 'with', 'in', 'on', 'my', 'about', 'like', 'that', 'this',
+]);
+
 function titleSource(content) {
   const sections = ['Scene', 'Product', 'Project'];
   for (const section of sections) {
     const match = content.match(new RegExp(`(?:^|\\n)##\\s*${section}\\s*\\n([^\\n]+)`, 'i'));
     if (match?.[1]?.trim()) return match[1].trim();
   }
-  return content.split('\n').map(line => line.replace(/^#+\s*/, '').trim()).find(line => line && !/^(project|character|product|scene|camera|lighting|voice|style|negative prompt|technical notes)$/i.test(line)) || '';
+  return content.split('\n').map(line => line.replace(/^#+\s*/, '').trim()).find(line => line && !SECTION_HEADER_RE.test(line)) || '';
+}
+
+function condenseLine(line) {
+  let text = clean(line).replace(/^[-–—:]+|[-–—:]+$/g, '').trim();
+  while (FILLER_RE.test(text)) text = text.replace(FILLER_RE, '').trim();
+  const words = text.split(/\s+/);
+  const kept = [];
+  for (const word of words) {
+    if (kept.length >= 7) break;
+    if (STOP_WORDS.has(word.toLowerCase())) continue;
+    kept.push(word);
+  }
+  let title = kept.join(' ').replace(/[.,;:!?…]+$/, '').trim();
+  if (title) title = title[0].toUpperCase() + title.slice(1);
+  return title;
 }
 
 function autoTitle(content, now = new Date()) {
-  const source = clean(titleSource(String(content || ''))).replace(/^[-–—:]+|[-–—:]+$/g, '').trim();
-  if (source) {
-    const words = source.split(/\s+/).slice(0, 9).join(' ');
-    return words.length > 72 ? `${words.slice(0, 69).trim()}…` : words;
-  }
+  const source = titleSource(String(content || ''));
+  const title = condenseLine(source);
+  if (title) return title;
   const stamp = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(now);
   return `Prompt ${stamp}`;
 }
