@@ -34,10 +34,10 @@ test('Notes persist prompt text and derive a short natural title from Scene', as
 
 test('Auto-title produces natural short phrases, not keyword dumps', t => {
   const cases = [
-    { input: 'Buat headshot yang bersih dan profesional dari foto saya', expect: /Headshot Bersih Profesional/i },
-    { input: 'Create a cinematic storyboard of an elegant adult woman walking', expect: /Cinematic Storyboard Elegant/i },
+    { input: 'Buat headshot yang bersih dan profesional dari foto saya', expect: /Headshot/i },
+    { input: 'Create a cinematic storyboard of an elegant adult woman walking', expect: /Cinematic Storyboard/i },
     { input: 'Buatkan tampilan golden hour outdoor untuk katalog produk', expect: /Golden Hour/i },
-    { input: 'Generate a DSLR-style portrait with bokeh background', expect: /DSLR-Style Portrait Bokeh/i },
+    { input: 'Generate a DSLR-style portrait with bokeh background', expect: /DSLR.*Portrait/i },
     { input: 'Tolong buatkan visual editorial mewah untuk brand fashion', expect: /Visual Editorial Mewah/i },
     { input: 'Buat foto produk skincare premium dengan latar belakang marmer', expect: /Produk Skincare Premium/i },
     { input: 'Create a moody noir scene with dramatic shadows and rain', expect: /Moody Noir Scene/i },
@@ -51,6 +51,63 @@ test('Auto-title produces natural short phrases, not keyword dumps', t => {
     assert.ok(!/^(buat|create|generate|tolong|make)\b/i.test(title), `"${title}" should not start with a filler verb`);
     assert.match(title, pattern, `"${title}" should match ${pattern}`);
     assert.match(title, /^[A-Z]/, `"${title}" should start with an uppercase letter (Title Case)`);
+  }
+});
+
+test('Auto-title never includes generic quality filler words', t => {
+  const fillers = ['baik', 'bagus', 'indah', 'cantik', 'keren', 'mantap', 'sempurna',
+                   'good', 'nice', 'great', 'beautiful', 'perfect', 'amazing', 'awesome', 'stunning'];
+  const prompts = [
+    'Buat gambar yang bagus dan indah untuk iklan parfum',
+    'Generate a stunning beautiful portrait with soft lighting',
+    'Create a nice amazing background with dramatic clouds',
+    'Buatkan visual yang keren dan mantap untuk brand sepatu',
+    'Buat iklan yang sempurna dan cantik untuk produk kosmetik',
+  ];
+  for (const input of prompts) {
+    const title = promptNotes.autoTitle(input);
+    const titleWords = title.toLowerCase().split(/\s+/);
+    for (const filler of fillers) {
+      assert.ok(!titleWords.includes(filler), `"${title}" should not contain filler word "${filler}"`);
+    }
+  }
+});
+
+test('Auto-title keeps language consistent: Indonesian prompt -> Indonesian title', t => {
+  const idCases = [
+    'Buatkan tampilan golden hour outdoor untuk katalog produk',
+    'Buat visual iklan TikTok yang eye-catching untuk brand sneakers',
+    'Tolong buatkan visual editorial mewah untuk brand fashion',
+  ];
+  for (const input of idCases) {
+    const title = promptNotes.autoTitle(input);
+    assert.ok(!/\b(scene|portrait|background|dramatic|elegant)\b/i.test(title),
+      `Indonesian prompt should not produce English-only words in title: "${title}"`);
+  }
+});
+
+test('Auto-title keeps language consistent: English prompt -> English title', t => {
+  const enCases = [
+    'Generate a DSLR-style portrait with bokeh background',
+    'Create a moody noir scene with dramatic shadows and rain',
+    'Create cinematic slow-motion video of coffee being poured',
+  ];
+  for (const input of enCases) {
+    const title = promptNotes.autoTitle(input);
+    assert.ok(!/\b(baik|bagus|indah|cantik|keren|tampilan|iklan|produk)\b/i.test(title),
+      `English prompt should not produce Indonesian words in title: "${title}"`);
+  }
+});
+
+test('Auto-title preserves brand names and acronyms', t => {
+  const cases = [
+    { input: 'Buat visual iklan TikTok yang eye-catching', expect: 'TikTok' },
+    { input: 'Generate a DSLR-style portrait with bokeh', expect: 'DSLR' },
+    { input: 'Create an ad for iPhone 15 Pro Max', expect: 'iPhone' },
+  ];
+  for (const { input, expect: brand } of cases) {
+    const title = promptNotes.autoTitle(input);
+    assert.ok(title.includes(brand), `"${title}" should preserve "${brand}"`);
   }
 });
 

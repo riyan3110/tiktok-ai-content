@@ -26,10 +26,12 @@ const DROP_WORDS = new Set([
   'yang', 'dan', 'dari', 'untuk', 'dengan', 'di', 'ke', 'pada', 'ini', 'itu',
   'saya', 'seorang', 'sebuah', 'suatu', 'tentang', 'seperti', 'adalah', 'sangat',
   'foto', 'gambar', 'image', 'picture', 'photo',
-  'a', 'an', 'the', 'of', 'for', 'with', 'in', 'on', 'at', 'my', 'about',
+  'a', 'an', 'the', 'of', 'for', 'in', 'on', 'at', 'my', 'about',
   'like', 'that', 'this', 'very', 'really', 'some', 'just', 'through', 'beside',
+  'baik', 'bagus', 'cantik', 'indah', 'keren', 'mantap', 'sempurna',
+  'good', 'nice', 'great', 'beautiful', 'perfect', 'amazing', 'awesome', 'stunning',
 ]);
-const TITLECASE_SMALL = new Set(['dan', 'di', 'ke', 'and', 'or', 'the', 'a', 'an', 'in', 'on', 'of', 'for', 'to']);
+const TITLECASE_SMALL = new Set(['dan', 'di', 'ke', 'and', 'or', 'the', 'a', 'an', 'in', 'on', 'of', 'for', 'to', 'with']);
 
 function titleSource(content) {
   const sections = ['Scene', 'Product', 'Project'];
@@ -54,28 +56,36 @@ function toTitleCase(words) {
   return words.map((w, i) => titleCaseWord(w, i === 0)).join(' ');
 }
 
+const CONNECTORS = new Set(['with', 'and', 'dan', 'untuk', 'on', 'of']);
+
 function pickCorePhrase(text) {
   let s = clean(text).replace(/^[-–—:]+|[-–—:]+$/g, '').trim();
   while (FILLER_RE.test(s)) s = s.replace(FILLER_RE, '').trim();
   const words = s.split(/\s+/);
-  const content = [];
-  let total = 0;
+  const result = [];
+  let contentCount = 0;
   const MAX_CONTENT = 3;
-  const MAX_TOTAL = 4;
+  let pendingConnector = null;
   for (const word of words) {
-    if (total >= MAX_TOTAL) break;
+    if (result.length >= 5) break;
     const low = word.toLowerCase();
-    if (DROP_WORDS.has(low)) continue;
-    const isDuplicate = content.some(prev => {
+    if (CONNECTORS.has(low) && contentCount > 0 && contentCount < MAX_CONTENT) {
+      pendingConnector = word;
+      continue;
+    }
+    if (DROP_WORDS.has(low)) { pendingConnector = null; continue; }
+    const isDuplicate = result.some(prev => {
       const a = prev.toLowerCase(), b = low;
       return a === b || a.startsWith(b) || b.startsWith(a);
     });
-    if (isDuplicate) continue;
-    content.push(word);
-    total++;
-    if (content.length >= MAX_CONTENT) break;
+    if (isDuplicate) { pendingConnector = null; continue; }
+    if (pendingConnector && contentCount > 0) result.push(pendingConnector);
+    pendingConnector = null;
+    result.push(word);
+    contentCount++;
+    if (contentCount >= MAX_CONTENT) break;
   }
-  return content;
+  return result;
 }
 
 function autoTitle(content, now = new Date()) {
