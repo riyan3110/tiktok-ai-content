@@ -112,7 +112,7 @@ function serialize(row) {
 function list(db, query = '') {
   ensureSchema(db);
   const search = clean(query).toLowerCase();
-  const rows = db.prepare('SELECT * FROM prompt_notes ORDER BY datetime(created_at) DESC, rowid DESC LIMIT 500').all();
+  const rows = db.prepare('SELECT * FROM prompt_notes ORDER BY datetime(created_at) ASC, rowid ASC LIMIT 500').all();
   return rows.filter(row => !search || `${row.title} ${row.content}`.toLowerCase().includes(search)).map(serialize);
 }
 
