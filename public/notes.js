@@ -22,6 +22,7 @@
     style.textContent = `
       #prompt-notes{display:grid;gap:12px;width:100%;min-width:0}
       #prompt-notes.hidden{display:none!important}
+      #prompt-notes #notes-list-view{display:grid;gap:12px}
       .notes-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border:2px solid var(--neo-line,#20263a);border-radius:16px;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
       .notes-heading h1{margin:0;font-size:1.25rem;font-weight:800;line-height:1.2}
       .notes-count{display:inline-flex;align-items:center;justify-content:center;padding:6px 12px;border:2px solid var(--neo-line,#20263a);border-radius:999px;background:var(--neo-yellow,#ffe66d);font-size:.8rem;font-weight:800;white-space:nowrap}

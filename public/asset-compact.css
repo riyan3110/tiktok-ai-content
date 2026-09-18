@@ -32,9 +32,9 @@
   display:none!important;
 }
 
-/* Upload row */
+/* Upload row — 12px below the Assets heading */
 #asset-manager .asset-upload-row{
-  margin-top:10px;
+  margin-top:12px;
 }
 #asset-manager .asset-upload-row button{
   width:100%;
@@ -48,32 +48,68 @@
   font-size:.9rem;
 }
 
-/* Toolbar: search + select only */
+/* Toolbar: search + select on one row — 12px below Upload, 8px between them.
+   The search is ONE component: single outer border, icon inside the same box,
+   no inner border on the input (kills the neo-theme's box-in-box look). */
 #asset-manager .asset-toolbar{
   display:flex;
-  align-items:center;
+  align-items:stretch;
   gap:8px;
-  margin-top:10px;
+  margin-top:12px;
 }
 #asset-manager .asset-toolbar .project-search{
   flex:1 1 0;
   min-width:0;
+  min-height:52px;
+  align-items:center;
+  padding:0 14px;
+}
+#asset-manager .asset-toolbar .project-search span:first-child{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  margin:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+  font-size:1.05rem;
 }
 #asset-manager .asset-toolbar .project-search input{
-  padding:10px 14px;
-  font-size:.9rem;
+  flex:1 1 auto;
+  min-width:0;
+  min-height:0;
+  height:52px;
+  padding:0 0 0 10px;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+  font-size:.92rem;
 }
 #asset-manager .asset-toolbar>#asset-select{
   flex:0 0 auto;
-  min-height:42px;
-  padding:10px 16px;
+  height:52px;
+  min-height:52px;
+  padding:0 18px;
   white-space:nowrap;
-  font-size:.85rem;
+  font-size:.88rem;
 }
 
-/* Results count */
+/* Kill the neo-theme double border on the asset search input */
+.aiads-neo-theme #asset-manager .asset-toolbar .project-search{
+  border-radius:12px;
+}
+.aiads-neo-theme #asset-manager .asset-toolbar .project-search input,
+#asset-manager .asset-toolbar .project-search input{
+  border:0!important;
+  background:transparent!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+
+/* Results count — 16px below the toolbar row, 8px above the grid */
 #asset-manager #asset-results{
-  margin:8px 0 4px;
+  margin:16px 0 8px;
   font-size:.75rem;
   font-weight:700;
   color:var(--neo-muted,#687386);
@@ -255,17 +291,27 @@
     min-height:42px;
     font-size:.85rem;
   }
+  /* Mobile: search + Select stay on one row, 8px apart */
   #asset-manager .asset-toolbar{
-    gap:6px;
+    gap:8px;
+  }
+  #asset-manager .asset-toolbar .project-search{
+    min-height:52px;
+    padding:0 12px;
   }
   #asset-manager .asset-toolbar .project-search input{
-    padding:9px 12px;
-    font-size:.85rem;
+    height:52px;
+    padding:0 0 0 9px;
+    font-size:.88rem;
   }
   #asset-manager .asset-toolbar>#asset-select{
-    min-height:40px;
-    padding:9px 12px;
-    font-size:.8rem;
+    height:52px;
+    min-height:52px;
+    padding:0 14px;
+    font-size:.82rem;
+  }
+  #asset-manager #asset-results{
+    margin:14px 0 7px;
   }
   #asset-manager .asset-grid{
     grid-template-columns:repeat(3,minmax(0,1fr));
