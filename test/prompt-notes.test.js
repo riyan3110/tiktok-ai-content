@@ -125,7 +125,10 @@ test('Notes reject empty prompts, support search, and can be deleted', async t =
 
 test('Notes frontend has list view with clickable titles and a detail view with copy/generate/delete', () => {
   const script = fs.readFileSync(path.join(__dirname, '../public/notes.js'), 'utf8');
-  for (const value of ['PROMPT NOTES', 'notes-search', 'notes-list-item', 'notes-detail-view', '/api/notes', 'aiads-image-generator-prompt', "location.hash = '#studio'"]) assert.ok(script.includes(value), `Missing: ${value}`);
+  for (const value of ['notes-search', 'notes-list-item', 'notes-detail-view', '/api/notes', 'aiads-image-generator-prompt', "location.hash = '#studio'"]) assert.ok(script.includes(value), `Missing: ${value}`);
+  assert.ok(!script.includes('PROMPT NOTES'), 'Header should not contain the old PROMPT NOTES eyebrow');
+  assert.ok(!script.includes('tersusun rapi di VPS'), 'Header should not contain old description text');
+  assert.ok(!script.includes('tersinkron dengan VPS'), 'Status should not show VPS sync message');
   assert.match(script, /data-note-open=/);
   assert.match(script, /notes-detail-copy/);
   assert.match(script, /notes-detail-generate/);
