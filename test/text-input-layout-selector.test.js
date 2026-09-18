@@ -6,7 +6,6 @@ const path = require('node:path');
 const softFit = require('../src/services/textInputSoftFitPatch');
 const verbatim = require('../src/services/textInputVerbatimPatch');
 const autoSourcePatch = require('../src/services/autoSourcePatch');
-const images = require('../src/services/images');
 
 const slides = [
   { section: 'HOOK', title: 'Kegagalan Bukan Akhir dari Semua Pilihan', body: '', points: [] },
@@ -97,20 +96,21 @@ test('UI menandai satu layout aktif dengan badge centang yang jelas', () => {
 
 
 test('Tutorial Cerita dan Berita memakai renderer visual yang berbeda', () => {
-  const background = { color: '#f5efe4', textColor: '#000000' };
-  const tutorial = softFit.buildTextInputLayouts(content('tutorial'))[1];
-  const story = softFit.buildTextInputLayouts(content('story'))[1];
-  const news = softFit.buildTextInputLayouts(content('news'))[1];
-
-  const tutorialSvg = images.renderLayout(tutorial, 2, 4, { enabled: false }, background);
-  const storySvg = images.renderLayout(story, 2, 4, { enabled: false }, background);
-  const newsSvg = images.renderLayout(news, 2, 4, { enabled: false }, background);
-
-  assert.match(tutorialSvg, /data-layout="tutorial"/);
-  assert.match(storySvg, /data-layout="story"/);
-  assert.match(newsSvg, /data-layout="news"/);
-  assert.notEqual(tutorialSvg, storySvg);
-  assert.notEqual(storySvg, newsSvg);
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    require('./src/services/slideSpacingPatch').install();
+    const images = require('./src/services/images');
+    const slide = { section: 'SITUASI', title: 'Judul cerita yang cukup jelas', body: 'Isi singkat untuk menguji komposisi visual.', points: ['Poin pertama yang jelas', 'Poin kedua yang jelas'] };
+    const background = { color: '#f5efe4', textColor: '#000000' };
+    for (const style of ['tutorial','story','news']) {
+      const layout = images.buildStructuredLayout(slide, 1, 4, 'Fakta singkat', { textInputOnly: true, layoutStyle: style });
+      process.stdout.write(images.renderLayout(layout, 2, 4, { enabled: false }, background) + '\\n---' + style + '---\\n');
+    }
+  `;
+  const output = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  assert.match(output, /data-layout="tutorial"/);
+  assert.match(output, /data-layout="story"/);
+  assert.match(output, /data-layout="news"/);
 });
 
 test('empat tombol tata letak selalu berjajar satu baris', () => {
