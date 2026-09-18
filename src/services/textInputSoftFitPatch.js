@@ -4,6 +4,7 @@ const sharp = require('sharp');
 const config = require('../config');
 const images = require('./images');
 const { INVISIBLE_SECTION } = require('./textInputVerbatimPatch');
+const { resolveContentLayout, layoutRendererStyle, layoutSections } = require('./contentLayouts');
 
 const BODY_MIN_KEEP_RATIO = 0.65;
 const TEXT_INPUT_LOWER_SHIFT = 70;
@@ -62,27 +63,34 @@ function bodyCandidates(value) {
   return candidates;
 }
 
-function renderSlide(slide, index, total, format) {
+function textInputSectionLabel(contentLayout, index, total) {
+  const layout = resolveContentLayout(contentLayout);
+  if (layout === 'default') return INVISIBLE_SECTION;
+  return layoutSections(layout, total)?.[index] || INVISIBLE_SECTION;
+}
+
+function renderSlide(slide, index, total, format, contentLayout = 'default') {
+  const layoutStyle = layoutRendererStyle(contentLayout);
   const prepared = {
-    section: INVISIBLE_SECTION,
+    section: textInputSectionLabel(contentLayout, index, total),
     title: cleanInline(slide?.title),
     body: cleanInline(slide?.body),
     points: Array.isArray(slide?.points) ? slide.points.map(cleanInline).filter(Boolean) : []
   };
-  const layout = images.buildStructuredLayout(prepared, index, total, format, { textInputOnly: true });
+  const layout = images.buildStructuredLayout(prepared, index, total, format, { textInputOnly: true, layoutStyle });
   images.validateVisualLayout(layout, { slideIndex: index + 1 });
   return { slide: prepared, layout };
 }
 
-function fitSlide(slide, index, total, format) {
+function fitSlide(slide, index, total, format, contentLayout = 'default') {
   try {
-    return { ...renderSlide(slide, index, total, format), trimmed: false };
+    return { ...renderSlide(slide, index, total, format, contentLayout), trimmed: false };
   } catch (initialError) {
     if (!cleanInline(slide?.body)) throw initialError;
 
     for (const body of bodyCandidates(slide.body)) {
       try {
-        const fitted = renderSlide({ ...slide, body }, index, total, format);
+        const fitted = renderSlide({ ...slide, body }, index, total, format, contentLayout);
         return { ...fitted, trimmed: true, originalBody: cleanInline(slide.body) };
       } catch {}
     }
@@ -96,7 +104,7 @@ function prepareSoftFitContent(content = {}) {
     throw Object.assign(new Error('Generate dari Teks harus memiliki tepat 4 slide: HOOK, FAKTA UTAMA, DETAIL, PENUTUP.'), { status: 422 });
   }
   const total = content.slides.length;
-  const fitted = content.slides.map((slide, index) => fitSlide(slide, index, total, content.contentFormat));
+  const fitted = content.slides.map((slide, index) => fitSlide(slide, index, total, content.contentFormat, content.contentLayout));
   return {
     ...content,
     slides: fitted.map(item => item.slide),
@@ -108,7 +116,7 @@ function buildTextInputLayouts(content = {}) {
   if (content?.verificationStatus !== 'text_input_only' || !Array.isArray(content?.slides)) return [];
   const total = content.slides.length;
   if (total !== 4) throw Object.assign(new Error('Generate dari Teks harus memiliki tepat 4 slide.'), { status: 422 });
-  return content.slides.map((slide, index) => renderSlide(slide, index, total, content.contentFormat).layout);
+  return content.slides.map((slide, index) => renderSlide(slide, index, total, content.contentFormat, content.contentLayout).layout);
 }
 
 function lowerShiftForLayout(layout) {
@@ -206,6 +214,7 @@ module.exports = {
   fitSlide,
   prepareSoftFitContent,
   buildTextInputLayouts,
+  textInputSectionLabel,
   lowerShiftForLayout,
   shiftContentText,
   emphasizeRoleText,

@@ -632,3 +632,32 @@
     margin-bottom:12px;
   }
 }
+
+
+/* Text Content layout picker: keep the selected card unmistakable in the neo
+   yellow theme, where global button styling otherwise makes all four cards
+   look active. */
+#legacy-studio #layout-picker .layout-option{
+  position:relative;
+}
+#legacy-studio #layout-picker .layout-option.active{
+  box-shadow:0 0 0 3px #b8f13a,3px 3px 0 #1a2430!important;
+  transform:translateY(-1px);
+}
+#legacy-studio #layout-picker .layout-option.active::after{
+  content:"✓";
+  position:absolute;
+  top:6px;
+  right:7px;
+  display:grid;
+  place-items:center;
+  width:20px;
+  height:20px;
+  border:2px solid #1a2430;
+  border-radius:50%;
+  background:#b8f13a;
+  color:#1a2430;
+  font-size:.72rem;
+  font-weight:900;
+  line-height:1;
+}

@@ -1,5 +1,6 @@
 const textInputComposer = require('./textInputComposer');
 const images = require('./images');
+const { resolveContentLayout } = require('./contentLayouts');
 
 const MAX_TEXT_CHARS = 20000;
 const SECTION_ORDER = ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'PENUTUP'];
@@ -241,7 +242,7 @@ function flattenPastedSlideCopy(slides) {
   return slides.slice(1).flatMap(slide => [slide.title, slide.body, ...slide.points]).filter(Boolean).join('\n');
 }
 
-async function composeVerbatim({ text } = {}) {
+async function composeVerbatim({ text, contentLayout = 'default' } = {}) {
   const parsed = parseStructuredText(text);
   const [hook, fact, detail, closing] = parsed.slides;
   return {
@@ -263,6 +264,7 @@ async function composeVerbatim({ text } = {}) {
     hook_pattern: 'text-input-verbatim',
     verificationStatus: 'text_input_only',
     unsupportedClaims: [],
+    contentLayout: resolveContentLayout(contentLayout),
     slides: parsed.slides
   };
 }

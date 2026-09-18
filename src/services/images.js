@@ -204,7 +204,9 @@ function frame(inner, number, total, watermark, background = {}) {
 function buildStructuredLayout(slide, index, total, format = '', options = {}) {
   const textInputOnly = options.textInputOnly === true;
   const layoutStyle = options.layoutStyle === 'tutorial' || options.layoutStyle === 'story' || options.layoutStyle === 'news' ? options.layoutStyle : 'default';
-  const tutorial = !textInputOnly && (layoutStyle === 'tutorial' || /tutorial/i.test(format) || /LANGKAH/i.test(slide.section));
+  // Generate-dari-Teks normally suppresses legacy tutorial numbering, but an
+  // explicit Tutorial layout selection must still be visible in the renderer.
+  const tutorial = layoutStyle === 'tutorial' || (!textInputOnly && (/tutorial/i.test(format) || /LANGKAH/i.test(slide.section)));
   const tutorialNumbers = tutorial && layoutStyle === 'tutorial';
   const storyLabel = layoutStyle === 'story';
   const newsLabel = layoutStyle === 'news';
@@ -225,7 +227,7 @@ function buildStructuredLayout(slide, index, total, format = '', options = {}) {
     height = (titleFit?.height || 0) + (bodyFit ? bodyFit.height + pointSpacing : 0) + points.reduce((sum, point) => sum + point.lines.length * pointSize * 1.22 + pointSpacing, 0);
   } while ((lineCount > 9 || height > CONTENT_BOTTOM - CONTENT_TOP) && pointSize > 32);
   return {
-    type: 'structured', title: structuredSectionLabel(slide, index, layoutStyle),
+    type: 'structured', title: structuredSectionLabel(slide, index, layoutStyle), layoutStyle,
     content: { title: slide.title, body: slide.body, points },
     fit: { kind: height < 320 ? 'short' : height < 560 ? 'medium' : 'long', height, lineCount, titleFit, bodyFit, pointSize, pointSpacing, lines: [] },
     isOnlyTitle: Boolean(slide.title && !slide.body && !points.length),

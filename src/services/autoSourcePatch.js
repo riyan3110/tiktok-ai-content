@@ -248,13 +248,13 @@ function retryableTextInputError(error) {
     && error.validationErrors.length > 0;
 }
 
-async function composeTextInputWithFreshRetry({ text, client, composer } = {}) {
+async function composeTextInputWithFreshRetry({ text, client, composer, contentLayout = 'default' } = {}) {
   const textInputComposer = composer || require('./textInputComposer');
   try {
-    return await textInputComposer.compose({ text, client });
+    return await textInputComposer.compose({ text, client, contentLayout });
   } catch (error) {
     if (!retryableTextInputError(error)) throw error;
-    return textInputComposer.compose({ text, client });
+    return textInputComposer.compose({ text, client, contentLayout });
   }
 }
 
@@ -275,7 +275,8 @@ function install() {
     wrappedContent.generateContent = async () => composeTextInputWithFreshRetry({
       text: inputText,
       client: args.textInputClient,
-      composer: textInputComposer
+      composer: textInputComposer,
+      contentLayout: args.contentLayout
     });
 
     // Manual Tanpa URL is now Generate dari Teks. It never performs discovery,
