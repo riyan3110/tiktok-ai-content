@@ -388,3 +388,25 @@ test('Tutorial slide hasil membungkus title dan body dengan margin aman', () => 
   const lines = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
   assert.ok(lines.every(line => line.length <= 42), `Tutorial result masih punya baris terlalu panjang: ${lines.join(' | ')}`);
 });
+
+
+test('Cerita slide penyelesaian menjaga title dan paragraf jauh dari batas kartu', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    require('./src/services/slideSpacingPatch').install();
+    const images = require('./src/services/images');
+    const slide = {
+      section: 'PENYELESAIAN',
+      title: 'Anthropic Membangun Laboratorium Biologi Fisik',
+      body: 'Sehari kemudian, Reuters melaporkan Anthropic telah menyiapkan wet lab di San Francisco Bay Area untuk menghubungkan AI dengan eksperimen biologis.',
+      points: []
+    };
+    const layout = images.buildStructuredLayout(slide, 3, 4, 'Cerita', { textInputOnly: true, layoutStyle: 'story' });
+    process.stdout.write(images.renderLayout(layout, 4, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));
+  `;
+  const svg = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  assert.match(svg, /data-layout="story"/);
+  assert.match(svg, /width="920"/);
+  const lines = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
+  assert.ok(lines.every(line => line.length <= 42), `Cerita ending masih punya baris terlalu panjang: ${lines.join(' | ')}`);
+});
