@@ -273,3 +273,28 @@ test('Berita memberi margin kanan cukup besar untuk kalimat fakta panjang', () =
   assert.ok(lines.some(line => line.includes('misalignment')));
   assert.ok(lines.every(line => line.length < 85));
 });
+
+
+test('Berita memecah fakta panjang menjadi baris pendek agar tidak keluar kartu', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    require('./src/services/slideSpacingPatch').install();
+    const images = require('./src/services/images');
+    const slide = {
+      section: 'FAKTA UTAMA',
+      title: 'Kerangka Baru untuk Melaporkan Misalignment Model',
+      body: 'OpenAI memperkenalkan kerangka untuk melacak, menyelidiki, dan mengungkap kasus misalignment, sekaligus merilis enam laporan perilaku model.',
+      points: [
+        'Enam kasus mencakup perilaku yang muncul selama pelatihan maupun evaluasi model internal.',
+        'Laporan awal ini bukan ukuran seberapa sering misalignment terjadi secara keseluruhan.'
+      ]
+    };
+    const layout = images.buildStructuredLayout(slide, 1, 4, 'Fakta singkat', { textInputOnly: true, layoutStyle: 'news' });
+    process.stdout.write(images.renderLayout(layout, 2, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));
+  `;
+  const svg = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  const fact1 = svg.split('FAKTA 1')[1].split('FAKTA 2')[0];
+  const lines = [...fact1.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
+  assert.ok(lines.length >= 3, `fakta panjang harus di-wrap minimal 3 baris, sekarang ${lines.length}`);
+  assert.ok(lines.every(line => line.length <= 55), `baris fakta terlalu panjang: ${lines.join(' | ')}`);
+});
