@@ -601,25 +601,28 @@ function renderStructuredVariant(layout) {
       y += titleFit.lines.length * titleFit.fontSize * 1.02 + 42;
     }
 
-    const bodyFit = fitVariantText(bodyText, SAFE_WIDTH, 190, 43, 34, 4, false);
+    const bodyFit = fitVariantText(bodyText, SAFE_WIDTH, 220, 43, 34, 5, false);
     if (bodyFit) {
+      const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.27;
+      const bodyBoxHeight = Math.max(150, bodyHeight + 86);
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 40}" width="${SAFE_WIDTH}" height="${bodyFit.lines.length * bodyFit.fontSize * 1.27 + 58}" rx="18" fill="${accent}" fill-opacity=".075"/>`,
-        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y, fontSize: bodyFit.fontSize, lineHeight: 1.27, weight: 500, fill: '#f3e8ff' })
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${SAFE_WIDTH}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
+        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.27, weight: 500, fill: '#f3e8ff' })
       );
-      y += bodyFit.lines.length * bodyFit.fontSize * 1.27 + 70;
+      y += bodyBoxHeight + 18;
     }
 
     pointTexts.slice(0, 2).forEach((point, index) => {
-      const pointFit = fitVariantText(point, SAFE_WIDTH - 30, 160, 38, 31, 3, false);
+      const pointFit = fitVariantText(point, SAFE_WIDTH - 44, 205, 38, 31, 4, false);
       if (!pointFit) return;
-      const boxHeight = Math.max(120, pointFit.lines.length * pointFit.fontSize * 1.24 + 72);
+      const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.24;
+      const boxHeight = Math.max(155, pointHeight + 94);
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 44}" width="${SAFE_WIDTH}" height="${boxHeight}" rx="18" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${SAFE_WIDTH}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
         `<text x="${SAFE_AREA.left + 22}" y="${y - 10}" fill="${accent}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="1.1">FAKTA ${index + 1}</text>`,
-        positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 30, fontSize: pointFit.fontSize, lineHeight: 1.24, weight: 700 })
+        positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 34, fontSize: pointFit.fontSize, lineHeight: 1.24, weight: 700 })
       );
-      y += boxHeight + 24;
+      y += boxHeight + 28;
     });
   }
 
