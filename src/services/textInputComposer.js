@@ -577,81 +577,41 @@ function legacyDefaultPrompt(text, requestedSlideCount) {
 function promptFor(text, requestedSlideCount, contentLayout = 'default') {
   const layout = resolveContentLayout(contentLayout);
   if (layout === 'default') return legacyDefaultPrompt(text, requestedSlideCount);
-  const sections = layoutSections(layout, requestedSlideCount)
-    || (requestedSlideCount === 5 ? ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'KONTEKS', 'PENUTUP'] : ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'PENUTUP']);
-  const selectedLayoutRule = layoutInstruction(layout);
 
-  let structureRules;
-  let jsonSlides;
-  if (layout === 'tutorial') {
-    structureRules = `- Slide 1 = ${sections[0]}. Hanya judul hook 7–10 kata; body "" dan points [].
-- Slide tengah mengikuti ${sections.slice(1, -1).join(' → ')}. Setiap slide fokus pada SATU langkah utama: body 7–18 kata + points 1–2 tindakan pendukung 3–12 kata. points adalah KARTU TINDAKAN, bukan bullet.
-- Slide terakhir = ${sections.at(-1)}. Body 12–24 kata dan points []. Jelaskan hasil/pengecekan akhir tanpa mengulang langkah.`;
-  } else if (layout === 'story') {
-    structureRules = `- Slide 1 = ${sections[0]}. Hanya judul pembuka 7–10 kata; body "" dan points [].
-- Slide tengah mengikuti ${sections.slice(1, -1).join(' → ')}. Body 12–26 kata sebagai PARAGRAF NARATIF yang menyambung. points boleh [] atau maksimal 1 item berisi paragraf lanjutan 8–22 kata. points BUKAN bullet/list.
-- Slide terakhir = ${sections.at(-1)}. Body 14–28 kata sebagai penyelesaian/makna. Maksimal satu paragraf lanjutan di points.
-- Cerita harus terasa mengalir antar-slide. Jangan mengubah fakta menjadi tokoh, pengalaman, emosi, atau sebab-akibat yang tidak ada di TEXT_INPUT.`;
-  } else if (layout === 'news') {
-    structureRules = `- Slide 1 = ${sections[0]}. Hanya headline 7–10 kata; body "" dan points [].
-- Slide tengah mengikuti ${sections.slice(1, -1).join(' → ')}. Body 9–20 kata sebagai ringkasan fakta utama + points 1–2 fakta pendukung 4–12 kata. points akan tampil sebagai KARTU FAKTA, bukan bullet.
-- Slide terakhir = ${sections.at(-1)}. Body 12–24 kata tentang perkembangan/penutup dan maksimal satu fakta pendukung.
-- Gunakan pola piramida terbalik: fakta paling penting lebih dulu. Nada netral, faktual, tanpa dramatisasi.`;
-  } else {
-    const optionalContext = requestedSlideCount === 5
-      ? '- Slide 4 = KONTEKS / DETAIL TAMBAHAN. Body 10–16 kata dan points wajib [].\n'
-      : '';
-    structureRules = `- Slide 1 = HOOK. HANYA judul besar 7–10 kata yang padat, jelas, dan menarik tanpa clickbait berlebihan. body wajib "" dan points wajib [].
-- Slide 2 = FAKTA UTAMA. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata dan membawa informasi berbeda.
-- Slide 3 = DETAIL / HAL PENTING. Body 8–14 kata + 2–3 bullet. Setiap bullet 3–7 kata. Jangan mengulang slide 2.
-${optionalContext}- Slide terakhir = PENUTUP / KESIMPULAN. Body 14–18 kata. points wajib []. Jangan sekadar mengulang hook.`;
-  }
+  const count = 4;
+  const sections = layoutSections(layout, count);
+  const structure = layout === 'tutorial'
+    ? 'PEMBUKA → LANGKAH 1 → LANGKAH 2 → HASIL/PENUTUP. Slide 2–3: body instruksi singkat + 1–2 points sebagai KARTU TINDAKAN, bukan bullet. Slide 4 tanpa points.'
+    : layout === 'story'
+      ? 'PEMBUKA CERITA → SITUASI → PERKEMBANGAN → PENYELESAIAN. Slide 2–4 berupa paragraf naratif. points kosong atau maksimal satu PARAGRAF NARATIF lanjutan; BUKAN bullet/list.'
+      : 'HEADLINE → FAKTA UTAMA → KONTEKS/DETAIL → PERKEMBANGAN. Slide 2–3: body ringkasan + 1–2 points sebagai KARTU FAKTA, bukan bullet. Slide 4 tanpa points. Gunakan piramida terbalik.';
 
-  jsonSlides = sections.map((section, index) => {
-    if (index === 0) return { section, title: '...', body: '', points: [] };
-    if (layout === 'tutorial') return { section, title: '...', body: '...', points: index === sections.length - 1 ? [] : ['...', '...'] };
-    if (layout === 'story') return { section, title: '...', body: '...', points: index === sections.length - 1 ? [] : ['...'] };
-    if (layout === 'news') return { section, title: '...', body: '...', points: index === sections.length - 1 ? [] : ['...', '...'] };
-    if (index === sections.length - 1 || (requestedSlideCount === 5 && index === 3)) return { section, title: '...', body: '...', points: [] };
-    return { section, title: '...', body: '...', points: ['...', '...'] };
-  });
-
-  return `MODE: GENERATE DARI TEKS — TRANSFORM ONLY.
-
+  return `TRANSFORM-ONLY.
 TATA LETAK DIPILIH USER: ${layout.toUpperCase()}
-${selectedLayoutRule ? `ATURAN TATA LETAK WAJIB: ${selectedLayoutRule}\n` : ''}
+Susun TEXT_INPUT menjadi tepat 4 slide sesuai tata letak tersebut.
 
-TEKS INPUT PENGGUNA:
-<<<TEXT_INPUT>>>
+TEXT_INPUT:
+<<<
 ${text}
-<<<END_TEXT_INPUT>>>
-
-TUGAS:
-Susun ulang TEXT_INPUT menjadi carousel AI Ads Lab sesuai TATA LETAK DIPILIH USER. Pilihan layout adalah instruksi kerja AI, bukan sekadar gaya visual. Anda BUKAN peneliti dan BUKAN mesin pencari. Jangan browsing, jangan memakai pengetahuan internal, dan jangan menambahkan fakta dari luar TEXT_INPUT. Anda hanya boleh meringkas, memparafrasekan, mengurutkan, dan memperjelas informasi yang memang tertulis.
+>>>
 
 STRUKTUR WAJIB:
-- Total HARUS tepat ${requestedSlideCount} slide.
-- Section WAJIB persis dan berurutan: ${sections.join(' → ')}.
-${structureRules}
+${structure}
+Section harus persis: ${sections.join(' → ')}.
 
-ATURAN KERAS:
-- Jangan memakai struktur Default bila user memilih Tutorial, Cerita, atau Berita.
-- Jangan sekadar mengganti nama section; susunan kalimat, urutan informasi, dan bentuk points harus benar-benar mengikuti layout terpilih.
-- Tidak boleh menambah fakta, angka, tanggal, nama, lokasi, fitur, manfaat, sebab-akibat, opini, prediksi, atau status peluncuran yang tidak ada di TEXT_INPUT.
-- Pertahankan subjek, predikat, objek, pemilik sifat/hasil, nama brand/produk/model/mode, angka, tanggal, qualifier, dan tingkat kepastian.
-- Jika efek hanya berlaku dengan/melalui/saat memakai fitur, mode, opsi, kondisi, atau mekanisme tertentu, konteks itu WAJIB tetap terlihat.
-- Jangan membuat atribusi baru seperti perusahaan menegaskan/mengklaim jika TEXT_INPUT tidak mengatakan itu.
-- Jangan menambahkan kata penilaian seperti signifikan, efektif, optimal, instan, terintegrasi, unggul, terbaik, sempurna, otomatis, efisiensi, produktivitas, kunci, atau real-time jika tidak ada pada TEXT_INPUT.
-- Judul maksimal 10 kata dan harus spesifik, bukan salinan label section.
-- Satu fakta utama cukup muncul sekali. Jangan mengulang ide yang sama di title, body, dan points.
-- Nama media/publisher yang hanya menjadi sumber jangan dijadikan isi utama.
-- Jangan awali points dengan simbol bullet; renderer menentukan bentuk visualnya sesuai layout.
-- Gunakan Bahasa Indonesia natural.
-- Caption WAJIB ${CAPTION_MIN_WORDS}–${CAPTION_MAX_WORDS} kata, 1–2 kalimat, tanpa klaim baru.
-- Hashtag WAJIB ${HASHTAG_MIN}–${HASHTAG_MAX} item dan spesifik pada topik.
+ATURAN:
+- Jangan mencari data baru dan jangan menambah fakta dari luar TEXT_INPUT.
+- Jangan mengubah nama, angka, tanggal, istilah teknis, subjek, pemilik sifat, hubungan fakta, atau tingkat kepastian.
+- Jangan mengarang sebab-akibat, manfaat, motif, prediksi, atribusi, atau kutipan.
+- Judul maksimal 10 kata dan harus spesifik.
+- Jangan mengulang fakta yang sama di title/body/points.
+- Caption 25–40 kata, 1–2 kalimat. Hashtag 3–5 item.
+- Bahasa Indonesia natural, ringkas, tidak terdengar seperti AI.
+- Layout yang dipilih WAJIB mengubah cara penyusunan teks, bukan sekadar nama section.
+- Jangan kembali ke pola Default bila layout bukan Default.
 
 Kembalikan HANYA JSON:
-${JSON.stringify({ topic: 'judul/topik singkat', caption: '...', hashtags: ['#...'], slides: jsonSlides })}`;
+{"topic":"...","caption":"...","hashtags":["#..."],"slides":[{"section":"${sections[0]}","title":"...","body":"","points":[]},{"section":"${sections[1]}","title":"...","body":"...","points":[]},{"section":"${sections[2]}","title":"...","body":"...","points":[]},{"section":"${sections[3]}","title":"...","body":"...","points":[]}]} `;
 }
 
 function buildContent(parsed, slides, contentLayout = 'default') {
@@ -725,50 +685,77 @@ async function composeDefaultLegacy({ text, client, contentLayout = 'default' } 
 }
 
 
+
+function normalizeFastLayoutSlides(parsed, layout) {
+  const sections = layoutSections(layout, 4);
+  const raw = normalizeSlides(parsed?.slides);
+  const slides = Array.from({ length: 4 }, (_, index) => {
+    const source = raw[index] || {};
+    const next = {
+      section: sections[index],
+      title: clean(source.title),
+      body: index === 0 ? '' : clean(source.body),
+      points: Array.isArray(source.points) ? source.points.map(clean).filter(Boolean) : []
+    };
+    if (index === 0 || index === 3) next.points = [];
+    if (layout === 'tutorial' || layout === 'news') next.points = next.points.slice(0, 2);
+    if (layout === 'story') {
+      const extras = next.points.filter(Boolean);
+      next.points = extras.length ? [extras.join(' ')] : [];
+    }
+    return next;
+  });
+  return slides;
+}
+
+function fastLayoutGroundingErrors(parsed, slides, sourceText) {
+  const shaped = { ...(parsed || {}), slides };
+  return [
+    ...validateGroundedNumbers(shaped, sourceText).map(value => `angka baru: ${value}`),
+    ...validateGroundedModifiers(shaped, sourceText).map(value => `penegasan baru: ${value}`),
+    ...validateEntityContext(shaped, sourceText),
+    ...validateComparisonCompleteness(shaped, sourceText),
+    ...validateModeSubjectShift(shaped, sourceText),
+    ...validateQualifierOwnership(shaped, sourceText)
+  ];
+}
+
 async function compose({ text, client, contentLayout = 'default' } = {}) {
   const layout = resolveContentLayout(contentLayout);
   if (layout === 'default') return composeDefaultLegacy({ text, client });
+
   const sourceText = validateInputText(text);
-  const requestedSlideCount = targetSlideCount(sourceText);
-  const sections = layoutSections(layout, requestedSlideCount)
-    || (requestedSlideCount === 5 ? ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'KONTEKS', 'PENUTUP'] : ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'PENUTUP']);
   const openai = client || require('./textProviderRuntime').client();
-  const messages = [
-    { role: 'system', content: `Anda editor carousel Indonesia dalam mode transform-only. Tata letak yang dipilih user adalah "${layout}". Tata letak tersebut WAJIB menentukan struktur dan cara penyajian. Fakta hanya boleh berasal dari teks pengguna.` },
-    { role: 'user', content: promptFor(sourceText, requestedSlideCount, layout) }
-  ];
-
-  let parsed = shapeParsed(parseOutput(await openai.chat.completions.create({
+  const response = await openai.chat.completions.create({
     model: config.aiModel,
-    messages,
+    messages: [
+      {
+        role: 'system',
+        content: `Anda hanya menyusun ulang teks menjadi layout ${layout}. Jangan mencari fakta baru. Jawab sekali dalam JSON valid.`
+      },
+      { role: 'user', content: promptFor(sourceText, 4, layout) }
+    ],
     response_format: { type: 'json_object' }
-  })), requestedSlideCount);
+  });
 
-  for (let repair = 0; repair <= MAX_REPAIRS; repair += 1) {
-    const checked = validateResult(parsed, sourceText, requestedSlideCount, layout);
-    if (!checked.errors.length) return buildContent(parsed, checked.slides, layout);
-    if (repair === MAX_REPAIRS) {
-      throw Object.assign(new Error(`Generate dari Teks belum lolos pengecekan layout ${layout}: ${checked.errors[0]}`), {
-        status: 422,
-        validationErrors: checked.errors
-      });
-    }
-    const targetedRepair = buildRepairGuidance(checked.errors);
-    parsed = shapeParsed(parseOutput(await openai.chat.completions.create({
-      model: config.aiModel,
-      messages: [
-        ...messages,
-        { role: 'assistant', content: JSON.stringify(parsed) },
-        {
-          role: 'user',
-          content: `Perbaiki JSON tadi TANPA menambah informasi dari luar TEXT_INPUT. Layout user tetap "${layout}" dan TIDAK BOLEH diganti menjadi Default. Section wajib persis ${sections.join(' → ')}. Ikuti aturan layout ini: ${layoutInstruction(layout) || 'struktur Default lama'}. ERROR SAAT INI: ${targetedRepair}. Masalah lengkap: ${checked.errors.join('; ')}. Pertahankan subjek, predikat, objek, pemilik sifat/hasil, nama, angka, qualifier, dan tingkat kepastian dari TEXT_INPUT. Jangan mengarang fakta untuk memenuhi template. Kembalikan JSON lengkap saja.`
-        }
-      ],
-      response_format: { type: 'json_object' }
-    })), requestedSlideCount);
+  const parsed = parseOutput(response);
+  const slides = normalizeFastLayoutSlides(parsed, layout);
+  const groundingErrors = fastLayoutGroundingErrors(parsed, slides, sourceText);
+  if (groundingErrors.length) {
+    throw Object.assign(new Error(`Generate dari Teks ditolak karena ada perubahan fakta: ${groundingErrors[0]}`), {
+      status: 422,
+      validationErrors: groundingErrors
+    });
   }
 
-  throw Object.assign(new Error('Generate dari Teks gagal disusun.'), { status: 422 });
+  const topic = clean(parsed?.topic) || clean(slides[0]?.title) || 'Konten';
+  const caption = clean(parsed?.caption);
+  const hashtags = normalizeHashtags(parsed?.hashtags);
+  if (!slides.every(slide => slide.title) || !caption || hashtags.length < HASHTAG_MIN) {
+    throw Object.assign(new Error('AI belum menghasilkan struktur lengkap. Coba sekali lagi.'), { status: 422 });
+  }
+
+  return buildContent({ ...parsed, topic, caption, hashtags }, slides, layout);
 }
 
 module.exports = {
