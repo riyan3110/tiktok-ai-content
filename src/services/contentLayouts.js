@@ -66,6 +66,35 @@ function contentFormatForLayout(value, fallback = 'Tutorial langkah') {
   return fallback;
 }
 
+function validateLayoutSlides(value, slides = []) {
+  const layout = resolveContentLayout(value);
+  if (layout === 'default' || !Array.isArray(slides)) return [];
+  const errors = [];
+  const sections = slides.map(slide => String(slide?.section || '').trim());
+  const copy = slides.map(slide => [slide?.section, slide?.title, slide?.body, ...(Array.isArray(slide?.points) ? slide.points : [])].filter(Boolean).join(' '));
+
+  if (layout === 'tutorial') {
+    const numbered = sections.map(section => section.match(/LANGKAH\s*(\d+)/i)).filter(Boolean).map(match => Number(match[1]));
+    if (!numbered.length) errors.push('Tata letak Tutorial wajib memiliki section LANGKAH bernomor.');
+    numbered.forEach((number, index) => {
+      if (number !== index + 1) errors.push(`Tata letak Tutorial: urutan LANGKAH harus mulai dari 1 tanpa loncat; ditemukan ${numbered.join(', ')}.`);
+    });
+  }
+
+  if (layout === 'story') {
+    if (copy.some(text => /\bLANGKAH\s*\d+\b|(?:^|\s)\d+[.)]\s+/i.test(text))) errors.push('Tata letak Cerita tidak boleh memakai langkah bernomor.');
+    if (sections.length && !/PEMBUKA|HOOK|CERITA/i.test(sections[0])) errors.push('Tata letak Cerita harus dimulai dengan PEMBUKA CERITA/HOOK.');
+    if (sections.length && !/PENYELESAIAN|MAKNA|PENUTUP|AKHIR/i.test(sections.at(-1))) errors.push('Tata letak Cerita harus berakhir dengan PENYELESAIAN/MAKNA/PENUTUP.');
+  }
+
+  if (layout === 'news') {
+    if (copy.some(text => /\bLANGKAH\s*\d+\b|(?:^|\s)\d+[.)]\s+/i.test(text))) errors.push('Tata letak Berita tidak boleh memakai langkah bernomor.');
+    if (sections.length && !/HEADLINE|PEMBUKA|BERITA/i.test(sections[0])) errors.push('Tata letak Berita harus dimulai dengan HEADLINE.');
+    if (!sections.some(section => /FAKTA|DETAIL|KONTEKS|PERKEMBANGAN/i.test(section))) errors.push('Tata letak Berita harus memiliki FAKTA/DETAIL/KONTEKS.');
+  }
+  return [...new Set(errors)];
+}
+
 function layoutSections(value, count = 4) {
   const layout = resolveContentLayout(value);
   const size = Math.min(5, Math.max(4, Number(count) || 4));
@@ -93,5 +122,6 @@ module.exports = {
   layoutInstruction,
   layoutRendererStyle,
   contentFormatForLayout,
-  layoutSections
+  layoutSections,
+  validateLayoutSlides
 };
