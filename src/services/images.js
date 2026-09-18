@@ -521,11 +521,12 @@ function renderTutorialStructured(layout, number, total, watermark, background) 
     y += layout.fit.bodyFit.height + 18;
   }
   layout.content.points.forEach((point, index) => {
-    const cardHeight = Math.max(86, point.lines.length * layout.fit.pointSize * 1.22 + 34);
+    const cleanText = String(point.text || '').replace(/^\d+[.)]\s*/, '').trim();
+    const cleanLines = wrapText(cleanText, SAFE_WIDTH - 105, layout.fit.pointSize, false);
+    const cardHeight = Math.max(86, cleanLines.length * layout.fit.pointSize * 1.22 + 34);
     parts.push(`<rect x="${SAFE_AREA.left - 16}" y="${y - 43}" width="${SAFE_WIDTH + 32}" height="${cardHeight}" rx="22" fill="${accent}" fill-opacity=".09" stroke="${accent}" stroke-opacity=".42" stroke-width="2"/>`);
     parts.push(`<circle cx="${SAFE_AREA.left + 28}" cy="${y - 7}" r="25" fill="${accent}"/>`);
-    parts.push(`<text x="${SAFE_AREA.left + 28}" y="${y + 3}" fill="white" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`);
-    const cleanLines = point.lines.map(line => line.replace(/^\d+[.)]\s*/, ''));
+    parts.push(`<text x="${SAFE_AREA.left + 28}" y="${y + 3}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`);
     parts.push(`<text x="${SAFE_AREA.left + 70}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.pointSize}" font-weight="650">${cleanLines.map((line, lineIndex) => `<tspan x="${SAFE_AREA.left + 70}" dy="${lineIndex ? layout.fit.pointSize * 1.22 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
     y += cardHeight + 18;
   });
@@ -539,23 +540,24 @@ function renderStoryStructured(layout, number, total, watermark, background) {
   const parts = [
     '<g data-layout="story">',
     `<text x="${SAFE_AREA.left}" y="${LABEL_Y - 6}" fill="${accent}" font-family="Arial,sans-serif" font-size="26" font-weight="800" letter-spacing="2">CERITA</text>`,
-    `<line x1="${SAFE_AREA.left + 10}" y1="${CONTENT_TOP - 20}" x2="${SAFE_AREA.left + 10}" y2="${CONTENT_BOTTOM - 20}" stroke="${accent}" stroke-opacity=".55" stroke-width="5" stroke-linecap="round"/>`,
-    `<circle cx="${SAFE_AREA.left + 10}" cy="${startY - 28}" r="12" fill="${accent}"/>`
+    `<line x1="${SAFE_AREA.left - 24}" y1="${CONTENT_TOP - 20}" x2="${SAFE_AREA.left - 24}" y2="${CONTENT_BOTTOM - 20}" stroke="${accent}" stroke-opacity=".55" stroke-width="5" stroke-linecap="round"/>`,
+    `<circle cx="${SAFE_AREA.left - 24}" cy="${startY - 28}" r="12" fill="${accent}"/>`
   ];
   let y = startY;
   if (layout.fit.titleFit) {
-    parts.push(`<text x="${SAFE_AREA.left + 42}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.titleFit.fontSize}" font-weight="800">${layout.fit.titleFit.lines.map((line, i) => `<tspan x="${SAFE_AREA.left + 42}" dy="${i ? layout.fit.titleFit.fontSize * 1.08 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
+    parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.08, weight: 800 }));
     y += layout.fit.titleFit.height + 30;
   }
   if (layout.fit.bodyFit) {
-    parts.push(`<text x="${SAFE_AREA.left + 42}" y="${y}" fill="#f3e8ff" font-family="Arial,sans-serif" font-size="${layout.fit.bodyFit.fontSize}" font-weight="400">${layout.fit.bodyFit.lines.map((line, i) => `<tspan x="${SAFE_AREA.left + 42}" dy="${i ? layout.fit.bodyFit.fontSize * layout.fit.bodyFit.lineHeight : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
+    parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
     y += layout.fit.bodyFit.height + 32;
   }
   layout.content.points.forEach((point) => {
-    parts.push(`<circle cx="${SAFE_AREA.left + 10}" cy="${y - 9}" r="8" fill="${accent}"/>`);
-    const cleanLines = point.lines.map(line => line.replace(/^•\s*/, ''));
-    parts.push(`<text x="${SAFE_AREA.left + 42}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.pointSize}" font-weight="600">${cleanLines.map((line, i) => `<tspan x="${SAFE_AREA.left + 42}" dy="${i ? layout.fit.pointSize * 1.22 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
-    y += point.lines.length * layout.fit.pointSize * 1.22 + 34;
+    parts.push(`<circle cx="${SAFE_AREA.left - 24}" cy="${y - 9}" r="8" fill="${accent}"/>`);
+    const cleanText = String(point.text || '').replace(/^•\s*/, '').trim();
+    const cleanLines = wrapText(cleanText, SAFE_WIDTH, layout.fit.pointSize, false);
+    parts.push(textElement(cleanLines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
+    y += cleanLines.length * layout.fit.pointSize * 1.22 + 34;
   });
   parts.push('</g>');
   return frame(parts.join(''), number, total, watermark, background);
@@ -582,10 +584,11 @@ function renderNewsStructured(layout, number, total, watermark, background) {
     y += layout.fit.bodyFit.height + 30;
   }
   layout.content.points.forEach((point) => {
-    parts.push(`<rect x="${SAFE_AREA.left}" y="${y - 35}" width="10" height="${Math.max(48, point.lines.length * layout.fit.pointSize * 1.22)}" rx="5" fill="${accent}"/>`);
-    const cleanLines = point.lines.map(line => line.replace(/^•\s*/, ''));
+    const cleanText = String(point.text || '').replace(/^•\s*/, '').trim();
+    const cleanLines = wrapText(cleanText, SAFE_WIDTH - 45, layout.fit.pointSize, false);
+    parts.push(`<rect x="${SAFE_AREA.left}" y="${y - 35}" width="10" height="${Math.max(48, cleanLines.length * layout.fit.pointSize * 1.22)}" rx="5" fill="${accent}"/>`);
     parts.push(`<text x="${SAFE_AREA.left + 30}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.pointSize}" font-weight="650">${cleanLines.map((line, i) => `<tspan x="${SAFE_AREA.left + 30}" dy="${i ? layout.fit.pointSize * 1.22 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
-    y += point.lines.length * layout.fit.pointSize * 1.22 + 34;
+    y += cleanLines.length * layout.fit.pointSize * 1.22 + 34;
   });
   parts.push('</g>');
   return frame(parts.join(''), number, total, watermark, background);
