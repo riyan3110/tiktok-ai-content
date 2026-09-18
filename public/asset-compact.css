@@ -686,6 +686,14 @@
   line-height:1.05!important;
   white-space:nowrap!important;
 }
+#legacy-studio #layout-picker .layout-option.active::after{
+  top:4px!important;
+  right:4px!important;
+  width:16px!important;
+  height:16px!important;
+  font-size:.58rem!important;
+  border-width:1.5px!important;
+}
 @media(max-width:380px){
   #legacy-studio #layout-picker .layout-options{gap:4px!important}
   #legacy-studio #layout-picker .layout-option{padding:8px 2px!important}
