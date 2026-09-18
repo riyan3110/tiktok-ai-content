@@ -109,11 +109,19 @@ test('Tutorial Cerita dan Berita memakai renderer visual yang berbeda', () => {
   `;
   const output = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
   assert.match(output, /data-layout="tutorial"/);
+  assert.match(output, /TUTORIAL ·/);
   assert.match(output, /data-layout="story"/);
+  assert.match(output, /CERITA ·/);
+  assert.match(output, />“</);
   assert.match(output, /data-layout="news"/);
+  assert.match(output, />BERITA</);
+  assert.match(output, />01</);
 });
 
-test('empat tombol tata letak selalu berjajar satu baris', () => {
+test('empat tombol tata letak memenuhi lebar panel dan tetap nyaman disentuh', () => {
   const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'asset-compact.css'), 'utf8');
+  assert.match(css, /#legacy-studio #content-generator > #layout-picker[\s\S]*grid-column:1\/-1!important/);
   assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)!important/);
+  assert.match(css, /min-height:82px!important/);
+  assert.match(css, /width:27px!important/);
 });
