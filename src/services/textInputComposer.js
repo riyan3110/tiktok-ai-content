@@ -581,10 +581,10 @@ function promptFor(text, requestedSlideCount, contentLayout = 'default') {
   const count = 4;
   const sections = layoutSections(layout, count);
   const structure = layout === 'tutorial'
-    ? 'PEMBUKA → LANGKAH 1 → LANGKAH 2 → HASIL/PENUTUP. Slide 2–3: body instruksi singkat + 1–2 points sebagai kartu tindakan, bukan bullet. Slide 4 tanpa points.'
+    ? 'PEMBUKA → LANGKAH 1 → LANGKAH 2 → HASIL/PENUTUP. Slide 2–3: body instruksi singkat + 1–2 points sebagai KARTU TINDAKAN, bukan bullet. Slide 4 tanpa points.'
     : layout === 'story'
-      ? 'PEMBUKA CERITA → SITUASI → PERKEMBANGAN → PENYELESAIAN. Slide 2–4 berupa paragraf naratif. points kosong atau maksimal satu paragraf lanjutan; jangan membuat bullet/list.'
-      : 'HEADLINE → FAKTA UTAMA → KONTEKS/DETAIL → PERKEMBANGAN. Slide 2–3: body ringkasan + 1–2 points sebagai kartu fakta, bukan bullet. Slide 4 tanpa points. Gunakan piramida terbalik.';
+      ? 'PEMBUKA CERITA → SITUASI → PERKEMBANGAN → PENYELESAIAN. Slide 2–4 berupa paragraf naratif. points kosong atau maksimal satu PARAGRAF NARATIF lanjutan; BUKAN bullet/list.'
+      : 'HEADLINE → FAKTA UTAMA → KONTEKS/DETAIL → PERKEMBANGAN. Slide 2–3: body ringkasan + 1–2 points sebagai KARTU FAKTA, bukan bullet. Slide 4 tanpa points. Gunakan piramida terbalik.';
 
   return `TRANSFORM-ONLY. Susun TEXT_INPUT menjadi tepat 4 slide sesuai layout ${layout.toUpperCase()}.
 
