@@ -47,6 +47,9 @@
       .notes-detail-title-group{flex:1 1 auto;min-width:0}
       .notes-detail-title-group h1{margin:0;font-size:1.15rem;font-weight:800;line-height:1.2;overflow-wrap:anywhere}
       .notes-detail-title-group time{display:block;margin-top:3px;color:var(--neo-muted,#687386);font-size:.75rem}
+      .notes-detail-edit-title{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;min-height:38px;padding:0;border:2px solid var(--neo-line,#20263a);border-radius:11px;background:var(--neo-yellow,#ffe66d);color:var(--neo-line,#20263a);cursor:pointer;flex:0 0 auto}
+      .notes-detail-edit-title svg{width:18px;height:18px;display:block}
+      .notes-detail-edit-title:hover{filter:brightness(.98);transform:none}
       .notes-detail-content{padding:16px;border:2px solid var(--neo-line,#20263a);border-radius:16px;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
       .notes-detail-content pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.86rem;line-height:1.6;color:var(--neo-muted,#566174);background:var(--neo-soft,#f6f3ea);border:1.5px solid var(--neo-line,#20263a);border-radius:12px;padding:14px}
       .notes-detail-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -153,6 +156,9 @@
           <h1>${safe(note.title)}</h1>
           ${note.createdAt ? `<time datetime="${safe(note.createdAt)}">${safe(date(note.createdAt))}</time>` : ''}
         </div>
+        <button class="notes-detail-edit-title" id="notes-detail-edit-title" type="button" aria-label="Edit judul Notes" title="Edit judul">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
       </header>
       <div class="notes-detail-content">
         <pre>${safe(note.content)}</pre>
@@ -166,6 +172,7 @@
         <button class="danger outline" type="button" id="notes-detail-delete">Hapus</button>
       </div>`;
     $('#notes-back').addEventListener('click', renderList);
+    $('#notes-detail-edit-title').addEventListener('click', () => detailAction('edit-title', note));
     $('#notes-detail-copy').addEventListener('click', () => detailAction('copy', note));
     $('#notes-detail-generate').addEventListener('click', () => detailAction('generate', note));
     $('#notes-detail-delete').addEventListener('click', () => detailAction('delete', note));
@@ -202,7 +209,16 @@
 
   async function detailAction(name, note) {
     try {
-      if (name === 'copy') {
+      if (name === 'edit-title') {
+        const nextTitle = window.prompt('Edit judul Notes', note.title);
+        if (nextTitle === null) return;
+        const title = String(nextTitle || '').replace(/\s+/g, ' ').trim();
+        if (!title) return void detailStatus('Judul tidak boleh kosong.', true);
+        const updated = await api(`/api/notes/${encodeURIComponent(note.id)}`, { method: 'PATCH', body: JSON.stringify({ title }) });
+        notes = notes.map(item => item.id === updated.id ? updated : item);
+        openDetail(updated.id);
+        detailStatus('Judul berhasil diubah.');
+      } else if (name === 'copy') {
         await copyText(note.content);
         detailStatus('Prompt berhasil disalin.');
       } else if (name === 'generate') {

@@ -214,6 +214,27 @@ function cleanSourceUrls() { const seen = new Set(); return sourceUrls.map(v => 
 function validateSourceUrls() { $('#source-url-error').textContent = ''; if (!sourceModeEnabled()) return []; const urls = cleanSourceUrls(); if (!urls.length) { $('#source-url-error').textContent = 'Minimal 1 URL sumber wajib diisi.'; return null; } if (urls.length > 3) { $('#source-url-error').textContent = 'Maksimal 3 URL sumber.'; return null; } for (const url of urls) { try { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { $('#source-url-error').textContent = `URL tidak valid: ${url}`; return null; } } return urls; }
 function renderSourcePreview(item) { const meta = item.render_source || {}; const sources = meta.sources || []; const host = $('#source-preview'); host.classList.toggle('hidden', !sources.length); if (!sources.length) return; const status = meta.verificationStatus === 'needs_review' ? 'Perlu ditinjau — sumber tidak cukup atau saling berbeda' : 'Berbasis sumber — tetap periksa sebelum dipublikasikan'; host.innerHTML = `<h3>Dibuat berdasarkan sumber</h3><p>${status} · ${sources.length} sumber</p><small>Klaim faktual diperiksa terhadap kutipan sumber.</small><ul>${sources.map(src => { let domain = src.finalUrl || src.url; try { domain = new URL(domain).hostname; } catch {} return `<li><a href="${escapeHtml(src.finalUrl || src.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(src.title || domain)}</a><br><small>${escapeHtml(domain)} · diambil ${escapeHtml(new Date(src.fetchedAt).toLocaleString('id-ID'))}</small></li>`; }).join('')}</ul>`; }
 let sourceUrls = [''];
+function ensureManualCarouselInput() {
+  const field = $('#manual-topic-field');
+  const current = $('#manual-topic');
+  if (!field || !current) return current;
+  let input = current;
+  if (current.tagName !== 'TEXTAREA') {
+    input = document.createElement('textarea');
+    input.id = 'manual-topic';
+    input.value = current.value || '';
+    input.name = current.name || '';
+    input.autocomplete = current.autocomplete || 'off';
+    current.replaceWith(input);
+  }
+  input.rows = 6;
+  input.maxLength = 20000;
+  input.placeholder = 'Tempel text content di sini';
+  input.setAttribute('aria-label', 'Teks carousel siap tempel');
+  field.replaceChildren(document.createTextNode('Teks carousel siap tempel'), input);
+  return input;
+}
+ensureManualCarouselInput();
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { const manual = input.value === 'manual' && input.checked; $('#manual-topic-wrap').classList.toggle('hidden', !manual); renderSourceUrlFields(); });
 document.querySelectorAll('input[name="source-mode"]').forEach(input => input.onchange = renderSourceUrlFields); $('#add-source-url').onclick = () => { if (sourceUrls.length < 3) sourceUrls.push(''); renderSourceUrlFields(); }; renderSourceUrlFields();
 let lastGenerationRequest;

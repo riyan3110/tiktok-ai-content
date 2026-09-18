@@ -410,3 +410,15 @@ test('Cerita slide penyelesaian menjaga title dan paragraf jauh dari batas kartu
   const lines = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
   assert.ok(lines.every(line => line.length <= 42), `Cerita ending masih punya baris terlalu panjang: ${lines.join(' | ')}`);
 });
+
+
+test('kolom Text Content manual menjadi textarea compact dengan placeholder sederhana', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'asset-compact.css'), 'utf8');
+  assert.match(app, /ensureManualCarouselInput/);
+  assert.match(app, /Tempel text content di sini/);
+  assert.match(app, /document\.createElement\('textarea'\)/);
+  assert.match(css, /#legacy-studio #manual-topic\{/);
+  assert.match(css, /height:220px/);
+  assert.match(css, /height:210px/);
+});

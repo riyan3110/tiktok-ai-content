@@ -123,6 +123,16 @@ test('Notes reject empty prompts, support search, and can be deleted', async t =
   assert.deepEqual((await request(app).get('/api/notes').expect(200)).body, []);
 });
 
+test('Notes title can be renamed from detail view API', async t => {
+  const { app } = fixture(t);
+  const saved = await request(app).post('/api/notes').send({ content: '## Scene\nPremium red sneaker rotating on a clean studio pedestal.' }).expect(201);
+  const updated = await request(app).patch(`/api/notes/${saved.body.id}`).send({ title: 'Judul Baru Notes' }).expect(200);
+  assert.equal(updated.body.title, 'Judul Baru Notes');
+  assert.equal(updated.body.content, saved.body.content);
+  await request(app).patch(`/api/notes/${saved.body.id}`).send({ title: '   ' }).expect(422);
+});
+
+
 test('Notes frontend has list view with clickable titles and a detail view with copy/generate/delete', () => {
   const script = fs.readFileSync(path.join(__dirname, '../public/notes.js'), 'utf8');
   for (const value of ['notes-search', 'notes-list-item', 'notes-detail-view', '/api/notes', 'aiads-image-generator-prompt', "location.hash = '#studio'"]) assert.ok(script.includes(value), `Missing: ${value}`);
@@ -134,6 +144,9 @@ test('Notes frontend has list view with clickable titles and a detail view with 
   assert.match(script, /notes-detail-generate/);
   assert.match(script, /notes-detail-delete/);
   assert.match(script, /notes-detail-back/);
+  assert.match(script, /notes-detail-edit-title/);
+  assert.match(script, /Edit judul Notes/);
+  assert.match(script, /method: 'PATCH'/);
   assert.ok(!script.includes('note-card-actions'), 'List view should not have card action buttons');
   assert.match(script, /method: 'DELETE'/);
 });
