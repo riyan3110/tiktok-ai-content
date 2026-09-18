@@ -6,6 +6,7 @@ const path = require('node:path');
 const softFit = require('../src/services/textInputSoftFitPatch');
 const verbatim = require('../src/services/textInputVerbatimPatch');
 const autoSourcePatch = require('../src/services/autoSourcePatch');
+const images = require('../src/services/images');
 
 const slides = [
   { section: 'HOOK', title: 'Kegagalan Bukan Akhir dari Semua Pilihan', body: '', points: [] },
@@ -92,4 +93,27 @@ test('UI menandai satu layout aktif dengan badge centang yang jelas', () => {
   const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'asset-compact.css'), 'utf8');
   assert.match(css, /#legacy-studio #layout-picker \.layout-option\.active::after/);
   assert.match(css, /content:"✓"/);
+});
+
+
+test('Tutorial Cerita dan Berita memakai renderer visual yang berbeda', () => {
+  const background = { color: '#f5efe4', textColor: '#000000' };
+  const tutorial = softFit.buildTextInputLayouts(content('tutorial'))[1];
+  const story = softFit.buildTextInputLayouts(content('story'))[1];
+  const news = softFit.buildTextInputLayouts(content('news'))[1];
+
+  const tutorialSvg = images.renderLayout(tutorial, 2, 4, { enabled: false }, background);
+  const storySvg = images.renderLayout(story, 2, 4, { enabled: false }, background);
+  const newsSvg = images.renderLayout(news, 2, 4, { enabled: false }, background);
+
+  assert.match(tutorialSvg, /data-layout="tutorial"/);
+  assert.match(storySvg, /data-layout="story"/);
+  assert.match(newsSvg, /data-layout="news"/);
+  assert.notEqual(tutorialSvg, storySvg);
+  assert.notEqual(storySvg, newsSvg);
+});
+
+test('empat tombol tata letak selalu berjajar satu baris', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'asset-compact.css'), 'utf8');
+  assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)!important/);
 });
