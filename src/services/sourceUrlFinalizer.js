@@ -290,7 +290,8 @@ function groupedFacts(sources, facts) {
   });
 }
 
-function contentShapeGoalErrors(content, facts) {
+function contentShapeGoalErrors(content, facts, contentLayout = 'default') {
+  const layout = resolveContentLayout(contentLayout);
   const slides = Array.isArray(content?.slides) ? content.slides : [];
   const profile = sourceRichness(facts, slides.length || 4);
   return slides.flatMap((slide, index) => {
@@ -299,8 +300,18 @@ function contentShapeGoalErrors(content, facts) {
     const points = Array.isArray(slide?.points) ? slide.points : [];
     const count = visibleCount(slide);
     if (bodyCount < profile.bodyMin) errors.push(`slide:${index}:shape-goal: body baru ${bodyCount} kata; wajib minimal ${profile.bodyMin} kata.`);
-    if (points.length < profile.targetPoints) errors.push(`slide:${index}:shape-goal: baru ${points.length} bullet; target ${profile.targetPoints} bullet fakta berbeda.`);
-    if (count < profile.visibleGoal) errors.push(`slide:${index}:shape-goal: baru ${count} kata visible; perkaya menuju ${profile.visibleGoal} tanpa filler.`);
+
+    if (layout === 'default') {
+      if (points.length < profile.targetPoints) errors.push(`slide:${index}:shape-goal: baru ${points.length} bullet; target ${profile.targetPoints} bullet fakta berbeda.`);
+    } else if (layout === 'tutorial' && index > 0 && index < slides.length - 1) {
+      if (points.length < 1 || points.length > 2) errors.push(`slide:${index}:shape-goal: Tutorial membutuhkan 1–2 kartu tindakan.`);
+    } else if (layout === 'story') {
+      if (points.length > 1) errors.push(`slide:${index}:shape-goal: Cerita maksimal satu paragraf lanjutan; jangan menjadi daftar.`);
+    } else if (layout === 'news' && index > 0 && index < slides.length - 1) {
+      if (points.length < 1 || points.length > 2) errors.push(`slide:${index}:shape-goal: Berita membutuhkan 1–2 kartu fakta.`);
+    }
+
+    if (count < profile.visibleGoal && layout === 'default') errors.push(`slide:${index}:shape-goal: baru ${count} kata visible; perkaya menuju ${profile.visibleGoal} tanpa filler.`);
     return errors;
   });
 }
@@ -311,18 +322,37 @@ function qualityScore(content) {
 }
 const densityScore = qualityScore;
 
-function densityInstruction(facts, slideCount) {
+function densityInstruction(facts, slideCount, contentLayout = 'default') {
+  const layout = resolveContentLayout(contentLayout);
   const profile = sourceRichness(facts, slideCount);
   const targetPoints = Math.min(3, profile.targetPoints);
+  if (layout === 'tutorial') return 'Tutorial: tiap slide langkah memakai body instruksi + 1–2 points sebagai KARTU TINDAKAN bernomor, bukan bullet. Pembuka/hasil boleh tanpa points.';
+  if (layout === 'story') return 'Cerita: utamakan paragraf naratif. points harus [] atau maksimal 1 paragraf lanjutan; jangan menulis bullet/list.';
+  if (layout === 'news') return 'Berita: tiap slide fakta memakai body ringkasan + 1–2 points sebagai KARTU FAKTA, bukan bullet. Headline boleh tanpa points.';
   if (targetPoints >= 3) return 'Setiap slide WAJIB berisi body + 3 bullet fakta berbeda.';
   if (targetPoints === 2) return 'Setiap slide WAJIB berisi body + 2 bullet fakta berbeda jika FACT BANK mendukung.';
   if (targetPoints === 1) return 'Setiap slide WAJIB berisi body + minimal 1 bullet fakta.';
   return 'Setiap slide wajib memiliki body faktual dan bullet sebanyak fakta berbeda yang tersedia.';
 }
 
-function urlDensityErrors(content, facts = []) {
+function urlDensityErrors(content, facts = [], contentLayout = 'default') {
+  const layout = resolveContentLayout(contentLayout);
   const slides = Array.isArray(content?.slides) ? content.slides : [];
   if (!slides.length) return [];
+  if (layout === 'story') {
+    return slides.flatMap((slide, index) => (slide?.points || []).length > 1
+      ? [`slide:${index}:url-density: Cerita maksimal satu paragraf lanjutan, bukan daftar fakta.`]
+      : []);
+  }
+  if (layout === 'tutorial' || layout === 'news') {
+    return slides.flatMap((slide, index) => {
+      if (index === 0 || index === slides.length - 1) return [];
+      const count = Array.isArray(slide?.points) ? slide.points.length : 0;
+      return count < 1 || count > 2
+        ? [`slide:${index}:url-density: ${layout === 'tutorial' ? 'Tutorial' : 'Berita'} membutuhkan 1–2 ${layout === 'tutorial' ? 'kartu tindakan' : 'kartu fakta'}.`]
+        : [];
+    });
+  }
   const targetPoints = Math.min(3, sourceRichness(facts, slides.length).targetPoints);
   return slides.flatMap((slide, index) => {
     const count = Array.isArray(slide?.points) ? slide.points.length : 0;
@@ -375,7 +405,54 @@ function finalizerPrompt({ generated, sources, facts, format, topic, errors, rec
   const sourceGroups = groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
   const plan = buildFactPlan(sources, facts, sections.length);
-  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nTATA LETAK: ${JSON.stringify(resolvedLayout)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${selectedLayoutInstruction ? `ATURAN TATA LETAK: ${selectedLayoutInstruction}\n` : ''}${densityInstruction(facts, sections.length)}\nBODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN BODY FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nFACT PLAN UNIK PER SLIDE (panduan evidence; jangan mengulang evidence canonical):\n${JSON.stringify(plan)}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta visible pada body atau bullet final.\n- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, lokasi dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.\n- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN. Evidence dari bagian halaman lain dianggap tidak valid meskipun URL-nya sama.\n- Bahasa Indonesia harus natural, utuh, dan enak dibaca; jangan menyalin potongan kutipan, anak kalimat, atau attribution seperti “katanya/ujarnya”.\n- DILARANG menambahkan tujuan, sebab-akibat, manfaat, aplikasi, risiko, strategi, implikasi, rekomendasi, atau outcome yang tidak dinyatakan eksplisit oleh evidence.\n- Judul harus natural dan spesifik terhadap isi slide. Judul DILARANG hanya berupa nama section seperti “Pembuka”, “Fakta Utama”, “Konteks”, atau “Kesimpulan”. Jangan memakai pola berulang “<topik>: Fakta Utama / Konteks / Kesimpulan”.\n- Judul boleh berupa pertanyaan natural seperti “Apa itu Muse Code?” atau label ringkas seperti “Kemampuan Muse Code”. Jangan membuat semua judul berupa pertanyaan. Untuk judul label/netral, jangan membuat claim title yang tidak perlu.\n- BODY 10–20 kata, satu kalimat utuh, maksimal 4 baris.\n- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n- Setiap BODY dan BULLET WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama. Judul hanya perlu claim title jika memang memuat pernyataan faktual independen; judul struktural/ringkasan tidak perlu claim.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika tidak perlu, hilangkan angkanya; jangan menebak pengganti.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun antar-slide.\n- Jangan mengulang fakta yang sama dengan wording berbeda.\n- Judul maksimal 10 kata dan 3 baris. Jangan memotong copy di renderer.\n- Jika jumlah fakta bersih memang tidak cukup untuk 3 bullet di semua slide, gunakan sebanyak mungkin fakta unik yang benar-benar didukung; jangan filler dan jangan mengarang.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis bila evidence menyatakan tindakan itu. Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan tersebut.\n${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+
+  let layoutCopyRules = '';
+  if (resolvedLayout === 'tutorial') {
+    layoutCopyRules = '- TUTORIAL: setiap slide LANGKAH fokus pada satu tindakan utama. points adalah 1–2 KARTU TINDAKAN pendukung (3–12 kata), bukan bullet. Tindakan hanya boleh ditulis jika evidence mendukung tindakan tersebut.\n';
+  } else if (resolvedLayout === 'story') {
+    layoutCopyRules = '- CERITA: susun fakta sebagai alur naratif yang mengalir antar-slide. Body 12–26 kata. points harus [] atau maksimal 1 paragraf lanjutan 8–22 kata; jangan membuat daftar/bullet. Jangan menciptakan tokoh, emosi, pengalaman, atau sebab-akibat yang tidak ada di evidence.\n';
+  } else if (resolvedLayout === 'news') {
+    layoutCopyRules = '- BERITA: gunakan piramida terbalik. Headline dan fakta terpenting muncul lebih dulu. points adalah 1–2 KARTU FAKTA (4–12 kata), bukan bullet. Nada netral dan faktual.\n';
+  }
+
+  const pointRule = resolvedLayout === 'default'
+    ? '- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n'
+    : '- Field points tetap dipakai sebagai wadah data, tetapi bentuk bahasanya WAJIB mengikuti tata letak terpilih dan tidak boleh kembali ke gaya bullet Default.\n';
+
+  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.
+
+TOPIK PENGGUNA: ${JSON.stringify(topic)}
+FORMAT: ${JSON.stringify(format)}
+TATA LETAK DIPILIH USER: ${JSON.stringify(resolvedLayout)}
+SECTION WAJIB: ${JSON.stringify(sections)}
+${selectedLayoutInstruction ? `ATURAN TATA LETAK: ${selectedLayoutInstruction}\n` : ''}${densityInstruction(facts, sections.length, resolvedLayout)}
+BODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.
+ERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}
+
+SEMUA SUMBER/URL DAN BODY FACT BANK:
+${JSON.stringify(sourceGroups)}
+
+FACT PLAN UNIK PER SLIDE:
+${JSON.stringify(plan)}
+
+ATURAN WAJIB:
+- Pilihan tata letak adalah INSTRUKSI PENULISAN AI, bukan sekadar label atau dekorasi. Jangan memakai struktur Default jika user memilih Tutorial, Cerita, atau Berita.
+- Gunakan SEMUA URL yang diberikan: SETIAP sourceId wajib menyumbang minimal satu fakta visible pada title/body/points final.
+- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.
+- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.
+- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN.
+- Bahasa Indonesia harus natural, utuh, dan enak dibaca.
+- DILARANG menambahkan tujuan, sebab-akibat, manfaat, aplikasi, risiko, strategi, implikasi, rekomendasi, atau outcome yang tidak dinyatakan evidence.
+- Judul harus natural dan spesifik; jangan hanya menyalin nama section. Judul maksimal 10 kata.
+- BODY harus kalimat/paragraf utuh dan tidak boleh berupa fragmen.
+${layoutCopyRules}${pointRule}- SETIAP field faktual body/points WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama.
+- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.
+- Jika memakai angka/ordinal/tanggal, tokennya WAJIB sama persis dengan evidence claim itu.
+- Jangan memakai evidence canonical yang sama dua kali dan jangan mengulang fakta yang sama dengan wording berbeda.
+- Jika fakta bersih terbatas, kurangi detail; jangan mengarang demi memenuhi template.
+${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}
+Kembalikan HANYA JSON:
+{"slides":[{"section":"...","title":"judul natural","body":"kalimat/paragraf sesuai layout","points":[],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function responseJson(response) {
@@ -451,24 +528,52 @@ function syncTop(content) {
   return { ...content, hook: String(first?.title || content?.hook || '').trim(), body: main(middle), caption: main(middle), cta: String(last?.title || content?.cta || '').trim() };
 }
 
-function localLayoutErrors(content) {
+function localLayoutErrors(content, contentLayout = 'default') {
+  const layout = resolveContentLayout(contentLayout);
   const errors = [];
-  (content?.slides || []).forEach((slide, slideIndex) => {
+  const slides = Array.isArray(content?.slides) ? content.slides : [];
+  slides.forEach((slide, slideIndex) => {
     const title = String(slide?.title || '').trim();
     const titleCount = words(title).length;
     if (!titleCount || titleCount > 10) errors.push(`slide:${slideIndex}:title: title harus 1–10 kata.`);
     if (SECTION_ONLY_TITLE.test(title) || normalize(title) === normalize(slide?.section)) errors.push(`slide:${slideIndex}:title:natural: judul tidak boleh hanya nama section.`);
     const bodyCount = words(slide?.body).length;
-    if (bodyCount < 8 || bodyCount > 20) errors.push(`slide:${slideIndex}:body: body harus 8–20 kata untuk Pakai URL.`);
+    const points = Array.isArray(slide?.points) ? slide.points : [];
+
+    if (layout === 'story') {
+      if (bodyCount < 10 || bodyCount > 28) errors.push(`slide:${slideIndex}:body: paragraf Cerita harus 10–28 kata.`);
+      if (points.length > 1) errors.push(`slide:${slideIndex}: Cerita maksimal satu paragraf lanjutan.`);
+      points.forEach((point, pointIndex) => {
+        const count = words(point).length;
+        if (count < 6 || count > 22) errors.push(`slide:${slideIndex}:point:${pointIndex}: paragraf lanjutan Cerita harus 6–22 kata.`);
+      });
+    } else if (layout === 'tutorial') {
+      if (bodyCount < 7 || bodyCount > 22) errors.push(`slide:${slideIndex}:body: instruksi Tutorial harus 7–22 kata.`);
+      if (slideIndex > 0 && slideIndex < slides.length - 1 && (points.length < 1 || points.length > 2)) errors.push(`slide:${slideIndex}: Tutorial membutuhkan 1–2 kartu tindakan.`);
+      if (points.length > 2) errors.push(`slide:${slideIndex}: Tutorial maksimal 2 kartu tindakan.`);
+      points.forEach((point, pointIndex) => {
+        const count = words(point).length;
+        if (count < 3 || count > 12) errors.push(`slide:${slideIndex}:point:${pointIndex}: tindakan Tutorial harus 3–12 kata.`);
+      });
+    } else if (layout === 'news') {
+      if (bodyCount < 8 || bodyCount > 22) errors.push(`slide:${slideIndex}:body: ringkasan Berita harus 8–22 kata.`);
+      if (slideIndex > 0 && slideIndex < slides.length - 1 && (points.length < 1 || points.length > 2)) errors.push(`slide:${slideIndex}: Berita membutuhkan 1–2 kartu fakta.`);
+      if (points.length > 2) errors.push(`slide:${slideIndex}: Berita maksimal 2 kartu fakta.`);
+      points.forEach((point, pointIndex) => {
+        const count = words(point).length;
+        if (count < 4 || count > 12) errors.push(`slide:${slideIndex}:point:${pointIndex}: kartu fakta Berita harus 4–12 kata.`);
+      });
+    } else {
+      if (bodyCount < 8 || bodyCount > 20) errors.push(`slide:${slideIndex}:body: body harus 8–20 kata untuk Pakai URL.`);
+      if (points.length > 3) errors.push(`slide:${slideIndex}: maksimal 3 point.`);
+      points.forEach((point, pointIndex) => {
+        const count = words(point).length;
+        if (count < 3 || count > 7) errors.push(`slide:${slideIndex}:point:${pointIndex}: harus 3–7 kata.`);
+        if (BAD_BULLET_START.test(point) || endsDangling(point) || ATTRIBUTION_FRAGMENT.test(point)) errors.push(`slide:${slideIndex}:point:${pointIndex}: bullet berupa fragmen/kutipan gantung dan harus ditulis ulang utuh.`);
+      });
+    }
+
     if (BYLINE_PREFIX.test(String(slide?.body || ''))) errors.push(`slide:${slideIndex}:body:natural: dateline/lokasi berita tidak boleh menjadi awal body.`);
-    if ((slide?.points || []).length > 3) errors.push(`slide:${slideIndex}: maksimal 3 point.`);
-    (slide?.points || []).forEach((point, pointIndex) => {
-      const count = words(point).length;
-      if (count < 3 || count > 7) errors.push(`slide:${slideIndex}:point:${pointIndex}: harus 3–7 kata.`);
-      if (BAD_BULLET_START.test(point) || endsDangling(point) || ATTRIBUTION_FRAGMENT.test(point)) {
-        errors.push(`slide:${slideIndex}:point:${pointIndex}: bullet berupa fragmen/kutipan gantung dan harus ditulis ulang utuh.`);
-      }
-    });
   });
   return errors;
 }
@@ -607,16 +712,19 @@ function evidenceBankErrors(content, sources, facts) {
   return [...new Set(errors)];
 }
 
-function sourceValidationErrors(content, sources, facts, strict) {
+function sourceValidationErrors(content, sources, facts, strict, contentLayout = 'default') {
+  const layout = resolveContentLayout(contentLayout);
+  const presentation = layout === 'default' ? manualSourceFallback.presentationErrors(content, facts) : [];
   const errors = [
     ...manualSourceFallback.sourceCoverageErrors(content, sources),
-    ...manualSourceFallback.presentationErrors(content, facts),
+    ...presentation,
     ...manualSourceFallback.naturalCopyErrors(content)
   ];
   return strict ? errors : errors.filter(error => !/:richness:/.test(error));
 }
 
-function validateCandidate(base, candidate, { contentService, format, topic, sources, mode, facts = [], strict = true }) {
+function validateCandidate(base, candidate, { contentService, format, topic, sources, mode, facts = [], strict = true, contentLayout = 'default' }) {
+  const layout = resolveContentLayout(contentLayout);
   const checked = sourceFilter.validateVerifiedContent(base, { slides: candidate.slides }, {
     contentService,
     format,
@@ -628,11 +736,11 @@ function validateCandidate(base, candidate, { contentService, format, topic, sou
   const errors = [
     ...numericGroundingErrors(content),
     ...checked.errors,
-    ...sourceValidationErrors(content, sources, facts, strict),
+    ...sourceValidationErrors(content, sources, facts, strict, layout),
     ...evidenceBankErrors(content, sources, facts),
-    ...(strict ? urlDensityErrors(content, facts) : []),
+    ...(strict ? urlDensityErrors(content, facts, layout) : []),
     ...(strict ? manualSourceDedupe.manualCrossSlideDuplicateErrors(content) : []),
-    ...localLayoutErrors(content),
+    ...localLayoutErrors(content, layout),
     ...urlVisualFitErrors(content),
     ...repeatedTemplateTitleErrors(content, topic)
   ];
@@ -694,7 +802,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
   const resolvedLayout = resolveContentLayout(contentLayout || generated?.contentLayout);
   const sections = targetSections(generated, effectiveFormat, seedFacts, sources, resolvedTopic, resolvedLayout);
   const openai = client || require('./textProviderRuntime').client();
-  let draft = { ...generated, topic: resolvedTopic };
+  let draft = { ...generated, topic: resolvedTopic, contentLayout: resolvedLayout };
   let lastErrors = [];
 
   for (let attempt = 0; attempt < FAST_FINALIZE_ATTEMPTS; attempt += 1) {
@@ -705,8 +813,8 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
         model: config.aiModel,
         messages: [
           { role: 'system', content: recovery
-            ? 'Anda recovery editor Pakai URL. Buang output lama dan bangun ulang carousel dari fact bank bersih. Semua URL harus dipakai. Copy harus faktual, natural, padat, unik, dan tidak boleh memakai related content atau fragmen kutipan.'
-            : 'Anda editor final khusus Pakai URL. Susun carousel baru hanya dari fact bank URL yang relevan. Gunakan semua URL, tulis natural dan padat, dan jangan menambah fakta di luar evidence.' },
+            ? `Anda recovery editor Pakai URL. Tata letak user adalah "${resolvedLayout}" dan WAJIB dipertahankan. Buang output lama dan bangun ulang carousel dari fact bank bersih tanpa menambah fakta.`
+            : `Anda editor final Pakai URL. Tata letak user adalah "${resolvedLayout}" dan WAJIB menentukan struktur penulisan. Gunakan hanya fact bank URL relevan tanpa menambah fakta.` },
           { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts: seedFacts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors, recovery, contentLayout: resolvedLayout }) }
         ],
         response_format: { type: 'json_object' }
@@ -719,14 +827,14 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     }
 
     let validated = validateCandidate(draft, draft, {
-      contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: true
+      contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: true, contentLayout: resolvedLayout
     });
 
     const titleRepair = repairProblematicTitles(validated.content, validated.errors, resolvedTopic, effectiveFormat);
     if (titleRepair.changed) {
       draft = titleRepair.content;
       validated = validateCandidate(draft, draft, {
-        contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: true
+        contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: true, contentLayout: resolvedLayout
       });
     }
 
@@ -741,7 +849,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
       if (pruned.changed) {
         draft = pruned.content;
         validated = validateCandidate(draft, draft, {
-          contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: false
+          contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: false, contentLayout: resolvedLayout
         });
         if (!bodyCriticalErrors(validated.errors).length && !validated.errors.length) {
           const semantic = await auditUrlSemantics(openai, validated.content, resolvedTopic, effectiveFormat);
@@ -754,7 +862,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
             topic: resolvedTopic,
             format: effectiveFormat,
             validate: candidate => validateCandidate(candidate, candidate, {
-              contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: false
+              contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: false, contentLayout: resolvedLayout
             }),
             audit: candidate => auditUrlSemantics(openai, candidate, resolvedTopic, effectiveFormat)
           });
@@ -778,7 +886,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
         topic: resolvedTopic,
         format: effectiveFormat,
         validate: candidate => validateCandidate(candidate, candidate, {
-          contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: true
+          contentService, format: effectiveFormat, topic: resolvedTopic, sources, mode, facts: seedFacts, strict: true, contentLayout: resolvedLayout
         }),
         audit: candidate => auditUrlSemantics(openai, candidate, resolvedTopic, effectiveFormat)
       });
