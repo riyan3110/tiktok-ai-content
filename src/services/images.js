@@ -563,11 +563,12 @@ function renderStructuredVariant(layout) {
     });
   }
   if (style === 'story') {
+    const isEndingSlide = /PENYELESAIAN|PENUTUP|AKHIR/i.test(section);
     const cardRight = 70;
     const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
-    const titleTextWidth = cardWidth - 220;
-    const bodyTextWidth = cardWidth - 130;
-    const continuationTextWidth = cardWidth - 160;
+    const titleTextWidth = isEndingSlide ? cardWidth - 260 : cardWidth - 220;
+    const bodyTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 150;
+    const continuationTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 180;
     const narrative = [bodyText, ...pointTexts].filter(Boolean).slice(0, 2);
 
     parts.push(
@@ -578,7 +579,7 @@ function renderStructuredVariant(layout) {
     );
 
     let y = CONTENT_TOP + 90;
-    const titleFit = fitVariantText(titleText, titleTextWidth, 330, 72, 46, 4, true);
+    const titleFit = fitVariantText(titleText, titleTextWidth, 340, isEndingSlide ? 66 : 72, 44, 4, true);
     if (titleFit) {
       parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
       y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
@@ -586,14 +587,25 @@ function renderStructuredVariant(layout) {
 
     narrative.forEach((paragraph, index) => {
       const maxWidth = index === 0 ? bodyTextWidth : continuationTextWidth;
-      const paragraphFit = fitVariantText(paragraph, maxWidth, 270, index === 0 ? 40 : 36, 30, 6, false);
+      const paragraphFit = fitVariantText(
+        paragraph,
+        maxWidth,
+        isEndingSlide ? 300 : 270,
+        isEndingSlide ? (index === 0 ? 36 : 34) : (index === 0 ? 40 : 36),
+        29,
+        isEndingSlide ? 7 : 6,
+        false
+      );
       if (!paragraphFit) return;
       const paragraphHeight = paragraphFit.lines.length * paragraphFit.fontSize * 1.28;
-      const boxHeight = Math.max(index === 0 ? 170 : 155, paragraphHeight + 88);
+      const boxHeight = Math.max(
+        isEndingSlide ? (index === 0 ? 190 : 175) : (index === 0 ? 170 : 155),
+        paragraphHeight + (isEndingSlide ? 110 : 88)
+      );
       parts.push(
         `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="${accent}" fill-opacity="${index === 0 ? '.075' : '.045'}" ${index === 0 ? '' : `stroke="${accent}" stroke-opacity=".24" stroke-width="2"`}/>`,
         positionedText(paragraphFit.lines, {
-          x: SAFE_AREA.left + 24,
+          x: SAFE_AREA.left + (isEndingSlide ? 30 : 24),
           y: y + 8,
           fontSize: paragraphFit.fontSize,
           lineHeight: 1.28,
