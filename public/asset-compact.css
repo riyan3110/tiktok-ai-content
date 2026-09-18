@@ -700,3 +700,52 @@
   #legacy-studio #layout-picker .layout-option span{font-size:.62rem!important}
   #legacy-studio #layout-picker .layout-option svg{width:20px!important;height:20px!important}
 }
+
+
+/* Text Content layout picker — full-width row with usable mobile tap targets. */
+@media(max-width:767px){
+  #legacy-studio #content-generator > #layout-picker{
+    grid-column:1/-1!important;
+    grid-row:2!important;
+    width:100%!important;
+    min-width:0!important;
+    margin:8px 0 12px!important;
+  }
+  #legacy-studio #layout-picker .layout-options{
+    display:grid!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+    gap:8px!important;
+    width:100%!important;
+  }
+  #legacy-studio #layout-picker .layout-option{
+    width:100%!important;
+    min-width:0!important;
+    min-height:82px!important;
+    padding:10px 4px 9px!important;
+    gap:7px!important;
+    border-radius:13px!important;
+  }
+  #legacy-studio #layout-picker .layout-option svg{
+    width:27px!important;
+    height:27px!important;
+  }
+  #legacy-studio #layout-picker .layout-option span{
+    font-size:.77rem!important;
+    line-height:1.05!important;
+    white-space:nowrap!important;
+  }
+  #legacy-studio #layout-picker .layout-option.active::after{
+    top:5px!important;
+    right:5px!important;
+    width:18px!important;
+    height:18px!important;
+    font-size:.62rem!important;
+    border-width:1.5px!important;
+  }
+}
+@media(max-width:370px){
+  #legacy-studio #layout-picker .layout-options{gap:6px!important}
+  #legacy-studio #layout-picker .layout-option{min-height:78px!important;padding:9px 3px 8px!important}
+  #legacy-studio #layout-picker .layout-option svg{width:25px!important;height:25px!important}
+  #legacy-studio #layout-picker .layout-option span{font-size:.7rem!important}
+}
