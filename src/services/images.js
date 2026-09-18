@@ -516,73 +516,92 @@ function renderStructuredVariant(layout) {
   if (style === 'tutorial') {
     const stepMatch = section.match(/LANGKAH\s*(\d+)/i);
     const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (/HASIL|PENUTUP/i.test(section) ? 'HASIL' : 'TUTORIAL');
-    const bigNumber = stepMatch ? String(stepMatch[1]).padStart(2, '0') : '';
+    const cardRight = 70;
+    const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+    const titleTextWidth = cardWidth - 220;
+    const bodyTextWidth = cardWidth - 130;
+    const actionTextWidth = cardWidth - 210;
+
     parts.push(
-      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 72}" width="${SAFE_WIDTH}" height="58" rx="16" fill="${accent}"/>`,
-      `<text x="${SAFE_AREA.left + 24}" y="${CONTENT_TOP - 34}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" letter-spacing="1.4">${escapeXml(stepLabel)}</text>`
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">TUTORIAL</text>`,
+      `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(stepLabel)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
     );
-    if (bigNumber) {
-      parts.push(`<text x="${WIDTH - SAFE_AREA.right}" y="${CONTENT_TOP + 150}" fill="${accent}" fill-opacity=".16" font-family="Arial,sans-serif" font-size="190" font-weight="900" text-anchor="end">${bigNumber}</text>`);
-    }
 
-    let y = CONTENT_TOP + 70;
-    const titleFit = fitVariantText(titleText, SAFE_WIDTH, 270, 76, 52, 3, true);
+    let y = CONTENT_TOP + 90;
+    const titleFit = fitVariantText(titleText, titleTextWidth, 330, 72, 46, 4, true);
     if (titleFit) {
-      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.05, weight: 900 }));
-      y += titleFit.lines.length * titleFit.fontSize * 1.05 + 34;
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
     }
 
-    const bodyFit = fitVariantText(bodyText, SAFE_WIDTH, 190, 42, 34, 4, false);
+    const bodyFit = fitVariantText(bodyText, bodyTextWidth, 230, 40, 32, 5, false);
     if (bodyFit) {
-      parts.push(positionedText(bodyFit.lines, { y, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 450, fill: '#f3e8ff' }));
-      y += bodyFit.lines.length * bodyFit.fontSize * 1.26 + 36;
+      const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.26;
+      const bodyBoxHeight = Math.max(150, bodyHeight + 86);
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
+        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 500, fill: '#f3e8ff' })
+      );
+      y += bodyBoxHeight + 18;
     }
 
     pointTexts.slice(0, 2).forEach((point, index) => {
-      const pointFit = fitVariantText(point, SAFE_WIDTH - 116, 150, 38, 31, 3, false);
+      const pointFit = fitVariantText(point, actionTextWidth, 250, 34, 28, 5, true);
       if (!pointFit) return;
-      const cardHeight = Math.max(106, pointFit.lines.length * pointFit.fontSize * 1.22 + 48);
+      const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
+      const boxHeight = Math.max(175, pointHeight + 104);
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 42}" width="${SAFE_WIDTH}" height="${cardHeight}" rx="24" fill="${accent}" fill-opacity=".10" stroke="${accent}" stroke-opacity=".42" stroke-width="2.5"/>`,
-        `<rect x="${SAFE_AREA.left + 18}" y="${y - 17}" width="58" height="58" rx="15" fill="${accent}"/>`,
-        `<text x="${SAFE_AREA.left + 47}" y="${y + 22}" fill="#ffffff" font-family="Arial,sans-serif" font-size="27" font-weight="900" text-anchor="middle">${index + 1}</text>`,
-        positionedText(pointFit.lines, { x: SAFE_AREA.left + 96, y: y + 12, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".035" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+        `<rect x="${SAFE_AREA.left + 22}" y="${y - 12}" width="54" height="54" rx="13" fill="${accent}"/>`,
+        `<text x="${SAFE_AREA.left + 49}" y="${y + 24}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`,
+        positionedText(pointFit.lines, { x: SAFE_AREA.left + 96, y: y + 24, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
       );
-      y += cardHeight + 24;
+      y += boxHeight + 28;
     });
   }
-
   if (style === 'story') {
-    const narrative = [bodyText, ...pointTexts].filter(Boolean).slice(0, 3);
+    const cardRight = 70;
+    const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+    const titleTextWidth = cardWidth - 220;
+    const bodyTextWidth = cardWidth - 130;
+    const continuationTextWidth = cardWidth - 160;
+    const narrative = [bodyText, ...pointTexts].filter(Boolean).slice(0, 2);
+
     parts.push(
-      `<text x="${SAFE_AREA.left}" y="${CONTENT_TOP - 34}" fill="${accent}" font-family="Arial,sans-serif" font-size="25" font-weight="900" letter-spacing="1.7">CERITA · ${escapeXml(section)}</text>`,
-      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 14}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 14}" stroke="${accent}" stroke-opacity=".28" stroke-width="2"/>`,
-      `<text x="${WIDTH - SAFE_AREA.right}" y="${CONTENT_TOP + 150}" fill="${accent}" fill-opacity=".12" font-family="Georgia,serif" font-size="230" font-weight="700" text-anchor="end">“</text>`
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA</text>`,
+      `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
     );
 
-    let y = CONTENT_TOP + 105;
-    const titleFit = fitVariantText(titleText, SAFE_WIDTH, 300, 78, 54, 3, true);
+    let y = CONTENT_TOP + 90;
+    const titleFit = fitVariantText(titleText, titleTextWidth, 330, 72, 46, 4, true);
     if (titleFit) {
-      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.04, weight: 900 }));
-      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 44;
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
     }
 
     narrative.forEach((paragraph, index) => {
-      const paragraphFit = fitVariantText(paragraph, SAFE_WIDTH - 34, 210, index === 0 ? 43 : 39, 32, 4, false);
+      const maxWidth = index === 0 ? bodyTextWidth : continuationTextWidth;
+      const paragraphFit = fitVariantText(paragraph, maxWidth, 270, index === 0 ? 40 : 36, 30, 6, false);
       if (!paragraphFit) return;
-      if (index > 0) {
-        parts.push(`<line x1="${SAFE_AREA.left}" y1="${y - 25}" x2="${SAFE_AREA.left + 110}" y2="${y - 25}" stroke="${accent}" stroke-width="4" stroke-linecap="round"/>`);
-      }
-      parts.push(positionedText(paragraphFit.lines, {
-        x: SAFE_AREA.left,
-        y,
-        fontSize: paragraphFit.fontSize,
-        lineHeight: 1.32,
-        weight: index === 0 ? 500 : 430,
-        fill: '#f3e8ff',
-        italic: index === 0
-      }));
-      y += paragraphFit.lines.length * paragraphFit.fontSize * 1.32 + 44;
+      const paragraphHeight = paragraphFit.lines.length * paragraphFit.fontSize * 1.28;
+      const boxHeight = Math.max(index === 0 ? 170 : 155, paragraphHeight + 88);
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="${accent}" fill-opacity="${index === 0 ? '.075' : '.045'}" ${index === 0 ? '' : `stroke="${accent}" stroke-opacity=".24" stroke-width="2"`}/>`,
+        positionedText(paragraphFit.lines, {
+          x: SAFE_AREA.left + 24,
+          y: y + 8,
+          fontSize: paragraphFit.fontSize,
+          lineHeight: 1.28,
+          weight: index === 0 ? 500 : 600,
+          fill: '#f3e8ff',
+          italic: false
+        })
+      );
+      y += boxHeight + 24;
     });
   }
 
