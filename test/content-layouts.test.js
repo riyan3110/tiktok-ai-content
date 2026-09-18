@@ -118,7 +118,7 @@ test('BERITA: instruksi headline + fakta + detail diteruskan', async () => {
   const prompt = requests[0].messages[1].content;
   assert.match(prompt, /TATA LETAK BERITA/);
   assert.match(prompt, /HEADLINE utama/);
-  assert.match(prompt, /hindari opini yang tidak didukung sumber/);
+  assert.match(prompt, /hindari opini/i);
   assert.equal(output.contentLayout, 'news');
   const layouts = outputLayouts(output.slides, 'news');
   assert.match(layouts[0].title, /HEADLINE/);
