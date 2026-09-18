@@ -478,31 +478,130 @@ function validateVisualLayout(layout, { slideIndex } = {}) {
   return true;
 }
 
-function renderLayout(layout, number, total, watermark, background) {
-  validateVisualLayout(layout);
+function renderDefaultStructured(layout, number, total, watermark, background) {
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
   const startY = contentY(layout.fit);
-  if (layout.type === 'structured') {
-    let y = layout.isOnlyTitle
-      ? (layout.textInputHook ? TEXT_INPUT_HOOK_Y : Math.round(Math.max(CONTENT_TOP, (CONTENT_TOP + CONTENT_BOTTOM - layout.fit.height) / 2)))
-      : startY;
-    const parts = [];
-    if (layout.fit.titleFit) {
-      parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.1, weight: 700 }));
-      y += layout.fit.titleFit.height;
-    }
-    if (layout.fit.bodyFit) {
-      y += layout.fit.pointSpacing;
-      parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
-      y += layout.fit.bodyFit.height;
-    }
-    for (const point of layout.content.points) {
-      y += layout.fit.pointSpacing;
-      parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
-      y += point.lines.length * layout.fit.pointSize * 1.22;
-    }
-    return frame(heading + parts.join(''), number, total, watermark, background);
+  let y = layout.isOnlyTitle
+    ? (layout.textInputHook ? TEXT_INPUT_HOOK_Y : Math.round(Math.max(CONTENT_TOP, (CONTENT_TOP + CONTENT_BOTTOM - layout.fit.height) / 2)))
+    : startY;
+  const parts = [];
+  if (layout.fit.titleFit) {
+    parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.1, weight: 700 }));
+    y += layout.fit.titleFit.height;
   }
+  if (layout.fit.bodyFit) {
+    y += layout.fit.pointSpacing;
+    parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
+    y += layout.fit.bodyFit.height;
+  }
+  for (const point of layout.content.points) {
+    y += layout.fit.pointSpacing;
+    parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
+    y += point.lines.length * layout.fit.pointSize * 1.22;
+  }
+  return frame(heading + parts.join(''), number, total, watermark, background);
+}
+
+function renderTutorialStructured(layout, number, total, watermark, background) {
+  const accent = '#7c3aed';
+  const startY = layout.isOnlyTitle ? 690 : Math.max(CONTENT_TOP, contentY(layout.fit) - 55);
+  const parts = [
+    '<g data-layout="tutorial">',
+    `<rect x="${SAFE_AREA.left}" y="${LABEL_Y - 42}" width="235" height="58" rx="29" fill="${accent}" fill-opacity=".13" stroke="${accent}" stroke-width="3"/>`,
+    `<text x="${SAFE_AREA.left + 24}" y="${LABEL_Y - 4}" fill="${accent}" font-family="Arial,sans-serif" font-size="27" font-weight="800" letter-spacing="1.2">TUTORIAL</text>`,
+    `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 42}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 42}" stroke="${accent}" stroke-width="5" stroke-linecap="round"/>`
+  ];
+  let y = startY;
+  if (layout.fit.titleFit) {
+    parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.08, weight: 800 }));
+    y += layout.fit.titleFit.height + 18;
+  }
+  if (layout.fit.bodyFit) {
+    parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
+    y += layout.fit.bodyFit.height + 18;
+  }
+  layout.content.points.forEach((point, index) => {
+    const cardHeight = Math.max(86, point.lines.length * layout.fit.pointSize * 1.22 + 34);
+    parts.push(`<rect x="${SAFE_AREA.left - 16}" y="${y - 43}" width="${SAFE_WIDTH + 32}" height="${cardHeight}" rx="22" fill="${accent}" fill-opacity=".09" stroke="${accent}" stroke-opacity=".42" stroke-width="2"/>`);
+    parts.push(`<circle cx="${SAFE_AREA.left + 28}" cy="${y - 7}" r="25" fill="${accent}"/>`);
+    parts.push(`<text x="${SAFE_AREA.left + 28}" y="${y + 3}" fill="white" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`);
+    const cleanLines = point.lines.map(line => line.replace(/^\d+[.)]\s*/, ''));
+    parts.push(`<text x="${SAFE_AREA.left + 70}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.pointSize}" font-weight="650">${cleanLines.map((line, lineIndex) => `<tspan x="${SAFE_AREA.left + 70}" dy="${lineIndex ? layout.fit.pointSize * 1.22 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
+    y += cardHeight + 18;
+  });
+  parts.push('</g>');
+  return frame(parts.join(''), number, total, watermark, background);
+}
+
+function renderStoryStructured(layout, number, total, watermark, background) {
+  const accent = '#8b5cf6';
+  const startY = layout.isOnlyTitle ? 700 : Math.max(CONTENT_TOP + 30, contentY(layout.fit) - 15);
+  const parts = [
+    '<g data-layout="story">',
+    `<text x="${SAFE_AREA.left}" y="${LABEL_Y - 6}" fill="${accent}" font-family="Arial,sans-serif" font-size="26" font-weight="800" letter-spacing="2">CERITA</text>`,
+    `<line x1="${SAFE_AREA.left + 10}" y1="${CONTENT_TOP - 20}" x2="${SAFE_AREA.left + 10}" y2="${CONTENT_BOTTOM - 20}" stroke="${accent}" stroke-opacity=".55" stroke-width="5" stroke-linecap="round"/>`,
+    `<circle cx="${SAFE_AREA.left + 10}" cy="${startY - 28}" r="12" fill="${accent}"/>`
+  ];
+  let y = startY;
+  if (layout.fit.titleFit) {
+    parts.push(`<text x="${SAFE_AREA.left + 42}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.titleFit.fontSize}" font-weight="800">${layout.fit.titleFit.lines.map((line, i) => `<tspan x="${SAFE_AREA.left + 42}" dy="${i ? layout.fit.titleFit.fontSize * 1.08 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
+    y += layout.fit.titleFit.height + 30;
+  }
+  if (layout.fit.bodyFit) {
+    parts.push(`<text x="${SAFE_AREA.left + 42}" y="${y}" fill="#f3e8ff" font-family="Arial,sans-serif" font-size="${layout.fit.bodyFit.fontSize}" font-weight="400">${layout.fit.bodyFit.lines.map((line, i) => `<tspan x="${SAFE_AREA.left + 42}" dy="${i ? layout.fit.bodyFit.fontSize * layout.fit.bodyFit.lineHeight : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
+    y += layout.fit.bodyFit.height + 32;
+  }
+  layout.content.points.forEach((point) => {
+    parts.push(`<circle cx="${SAFE_AREA.left + 10}" cy="${y - 9}" r="8" fill="${accent}"/>`);
+    const cleanLines = point.lines.map(line => line.replace(/^•\s*/, ''));
+    parts.push(`<text x="${SAFE_AREA.left + 42}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.pointSize}" font-weight="600">${cleanLines.map((line, i) => `<tspan x="${SAFE_AREA.left + 42}" dy="${i ? layout.fit.pointSize * 1.22 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
+    y += point.lines.length * layout.fit.pointSize * 1.22 + 34;
+  });
+  parts.push('</g>');
+  return frame(parts.join(''), number, total, watermark, background);
+}
+
+function renderNewsStructured(layout, number, total, watermark, background) {
+  const accent = '#dc2626';
+  const startY = layout.isOnlyTitle ? 665 : Math.max(CONTENT_TOP, contentY(layout.fit) - 70);
+  const parts = [
+    '<g data-layout="news">',
+    `<rect x="${SAFE_AREA.left}" y="${LABEL_Y - 43}" width="185" height="58" rx="7" fill="${accent}"/>`,
+    `<text x="${SAFE_AREA.left + 18}" y="${LABEL_Y - 4}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" letter-spacing="1.5">BERITA</text>`,
+    `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 50}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 50}" stroke="${accent}" stroke-width="8"/>`
+  ];
+  let y = startY;
+  if (layout.fit.titleFit) {
+    parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.04, weight: 900 }));
+    y += layout.fit.titleFit.height + 28;
+    parts.push(`<line x1="${SAFE_AREA.left}" y1="${y - 12}" x2="${WIDTH - SAFE_AREA.right}" y2="${y - 12}" stroke="${accent}" stroke-opacity=".7" stroke-width="3"/>`);
+  }
+  if (layout.fit.bodyFit) {
+    y += 18;
+    parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
+    y += layout.fit.bodyFit.height + 30;
+  }
+  layout.content.points.forEach((point) => {
+    parts.push(`<rect x="${SAFE_AREA.left}" y="${y - 35}" width="10" height="${Math.max(48, point.lines.length * layout.fit.pointSize * 1.22)}" rx="5" fill="${accent}"/>`);
+    const cleanLines = point.lines.map(line => line.replace(/^•\s*/, ''));
+    parts.push(`<text x="${SAFE_AREA.left + 30}" y="${y}" fill="white" font-family="Arial,sans-serif" font-size="${layout.fit.pointSize}" font-weight="650">${cleanLines.map((line, i) => `<tspan x="${SAFE_AREA.left + 30}" dy="${i ? layout.fit.pointSize * 1.22 : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`);
+    y += point.lines.length * layout.fit.pointSize * 1.22 + 34;
+  });
+  parts.push('</g>');
+  return frame(parts.join(''), number, total, watermark, background);
+}
+
+function renderLayout(layout, number, total, watermark, background) {
+  validateVisualLayout(layout);
+  if (layout.type === 'structured') {
+    if (layout.layoutStyle === 'tutorial') return renderTutorialStructured(layout, number, total, watermark, background);
+    if (layout.layoutStyle === 'story') return renderStoryStructured(layout, number, total, watermark, background);
+    if (layout.layoutStyle === 'news') return renderNewsStructured(layout, number, total, watermark, background);
+    return renderDefaultStructured(layout, number, total, watermark, background);
+  }
+
+  const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
+  const startY = contentY(layout.fit);
   if (layout.type === 'steps') {
     let y = startY;
     const elements = layout.fit.groups.map((lines) => {
