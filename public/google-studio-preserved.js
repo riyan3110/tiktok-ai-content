@@ -31,9 +31,7 @@
     section.innerHTML = `
       <div class="generator-heading">
         <div>
-          <span class="eyebrow">PROMPT GENERATOR</span>
           <h1 id="generator-title">Buat Prompt dengan AI</h1>
-          <p>Susun prompt final otomatis dari Permintaan, Konsisten, Produk, dan Foto Referensi — memakai Text AI yang sudah dikonfigurasi.</p>
         </div>
       </div>
       <form id="prompt-simple-form" class="generator-panel">

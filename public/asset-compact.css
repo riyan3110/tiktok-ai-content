@@ -11,7 +11,7 @@
   display:none!important;
 }
 
-/* Compact header */
+/* Compact header — title matches the big Prompt Generator heading */
 #asset-manager .asset-heading{
   display:flex;
   align-items:center;
@@ -23,9 +23,13 @@
 }
 #asset-manager .asset-heading h1{
   margin:0;
-  font-size:1.25rem;
+  font-size:clamp(2.1rem,4vw,3.7rem);
   font-weight:800;
-  line-height:1.2;
+  line-height:1.15;
+  letter-spacing:-.045em;
+}
+.aiads-neo-theme #asset-manager .asset-heading h1{
+  font-size:2rem;
 }
 #asset-manager .asset-heading .eyebrow,
 #asset-manager .asset-heading p{
@@ -285,7 +289,7 @@
     padding:12px 14px;
   }
   #asset-manager .asset-heading h1{
-    font-size:1.1rem;
+    font-size:clamp(1.6rem,6vw,2.1rem);
   }
   #asset-manager .asset-upload-row button{
     min-height:42px;

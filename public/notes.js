@@ -24,7 +24,8 @@
       #prompt-notes.hidden{display:none!important}
       #prompt-notes #notes-list-view{display:grid;gap:12px}
       .notes-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border:2px solid var(--neo-line,#20263a);border-radius:16px;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
-      .notes-heading h1{margin:0;font-size:1.25rem;font-weight:800;line-height:1.2}
+      .notes-heading h1{margin:0;font-size:clamp(2.1rem,4vw,3.7rem);font-weight:800;line-height:1.15;letter-spacing:-.045em}
+      .aiads-neo-theme .notes-heading h1{font-size:2rem}
       .notes-count{display:inline-flex;align-items:center;justify-content:center;padding:6px 12px;border:2px solid var(--neo-line,#20263a);border-radius:999px;background:var(--neo-yellow,#ffe66d);font-size:.8rem;font-weight:800;white-space:nowrap}
       .notes-toolbar{display:flex;align-items:center;gap:8px}
       .notes-toolbar input{flex:1 1 0;min-width:0;padding:10px 14px;border:2px solid var(--neo-line,#20263a);border-radius:13px;background:var(--neo-white,#fff);color:inherit;font:inherit;font-size:.9rem}
@@ -52,7 +53,7 @@
       .notes-detail-actions button{flex:1 1 auto;min-width:80px;padding:10px 14px;min-height:44px}
       .notes-detail-delete{margin-top:4px}
       .notes-detail-delete button{min-height:42px;padding:9px 14px}
-      @media(max-width:720px){.notes-heading{padding:12px 14px}.notes-heading h1{font-size:1.1rem}.notes-toolbar{flex-wrap:wrap}.notes-toolbar input{flex:1 1 160px}.notes-list-item{padding:10px 14px}.notes-detail-header{padding:12px 14px}.notes-detail-content{padding:14px}.notes-detail-content pre{font-size:.82rem;padding:12px}}
+      @media(max-width:720px){.notes-heading{padding:12px 14px}.notes-heading h1{font-size:clamp(1.6rem,6vw,2.1rem)}.notes-toolbar{flex-wrap:wrap}.notes-toolbar input{flex:1 1 160px}.notes-list-item{padding:10px 14px}.notes-detail-header{padding:12px 14px}.notes-detail-content{padding:14px}.notes-detail-content pre{font-size:.82rem;padding:12px}}
     `;
     document.head.appendChild(style);
   }
