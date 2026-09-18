@@ -24,7 +24,7 @@ function install() {
       y += point.lines.length * layout.fit.pointSize * 1.22;
     }`;
 
-  const replacement = \`    const selectedLayoutStyle = layout.layoutStyle || 'default';
+  const replacement = `    const selectedLayoutStyle = layout.layoutStyle || 'default';
     if (selectedLayoutStyle !== 'default') {
       // Non-default models own the whole composition. Remove the default
       // title/body that was already queued and render the selected template.
@@ -47,7 +47,7 @@ function install() {
         y += point.lines.length * layout.fit.pointSize * 1.22;
         pointIndex += 1;
       }
-    }\`;
+    }`;
 
   if (!source.includes(original)) {
     throw new Error('Target render spacing images.js tidak ditemukan; patch dibatalkan agar layout lain tidak berubah.');
