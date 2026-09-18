@@ -515,11 +515,12 @@ function renderStructuredVariant(layout) {
 
   if (style === 'tutorial') {
     const stepMatch = section.match(/LANGKAH\s*(\d+)/i);
-    const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (/HASIL|PENUTUP/i.test(section) ? 'HASIL' : 'TUTORIAL');
+    const isResultSlide = /HASIL|PENUTUP/i.test(section);
+    const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (isResultSlide ? 'HASIL' : 'TUTORIAL');
     const cardRight = 70;
     const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
-    const titleTextWidth = cardWidth - 220;
-    const bodyTextWidth = cardWidth - 130;
+    const titleTextWidth = isResultSlide ? cardWidth - 260 : cardWidth - 220;
+    const bodyTextWidth = isResultSlide ? cardWidth - 200 : cardWidth - 130;
     const actionTextWidth = cardWidth - 210;
 
     parts.push(
@@ -530,16 +531,16 @@ function renderStructuredVariant(layout) {
     );
 
     let y = CONTENT_TOP + 90;
-    const titleFit = fitVariantText(titleText, titleTextWidth, 330, 72, 46, 4, true);
+    const titleFit = fitVariantText(titleText, titleTextWidth, 340, isResultSlide ? 66 : 72, 44, 4, true);
     if (titleFit) {
       parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
       y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
     }
 
-    const bodyFit = fitVariantText(bodyText, bodyTextWidth, 230, 40, 32, 5, false);
+    const bodyFit = fitVariantText(bodyText, bodyTextWidth, isResultSlide ? 270 : 230, isResultSlide ? 36 : 40, 30, isResultSlide ? 6 : 5, false);
     if (bodyFit) {
       const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.26;
-      const bodyBoxHeight = Math.max(150, bodyHeight + 86);
+      const bodyBoxHeight = Math.max(isResultSlide ? 180 : 150, bodyHeight + (isResultSlide ? 104 : 86));
       parts.push(
         `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
         positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 500, fill: '#f3e8ff' })
