@@ -483,12 +483,23 @@ function renderLayout(layout, number, total, watermark, background) {
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
   const startY = contentY(layout.fit);
   if (layout.type === 'structured') {
+    const style = layout.layoutStyle || 'default';
     let y = layout.isOnlyTitle
       ? (layout.textInputHook ? TEXT_INPUT_HOOK_Y : Math.round(Math.max(CONTENT_TOP, (CONTENT_TOP + CONTENT_BOTTOM - layout.fit.height) / 2)))
       : startY;
     const parts = [];
+
+    if (style === 'tutorial') {
+      parts.push(`<g data-layout="tutorial"><rect x="${SAFE_AREA.left - 18}" y="${CONTENT_TOP - 62}" width="${SAFE_WIDTH + 36}" height="${Math.max(250, layout.fit.height + 120)}" rx="30" fill="#f59e0b" fill-opacity=".08" stroke="#f59e0b" stroke-opacity=".55" stroke-width="3"/><line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 34}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 34}" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/></g>`);
+    } else if (style === 'story') {
+      parts.push(`<g data-layout="story"><line x1="${SAFE_AREA.left - 24}" y1="${CONTENT_TOP - 28}" x2="${SAFE_AREA.left - 24}" y2="${CONTENT_BOTTOM - 30}" stroke="#8b5cf6" stroke-opacity=".72" stroke-width="6" stroke-linecap="round"/><circle cx="${SAFE_AREA.left - 24}" cy="${CONTENT_TOP + 8}" r="12" fill="#8b5cf6"/><circle cx="${SAFE_AREA.left - 24}" cy="${Math.min(CONTENT_BOTTOM - 50, CONTENT_TOP + 220)}" r="8" fill="#8b5cf6" fill-opacity=".72"/></g>`);
+    } else if (style === 'news') {
+      parts.push(`<g data-layout="news"><rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 64}" width="180" height="42" rx="8" fill="#dc2626"/><text x="${SAFE_AREA.left + 16}" y="${CONTENT_TOP - 35}" fill="#ffffff" font-family="Arial,sans-serif" font-size="22" font-weight="900" letter-spacing="1.2">BERITA</text><line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 12}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 12}" stroke="#dc2626" stroke-width="7"/></g>`);
+      y += 18;
+    }
+
     if (layout.fit.titleFit) {
-      parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.1, weight: 700 }));
+      parts.push(textElement(layout.fit.titleFit.lines, { y, fontSize: layout.fit.titleFit.fontSize, lineHeight: 1.1, weight: style === 'news' ? 900 : 700 }));
       y += layout.fit.titleFit.height;
     }
     if (layout.fit.bodyFit) {
@@ -498,6 +509,13 @@ function renderLayout(layout, number, total, watermark, background) {
     }
     for (const point of layout.content.points) {
       y += layout.fit.pointSpacing;
+      if (style === 'tutorial') {
+        parts.push(`<line x1="${SAFE_AREA.left}" y1="${y - 26}" x2="${WIDTH - SAFE_AREA.right}" y2="${y - 26}" stroke="#f59e0b" stroke-opacity=".32" stroke-width="2"/>`);
+      } else if (style === 'story') {
+        parts.push(`<circle cx="${SAFE_AREA.left - 24}" cy="${y - 10}" r="7" fill="#8b5cf6"/>`);
+      } else if (style === 'news') {
+        parts.push(`<rect x="${SAFE_AREA.left - 12}" y="${y - 32}" width="7" height="${Math.max(44, point.lines.length * layout.fit.pointSize * 1.22)}" rx="3" fill="#dc2626"/>`);
+      }
       parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
       y += point.lines.length * layout.fit.pointSize * 1.22;
     }
