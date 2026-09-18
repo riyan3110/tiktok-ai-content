@@ -591,8 +591,10 @@ function renderStructuredVariant(layout) {
     // area so the body/fact cards can hold normal sentences without clipping.
     const newsRight = 70;
     const newsWidth = WIDTH - SAFE_AREA.left - newsRight;
-    const newsBodyTextWidth = newsWidth - 92;
-    const newsFactTextWidth = newsWidth - 104;
+    const newsBodyTextWidth = newsWidth - 130;
+    // Fact cards need a much more conservative wrap width because the bold
+    // browser font renders wider than our lightweight width estimator.
+    const newsFactTextWidth = newsWidth - 200;
     parts.push(
       `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
       `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">BERITA</text>`,
@@ -619,14 +621,14 @@ function renderStructuredVariant(layout) {
     }
 
     pointTexts.slice(0, 2).forEach((point, index) => {
-      const pointFit = fitVariantText(point, newsFactTextWidth, 205, 38, 31, 4, false);
+      const pointFit = fitVariantText(point, newsFactTextWidth, 250, 34, 28, 5, true);
       if (!pointFit) return;
-      const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.24;
-      const boxHeight = Math.max(155, pointHeight + 94);
+      const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
+      const boxHeight = Math.max(175, pointHeight + 104);
       parts.push(
         `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${newsWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
         `<text x="${SAFE_AREA.left + 22}" y="${y - 10}" fill="${accent}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="1.1">FAKTA ${index + 1}</text>`,
-        positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 34, fontSize: pointFit.fontSize, lineHeight: 1.24, weight: 700 })
+        positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 36, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
       );
       y += boxHeight + 28;
     });
