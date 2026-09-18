@@ -56,6 +56,24 @@ const errorState = message => `<div class="error-state"><span class="state-icon"
 document.querySelector('#history').innerHTML = loadingState('Memuat riwayat…');
 let current;
 const $ = (s) => document.querySelector(s);
+
+// Content layout selector: default keeps the legacy structure untouched, and
+// switching layouts only affects the next generation, never existing input.
+let selectedLayout = 'default';
+const layoutButtons = () => [...document.querySelectorAll('#layout-picker .layout-option')];
+function initLayoutPicker() {
+  layoutButtons().forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedLayout = button.dataset.layout || 'default';
+      layoutButtons().forEach((other) => {
+        const active = other === button;
+        other.classList.toggle('active', active);
+        other.setAttribute('aria-checked', active ? 'true' : 'false');
+      });
+    });
+  });
+}
+initLayoutPicker();
 async function api(url, options) {
   const r = await fetch(url, options);
   const data = await r.json().catch(() => ({}));
@@ -250,7 +268,7 @@ async function generate(request) {
     $('#message').textContent = error.message; $('#retry-generate').classList.remove('hidden');
   }
 }
-$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = topicSource === 'manual' ? $('#manual-topic').value : ''; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; const isManualWithoutUrl = topicSource === 'manual' && !sourceModeEnabled(); if (!isManualWithoutUrl && contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); const useSources = (topicSource === 'manual' || topicSource === 'ai') && sourceModeEnabled(); const sourceUrlsPayload = useSources ? validateSourceUrls() : []; if (sourceUrlsPayload === null) return; await generate({ topicSource, requestedTopic, useSources, sourceUrls: sourceUrlsPayload, contentCategory, customCategory, contentFormat, assetIds: studioAssets.map(asset => asset.id), useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false, watermarkEnabled: watermarkEnabled(), background: carouselBackground }); };
+$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = topicSource === 'manual' ? $('#manual-topic').value : ''; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; const isManualWithoutUrl = topicSource === 'manual' && !sourceModeEnabled(); if (!isManualWithoutUrl && contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); const useSources = (topicSource === 'manual' || topicSource === 'ai') && sourceModeEnabled(); const sourceUrlsPayload = useSources ? validateSourceUrls() : []; if (sourceUrlsPayload === null) return; await generate({ topicSource, requestedTopic, useSources, sourceUrls: sourceUrlsPayload, contentCategory, customCategory, contentFormat, assetIds: studioAssets.map(asset => asset.id), useTrendReference: $('#use-trend-reference').checked, contentLayout: selectedLayout, forceNewAngle: false, watermarkEnabled: watermarkEnabled(), background: carouselBackground }); };
 $('#retry-generate').onclick = () => generate({ ...lastGenerationRequest, forceNewAngle: true });
 function renderPublishStatus(data, message = '') {
   const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];

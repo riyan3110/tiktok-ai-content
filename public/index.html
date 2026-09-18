@@ -188,6 +188,15 @@
       <section class="hero" id="studio"><div><span class="eyebrow">CONTENT STUDIO</span><h1>Text Content</h1><p>Rancang carousel TikTok, tinjau hasilnya, lalu kirim sebagai draft dalam satu alur kerja.</p></div><div class="hero-stat"><span>Alur kerja</span><strong>Ide → Preview → Draft</strong><small>Fokus, cepat, dan konsisten</small></div></section>
       <div class="content-layout">
     <section class="actions" id="content-generator"><div class="section-kicker">01 · CREATE</div>
+      <div class="layout-picker" id="layout-picker" role="radiogroup" aria-label="Tata Letak">
+        <span class="layout-picker-label">Tata Letak</span>
+        <div class="layout-options">
+          <button type="button" class="layout-option active" data-layout="default" role="radio" aria-checked="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 9v12"/></svg><span>Default</span></button>
+          <button type="button" class="layout-option" data-layout="tutorial" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9M4 12h9M4 18h9"/><path d="M17 5l2 2 4-4" transform="translate(-2 1)"/></svg><span>Tutorial</span></button>
+          <button type="button" class="layout-option" data-layout="story" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V6a2 2 0 0 1 2-2h9v13H6a2 2 0 0 0-2 2z"/><path d="M15 4h3a2 2 0 0 1 2 2v13h-5"/></svg><span>Cerita</span></button>
+          <button type="button" class="layout-option" data-layout="news" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h16"/><path d="M4 4h16v13H4z"/><path d="M8 8h8M8 12h5"/></svg><span>Berita</span></button>
+        </div>
+      </div>
       <h2>Mode Posting</h2>
       <label class="switch-row"><input id="automation-toggle" type="checkbox" role="switch"><span class="switch-control" aria-hidden="true"></span><span>Aktifkan posting otomatis</span></label>
       <label class="switch-row"><input id="watermark-enabled" type="checkbox" role="switch" checked><span class="switch-control" aria-hidden="true"></span><span>Tampilkan watermark</span></label>

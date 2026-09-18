@@ -203,7 +203,11 @@ function frame(inner, number, total, watermark, background = {}) {
 
 function buildStructuredLayout(slide, index, total, format = '', options = {}) {
   const textInputOnly = options.textInputOnly === true;
-  const tutorial = !textInputOnly && (/tutorial/i.test(format) || /LANGKAH/i.test(slide.section));
+  const layoutStyle = options.layoutStyle === 'tutorial' || options.layoutStyle === 'story' || options.layoutStyle === 'news' ? options.layoutStyle : 'default';
+  const tutorial = !textInputOnly && (layoutStyle === 'tutorial' || /tutorial/i.test(format) || /LANGKAH/i.test(slide.section));
+  const tutorialNumbers = tutorial && layoutStyle === 'tutorial';
+  const storyLabel = layoutStyle === 'story';
+  const newsLabel = layoutStyle === 'news';
   const titleFit = slide.title ? autoFitText(slide.title, { maxWidth: SAFE_WIDTH, maxHeight: 250, maxLines: 3, startSize: 76, minSize: 46, lineHeight: 1.08 }) : null;
   const bodyFit = slide.body ? autoFitText(slide.body, { maxWidth: SAFE_WIDTH, maxHeight: 220, maxLines: 4, startSize: 42, minSize: 34, lineHeight: 1.24 }) : null;
   if (slide.title && !titleFit) throw new Error('Judul tidak muat dalam maksimal tiga baris.');
@@ -214,19 +218,30 @@ function buildStructuredLayout(slide, index, total, format = '', options = {}) {
     pointSpacing = Math.max(12, pointSpacing - 1);
     points = slide.points.slice(0, 3).map((point, pointIndex) => {
       const clean = String(point).replace(textInputOnly ? /^(?:[-•*]\s*|\d+[.)]\s+)/ : /^[-•*\d.)\s]+/, '').trim();
-      const prefix = tutorial ? `${pointIndex + 1}.` : '•';
+      const prefix = (tutorial && !storyLabel) ? `${pointIndex + 1}.` : '•';
       return { text: `${prefix} ${clean}`, lines: wrapText(`${prefix} ${clean}`, SAFE_WIDTH, pointSize, false) };
     });
     lineCount = (titleFit?.lines.length || 0) + (bodyFit?.lines.length || 0) + points.reduce((sum, point) => sum + point.lines.length, 0);
     height = (titleFit?.height || 0) + (bodyFit ? bodyFit.height + pointSpacing : 0) + points.reduce((sum, point) => sum + point.lines.length * pointSize * 1.22 + pointSpacing, 0);
   } while ((lineCount > 9 || height > CONTENT_BOTTOM - CONTENT_TOP) && pointSize > 32);
   return {
-    type: 'structured', title: slide.section || `SLIDE ${index + 1}`,
+    type: 'structured', title: structuredSectionLabel(slide, index, layoutStyle),
     content: { title: slide.title, body: slide.body, points },
     fit: { kind: height < 320 ? 'short' : height < 560 ? 'medium' : 'long', height, lineCount, titleFit, bodyFit, pointSize, pointSpacing, lines: [] },
     isOnlyTitle: Boolean(slide.title && !slide.body && !points.length),
     textInputHook: Boolean(textInputOnly && index === 0 && slide.title && !slide.body && !points.length), total
   };
+}
+
+// Section labels are derived from the AI section when present so stored
+// content keeps its original labels; layout styles only supply friendly
+// fallbacks when the model omitted the section.
+function structuredSectionLabel(slide, index, layoutStyle) {
+  if (slide.section) return slide.section;
+  if (layoutStyle === 'story') return index === 0 ? 'PEMBUKA CERITA' : 'ALUR CERITA';
+  if (layoutStyle === 'news') return index === 0 ? 'HEADLINE' : 'FAKTA & DETAIL';
+  if (layoutStyle === 'tutorial') return index === 0 ? 'PEMBUKA TUTORIAL' : 'LANGKAH';
+  return `SLIDE ${index + 1}`;
 }
 
 function wordChunks(value, maximum) {
@@ -266,12 +281,14 @@ function fitStructuredSlides(input, format = '', options = {}) {
   return canKeepOriginal ? normalized : repairStructuredSlides(input);
 }
 
+const { resolveContentLayout, layoutRendererStyle } = require('./contentLayouts');
+
 function buildSlideLayouts(content) {
   if (Array.isArray(content.slides)) {
     // Generate dari Teks has its own fixed carousel structure. Keep its hook
     // and bullets independent from the UI format selector without changing URL mode.
     const textInputOnly = content.verificationStatus === 'text_input_only';
-    const layoutOptions = { textInputOnly };
+    const layoutOptions = { textInputOnly, layoutStyle: layoutRendererStyle(content.contentLayout) };
     // Do not summarize or bulletize copy that already fits the native canvas.
     const slides = fitStructuredSlides(content.slides, content.contentFormat, layoutOptions);
     // Source-filtered copy has already passed its own evidence-aware validation.

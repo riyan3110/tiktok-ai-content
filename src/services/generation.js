@@ -121,7 +121,7 @@ async function finalizeSourceCandidate({ generated, sources, topic, requestedFor
   return assertFinalSourceContent(repaired, sources);
 }
 
-async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
+async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Iklan & UGC', customCategory, format = 'Tutorial langkah', contentLayout = 'default', content = defaultContent, images = defaultImages, trending = defaultTrending, sourceFetcher = defaultSourceFetcher, sourceFilter = null, manualSourceRoleGuard = null, mainTopic = null, angle = null, useTrendReference = true, forceNewAngle = false, watermark, background, useSources = false, sourceUrls = [] }) {
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
@@ -156,6 +156,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       date: new Date().toISOString().slice(0, 10),
       contentCategory,
       contentFormat,
+      contentLayout,
       recentContents: history,
       rejectedAngle: attempt > 1 || forceNewAngle ? 'Angle sebelumnya gagal atau terlalu mirip; pilih kandidat lain dengan tool, hook, langkah, dan CTA berbeda.' : null,
       trendReference: trendReference ? { keywords: trendReference.keywords, keyword_categories: trendReference.keyword_categories, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null,
@@ -280,7 +281,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, watermark, background });
+      renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, contentLayout: generated.contentLayout || contentLayout, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
         .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, finalContentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(renderedSlides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}), JSON.stringify({ ...generated, contentCategory, contentFormat: finalContentFormat, watermark }));
       try {
