@@ -100,8 +100,8 @@ function fitSlide(slide, index, total, format, contentLayout = 'default') {
 
 function prepareSoftFitContent(content = {}) {
   if (content?.verificationStatus !== 'text_input_only' || !Array.isArray(content?.slides)) return content;
-  if (content.slides.length !== 4) {
-    throw Object.assign(new Error('Generate dari Teks harus memiliki tepat 4 slide: HOOK, FAKTA UTAMA, DETAIL, PENUTUP.'), { status: 422 });
+  if (content.slides.length < 4 || content.slides.length > 5) {
+    throw Object.assign(new Error('Generate dari Teks harus memiliki 4–5 slide sesuai tata letak yang dipilih.'), { status: 422 });
   }
   const total = content.slides.length;
   const fitted = content.slides.map((slide, index) => fitSlide(slide, index, total, content.contentFormat, content.contentLayout));
@@ -115,7 +115,7 @@ function prepareSoftFitContent(content = {}) {
 function buildTextInputLayouts(content = {}) {
   if (content?.verificationStatus !== 'text_input_only' || !Array.isArray(content?.slides)) return [];
   const total = content.slides.length;
-  if (total !== 4) throw Object.assign(new Error('Generate dari Teks harus memiliki tepat 4 slide.'), { status: 422 });
+  if (total < 4 || total > 5) throw Object.assign(new Error('Generate dari Teks harus memiliki 4–5 slide.'), { status: 422 });
   return content.slides.map((slide, index) => renderSlide(slide, index, total, content.contentFormat, content.contentLayout).layout);
 }
 
