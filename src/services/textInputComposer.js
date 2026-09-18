@@ -682,10 +682,54 @@ function buildContent(parsed, slides, contentLayout = 'default') {
   };
 }
 
-async function compose({ text, client, contentLayout = 'default' } = {}) {
+async function composeDefaultLegacy({ text, client, contentLayout = 'default' } = {}) {
   const sourceText = validateInputText(text);
   const requestedSlideCount = targetSlideCount(sourceText);
+  const openai = client || require('./textProviderRuntime').client();
+  const messages = [
+    { role: 'system', content: 'Anda editor layout carousel Indonesia dalam mode transform-only. Fakta hanya boleh berasal dari teks pengguna yang diberikan.' },
+    { role: 'user', content: promptFor(sourceText, requestedSlideCount) }
+  ];
+
+  let parsed = shapeParsed(parseOutput(await openai.chat.completions.create({
+    model: config.aiModel,
+    messages,
+    response_format: { type: 'json_object' }
+  })), requestedSlideCount);
+
+  for (let repair = 0; repair <= MAX_REPAIRS; repair += 1) {
+    const checked = validateResult(parsed, sourceText, requestedSlideCount);
+    if (!checked.errors.length) return buildContent(parsed, checked.slides, contentLayout);
+    if (repair === MAX_REPAIRS) {
+      throw Object.assign(new Error(`Generate dari Teks belum lolos pengecekan: ${checked.errors[0]}`), {
+        status: 422,
+        validationErrors: checked.errors
+      });
+    }
+    const targetedRepair = buildRepairGuidance(checked.errors);
+    parsed = shapeParsed(parseOutput(await openai.chat.completions.create({
+      model: config.aiModel,
+      messages: [
+        ...messages,
+        { role: 'assistant', content: JSON.stringify(parsed) },
+        {
+          role: 'user',
+          content: `Perbaiki JSON tadi TANPA menambah informasi dari luar TEXT_INPUT. PERBAIKAN WAJIB BERDASARKAN ERROR SAAT INI: ${targetedRepair} Masalah lengkap: ${checked.errors.join('; ')}. Jangan sekadar mengganti satu kata bila kalimatnya bergantung pada klaim yang ditolak; tulis ulang field tersebut dari fakta yang benar-benar ada di TEXT_INPUT. Total harus tepat ${requestedSlideCount} slide. Slide 1 WAJIB hanya judul hook 7–10 kata dengan body "" dan points []; slide 2–3 body 8–14 kata dengan 2–3 bullet berisi 3–7 kata; ${requestedSlideCount === 5 ? 'slide 4 body 10–16 kata tanpa bullet; ' : ''}slide terakhir body 14–18 kata tanpa bullet. Caption harus ${CAPTION_MIN_WORDS}–${CAPTION_MAX_WORDS} kata dan hashtag ${HASHTAG_MIN}–${HASHTAG_MAX} item. Label section hanya untuk label kecil; judul besar harus spesifik. Jika angka/klaim utama sudah ada di hook atau judul, field berikutnya harus memberi konteks berbeda tanpa mengulang klaim itu. Bullet harus berupa fakta/konteks konkret dari TEXT_INPUT, bukan filler generik atau atribusi publisher seperti "Diklaim oleh X". Pertahankan subjek, predikat, objek, dan pemilik sifat/hasil seperti TEXT_INPUT. Jangan membuat contoh pekerjaan/tugas menjadi pemilik sifat yang sebenarnya milik model/produk. Jika efek hanya berlaku dengan/melalui/saat memakai fitur, mode, opsi, atau kondisi tertentu, qualifier itu wajib tetap terlihat dan efek tidak boleh dipindah menjadi sifat umum entitas lain. Hindari tautologi seperti "mempercepat ... lebih cepat"; gunakan satu konstruksi natural. Pertahankan subjek asli: kemampuan model tetap milik model dan jangan dipindah ke mode/fitur; relasi yang subjeknya "peningkatan kecepatan" tidak boleh dipindah ke mode atau model. Jika body sudah menyatakan hasil/sifat utama, bullet ambil fakta lain dari TEXT_INPUT, bukan mengulang sifat yang sama. Gunakan urutan "Mode [nama]", bukan "[nama] Mode". Pertahankan perbandingan lengkap seperti "14 kali lebih cepat". Pertahankan kata kerja status dan tingkat kepastian; jangan mengubah "memperkenalkan" menjadi "meluncurkan" atau "dapat" menjadi "menjanjikan" jika TEXT_INPUT tidak memakai makna itu. Penutup jangan membuat konteks baru seperti persaingan AI, tren industri, pasar, atau real-time bila tidak ada di TEXT_INPUT. Jangan membuat atribusi baru seperti perusahaan menegaskan atau mengklaim jika TEXT_INPUT tidak mengatakan itu. Jangan menyalin satu fakta yang sama ke slide 2 dan 3. Pertahankan jenis entitas, hubungan fakta, nama, angka, dan tingkat kepastian dari teks input. Kembalikan JSON lengkap saja.`
+        }
+      ],
+      response_format: { type: 'json_object' }
+    })), requestedSlideCount);
+  }
+
+  throw Object.assign(new Error('Generate dari Teks gagal disusun.'), { status: 422 });
+}
+
+
+async function compose({ text, client, contentLayout = 'default' } = {}) {
   const layout = resolveContentLayout(contentLayout);
+  if (layout === 'default') return composeDefaultLegacy({ text, client });
+  const sourceText = validateInputText(text);
+  const requestedSlideCount = targetSlideCount(sourceText);
   const sections = layoutSections(layout, requestedSlideCount)
     || (requestedSlideCount === 5 ? ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'KONTEKS', 'PENUTUP'] : ['HOOK', 'FAKTA UTAMA', 'DETAIL', 'PENUTUP']);
   const openai = client || require('./textProviderRuntime').client();
