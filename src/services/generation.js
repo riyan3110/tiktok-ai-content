@@ -201,9 +201,9 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
             } catch (error) {
               if (content !== defaultContent) throw error;
               if (error.sourceFinalizerAttempted) throw error;
-              const recoveryFormat = safeRecoveryFormat(contentFormat);
+              const recoveryFormat = normalizedContentLayout === 'default' ? safeRecoveryFormat(contentFormat) : layoutContentFormat;
               const recoverySeed = manualSourceSeed(basis, recoveryFormat, normalizedContentLayout);
-              if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
+              if (normalizedContentLayout === 'default' && recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
               generated = await aiThenDeterministicFallback({
                 generated: recoverySeed,
                 sources,
@@ -226,9 +226,9 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
         } catch (error) {
           if (content !== defaultContent) throw error;
           const sourceTopic = String(sources[0]?.title || 'Ringkasan sumber').trim();
-          const recoveryFormat = safeRecoveryFormat(contentFormat);
+          const recoveryFormat = normalizedContentLayout === 'default' ? safeRecoveryFormat(contentFormat) : layoutContentFormat;
           const recoverySeed = manualSourceSeed(sourceTopic, recoveryFormat, normalizedContentLayout);
-          if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
+          if (normalizedContentLayout === 'default' && recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
           generated = await aiThenDeterministicFallback({
             generated: recoverySeed,
             sources,
@@ -253,7 +253,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
           generated,
           sources,
           topic: sourceTopic,
-          requestedFormat: generated?.effectiveContentFormat || contentFormat,
+          requestedFormat: normalizedContentLayout === 'default' ? (generated?.effectiveContentFormat || contentFormat) : layoutContentFormat,
           mode,
           content
         });
