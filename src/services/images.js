@@ -478,6 +478,153 @@ function validateVisualLayout(layout, { slideIndex } = {}) {
   return true;
 }
 
+
+function positionedText(lines, { x = SAFE_AREA.left, y, fontSize, lineHeight = 1.2, weight = 700, fill = 'white', anchor = 'start', italic = false }) {
+  return `<text x="${x}" y="${y}" fill="${fill}" font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="${weight}" text-anchor="${anchor}"${italic ? ' font-style="italic"' : ''} filter="url(#shadow)">${lines.map((line, index) => `<tspan x="${x}" dy="${index ? fontSize * lineHeight : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`;
+}
+
+function cleanLayoutPointText(point) {
+  return String(point?.text || '')
+    .replace(/^(?:[-•*]\s*|\d+[.)]\s*)/, '')
+    .trim();
+}
+
+function renderStructuredVariant(layout) {
+  const style = layout.layoutStyle || 'default';
+  if (style === 'default') return '';
+
+  const accent = style === 'tutorial' ? '#d97706' : style === 'story' ? '#7c3aed' : '#dc2626';
+  const titleText = String(layout.content?.title || '').trim();
+  const bodyText = String(layout.content?.body || '').trim();
+  const pointTexts = (layout.content?.points || []).map(cleanLayoutPointText).filter(Boolean);
+  const section = String(layout.title || '').trim();
+  const parts = [`<g data-layout="${style}">`];
+
+  if (style === 'tutorial') {
+    parts.push(
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 62}" width="${SAFE_WIDTH}" height="54" rx="27" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 24}" y="${CONTENT_TOP - 27}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.2">TUTORIAL · ${escapeXml(section)}</text>`
+    );
+
+    let y = CONTENT_TOP + 70;
+    const titleSize = Math.min(64, layout.fit.titleFit?.fontSize || 58);
+    const titleLines = wrapText(titleText, SAFE_WIDTH, titleSize, true);
+    if (titleLines.length) {
+      parts.push(positionedText(titleLines, { y, fontSize: titleSize, lineHeight: 1.06, weight: 900 }));
+      y += titleLines.length * titleSize * 1.06 + 28;
+    }
+
+    if (bodyText) {
+      const bodySize = Math.min(37, layout.fit.bodyFit?.fontSize || 36);
+      const bodyLines = wrapText(bodyText, SAFE_WIDTH, bodySize, false);
+      parts.push(positionedText(bodyLines, { y, fontSize: bodySize, lineHeight: 1.25, weight: 400, fill: '#f3e8ff' }));
+      y += bodyLines.length * bodySize * 1.25 + 30;
+    }
+
+    pointTexts.forEach((point, index) => {
+      const pointSize = Math.min(34, layout.fit.pointSize || 34);
+      const pointLines = wrapText(point, SAFE_WIDTH - 105, pointSize, false);
+      const cardHeight = Math.max(86, pointLines.length * pointSize * 1.22 + 34);
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 38}" width="${SAFE_WIDTH}" height="${cardHeight}" rx="22" fill="${accent}" fill-opacity=".10" stroke="${accent}" stroke-opacity=".55" stroke-width="2.5"/>`,
+        `<circle cx="${SAFE_AREA.left + 34}" cy="${y}" r="24" fill="${accent}"/>`,
+        `<text x="${SAFE_AREA.left + 34}" y="${y + 9}" fill="#ffffff" font-family="Arial,sans-serif" font-size="24" font-weight="900" text-anchor="middle">${index + 1}</text>`,
+        positionedText(pointLines, { x: SAFE_AREA.left + 78, y: y + 8, fontSize: pointSize, lineHeight: 1.22, weight: 700 })
+      );
+      y += cardHeight + 18;
+    });
+  }
+
+  if (style === 'story') {
+    const panelTop = CONTENT_TOP - 58;
+    const panelBottom = CONTENT_BOTTOM - 35;
+    parts.push(
+      `<rect x="${SAFE_AREA.left - 18}" y="${panelTop}" width="${SAFE_WIDTH + 36}" height="${panelBottom - panelTop}" rx="34" fill="${accent}" fill-opacity=".055" stroke="${accent}" stroke-opacity=".28" stroke-width="2"/>`,
+      `<text x="${SAFE_AREA.left + 14}" y="${CONTENT_TOP - 22}" fill="${accent}" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA · ${escapeXml(section)}</text>`,
+      `<text x="${SAFE_AREA.left + 8}" y="${CONTENT_TOP + 92}" fill="${accent}" fill-opacity=".34" font-family="Georgia,serif" font-size="126" font-weight="700">“</text>`,
+      `<line x1="${SAFE_AREA.left + 18}" y1="${CONTENT_TOP + 165}" x2="${SAFE_AREA.left + 18}" y2="${CONTENT_BOTTOM - 82}" stroke="${accent}" stroke-opacity=".55" stroke-width="5" stroke-linecap="round"/>`
+    );
+
+    let y = CONTENT_TOP + 125;
+    const textX = SAFE_AREA.left + 58;
+    const storyWidth = SAFE_WIDTH - 70;
+    const titleSize = Math.min(60, layout.fit.titleFit?.fontSize || 56);
+    const titleLines = wrapText(titleText, storyWidth, titleSize, true);
+    if (titleLines.length) {
+      parts.push(positionedText(titleLines, { x: textX, y, fontSize: titleSize, lineHeight: 1.06, weight: 900 }));
+      y += titleLines.length * titleSize * 1.06 + 30;
+    }
+
+    if (bodyText) {
+      const bodySize = Math.min(36, layout.fit.bodyFit?.fontSize || 35);
+      const bodyLines = wrapText(bodyText, storyWidth, bodySize, false);
+      const bodyHeight = bodyLines.length * bodySize * 1.3;
+      parts.push(
+        `<rect x="${textX - 12}" y="${y - 35}" width="${storyWidth + 10}" height="${bodyHeight + 46}" rx="18" fill="${accent}" fill-opacity=".09"/>`,
+        positionedText(bodyLines, { x: textX + 8, y, fontSize: bodySize, lineHeight: 1.3, weight: 400, fill: '#f3e8ff', italic: true })
+      );
+      y += bodyHeight + 42;
+    }
+
+    pointTexts.forEach((point) => {
+      const pointSize = Math.min(32, layout.fit.pointSize || 32);
+      const pointLines = wrapText(point, storyWidth - 12, pointSize, false);
+      parts.push(
+        `<circle cx="${SAFE_AREA.left + 18}" cy="${y - 8}" r="9" fill="${accent}"/>`,
+        positionedText(pointLines, { x: textX, y, fontSize: pointSize, lineHeight: 1.24, weight: 650 })
+      );
+      y += pointLines.length * pointSize * 1.24 + 30;
+    });
+  }
+
+  if (style === 'news') {
+    parts.push(
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 74}" width="166" height="48" rx="7" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 18}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="22" font-weight="900" letter-spacing="1.6">BERITA</text>`,
+      `<text x="${SAFE_AREA.left + 188}" y="${CONTENT_TOP - 43}" fill="${accent}" font-family="Arial,sans-serif" font-size="21" font-weight="800" letter-spacing="1">${escapeXml(section)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 12}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 12}" stroke="${accent}" stroke-width="7"/>`
+    );
+
+    let y = CONTENT_TOP + 78;
+    const titleSize = Math.min(67, layout.fit.titleFit?.fontSize || 60);
+    const titleLines = wrapText(titleText, SAFE_WIDTH, titleSize, true);
+    if (titleLines.length) {
+      parts.push(positionedText(titleLines, { y, fontSize: titleSize, lineHeight: 1.02, weight: 900 }));
+      y += titleLines.length * titleSize * 1.02 + 32;
+    }
+
+    if (bodyText) {
+      const bodySize = Math.min(36, layout.fit.bodyFit?.fontSize || 35);
+      const bodyLines = wrapText(bodyText, SAFE_WIDTH - 36, bodySize, false);
+      const bodyHeight = bodyLines.length * bodySize * 1.25;
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 36}" width="${SAFE_WIDTH}" height="${bodyHeight + 50}" rx="14" fill="${accent}" fill-opacity=".075" stroke="${accent}" stroke-opacity=".28" stroke-width="2"/>`,
+        `<rect x="${SAFE_AREA.left}" y="${y - 36}" width="11" height="${bodyHeight + 50}" rx="5" fill="${accent}"/>`,
+        positionedText(bodyLines, { x: SAFE_AREA.left + 28, y, fontSize: bodySize, lineHeight: 1.25, weight: 500, fill: '#f3e8ff' })
+      );
+      y += bodyHeight + 50;
+    }
+
+    pointTexts.forEach((point, index) => {
+      const pointSize = Math.min(32, layout.fit.pointSize || 32);
+      const pointLines = wrapText(point, SAFE_WIDTH - 96, pointSize, false);
+      const rowHeight = Math.max(70, pointLines.length * pointSize * 1.22 + 28);
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 32}" width="66" height="44" rx="8" fill="${accent}"/>`,
+        `<text x="${SAFE_AREA.left + 33}" y="${y - 3}" fill="#ffffff" font-family="Arial,sans-serif" font-size="19" font-weight="900" text-anchor="middle">0${index + 1}</text>`,
+        positionedText(pointLines, { x: SAFE_AREA.left + 88, y, fontSize: pointSize, lineHeight: 1.22, weight: 700 })
+      );
+      y += rowHeight;
+      if (index < pointTexts.length - 1) {
+        parts.push(`<line x1="${SAFE_AREA.left + 88}" y1="${y - 24}" x2="${WIDTH - SAFE_AREA.right}" y2="${y - 24}" stroke="${accent}" stroke-opacity=".22" stroke-width="2"/>`);
+      }
+    });
+  }
+
+  parts.push('</g>');
+  return parts.join('');
+}
+
 function renderLayout(layout, number, total, watermark, background) {
   validateVisualLayout(layout);
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
@@ -501,7 +648,7 @@ function renderLayout(layout, number, total, watermark, background) {
       parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
       y += point.lines.length * layout.fit.pointSize * 1.22;
     }
-    return frame(heading + parts.join(''), number, total, watermark, background);
+    return frame((layout.layoutStyle === 'default' ? heading : '') + parts.join(''), number, total, watermark, background);
   }
   if (layout.type === 'steps') {
     let y = startY;
