@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const config = require('../config');
+const { resolveContentLayout, layoutInstruction, layoutSections } = require('./contentLayouts');
 const sourceFilter = require('./sourceFilter');
 const urlSemanticRepair = require('./sourceUrlSemanticRepair');
 const manualSourceDedupe = require('./manualSourceDedupe');
@@ -63,7 +64,7 @@ function defaultSections(format, count) {
   });
 }
 
-function targetSections(generated, format, facts, sources = [], topic = '') {
+function targetSections(generated, format, facts, sources = [], topic = '', contentLayout = 'default') {
   const normalizedFormat = String(format || '').trim().toLocaleLowerCase('id-ID');
   if (normalizedFormat === 'listicle') {
     const explicitCount = requestedListicleCount(sources, topic);
@@ -74,7 +75,7 @@ function targetSections(generated, format, facts, sources = [], topic = '') {
     return current.map(slide => String(slide.section).trim());
   }
   const count = facts.length >= 12 ? 5 : 4;
-  return defaultSections(format, count);
+  return layoutSections(resolveContentLayout(contentLayout), count) || defaultSections(format, count);
 }
 
 function topicTerms(value) {
@@ -367,12 +368,14 @@ function buildFactPlan(sources, facts, slideCount) {
   return plan;
 }
 
-function finalizerPrompt({ generated, sources, facts, format, topic, errors, recovery = false }) {
-  const sections = targetSections(generated, format, facts, sources, topic);
+function finalizerPrompt({ generated, sources, facts, format, topic, errors, recovery = false, contentLayout = 'default' }) {
+  const resolvedLayout = resolveContentLayout(contentLayout);
+  const sections = targetSections(generated, format, facts, sources, topic, resolvedLayout);
+  const selectedLayoutInstruction = layoutInstruction(resolvedLayout);
   const sourceGroups = groupedFacts(sources, facts);
   const profile = sourceRichness(facts, sections.length);
   const plan = buildFactPlan(sources, facts, sections.length);
-  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${densityInstruction(facts, sections.length)}\nBODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN BODY FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nFACT PLAN UNIK PER SLIDE (panduan evidence; jangan mengulang evidence canonical):\n${JSON.stringify(plan)}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta visible pada body atau bullet final.\n- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, lokasi dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.\n- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN. Evidence dari bagian halaman lain dianggap tidak valid meskipun URL-nya sama.\n- Bahasa Indonesia harus natural, utuh, dan enak dibaca; jangan menyalin potongan kutipan, anak kalimat, atau attribution seperti “katanya/ujarnya”.\n- DILARANG menambahkan tujuan, sebab-akibat, manfaat, aplikasi, risiko, strategi, implikasi, rekomendasi, atau outcome yang tidak dinyatakan eksplisit oleh evidence.\n- Judul harus natural dan spesifik terhadap isi slide. Judul DILARANG hanya berupa nama section seperti “Pembuka”, “Fakta Utama”, “Konteks”, atau “Kesimpulan”. Jangan memakai pola berulang “<topik>: Fakta Utama / Konteks / Kesimpulan”.\n- Judul boleh berupa pertanyaan natural seperti “Apa itu Muse Code?” atau label ringkas seperti “Kemampuan Muse Code”. Jangan membuat semua judul berupa pertanyaan. Untuk judul label/netral, jangan membuat claim title yang tidak perlu.\n- BODY 10–20 kata, satu kalimat utuh, maksimal 4 baris.\n- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n- Setiap BODY dan BULLET WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama. Judul hanya perlu claim title jika memang memuat pernyataan faktual independen; judul struktural/ringkasan tidak perlu claim.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika tidak perlu, hilangkan angkanya; jangan menebak pengganti.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun antar-slide.\n- Jangan mengulang fakta yang sama dengan wording berbeda.\n- Judul maksimal 10 kata dan 3 baris. Jangan memotong copy di renderer.\n- Jika jumlah fakta bersih memang tidak cukup untuk 3 bullet di semua slide, gunakan sebanyak mungkin fakta unik yang benar-benar didukung; jangan filler dan jangan mengarang.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis bila evidence menyatakan tindakan itu. Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan tersebut.\n${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
+  return `${recovery ? 'RECOVERY FINAL' : 'FINAL'} PAKAI URL — TULIS CAROUSEL DARI FACT BANK BERSIH.\n\nTOPIK PENGGUNA: ${JSON.stringify(topic)}\nFORMAT: ${JSON.stringify(format)}\nTATA LETAK: ${JSON.stringify(resolvedLayout)}\nSECTION WAJIB: ${JSON.stringify(sections)}\n${selectedLayoutInstruction ? `ATURAN TATA LETAK: ${selectedLayoutInstruction}\n` : ''}${densityInstruction(facts, sections.length)}\nBODY WAJIB minimal 10 kata; target ${Math.max(10, profile.bodyMin)}–20 kata.\nERROR YANG HARUS DIHILANGKAN: ${JSON.stringify(errors || [])}\n\nSEMUA SUMBER/URL DAN BODY FACT BANK:\n${JSON.stringify(sourceGroups)}\n\nFACT PLAN UNIK PER SLIDE (panduan evidence; jangan mengulang evidence canonical):\n${JSON.stringify(plan)}\n\nATURAN WAJIB:\n- Gunakan SEMUA URL yang diberikan: SETIAP sourceId yang tercantum WAJIB menyumbang minimal satu fakta visible pada body atau bullet final.\n- DRAF LAMA DILARANG disalin. Tulis copy baru hanya dari FACT BANK di atas.\n- Tetap pada konteks TOPIK PENGGUNA. Jangan memakai related article, rekomendasi, headline lain, byline, lokasi dateline, metadata, caption, promosi, atau artikel lain pada halaman yang sama.\n- HANYA gunakan evidence yang tercantum pada BODY FACT BANK/FACT PLAN. Evidence dari bagian halaman lain dianggap tidak valid meskipun URL-nya sama.\n- Bahasa Indonesia harus natural, utuh, dan enak dibaca; jangan menyalin potongan kutipan, anak kalimat, atau attribution seperti “katanya/ujarnya”.\n- DILARANG menambahkan tujuan, sebab-akibat, manfaat, aplikasi, risiko, strategi, implikasi, rekomendasi, atau outcome yang tidak dinyatakan eksplisit oleh evidence.\n- Judul harus natural dan spesifik terhadap isi slide. Judul DILARANG hanya berupa nama section seperti “Pembuka”, “Fakta Utama”, “Konteks”, atau “Kesimpulan”. Jangan memakai pola berulang “<topik>: Fakta Utama / Konteks / Kesimpulan”.\n- Judul boleh berupa pertanyaan natural seperti “Apa itu Muse Code?” atau label ringkas seperti “Kemampuan Muse Code”. Jangan membuat semua judul berupa pertanyaan. Untuk judul label/netral, jangan membuat claim title yang tidak perlu.\n- BODY 10–20 kata, satu kalimat utuh, maksimal 4 baris.\n- Jika source kaya, setiap slide harus punya 3 bullet fakta berbeda. Bullet 3–7 kata, maksimal 3, berupa frasa/kalimat utuh yang bisa dipahami tanpa konteks kalimat sebelumnya.\n- Bullet DILARANG dimulai dengan kata sambung/pronomina gantung seperti “hingga”, “bahkan”, “namun”, “ia”, “mereka”, “katanya”, atau “di sisi lain”.\n- Setiap BODY dan BULLET WAJIB punya claim field/text yang sama persis, sourceId benar, dan evidence persis dari bank sourceId yang sama. Judul hanya perlu claim title jika memang memuat pernyataan faktual independen; judul struktural/ringkasan tidak perlu claim.\n- Jika evidence berbahasa Inggris, parafrase/terjemahkan natural ke Bahasa Indonesia tanpa mengubah makna atau tingkat kepastian.\n- Jika memakai angka/ordinal/tanggal, token angkanya WAJIB sama persis dengan evidence claim itu. Jika tidak perlu, hilangkan angkanya; jangan menebak pengganti.\n- JANGAN memakai evidence canonical yang sama dua kali, baik dalam satu slide maupun antar-slide.\n- Jangan mengulang fakta yang sama dengan wording berbeda.\n- Judul maksimal 10 kata dan 3 baris. Jangan memotong copy di renderer.\n- Jika jumlah fakta bersih memang tidak cukup untuk 3 bullet di semua slide, gunakan sebanyak mungkin fakta unik yang benar-benar didukung; jangan filler dan jangan mengarang.\n- Untuk tutorial/tips/solusi, tindakan hanya boleh ditulis bila evidence menyatakan tindakan itu. Untuk before-after/hasil, outcome hanya boleh ditulis bila evidence mendukung hubungan tersebut.\n${recovery ? '- Ini pass terakhir: ABAIKAN TOTAL output pass sebelumnya dan bangun ulang dari bank unik di atas.\n' : ''}\nKembalikan HANYA JSON:\n{"slides":[{"section":"...","title":"judul natural","body":"kalimat faktual natural","points":["fakta pendek","fakta pendek","fakta pendek"],"claims":[{"field":"slide:0:body","text":"...","sourceId":"source-1","evidence":"..."},{"field":"slide:0:point:0","text":"...","sourceId":"source-1","evidence":"..."}]}]}`;
 }
 
 function responseJson(response) {
@@ -680,7 +683,7 @@ function bodyCriticalErrors(errors = []) {
 function emergencySourceOnlyFallback() { return null; }
 function buildUrlSourceFallback() { return null; }
 
-async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', format = 'Fakta singkat', mode = 'manual', contentService, client } = {}) {
+async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', format = 'Fakta singkat', mode = 'manual', contentLayout = 'default', contentService, client } = {}) {
   if (!sources.length) throw Object.assign(new Error('Tidak ada URL sumber yang dapat dipakai.'), { status: 422 });
   const allFacts = sourceFacts(sources);
   const seedFacts = relevantSourceFacts(sources, allFacts, topic);
@@ -688,7 +691,8 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
 
   const effectiveFormat = generated?.effectiveContentFormat || format || 'Fakta singkat';
   const resolvedTopic = String(topic || generated?.topic || sources?.[0]?.title || 'Ringkasan sumber').trim();
-  const sections = targetSections(generated, effectiveFormat, seedFacts, sources, resolvedTopic);
+  const resolvedLayout = resolveContentLayout(contentLayout || generated?.contentLayout);
+  const sections = targetSections(generated, effectiveFormat, seedFacts, sources, resolvedTopic, resolvedLayout);
   const openai = client || require('./textProviderRuntime').client();
   let draft = { ...generated, topic: resolvedTopic };
   let lastErrors = [];
@@ -703,7 +707,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
           { role: 'system', content: recovery
             ? 'Anda recovery editor Pakai URL. Buang output lama dan bangun ulang carousel dari fact bank bersih. Semua URL harus dipakai. Copy harus faktual, natural, padat, unik, dan tidak boleh memakai related content atau fragmen kutipan.'
             : 'Anda editor final khusus Pakai URL. Susun carousel baru hanya dari fact bank URL yang relevan. Gunakan semua URL, tulis natural dan padat, dan jangan menambah fakta di luar evidence.' },
-          { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts: seedFacts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors, recovery }) }
+          { role: 'user', content: finalizerPrompt({ generated: draft, sources, facts: seedFacts, format: effectiveFormat, topic: resolvedTopic, errors: lastErrors, recovery, contentLayout: resolvedLayout }) }
         ],
         response_format: { type: 'json_object' }
       });
