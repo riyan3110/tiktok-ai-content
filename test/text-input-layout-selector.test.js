@@ -367,3 +367,24 @@ test('Tutorial dan Cerita memakai kartu lebar dan wrapping aman seperti Berita',
     assert.ok(lines.every(line => line.length <= 58), `${item.style} masih punya baris terlalu panjang: ${lines.join(' | ')}`);
   }
 });
+
+
+test('Tutorial slide hasil membungkus title dan body dengan margin aman', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    require('./src/services/slideSpacingPatch').install();
+    const images = require('./src/services/images');
+    const slide = {
+      section: 'HASIL / PENUTUP',
+      title: 'Passkey Siap Digunakan untuk Login',
+      body: 'Setelah pendaftaran berhasil, passkey dapat digunakan untuk masuk ke GitHub tanpa mengetik password dan menyelesaikan 2FA secara terpisah.',
+      points: []
+    };
+    const layout = images.buildStructuredLayout(slide, 3, 4, 'Tutorial', { textInputOnly: true, layoutStyle: 'tutorial' });
+    process.stdout.write(images.renderLayout(layout, 4, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));
+  `;
+  const svg = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  assert.match(svg, /data-layout="tutorial"/);
+  const lines = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
+  assert.ok(lines.every(line => line.length <= 42), `Tutorial result masih punya baris terlalu panjang: ${lines.join(' | ')}`);
+});
