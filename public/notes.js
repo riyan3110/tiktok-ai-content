@@ -26,12 +26,12 @@
       .notes-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border:2px solid var(--neo-line,#20263a);border-radius:16px;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
       .notes-heading h1{margin:0;font-size:clamp(2.1rem,4vw,3.7rem);font-weight:800;line-height:1.15;letter-spacing:-.045em}
       .aiads-neo-theme .notes-heading h1{font-size:2rem}
-      .notes-count{display:inline-flex;align-items:center;justify-content:center;padding:6px 12px;border:2px solid var(--neo-line,#20263a);border-radius:999px;background:var(--neo-yellow,#ffe66d);font-size:.8rem;font-weight:800;white-space:nowrap}
       .notes-toolbar{display:flex;align-items:center;gap:8px}
       .notes-toolbar input{flex:1 1 0;min-width:0;padding:10px 14px;border:2px solid var(--neo-line,#20263a);border-radius:13px;background:var(--neo-white,#fff);color:inherit;font:inherit;font-size:.9rem}
       .notes-toolbar button{min-height:42px;padding:10px 14px;white-space:nowrap;font-size:.85rem}
       .notes-list{display:grid;gap:0;border:2px solid var(--neo-line,#20263a);border-radius:16px;overflow:hidden;background:var(--neo-white,#fff);box-shadow:3px 4px 0 rgba(21,27,43,.10)}
-      .notes-list-item{display:flex;align-items:center;padding:12px 16px;cursor:pointer;border-bottom:1.5px solid var(--neo-line,#e5e7eb);transition:background .15s}
+      .notes-list-item{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;border-bottom:1.5px solid var(--neo-line,#e5e7eb);transition:background .15s}
+      .notes-list-sequence{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;min-width:30px;border:2px solid var(--neo-line,#20263a);border-radius:9px;background:var(--neo-yellow,#ffe66d);color:var(--neo-line,#20263a);font-size:.76rem;font-weight:900;line-height:1}
       .notes-list-item:last-child{border-bottom:none}
       .notes-list-item:hover,.notes-list-item:focus-visible{background:var(--neo-soft,#f6f3ea)}
       .notes-list-item h3{margin:0;font-size:.9rem;font-weight:700;line-height:1.35;overflow-wrap:anywhere;flex:1 1 auto}
@@ -73,7 +73,6 @@
       <div id="notes-list-view">
         <header class="notes-heading">
           <h1 id="notes-title">Notes</h1>
-          <span class="notes-count" id="notes-count">0</span>
         </header>
         <div class="notes-toolbar">
           <input id="notes-search" type="search" autocomplete="off" placeholder="Cari judul atau isi prompt…" aria-label="Cari Notes">
@@ -127,10 +126,11 @@
     mount();
     showListView();
     const list = filteredNotes();
-    $('#notes-count').textContent = String(notes.length);
+    const sequenceById = new Map(notes.map((note, index) => [note.id, index + 1]));
     const grid = $('#notes-grid');
     grid.innerHTML = list.length ? list.map(note => `
       <div class="notes-list-item" tabindex="0" role="button" data-note-open="${safe(note.id)}" aria-label="${safe(note.title)}">
+        <span class="notes-list-sequence" aria-hidden="true">${safe(sequenceById.get(note.id))}</span>
         <h3>${safe(note.title)}</h3>
         <span class="notes-list-arrow" aria-hidden="true">&rsaquo;</span>
       </div>`).join('') : '<div class="notes-empty">Belum ada prompt tersimpan di Notes.</div>';
@@ -247,7 +247,7 @@
     const prompt = String(content || '').trim();
     if (!prompt) throw new Error('Prompt tidak boleh kosong.');
     const note = await api('/api/notes', { method: 'POST', body: JSON.stringify({ content: prompt, source }) });
-    notes = [note, ...notes.filter(item => item.id !== note.id)];
+    notes = [...notes.filter(item => item.id !== note.id), note];
     if (location.hash === '#notes' && !activeNoteId) renderList();
     return note;
   }
