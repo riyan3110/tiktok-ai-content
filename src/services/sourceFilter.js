@@ -658,7 +658,7 @@ function finalSourceGroundingErrors(autoSourceTopic, contentService, finalConten
 
 async function generateFilteredContent({ content, previousTopics = [], options = {}, sources = [], client }) {
   const contentLayout = resolveContentLayout(options.contentLayout);
-  const validationFormat = contentFormatForLayout(contentLayout, validationFormat || 'Fakta singkat');
+  const validationFormat = contentFormatForLayout(contentLayout, options.contentFormat || 'Fakta singkat');
   const autoSourceTopic = options.topicSource === 'ai'
     && options.useSources === true
     && !String(options.requestedTopic || '').trim();
