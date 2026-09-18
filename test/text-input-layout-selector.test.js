@@ -93,3 +93,27 @@ test('UI menandai satu layout aktif dengan badge centang yang jelas', () => {
   assert.match(css, /#legacy-studio #layout-picker \.layout-option\.active::after/);
   assert.match(css, /content:"✓"/);
 });
+
+
+test('Tutorial Cerita dan Berita memakai renderer visual yang berbeda', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    require('./src/services/slideSpacingPatch').install();
+    const images = require('./src/services/images');
+    const slide = { section: 'SITUASI', title: 'Judul cerita yang cukup jelas', body: 'Isi singkat untuk menguji komposisi visual.', points: ['Poin pertama yang jelas', 'Poin kedua yang jelas'] };
+    const background = { color: '#f5efe4', textColor: '#000000' };
+    for (const style of ['tutorial','story','news']) {
+      const layout = images.buildStructuredLayout(slide, 1, 4, 'Fakta singkat', { textInputOnly: true, layoutStyle: style });
+      process.stdout.write(images.renderLayout(layout, 2, 4, { enabled: false }, background) + '\\n---' + style + '---\\n');
+    }
+  `;
+  const output = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  assert.match(output, /data-layout="tutorial"/);
+  assert.match(output, /data-layout="story"/);
+  assert.match(output, /data-layout="news"/);
+});
+
+test('empat tombol tata letak selalu berjajar satu baris', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'asset-compact.css'), 'utf8');
+  assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)!important/);
+});
