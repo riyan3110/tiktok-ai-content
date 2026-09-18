@@ -605,7 +605,7 @@ function renderStructuredVariant(layout) {
       y += titleFit.lines.length * titleFit.fontSize * 1.02 + 42;
     }
 
-    const bodyFit = fitVariantText(bodyText, newsWidth - 28, 220, 43, 34, 5, false);
+    const bodyFit = fitVariantText(bodyText, newsWidth - 56, 220, 43, 34, 5, false);
     if (bodyFit) {
       const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.27;
       const bodyBoxHeight = Math.max(150, bodyHeight + 86);
@@ -617,7 +617,7 @@ function renderStructuredVariant(layout) {
     }
 
     pointTexts.slice(0, 2).forEach((point, index) => {
-      const pointFit = fitVariantText(point, newsWidth - 44, 205, 38, 31, 4, false);
+      const pointFit = fitVariantText(point, newsWidth - 60, 205, 38, 31, 4, false);
       if (!pointFit) return;
       const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.24;
       const boxHeight = Math.max(155, pointHeight + 94);
