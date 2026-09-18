@@ -108,14 +108,25 @@ test('Tutorial Cerita dan Berita memakai renderer visual yang berbeda', () => {
     }
   `;
   const output = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
-  assert.match(output, /data-layout="tutorial"/);
-  assert.match(output, /TUTORIAL ·/);
-  assert.match(output, /data-layout="story"/);
-  assert.match(output, /CERITA ·/);
-  assert.match(output, />“</);
-  assert.match(output, /data-layout="news"/);
-  assert.match(output, />BERITA</);
-  assert.match(output, />01</);
+  const tutorialSvg = output.split('---tutorial---')[0];
+  const storySvg = output.split('---tutorial---')[1].split('---story---')[0];
+  const newsSvg = output.split('---story---')[1].split('---news---')[0];
+
+  assert.match(tutorialSvg, /data-layout="tutorial"/);
+  assert.match(tutorialSvg, /TUTORIAL|LANGKAH/);
+  assert.match(tutorialSvg, />1<\/text>/);
+  assert.doesNotMatch(tutorialSvg, /•/);
+
+  assert.match(storySvg, /data-layout="story"/);
+  assert.match(storySvg, /CERITA ·/);
+  assert.match(storySvg, />“<\/text>/);
+  assert.doesNotMatch(storySvg, /•/);
+  assert.doesNotMatch(storySvg, /<circle/);
+
+  assert.match(newsSvg, /data-layout="news"/);
+  assert.match(newsSvg, />BERITA<\/text>/);
+  assert.match(newsSvg, /FAKTA 1/);
+  assert.doesNotMatch(newsSvg, /•/);
 });
 
 test('empat tombol tata letak memenuhi lebar panel dan tetap nyaman disentuh', () => {

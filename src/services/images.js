@@ -489,6 +489,19 @@ function cleanLayoutPointText(point) {
     .trim();
 }
 
+function fitVariantText(text, maxWidth, maxHeight, startSize, minSize, maxLines, bold = false) {
+  const value = String(text || '').trim();
+  if (!value) return null;
+  for (let size = startSize; size >= minSize; size -= 2) {
+    const lines = wrapText(value, maxWidth, size, bold);
+    const lineHeight = 1.18;
+    const height = lines.length * size * lineHeight;
+    if (lines.length <= maxLines && height <= maxHeight) return { lines, fontSize: size, lineHeight, height };
+  }
+  const fallbackLines = wrapText(value, maxWidth, minSize, bold).slice(0, maxLines);
+  return { lines: fallbackLines, fontSize: minSize, lineHeight: 1.18, height: fallbackLines.length * minSize * 1.18 };
+}
+
 function renderStructuredVariant(layout) {
   const style = layout.layoutStyle || 'default';
   if (style === 'default') return '';
@@ -501,123 +514,112 @@ function renderStructuredVariant(layout) {
   const parts = [`<g data-layout="${style}">`];
 
   if (style === 'tutorial') {
+    const stepMatch = section.match(/LANGKAH\s*(\d+)/i);
+    const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (/HASIL|PENUTUP/i.test(section) ? 'HASIL' : 'TUTORIAL');
+    const bigNumber = stepMatch ? String(stepMatch[1]).padStart(2, '0') : '';
     parts.push(
-      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 62}" width="${SAFE_WIDTH}" height="54" rx="27" fill="${accent}"/>`,
-      `<text x="${SAFE_AREA.left + 24}" y="${CONTENT_TOP - 27}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.2">TUTORIAL · ${escapeXml(section)}</text>`
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 72}" width="${SAFE_WIDTH}" height="58" rx="16" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 24}" y="${CONTENT_TOP - 34}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" letter-spacing="1.4">${escapeXml(stepLabel)}</text>`
     );
+    if (bigNumber) {
+      parts.push(`<text x="${WIDTH - SAFE_AREA.right}" y="${CONTENT_TOP + 150}" fill="${accent}" fill-opacity=".16" font-family="Arial,sans-serif" font-size="190" font-weight="900" text-anchor="end">${bigNumber}</text>`);
+    }
 
     let y = CONTENT_TOP + 70;
-    const titleSize = Math.min(64, layout.fit.titleFit?.fontSize || 58);
-    const titleLines = wrapText(titleText, SAFE_WIDTH, titleSize, true);
-    if (titleLines.length) {
-      parts.push(positionedText(titleLines, { y, fontSize: titleSize, lineHeight: 1.06, weight: 900 }));
-      y += titleLines.length * titleSize * 1.06 + 28;
+    const titleFit = fitVariantText(titleText, SAFE_WIDTH, 270, 76, 52, 3, true);
+    if (titleFit) {
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.05, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.05 + 34;
     }
 
-    if (bodyText) {
-      const bodySize = Math.min(37, layout.fit.bodyFit?.fontSize || 36);
-      const bodyLines = wrapText(bodyText, SAFE_WIDTH, bodySize, false);
-      parts.push(positionedText(bodyLines, { y, fontSize: bodySize, lineHeight: 1.25, weight: 400, fill: '#f3e8ff' }));
-      y += bodyLines.length * bodySize * 1.25 + 30;
+    const bodyFit = fitVariantText(bodyText, SAFE_WIDTH, 190, 42, 34, 4, false);
+    if (bodyFit) {
+      parts.push(positionedText(bodyFit.lines, { y, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 450, fill: '#f3e8ff' }));
+      y += bodyFit.lines.length * bodyFit.fontSize * 1.26 + 36;
     }
 
-    pointTexts.forEach((point, index) => {
-      const pointSize = Math.min(34, layout.fit.pointSize || 34);
-      const pointLines = wrapText(point, SAFE_WIDTH - 105, pointSize, false);
-      const cardHeight = Math.max(86, pointLines.length * pointSize * 1.22 + 34);
+    pointTexts.slice(0, 2).forEach((point, index) => {
+      const pointFit = fitVariantText(point, SAFE_WIDTH - 116, 150, 38, 31, 3, false);
+      if (!pointFit) return;
+      const cardHeight = Math.max(106, pointFit.lines.length * pointFit.fontSize * 1.22 + 48);
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 38}" width="${SAFE_WIDTH}" height="${cardHeight}" rx="22" fill="${accent}" fill-opacity=".10" stroke="${accent}" stroke-opacity=".55" stroke-width="2.5"/>`,
-        `<circle cx="${SAFE_AREA.left + 34}" cy="${y}" r="24" fill="${accent}"/>`,
-        `<text x="${SAFE_AREA.left + 34}" y="${y + 9}" fill="#ffffff" font-family="Arial,sans-serif" font-size="24" font-weight="900" text-anchor="middle">${index + 1}</text>`,
-        positionedText(pointLines, { x: SAFE_AREA.left + 78, y: y + 8, fontSize: pointSize, lineHeight: 1.22, weight: 700 })
+        `<rect x="${SAFE_AREA.left}" y="${y - 42}" width="${SAFE_WIDTH}" height="${cardHeight}" rx="24" fill="${accent}" fill-opacity=".10" stroke="${accent}" stroke-opacity=".42" stroke-width="2.5"/>`,
+        `<rect x="${SAFE_AREA.left + 18}" y="${y - 17}" width="58" height="58" rx="15" fill="${accent}"/>`,
+        `<text x="${SAFE_AREA.left + 47}" y="${y + 22}" fill="#ffffff" font-family="Arial,sans-serif" font-size="27" font-weight="900" text-anchor="middle">${index + 1}</text>`,
+        positionedText(pointFit.lines, { x: SAFE_AREA.left + 96, y: y + 12, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
       );
-      y += cardHeight + 18;
+      y += cardHeight + 24;
     });
   }
 
   if (style === 'story') {
-    const panelTop = CONTENT_TOP - 58;
-    const panelBottom = CONTENT_BOTTOM - 35;
+    const narrative = [bodyText, ...pointTexts].filter(Boolean).slice(0, 3);
     parts.push(
-      `<rect x="${SAFE_AREA.left - 18}" y="${panelTop}" width="${SAFE_WIDTH + 36}" height="${panelBottom - panelTop}" rx="34" fill="${accent}" fill-opacity=".055" stroke="${accent}" stroke-opacity=".28" stroke-width="2"/>`,
-      `<text x="${SAFE_AREA.left + 14}" y="${CONTENT_TOP - 22}" fill="${accent}" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA · ${escapeXml(section)}</text>`,
-      `<text x="${SAFE_AREA.left + 8}" y="${CONTENT_TOP + 92}" fill="${accent}" fill-opacity=".34" font-family="Georgia,serif" font-size="126" font-weight="700">“</text>`,
-      `<line x1="${SAFE_AREA.left + 18}" y1="${CONTENT_TOP + 165}" x2="${SAFE_AREA.left + 18}" y2="${CONTENT_BOTTOM - 82}" stroke="${accent}" stroke-opacity=".55" stroke-width="5" stroke-linecap="round"/>`
+      `<text x="${SAFE_AREA.left}" y="${CONTENT_TOP - 34}" fill="${accent}" font-family="Arial,sans-serif" font-size="25" font-weight="900" letter-spacing="1.7">CERITA · ${escapeXml(section)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 14}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 14}" stroke="${accent}" stroke-opacity=".28" stroke-width="2"/>`,
+      `<text x="${WIDTH - SAFE_AREA.right}" y="${CONTENT_TOP + 150}" fill="${accent}" fill-opacity=".12" font-family="Georgia,serif" font-size="230" font-weight="700" text-anchor="end">“</text>`
     );
 
-    let y = CONTENT_TOP + 125;
-    const textX = SAFE_AREA.left + 58;
-    const storyWidth = SAFE_WIDTH - 70;
-    const titleSize = Math.min(60, layout.fit.titleFit?.fontSize || 56);
-    const titleLines = wrapText(titleText, storyWidth, titleSize, true);
-    if (titleLines.length) {
-      parts.push(positionedText(titleLines, { x: textX, y, fontSize: titleSize, lineHeight: 1.06, weight: 900 }));
-      y += titleLines.length * titleSize * 1.06 + 30;
+    let y = CONTENT_TOP + 105;
+    const titleFit = fitVariantText(titleText, SAFE_WIDTH, 300, 78, 54, 3, true);
+    if (titleFit) {
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.04, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 44;
     }
 
-    if (bodyText) {
-      const bodySize = Math.min(36, layout.fit.bodyFit?.fontSize || 35);
-      const bodyLines = wrapText(bodyText, storyWidth, bodySize, false);
-      const bodyHeight = bodyLines.length * bodySize * 1.3;
-      parts.push(
-        `<rect x="${textX - 12}" y="${y - 35}" width="${storyWidth + 10}" height="${bodyHeight + 46}" rx="18" fill="${accent}" fill-opacity=".09"/>`,
-        positionedText(bodyLines, { x: textX + 8, y, fontSize: bodySize, lineHeight: 1.3, weight: 400, fill: '#f3e8ff', italic: true })
-      );
-      y += bodyHeight + 42;
-    }
-
-    pointTexts.forEach((point) => {
-      const pointSize = Math.min(32, layout.fit.pointSize || 32);
-      const pointLines = wrapText(point, storyWidth - 12, pointSize, false);
-      parts.push(
-        `<circle cx="${SAFE_AREA.left + 18}" cy="${y - 8}" r="9" fill="${accent}"/>`,
-        positionedText(pointLines, { x: textX, y, fontSize: pointSize, lineHeight: 1.24, weight: 650 })
-      );
-      y += pointLines.length * pointSize * 1.24 + 30;
+    narrative.forEach((paragraph, index) => {
+      const paragraphFit = fitVariantText(paragraph, SAFE_WIDTH - 34, 210, index === 0 ? 43 : 39, 32, 4, false);
+      if (!paragraphFit) return;
+      if (index > 0) {
+        parts.push(`<line x1="${SAFE_AREA.left}" y1="${y - 25}" x2="${SAFE_AREA.left + 110}" y2="${y - 25}" stroke="${accent}" stroke-width="4" stroke-linecap="round"/>`);
+      }
+      parts.push(positionedText(paragraphFit.lines, {
+        x: SAFE_AREA.left,
+        y,
+        fontSize: paragraphFit.fontSize,
+        lineHeight: 1.32,
+        weight: index === 0 ? 500 : 430,
+        fill: '#f3e8ff',
+        italic: index === 0
+      }));
+      y += paragraphFit.lines.length * paragraphFit.fontSize * 1.32 + 44;
     });
   }
 
   if (style === 'news') {
     parts.push(
-      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 74}" width="166" height="48" rx="7" fill="${accent}"/>`,
-      `<text x="${SAFE_AREA.left + 18}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="22" font-weight="900" letter-spacing="1.6">BERITA</text>`,
-      `<text x="${SAFE_AREA.left + 188}" y="${CONTENT_TOP - 43}" fill="${accent}" font-family="Arial,sans-serif" font-size="21" font-weight="800" letter-spacing="1">${escapeXml(section)}</text>`,
-      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 12}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 12}" stroke="${accent}" stroke-width="7"/>`
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">BERITA</text>`,
+      `<text x="${WIDTH - SAFE_AREA.right}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - SAFE_AREA.right}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
     );
 
-    let y = CONTENT_TOP + 78;
-    const titleSize = Math.min(67, layout.fit.titleFit?.fontSize || 60);
-    const titleLines = wrapText(titleText, SAFE_WIDTH, titleSize, true);
-    if (titleLines.length) {
-      parts.push(positionedText(titleLines, { y, fontSize: titleSize, lineHeight: 1.02, weight: 900 }));
-      y += titleLines.length * titleSize * 1.02 + 32;
+    let y = CONTENT_TOP + 90;
+    const titleFit = fitVariantText(titleText, SAFE_WIDTH, 300, 80, 54, 3, true);
+    if (titleFit) {
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.02 + 42;
     }
 
-    if (bodyText) {
-      const bodySize = Math.min(36, layout.fit.bodyFit?.fontSize || 35);
-      const bodyLines = wrapText(bodyText, SAFE_WIDTH - 36, bodySize, false);
-      const bodyHeight = bodyLines.length * bodySize * 1.25;
+    const bodyFit = fitVariantText(bodyText, SAFE_WIDTH, 190, 43, 34, 4, false);
+    if (bodyFit) {
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 36}" width="${SAFE_WIDTH}" height="${bodyHeight + 50}" rx="14" fill="${accent}" fill-opacity=".075" stroke="${accent}" stroke-opacity=".28" stroke-width="2"/>`,
-        `<rect x="${SAFE_AREA.left}" y="${y - 36}" width="11" height="${bodyHeight + 50}" rx="5" fill="${accent}"/>`,
-        positionedText(bodyLines, { x: SAFE_AREA.left + 28, y, fontSize: bodySize, lineHeight: 1.25, weight: 500, fill: '#f3e8ff' })
+        `<rect x="${SAFE_AREA.left}" y="${y - 40}" width="${SAFE_WIDTH}" height="${bodyFit.lines.length * bodyFit.fontSize * 1.27 + 58}" rx="18" fill="${accent}" fill-opacity=".075"/>`,
+        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y, fontSize: bodyFit.fontSize, lineHeight: 1.27, weight: 500, fill: '#f3e8ff' })
       );
-      y += bodyHeight + 50;
+      y += bodyFit.lines.length * bodyFit.fontSize * 1.27 + 70;
     }
 
-    pointTexts.forEach((point, index) => {
-      const pointSize = Math.min(32, layout.fit.pointSize || 32);
-      const pointLines = wrapText(point, SAFE_WIDTH - 96, pointSize, false);
-      const rowHeight = Math.max(70, pointLines.length * pointSize * 1.22 + 28);
+    pointTexts.slice(0, 2).forEach((point, index) => {
+      const pointFit = fitVariantText(point, SAFE_WIDTH - 30, 160, 38, 31, 3, false);
+      if (!pointFit) return;
+      const boxHeight = Math.max(120, pointFit.lines.length * pointFit.fontSize * 1.24 + 72);
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 32}" width="66" height="44" rx="8" fill="${accent}"/>`,
-        `<text x="${SAFE_AREA.left + 33}" y="${y - 3}" fill="#ffffff" font-family="Arial,sans-serif" font-size="19" font-weight="900" text-anchor="middle">0${index + 1}</text>`,
-        positionedText(pointLines, { x: SAFE_AREA.left + 88, y, fontSize: pointSize, lineHeight: 1.22, weight: 700 })
+        `<rect x="${SAFE_AREA.left}" y="${y - 44}" width="${SAFE_WIDTH}" height="${boxHeight}" rx="18" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+        `<text x="${SAFE_AREA.left + 22}" y="${y - 10}" fill="${accent}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="1.1">FAKTA ${index + 1}</text>`,
+        positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 30, fontSize: pointFit.fontSize, lineHeight: 1.24, weight: 700 })
       );
-      y += rowHeight;
-      if (index < pointTexts.length - 1) {
-        parts.push(`<line x1="${SAFE_AREA.left + 88}" y1="${y - 24}" x2="${WIDTH - SAFE_AREA.right}" y2="${y - 24}" stroke="${accent}" stroke-opacity=".22" stroke-width="2"/>`);
-      }
+      y += boxHeight + 24;
     });
   }
 

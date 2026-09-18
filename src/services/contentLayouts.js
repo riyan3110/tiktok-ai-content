@@ -17,7 +17,7 @@ const LAYOUTS = {
     label: 'Tutorial',
     icon: 'steps',
     structureInstruction: 'TATA LETAK TUTORIAL: Susun materi sebagai proses yang benar-benar berurutan, bukan sekadar mengganti label section. Gunakan 4–5 slide: PEMBUKA/HOOK, LANGKAH 1, LANGKAH 2 dan langkah lanjutan bila memang dibutuhkan, lalu HASIL/PENUTUP. Urutkan tindakan dari prasyarat ke tindakan utama lalu pengecekan hasil. Jangan melompati tahapan penting dan jangan mengulang satu tindakan di dua slide.',
-    writerInstruction: 'Kalimat tutorial harus instruktif, jelas, dan natural. Setiap slide menjelaskan apa yang dilakukan dan bila perlu alasan singkatnya. Nomor langkah berasal dari urutan proses, bukan dekorasi. Jika bahan tidak benar-benar berupa prosedur, jangan mengarang langkah; ubah menjadi urutan penjelasan paling masuk akal yang tetap setia pada fakta yang tersedia.',
+    writerInstruction: 'Kalimat tutorial harus instruktif, jelas, dan natural. Setiap slide fokus pada satu langkah utama. Body berisi instruksi inti yang enak dibaca, sedangkan points hanya untuk maksimal dua tindakan pendukung yang benar-benar perlu dan akan ditampilkan sebagai kartu langkah bernomor, bukan bullet. Nomor langkah berasal dari urutan proses, bukan dekorasi. Jika bahan tidak benar-benar berupa prosedur, jangan mengarang langkah; ubah menjadi urutan penjelasan paling masuk akal yang tetap setia pada fakta yang tersedia.',
     rendererStyle: 'tutorial'
   },
   story: {
@@ -25,7 +25,7 @@ const LAYOUTS = {
     label: 'Cerita',
     icon: 'story',
     structureInstruction: 'TATA LETAK CERITA: Susun 4–5 slide sebagai alur naratif yang menyambung dari slide ke slide: PEMBUKA CERITA/HOOK, SITUASI AWAL, PERKEMBANGAN atau KEJADIAN UTAMA, lalu PENYELESAIAN/MAKNA/PENUTUP. Jangan membuat daftar fakta yang berdiri sendiri dan jangan memakai penomoran langkah.',
-    writerInstruction: 'Kalimat cerita harus terasa seperti satu kisah yang terus bergerak. Gunakan transisi waktu atau hubungan kejadian hanya bila memang didukung materi. Jangan menciptakan tokoh, pengalaman pribadi, emosi, sebab-akibat, atau detail kejadian yang tidak tersedia. Body berupa kalimat naratif utuh; points hanya dipakai bila benar-benar membantu detail pendukung dan tetap tanpa nomor.',
+    writerInstruction: 'Kalimat cerita harus terasa seperti satu kisah yang terus bergerak. Gunakan transisi waktu atau hubungan kejadian hanya bila memang didukung materi. Jangan menciptakan tokoh, pengalaman pribadi, emosi, sebab-akibat, atau detail kejadian yang tidak tersedia. Utamakan body berupa paragraf naratif utuh. Jika points terpaksa dipakai karena struktur data, isinya harus berupa lanjutan paragraf pendek dan tidak boleh ditulis sebagai daftar atau bullet.',
     rendererStyle: 'story'
   },
   news: {
@@ -33,7 +33,7 @@ const LAYOUTS = {
     label: 'Berita',
     icon: 'news',
     structureInstruction: 'TATA LETAK BERITA: Susun 4–5 slide dengan pola piramida terbalik: HEADLINE, FAKTA UTAMA/APA YANG TERJADI, KONTEKS atau DETAIL PENTING, lalu PERKEMBANGAN TERAKHIR/APA SELANJUTNYA/PENUTUP. Informasi terpenting harus muncul lebih awal. Jangan memakai struktur tutorial atau storytelling dramatis.',
-    writerInstruction: 'Kalimat berita harus ringkas, netral, dan faktual. Bedakan fakta dari konteks; hindari opini, asumsi motif, clickbait, dan bahasa dramatis. Untuk angka, nama, tanggal, kutipan, status, atau perkembangan terbaru, gunakan hanya informasi yang tersedia pada sumber/input. Jika sumber tidak mendukung suatu detail, jangan menambahkannya.',
+    writerInstruction: 'Kalimat berita harus ringkas, netral, dan faktual. Headline menjadi fokus utama, body menjadi ringkasan berita, dan maksimal dua points dipakai sebagai fakta pendukung yang akan ditampilkan sebagai kartu FAKTA, bukan bullet. Bedakan fakta dari konteks; hindari opini, asumsi motif, clickbait, dan bahasa dramatis. Untuk angka, nama, tanggal, kutipan, status, atau perkembangan terbaru, gunakan hanya informasi yang tersedia pada sumber/input. Jika sumber tidak mendukung suatu detail, jangan menambahkannya.',
     rendererStyle: 'news'
   }
 };
