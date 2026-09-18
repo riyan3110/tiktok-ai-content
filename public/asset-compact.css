@@ -1,31 +1,94 @@
 /* Compact Asset Library — keeps the asset workflows intact while fitting more media on screen. */
 
-/* Main Asset Manager: remove the large folder/tag rail and use the full width for media. */
-#asset-manager .asset-layout{
-  grid-template-columns:minmax(0,1fr);
-  gap:0;
+/* Hide elements removed from visible UI but kept in DOM for JS compatibility */
+#asset-manager .asset-hidden-filter{
+  display:none!important;
 }
 #asset-manager .asset-layout>aside{
   display:none!important;
 }
+#asset-manager .asset-drop{
+  display:none!important;
+}
+
+/* Compact header */
+#asset-manager .asset-heading{
+  display:flex;
+  align-items:center;
+  padding:14px 18px;
+  border:2px solid var(--neo-line,#20263a);
+  border-radius:16px;
+  background:var(--neo-white,#fff);
+  box-shadow:3px 4px 0 rgba(21,27,43,.10);
+}
+#asset-manager .asset-heading h1{
+  margin:0;
+  font-size:1.25rem;
+  font-weight:800;
+  line-height:1.2;
+}
+#asset-manager .asset-heading .eyebrow,
+#asset-manager .asset-heading p{
+  display:none!important;
+}
+
+/* Upload row */
+#asset-manager .asset-upload-row{
+  margin-top:10px;
+}
+#asset-manager .asset-upload-row button{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:44px;
+  padding:10px 16px;
+  font-weight:700;
+  font-size:.9rem;
+}
+
+/* Toolbar: search + select only */
+#asset-manager .asset-toolbar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:10px;
+}
+#asset-manager .asset-toolbar .project-search{
+  flex:1 1 0;
+  min-width:0;
+}
+#asset-manager .asset-toolbar .project-search input{
+  padding:10px 14px;
+  font-size:.9rem;
+}
+#asset-manager .asset-toolbar>#asset-select{
+  flex:0 0 auto;
+  min-height:42px;
+  padding:10px 16px;
+  white-space:nowrap;
+  font-size:.85rem;
+}
+
+/* Results count */
+#asset-manager #asset-results{
+  margin:8px 0 4px;
+  font-size:.75rem;
+  font-weight:700;
+  color:var(--neo-muted,#687386);
+}
+
+/* Main Asset layout: single column, no aside */
+#asset-manager .asset-layout{
+  grid-template-columns:minmax(0,1fr);
+  gap:0;
+}
 #asset-manager .asset-layout>main{
   min-width:0;
 }
-#asset-manager .asset-drop{
-  margin-bottom:10px;
-  padding:10px 12px;
-  border-radius:11px;
-}
-#asset-manager .asset-drop strong{
-  font-size:.82rem;
-}
-#asset-manager .asset-drop span{
-  font-size:.7rem;
-}
-#asset-manager #asset-results{
-  margin:8px 0;
-  font-size:.72rem;
-}
+
+/* Grid */
 #asset-manager .asset-grid{
   grid-template-columns:repeat(auto-fill,minmax(128px,1fr));
   gap:8px;
@@ -78,6 +141,35 @@
 #asset-manager .asset-card-check input{
   width:14px;
   height:14px;
+}
+
+/* Selection toolbar compact */
+#asset-manager .asset-selection-toolbar{
+  margin-top:8px;
+  flex-wrap:wrap;
+  gap:6px;
+}
+
+/* Bottom padding so last row isn't hidden behind bottom nav */
+#asset-manager .asset-layout main{
+  padding-bottom:80px;
+}
+
+/* Upload progress status */
+#asset-manager .asset-upload-status{
+  font-size:.78rem;
+  font-weight:700;
+  color:var(--neo-muted,#687386);
+  margin-top:6px;
+}
+#asset-manager .asset-upload-status:empty{
+  display:none;
+}
+#asset-manager .asset-upload-status progress{
+  width:100%;
+  height:6px;
+  border-radius:3px;
+  margin-bottom:4px;
 }
 
 /* Asset picker: tighter controls, denser grid, less unused space. */
@@ -153,12 +245,31 @@
 }
 
 @media(max-width:767px){
+  #asset-manager .asset-heading{
+    padding:12px 14px;
+  }
+  #asset-manager .asset-heading h1{
+    font-size:1.1rem;
+  }
+  #asset-manager .asset-upload-row button{
+    min-height:42px;
+    font-size:.85rem;
+  }
+  #asset-manager .asset-toolbar{
+    gap:6px;
+  }
+  #asset-manager .asset-toolbar .project-search input{
+    padding:9px 12px;
+    font-size:.85rem;
+  }
+  #asset-manager .asset-toolbar>#asset-select{
+    min-height:40px;
+    padding:9px 12px;
+    font-size:.8rem;
+  }
   #asset-manager .asset-grid{
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:7px;
-  }
-  #asset-manager .asset-drop{
-    padding:9px 10px;
   }
   #asset-manager .asset-card-meta{
     padding:5px!important;
