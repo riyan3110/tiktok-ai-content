@@ -2,6 +2,7 @@ const defaultContent = require('./content');
 const defaultImages = require('./images');
 const defaultTrending = require('./trendingTopics');
 const { resolveCategory, resolveFormat } = require('./contentOptions');
+const { resolveContentLayout, contentFormatForLayout, layoutSections } = require('./contentLayouts');
 const trendReferences = require('./trendReferences');
 const defaultSourceFetcher = require('./sourceFetcher');
 const defaultSourceFilter = require('./sourceFilter');
@@ -52,7 +53,9 @@ function resolveManualSourceRoleGuard(override, content = defaultContent) {
   return content === defaultContent ? defaultManualSourceRoleGuard : null;
 }
 
-function manualSourceSeed(topic, format) {
+function manualSourceSeed(topic, format, contentLayout = 'default') {
+  const selectedLayout = resolveContentLayout(contentLayout);
+  const selectedSections = layoutSections(selectedLayout, 4);
   const structures = {
     'Tutorial langkah': ['PEMBUKA', 'LANGKAH 1', 'LANGKAH 2', 'HASIL/PENUTUP'],
     'Masalah dan solusi': ['MASALAH', 'SOLUSI', 'SOLUSI', 'PENUTUP'],
@@ -61,7 +64,7 @@ function manualSourceSeed(topic, format) {
     'Tips cepat': ['PEMBUKA', 'TIPS 1', 'TIPS 2', 'PENUTUP'],
     'Before-after': ['BEFORE', 'PERUBAHAN', 'AFTER', 'PENUTUP']
   };
-  const sections = structures[format] || ['PEMBUKA', 'ISI 1', 'ISI 2', 'PENUTUP'];
+  const sections = selectedSections || structures[format] || ['PEMBUKA', 'ISI 1', 'ISI 2', 'PENUTUP'];
   const slides = sections.map(section => ({ section, title: 'Draf sumber', body: '', points: [], claims: [] }));
   return {
     focus: { masalah: 'Konteks dari sumber', penyebab: 'Fakta dari sumber', solusi: 'Poin utama dari sumber', hasil: 'Ringkasan dari sumber' },
@@ -125,6 +128,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
   if (!MODES.has(mode)) throw Object.assign(new Error('Sumber topik tidak valid'), { status: 400 });
   const contentCategory = resolveCategory(category, customCategory);
   const contentFormat = resolveFormat(format);
+  const normalizedContentLayout = resolveContentLayout(contentLayout);
+  const layoutContentFormat = contentFormatForLayout(normalizedContentLayout, contentFormat);
   const trendReference = useTrendReference ? trendReferences.usable(db) : null;
   const manualTopic = String(requestedTopic || '').trim().replace(/\s+/g, ' ');
   if (mode === 'manual' && !manualTopic) throw Object.assign(new Error('Topik manual wajib diisi'), { status: 400 });
@@ -156,7 +161,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       date: new Date().toISOString().slice(0, 10),
       contentCategory,
       contentFormat,
-      contentLayout,
+      contentLayout: normalizedContentLayout,
       recentContents: history,
       rejectedAngle: attempt > 1 || forceNewAngle ? 'Angle sebelumnya gagal atau terlalu mirip; pilih kandidat lain dengan tool, hook, langkah, dan CTA berbeda.' : null,
       trendReference: trendReference ? { keywords: trendReference.keywords, keyword_categories: trendReference.keyword_categories, trend_hooks: trendReference.trend_hooks, trend_content_patterns: trendReference.trend_content_patterns, source: trendReference.source, region: trendReference.region, intensity: trendReference.intensity, notes: trendReference.notes } : null,
@@ -173,19 +178,19 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
         const explicitPakaiUrl = content === defaultContent && !manualSourceRoleGuard;
         if (explicitPakaiUrl) {
           sourceSafetyPatch.sanitizeSourcesForManualTopic(sources, basis);
-          const seed = manualSourceSeed(basis, contentFormat);
+          const seed = manualSourceSeed(basis, layoutContentFormat, normalizedContentLayout);
           generated = await aiThenDeterministicFallback({
             generated: seed,
             sources,
             topic: basis,
-            requestedFormat: contentFormat,
+            requestedFormat: layoutContentFormat,
             mode,
             content
           });
         } else {
           const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
           if (activeManualSourceRoleGuard?.repairManualSourceRoles) {
-            const seed = manualSourceSeed(basis, contentFormat);
+            const seed = manualSourceSeed(basis, layoutContentFormat, normalizedContentLayout);
             try {
               generated = await activeManualSourceRoleGuard.repairManualSourceRoles({
                 contentService: content,
@@ -197,7 +202,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
               if (content !== defaultContent) throw error;
               if (error.sourceFinalizerAttempted) throw error;
               const recoveryFormat = safeRecoveryFormat(contentFormat);
-              const recoverySeed = manualSourceSeed(basis, recoveryFormat);
+              const recoverySeed = manualSourceSeed(basis, recoveryFormat, normalizedContentLayout);
               if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
               generated = await aiThenDeterministicFallback({
                 generated: recoverySeed,
@@ -222,7 +227,7 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
           if (content !== defaultContent) throw error;
           const sourceTopic = String(sources[0]?.title || 'Ringkasan sumber').trim();
           const recoveryFormat = safeRecoveryFormat(contentFormat);
-          const recoverySeed = manualSourceSeed(sourceTopic, recoveryFormat);
+          const recoverySeed = manualSourceSeed(sourceTopic, recoveryFormat, normalizedContentLayout);
           if (recoveryFormat !== contentFormat) recoverySeed.effectiveContentFormat = 'Fakta singkat';
           generated = await aiThenDeterministicFallback({
             generated: recoverySeed,
@@ -281,9 +286,10 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
       const usedKeywords = [...new Set((generated.trendKeywordsUsed || []).filter(x => allowed.has(String(x).toLocaleLowerCase('id-ID'))))].slice(0, 3);
       const ignoredKeywords = (trendReference?.keywords || []).filter(keyword => !usedKeywords.some(used => used.toLocaleLowerCase('id-ID') === keyword.toLocaleLowerCase('id-ID')));
       const renderKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: finalContentFormat, contentLayout: generated.contentLayout || contentLayout, watermark, background });
+      const renderContentFormat = normalizedContentLayout === 'default' ? finalContentFormat : layoutContentFormat;
+      renderedSlides = await images.createSlides(renderKey, { ...generated, contentCategory, contentFormat: renderContentFormat, contentLayout: normalizedContentLayout, watermark, background });
       const result = db.prepare('INSERT INTO contents(topic,topic_source,requested_topic,main_topic,content_angle,primary_tool,hook_pattern,similarity_score,content_category,content_format,hook,body,caption,hashtags,cta,slides,trend_reference_id,trend_keywords_used,trend_keywords_ignored,background,render_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, finalContentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(renderedSlides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}), JSON.stringify({ ...generated, contentCategory, contentFormat: finalContentFormat, watermark }));
+        .run(generated.topic, mode, mode === 'manual' ? manualTopic : null, mainTopic, generated.content_angle, generated.primary_tool, generated.hook_pattern, similarityScore, contentCategory, finalContentFormat, generated.hook, generated.body, generated.caption, JSON.stringify(generated.hashtags), generated.cta, JSON.stringify(renderedSlides), trendReference?.id || null, JSON.stringify(usedKeywords), JSON.stringify(ignoredKeywords), JSON.stringify(background ? { ...background, imageData: undefined, slideBackgrounds: Object.fromEntries(Object.entries(background.slideBackgrounds || {}).map(([key, value]) => [key, { ...value, imageData: undefined }])) } : {}), JSON.stringify({ ...generated, contentCategory, contentFormat: finalContentFormat, ...(normalizedContentLayout !== 'default' ? { contentLayout: normalizedContentLayout } : {}), watermark }));
       try {
         let stableSlides = renderedSlides;
         if (images.promoteSlides) stableSlides = await images.promoteSlides(renderedSlides, result.lastInsertRowid, [], stable => db.prepare('UPDATE contents SET slides=? WHERE id=?').run(JSON.stringify(stable), result.lastInsertRowid));
