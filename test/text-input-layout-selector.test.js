@@ -298,3 +298,31 @@ test('Berita memecah fakta panjang menjadi baris pendek agar tidak keluar kartu'
   assert.ok(lines.length >= 3, `fakta panjang harus di-wrap minimal 3 baris, sekarang ${lines.length}`);
   assert.ok(lines.every(line => line.length <= 55), `baris fakta terlalu panjang: ${lines.join(' | ')}`);
 });
+
+
+test('Headline Berita slide 1 dan 4 dibungkus sebelum mencapai tepi kanan', () => {
+  const { execFileSync } = require('node:child_process');
+  const titles = [
+    'OpenAI Ungkap Enam Kasus Perilaku AI yang Mengkhawatirkan',
+    'OpenAI Akan Mempercepat Pelaporan Kasus Serupa'
+  ];
+  for (const [index, title] of titles.entries()) {
+    const script = `
+      require('./src/services/slideSpacingPatch').install();
+      const images = require('./src/services/images');
+      const slide = {
+        section: ${JSON.stringify(index === 0 ? 'HEADLINE' : 'PERKEMBANGAN')},
+        title: ${JSON.stringify(title)},
+        body: ${JSON.stringify(index === 0 ? '' : 'Kerangka baru menetapkan proses investigasi dan jalur pengungkapan.')},
+        points: []
+      };
+      const layout = images.buildStructuredLayout(slide, ${index === 0 ? 0 : 3}, 4, 'Fakta singkat', { textInputOnly: true, layoutStyle: 'news' });
+      process.stdout.write(images.renderLayout(layout, ${index === 0 ? 1 : 4}, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));
+    `;
+    const svg = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+    const titleArea = svg.split('stroke-width="7"/>')[1].split('<rect')[0];
+    const lines = [...titleArea.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
+    assert.ok(lines.length >= 2 && lines.length <= 4, `judul harus 2–4 baris, sekarang ${lines.length}: ${lines.join(' | ')}`);
+    assert.ok(lines.every(line => line.length <= 27), `baris judul terlalu panjang: ${lines.join(' | ')}`);
+  }
+});
