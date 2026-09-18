@@ -591,9 +591,12 @@ function renderStructuredVariant(layout) {
     // area so the body/fact cards can hold normal sentences without clipping.
     const newsRight = 70;
     const newsWidth = WIDTH - SAFE_AREA.left - newsRight;
+    // Headline/title needs its own conservative width because the bold
+    // browser font renders substantially wider than our lightweight estimator.
+    // Keep a large safety margin so long titles wrap before reaching the right edge.
+    const newsTitleTextWidth = newsWidth - 220;
     const newsBodyTextWidth = newsWidth - 130;
-    // Fact cards need a much more conservative wrap width because the bold
-    // browser font renders wider than our lightweight width estimator.
+    // Fact cards need a conservative wrap width for the same reason.
     const newsFactTextWidth = newsWidth - 200;
     parts.push(
       `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
@@ -603,10 +606,10 @@ function renderStructuredVariant(layout) {
     );
 
     let y = CONTENT_TOP + 90;
-    const titleFit = fitVariantText(titleText, newsWidth, 300, 80, 54, 3, true);
+    const titleFit = fitVariantText(titleText, newsTitleTextWidth, 330, 72, 46, 4, true);
     if (titleFit) {
       parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
-      y += titleFit.lines.length * titleFit.fontSize * 1.02 + 42;
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
     }
 
     const bodyFit = fitVariantText(bodyText, newsBodyTextWidth, 220, 43, 34, 5, false);
