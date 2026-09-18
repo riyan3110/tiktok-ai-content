@@ -132,6 +132,14 @@ test('Notes title can be renamed from detail view API', async t => {
   await request(app).patch(`/api/notes/${saved.body.id}`).send({ title: '   ' }).expect(422);
 });
 
+test('Notes list keeps old notes above new notes', async t => {
+  const { app } = fixture(t);
+  const first = await request(app).post('/api/notes').send({ content: '## Scene\nCatatan pertama untuk urutan Notes.' }).expect(201);
+  const second = await request(app).post('/api/notes').send({ content: '## Scene\nCatatan kedua untuk urutan Notes.' }).expect(201);
+  const listed = await request(app).get('/api/notes').expect(200);
+  assert.deepEqual(listed.body.map(note => note.id), [first.body.id, second.body.id]);
+});
+
 
 test('Notes frontend has list view with clickable titles and a detail view with copy/generate/delete', () => {
   const script = fs.readFileSync(path.join(__dirname, '../public/notes.js'), 'utf8');
@@ -147,6 +155,10 @@ test('Notes frontend has list view with clickable titles and a detail view with 
   assert.match(script, /notes-detail-edit-title/);
   assert.match(script, /Edit judul Notes/);
   assert.match(script, /method: 'PATCH'/);
+  assert.match(script, /notes-list-sequence/);
+  assert.match(script, /sequenceById/);
+  assert.ok(!script.includes('id="notes-count"'), 'Header should not show the old top count badge');
+  assert.match(script, /notes = \[\.\.\.notes\.filter\(item => item\.id !== note\.id\), note\]/);
   assert.ok(!script.includes('note-card-actions'), 'List view should not have card action buttons');
   assert.match(script, /method: 'DELETE'/);
 });
