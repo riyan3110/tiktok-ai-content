@@ -138,6 +138,6 @@ test('validator layout menerima section story dan menolak section default saat C
   assert.equal(checked.errors.some(error => /Tata letak Cerita/i.test(error)), false);
 
   const wrong = JSON.parse(JSON.stringify(valid));
-  wrong.slides[0].section = 'HOOK';
+  wrong.slides[0].section = 'FAKTA UTAMA';
   assert.ok(composer.validateResult(wrong, sourceText, 4, 'story').errors.some(error => /Tata letak Cerita harus dimulai/i.test(error)));
 });
