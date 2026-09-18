@@ -793,6 +793,8 @@ module.exports = {
   targetSlideCount,
   shapeSlides,
   buildContent,
+  promptFor,
+  legacyDefaultPrompt,
   MIN_TEXT_CHARS,
   MAX_TEXT_CHARS,
   FIVE_SLIDE_MIN_WORDS,
