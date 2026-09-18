@@ -26,6 +26,28 @@ jobs:
         run: npm ci
       - name: Syntax check
         run: npm run check
+      - name: Layout renderer regression
+        run: node --test test/text-input-layout-selector.test.js
+      - name: Server startup smoke
+        shell: bash
+        run: |
+          set -e
+          node src/server.js >/tmp/aiads-server.log 2>&1 &
+          pid=$!
+          ok=0
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 0.5
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          if [ "$ok" != "1" ]; then
+            cat /tmp/aiads-server.log
+            exit 1
+          fi
       - name: Manual provider regression suite
         run: npm run test:provider-manual
       - name: Full suite baseline (legacy failures do not block provider changes)
