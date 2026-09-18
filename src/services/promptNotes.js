@@ -128,6 +128,16 @@ function create(db, body = {}) {
   return serialize(db.prepare('SELECT * FROM prompt_notes WHERE id=?').get(id));
 }
 
+function updateTitle(db, id, rawTitle) {
+  ensureSchema(db);
+  const title = clean(rawTitle).replace(/\n+/g, ' ').trim();
+  if (!title) throw Object.assign(new Error('Judul Notes tidak boleh kosong.'), { status: 422 });
+  if (title.length > 120) throw Object.assign(new Error('Judul Notes maksimal 120 karakter.'), { status: 422 });
+  const result = db.prepare('UPDATE prompt_notes SET title=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(title, String(id || ''));
+  if (!result.changes) return null;
+  return serialize(db.prepare('SELECT * FROM prompt_notes WHERE id=?').get(String(id || '')));
+}
+
 function remove(db, id) {
   ensureSchema(db);
   return db.prepare('DELETE FROM prompt_notes WHERE id=?').run(String(id || '')).changes > 0;
@@ -143,6 +153,12 @@ function install({ app, db }) {
     try { res.status(201).json(create(db, req.body || {})); }
     catch (error) { res.status(error.status || 500).json({ error: error.message || 'Gagal menyimpan Notes.' }); }
   });
+  app.patch('/api/notes/:id', (req, res) => {
+    try {
+      const note = updateTitle(db, req.params.id, req.body?.title);
+      res.status(note ? 200 : 404).json(note || { error: 'Catatan tidak ditemukan.' });
+    } catch (error) { res.status(error.status || 500).json({ error: error.message || 'Gagal mengubah judul Notes.' }); }
+  });
   app.delete('/api/notes/:id', (req, res) => {
     try {
       const deleted = remove(db, req.params.id);
@@ -151,4 +167,4 @@ function install({ app, db }) {
   });
 }
 
-module.exports = { ensureSchema, autoTitle, list, create, remove, install };
+module.exports = { ensureSchema, autoTitle, list, create, updateTitle, remove, install };
