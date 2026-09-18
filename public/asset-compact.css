@@ -749,3 +749,30 @@
   #legacy-studio #layout-picker .layout-option svg{width:25px!important;height:25px!important}
   #legacy-studio #layout-picker .layout-option span{font-size:.7rem!important}
 }
+
+
+/* Text Content — compact pasted carousel field. */
+#legacy-studio #manual-topic-wrap{
+  margin-bottom:10px;
+}
+#legacy-studio #manual-topic-field{
+  gap:8px;
+}
+#legacy-studio #manual-topic{
+  display:block;
+  width:100%;
+  height:220px;
+  min-height:180px;
+  max-height:280px;
+  padding:14px 16px;
+  resize:vertical;
+  line-height:1.5;
+  overflow:auto;
+}
+@media(max-width:767px){
+  #legacy-studio #manual-topic{
+    height:210px;
+    min-height:170px;
+    max-height:260px;
+  }
+}
