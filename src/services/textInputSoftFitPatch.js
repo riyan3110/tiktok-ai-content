@@ -171,8 +171,13 @@ async function createTextInputSlides(id, content) {
         ? (prepared.background.slideBackgrounds?.[index] || prepared.background)
         : prepared.background;
       let svg = images.renderLayout(layouts[index], index + 1, layouts.length, prepared.watermark, background);
-      if (index === 0) svg = shiftContentText(svg, -TEXT_INPUT_HOOK_RAISE);
-      else svg = shiftContentText(svg, lowerShiftForLayout(layouts[index]));
+      // The Default template keeps the established text-input vertical shift.
+      // Tutorial/Cerita/Berita position their own cards/timeline/news blocks and
+      // must not have text shifted independently from their decorations.
+      if ((layouts[index].layoutStyle || 'default') === 'default') {
+        if (index === 0) svg = shiftContentText(svg, -TEXT_INPUT_HOOK_RAISE);
+        else svg = shiftContentText(svg, lowerShiftForLayout(layouts[index]));
+      }
       svg = emphasizeRoleText(svg, index, layouts.length);
       await sharp(Buffer.from(svg))
         .resize(images.WIDTH, images.HEIGHT)
