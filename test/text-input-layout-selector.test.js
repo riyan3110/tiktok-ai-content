@@ -6,6 +6,8 @@ const path = require('node:path');
 const softFit = require('../src/services/textInputSoftFitPatch');
 const verbatim = require('../src/services/textInputVerbatimPatch');
 const autoSourcePatch = require('../src/services/autoSourcePatch');
+const images = require('../src/services/images');
+const composer = require('../src/services/textInputComposer');
 
 const slides = [
   { section: 'HOOK', title: 'Kegagalan Bukan Akhir dari Semua Pilihan', body: '', points: [] },
@@ -92,4 +94,50 @@ test('UI menandai satu layout aktif dengan badge centang yang jelas', () => {
   const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'asset-compact.css'), 'utf8');
   assert.match(css, /#legacy-studio #layout-picker \.layout-option\.active::after/);
   assert.match(css, /content:"✓"/);
+});
+
+
+test('Tutorial, Cerita, dan Berita benar-benar memakai komposisi visual berbeda', () => {
+  const tutorial = softFit.buildTextInputLayouts(content('tutorial'))[1];
+  const story = softFit.buildTextInputLayouts(content('story'))[1];
+  const news = softFit.buildTextInputLayouts(content('news'))[1];
+
+  const tutorialSvg = images.renderLayout(tutorial, 2, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' });
+  const storySvg = images.renderLayout(story, 2, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' });
+  const newsSvg = images.renderLayout(news, 2, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' });
+
+  assert.match(tutorialSvg, /data-layout="tutorial"/);
+  assert.match(tutorialSvg, />TUTORIAL</);
+  assert.match(storySvg, /data-layout="story"/);
+  assert.match(storySvg, />CERITA</);
+  assert.match(newsSvg, /data-layout="news"/);
+  assert.match(newsSvg, />BERITA</);
+  assert.notEqual(tutorialSvg, storySvg);
+  assert.notEqual(storySvg, newsSvg);
+});
+
+test('layout picker selalu empat tombol sejajar', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'asset-compact.css'), 'utf8');
+  assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)!important/);
+});
+
+test('validator layout menerima section story dan menolak section default saat Cerita dipilih', () => {
+  const sourceText = 'Kegagalan dapat mengambil hasil yang diharapkan, tetapi masih ada ruang untuk bertindak. Seseorang dapat membedakan hal yang sudah terjadi dari langkah yang masih bisa dilakukan. Perhatian pada tindakan berikutnya membantu menyusun kembali arah setelah hasil yang mengecewakan.';
+  const valid = {
+    topic: 'Ruang Bertindak Setelah Kegagalan',
+    caption: 'Kegagalan dapat mengambil hasil yang diharapkan, tetapi masih ada ruang untuk bertindak. Membedakan yang sudah terjadi dari langkah berikutnya membantu menyusun kembali arah.',
+    hashtags: ['#Kegagalan', '#Pilihan', '#Tindakan'],
+    slides: [
+      { section: 'PEMBUKA CERITA', title: 'Kegagalan Tidak Menghapus Semua Pilihan yang Tersisa', body: '', points: [] },
+      { section: 'SITUASI', title: 'Hasil Buruk Membawa Rasa Kecewa', body: 'Kegagalan dapat mengambil hasil yang sebelumnya sangat diharapkan.', points: ['Rasa kecewa tetap hadir', 'Hasil sudah terjadi'] },
+      { section: 'PERKEMBANGAN', title: 'Masih Ada Ruang untuk Bertindak', body: 'Langkah berikutnya masih dapat dipilih setelah hasil mengecewakan.', points: ['Bedakan hasil dan tindakan', 'Perhatian diarahkan kembali'] },
+      { section: 'PENYELESAIAN', title: 'Arah Berikutnya Masih Bisa Disusun Kembali', body: 'Membedakan yang sudah terjadi dari tindakan berikutnya membantu menyusun kembali arah setelah hasil mengecewakan.', points: [] }
+    ]
+  };
+  const checked = composer.validateResult(valid, sourceText, 4, 'story');
+  assert.equal(checked.errors.some(error => /Tata letak Cerita/i.test(error)), false);
+
+  const wrong = JSON.parse(JSON.stringify(valid));
+  wrong.slides[0].section = 'HOOK';
+  assert.ok(composer.validateResult(wrong, sourceText, 4, 'story').errors.some(error => /Tata letak Cerita harus dimulai/i.test(error)));
 });
