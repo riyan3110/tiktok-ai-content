@@ -115,13 +115,14 @@ test('Tutorial Cerita dan Berita memakai renderer visual yang berbeda', () => {
   const newsSvg = output.split('---story---')[1].split('---news---')[0];
 
   assert.match(tutorialSvg, /data-layout="tutorial"/);
-  assert.match(tutorialSvg, /TUTORIAL|LANGKAH/);
+  assert.match(tutorialSvg, />TUTORIAL<\/text>/);
+  assert.match(tutorialSvg, /width="920"/);
   assert.match(tutorialSvg, />1<\/text>/);
   assert.doesNotMatch(tutorialSvg, /•/);
 
   assert.match(storySvg, /data-layout="story"/);
-  assert.match(storySvg, /CERITA ·/);
-  assert.match(storySvg, />“<\/text>/);
+  assert.match(storySvg, />CERITA<\/text>/);
+  assert.match(storySvg, /width="920"/);
   assert.doesNotMatch(storySvg, /•/);
   assert.doesNotMatch(storySvg, /<circle/);
 
@@ -324,5 +325,45 @@ test('Headline Berita slide 1 dan 4 dibungkus sebelum mencapai tepi kanan', () =
     const lines = [...titleArea.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
     assert.ok(lines.length >= 2 && lines.length <= 4, `judul harus 2–4 baris, sekarang ${lines.length}: ${lines.join(' | ')}`);
     assert.ok(lines.every(line => line.length <= 27), `baris judul terlalu panjang: ${lines.join(' | ')}`);
+  }
+});
+
+
+test('Tutorial dan Cerita memakai kartu lebar dan wrapping aman seperti Berita', () => {
+  const { execFileSync } = require('node:child_process');
+  const cases = [
+    {
+      style: 'tutorial',
+      section: 'LANGKAH 2',
+      title: 'Daftarkan Passkey di Perangkat',
+      body: 'Lanjutkan konfigurasi passkey dan ikuti permintaan Android untuk memverifikasi identitas melalui penguncian layar perangkat.',
+      points: [
+        'Tekan Add passkey pada halaman konfigurasi passwordless authentication',
+        'Konfirmasi menggunakan sidik jari, wajah, PIN, atau kunci layar'
+      ]
+    },
+    {
+      style: 'story',
+      section: 'PERKEMBANGAN',
+      title: 'Perhatian Kembali pada Hal yang Masih Bisa Dilakukan',
+      body: 'Setelah hasil yang mengecewakan, perhatian dapat kembali diarahkan pada pilihan dan tindakan yang masih benar-benar tersedia.',
+      points: [
+        'Arah berikutnya disusun dari hal yang masih bisa dilakukan tanpa menyangkal hasil yang sudah terjadi.'
+      ]
+    }
+  ];
+
+  for (const item of cases) {
+    const script = `
+      require('./src/services/slideSpacingPatch').install();
+      const images = require('./src/services/images');
+      const slide = ${JSON.stringify(item)};
+      const layout = images.buildStructuredLayout(slide, 2, 4, 'Fakta singkat', { textInputOnly: true, layoutStyle: ${JSON.stringify(item.style)} });
+      process.stdout.write(images.renderLayout(layout, 3, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));
+    `;
+    const svg = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+    assert.match(svg, /width="920"/);
+    const lines = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1].trim()).filter(Boolean);
+    assert.ok(lines.every(line => line.length <= 58), `${item.style} masih punya baris terlalu panjang: ${lines.join(' | ')}`);
   }
 });
