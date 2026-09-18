@@ -128,6 +128,7 @@ test('Tutorial Cerita dan Berita memakai renderer visual yang berbeda', () => {
   assert.match(newsSvg, /data-layout="news"/);
   assert.match(newsSvg, />BERITA<\/text>/);
   assert.match(newsSvg, /FAKTA 1/);
+  assert.match(newsSvg, /width="920"/);
   assert.doesNotMatch(newsSvg, /•/);
 });
 
@@ -245,4 +246,30 @@ test('custom layout Generate dari Teks hanya memanggil model satu kali', async (
   assert.equal(calls, 1);
   assert.equal(result.contentLayout, 'story');
   assert.equal(result.slides.length, 4);
+});
+
+
+test('Berita memberi margin kanan cukup besar untuk kalimat fakta panjang', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    require('./src/services/slideSpacingPatch').install();
+    const images = require('./src/services/images');
+    const slide = {
+      section: 'FAKTA UTAMA',
+      title: 'Kerangka Baru Melaporkan Misalignment Model',
+      body: 'OpenAI memperkenalkan kerangka baru untuk melacak, menyelidiki, dan mengungkap kasus misalignment, sekaligus merilis enam laporan perilaku model.',
+      points: [
+        'Enam kasus mencakup perilaku yang muncul selama pelatihan maupun evaluasi model internal.',
+        'OpenAI menegaskan laporan awal ini bukan ukuran seberapa sering misalignment terjadi secara keseluruhan.'
+      ]
+    };
+    const layout = images.buildStructuredLayout(slide, 1, 4, 'Fakta singkat', { textInputOnly: true, layoutStyle: 'news' });
+    process.stdout.write(images.renderLayout(layout, 2, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));
+  `;
+  const svg = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  assert.match(svg, /data-layout="news"/);
+  assert.match(svg, /width="920"/);
+  const lines = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(match => match[1]);
+  assert.ok(lines.some(line => line.includes('misalignment')));
+  assert.ok(lines.every(line => line.length < 85));
 });
