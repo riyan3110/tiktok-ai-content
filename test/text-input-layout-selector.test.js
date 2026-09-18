@@ -6,6 +6,8 @@ const path = require('node:path');
 const softFit = require('../src/services/textInputSoftFitPatch');
 const verbatim = require('../src/services/textInputVerbatimPatch');
 const autoSourcePatch = require('../src/services/autoSourcePatch');
+const textInputComposer = require('../src/services/textInputComposer');
+const sourceUrlFinalizer = require('../src/services/sourceUrlFinalizer');
 
 const slides = [
   { section: 'HOOK', title: 'Kegagalan Bukan Akhir dari Semua Pilihan', body: '', points: [] },
@@ -66,7 +68,7 @@ test('text composer bridge meneruskan layout yang dipilih', async () => {
   assert.equal(received.contentLayout, 'news');
 });
 
-test('verbatim pasted content menyimpan contentLayout tanpa menulis ulang copy', async () => {
+test('Default tetap copy-locked tanpa menulis ulang copy', async () => {
   const pasted = `SLIDE 1 - HOOK
 Kegagalan Bukan Akhir dari Semua Pilihan
 SLIDE 2 - FAKTA UTAMA
@@ -83,8 +85,8 @@ SLIDE 4 - PENUTUP
 Jangan Serahkan Arah Hidup pada Satu Hasil
 Kekalahan boleh terasa berat, tetapi keputusan berikutnya tetap bisa disusun kembali.`;
 
-  const result = await verbatim.composeVerbatim({ text: pasted, contentLayout: 'story' });
-  assert.equal(result.contentLayout, 'story');
+  const result = await verbatim.composeVerbatim({ text: pasted, contentLayout: 'default' });
+  assert.equal(result.contentLayout, 'default');
   assert.equal(result.slides[0].title, 'Kegagalan Bukan Akhir dari Semua Pilihan');
 });
 
@@ -135,4 +137,81 @@ test('empat tombol tata letak memenuhi lebar panel dan tetap nyaman disentuh', (
   assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)!important/);
   assert.match(css, /min-height:82px!important/);
   assert.match(css, /width:27px!important/);
+});
+
+test('AI prompt berubah sesuai tombol tata letak dan Default tetap identik dengan prompt lama', () => {
+  const source = 'Teks sumber panjang yang menjelaskan sebuah kejadian, urutan proses, konteks utama, fakta pendukung, dan penutup tanpa menambahkan informasi dari luar bahan pengguna.';
+  const legacy = textInputComposer.legacyDefaultPrompt(source, 4);
+  assert.equal(textInputComposer.promptFor(source, 4, 'default'), legacy);
+
+  const tutorial = textInputComposer.promptFor(source, 4, 'tutorial');
+  assert.match(tutorial, /TATA LETAK DIPILIH USER: TUTORIAL/);
+  assert.match(tutorial, /PEMBUKA → LANGKAH 1 → LANGKAH 2 → HASIL\/PENUTUP/);
+  assert.match(tutorial, /KARTU TINDAKAN/);
+  assert.doesNotMatch(tutorial, /Slide 2 = FAKTA UTAMA/);
+
+  const story = textInputComposer.promptFor(source, 4, 'story');
+  assert.match(story, /TATA LETAK DIPILIH USER: STORY/);
+  assert.match(story, /PEMBUKA CERITA → SITUASI → PERKEMBANGAN → PENYELESAIAN/);
+  assert.match(story, /PARAGRAF NARATIF/);
+  assert.match(story, /BUKAN bullet\/list/);
+  assert.doesNotMatch(story, /Slide 2 = FAKTA UTAMA/);
+
+  const news = textInputComposer.promptFor(source, 4, 'news');
+  assert.match(news, /TATA LETAK DIPILIH USER: NEWS/);
+  assert.match(news, /HEADLINE → FAKTA UTAMA → KONTEKS\/DETAIL → PERKEMBANGAN/);
+  assert.match(news, /KARTU FAKTA/);
+  assert.match(news, /piramida terbalik/i);
+});
+
+test('patch runtime: non-default memakai AI composer', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = [
+    "const composer = require('./src/services/textInputComposer');",
+    "const calls = [];",
+    "composer.compose = async args => { calls.push(args); return { delegated: true, layout: args.contentLayout }; };",
+    "delete require.cache[require.resolve('./src/services/textInputVerbatimPatch')];",
+    "const patch = require('./src/services/textInputVerbatimPatch');",
+    "patch.install();",
+    "(async () => {",
+    "  const story = await composer.compose({ text: 'teks bebas yang cukup panjang', contentLayout: 'story' });",
+    "  process.stdout.write(JSON.stringify({ story, calls }));",
+    "})().catch(error => { console.error(error); process.exit(1); });"
+  ].join('\n');
+  const output = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.story.delegated, true);
+  assert.equal(parsed.story.layout, 'story');
+  assert.equal(parsed.calls[0].contentLayout, 'story');
+});
+
+test('Pakai URL menerima layout sebagai instruksi AI, bukan dekorasi', () => {
+  const facts = [
+    { sourceId: 'source-1', evidence: 'Informasi utama berasal dari sumber yang sama dan menjelaskan peristiwa secara faktual.' },
+    { sourceId: 'source-1', evidence: 'Konteks tambahan tersedia untuk menjelaskan perkembangan peristiwa tanpa spekulasi.' }
+  ];
+  const sources = [{ url: 'https://example.com/a', finalUrl: 'https://example.com/a', title: 'Sumber A', text: facts.map(item => item.evidence).join(' ') }];
+  const generated = {
+    topic: 'Topik Uji',
+    slides: [
+      { section: 'PEMBUKA CERITA', title: 'Pembuka', body: 'Isi awal yang cukup panjang untuk konteks cerita.', points: [] },
+      { section: 'SITUASI', title: 'Situasi', body: 'Isi situasi yang cukup panjang untuk konteks cerita.', points: [] },
+      { section: 'PERKEMBANGAN', title: 'Perkembangan', body: 'Isi perkembangan yang cukup panjang untuk konteks cerita.', points: [] },
+      { section: 'PENYELESAIAN', title: 'Penutup', body: 'Isi penutup yang cukup panjang untuk konteks cerita.', points: [] }
+    ]
+  };
+
+  const storyPrompt = sourceUrlFinalizer.finalizerPrompt({
+    generated, sources, facts, format: 'Fakta singkat', topic: 'Topik Uji', errors: [], contentLayout: 'story'
+  });
+  assert.match(storyPrompt, /TATA LETAK DIPILIH USER: "story"/);
+  assert.match(storyPrompt, /points harus \[\] atau maksimal 1 paragraf lanjutan/);
+  assert.match(storyPrompt, /jangan membuat daftar\/bullet/i);
+  assert.doesNotMatch(storyPrompt, /Setiap slide WAJIB berisi body \+ 3 bullet fakta berbeda/);
+
+  const defaultPrompt = sourceUrlFinalizer.finalizerPrompt({
+    generated: { ...generated, slides: generated.slides.map((slide, index) => ({ ...slide, section: ['PEMBUKA','FAKTA UTAMA','KONTEKS','KESIMPULAN'][index] })) },
+    sources, facts, format: 'Fakta singkat', topic: 'Topik Uji', errors: [], contentLayout: 'default'
+  });
+  assert.match(defaultPrompt, /bullet fakta berbeda/);
 });
