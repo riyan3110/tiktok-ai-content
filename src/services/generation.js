@@ -100,7 +100,7 @@ function assertFinalSourceContent(generated, sources) {
   return generated;
 }
 
-async function aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content }) {
+async function aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content, contentLayout = 'default' }) {
   const recoveryFormat = generated?.effectiveContentFormat || requestedFormat;
   return defaultSourceUrlFinalizer.rewriteAllSourcesWithAi({
     generated,
@@ -108,19 +108,20 @@ async function aiAllSourceRecovery({ generated, sources, topic, requestedFormat,
     topic,
     format: recoveryFormat,
     mode,
+    contentLayout,
     contentService: content
   });
 }
 
-async function aiThenDeterministicFallback({ generated, sources, topic, requestedFormat, mode, content }) {
-  return aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content });
+async function aiThenDeterministicFallback({ generated, sources, topic, requestedFormat, mode, content, contentLayout = 'default' }) {
+  return aiAllSourceRecovery({ generated, sources, topic, requestedFormat, mode, content, contentLayout });
 }
 
-async function finalizeSourceCandidate({ generated, sources, topic, requestedFormat, mode, content, repair = aiThenDeterministicFallback }) {
+async function finalizeSourceCandidate({ generated, sources, topic, requestedFormat, mode, content, contentLayout = 'default', repair = aiThenDeterministicFallback }) {
   const initialErrors = manualSourceFallback.validateSourceContent(generated, sources);
   if (!initialErrors.length) return generated;
 
-  const repaired = await repair({ generated, sources, topic, requestedFormat, mode, content, validationErrors: initialErrors });
+  const repaired = await repair({ generated, sources, topic, requestedFormat, mode, content, contentLayout, validationErrors: initialErrors });
   return assertFinalSourceContent(repaired, sources);
 }
 
@@ -185,7 +186,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
             topic: basis,
             requestedFormat: layoutContentFormat,
             mode,
-            content
+            content,
+            contentLayout: normalizedContentLayout
           });
         } else {
           const activeManualSourceRoleGuard = resolveManualSourceRoleGuard(manualSourceRoleGuard, content);
@@ -210,7 +212,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
                 topic: basis,
                 requestedFormat: recoveryFormat,
                 mode,
-                content
+                content,
+                contentLayout: normalizedContentLayout
               });
             }
           } else {
@@ -235,7 +238,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
             topic: sourceTopic,
             requestedFormat: recoveryFormat,
             mode,
-            content
+            content,
+            contentLayout: normalizedContentLayout
           });
         }
       }
@@ -255,7 +259,8 @@ async function generateAndSave({ db, mode = 'ai', requestedTopic, category = 'Ik
           topic: sourceTopic,
           requestedFormat: normalizedContentLayout === 'default' ? (generated?.effectiveContentFormat || contentFormat) : layoutContentFormat,
           mode,
-          content
+          content,
+          contentLayout: normalizedContentLayout
         });
       }
     }
