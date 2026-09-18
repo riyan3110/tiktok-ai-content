@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const config = require('../config');
+const { resolveContentLayout, contentFormatForLayout } = require('./contentLayouts');
 
 const MAX_FACTS = 36;
 const MAX_VERIFY_ATTEMPTS = 3;
@@ -656,6 +657,8 @@ function finalSourceGroundingErrors(autoSourceTopic, contentService, finalConten
 }
 
 async function generateFilteredContent({ content, previousTopics = [], options = {}, sources = [], client }) {
+  const contentLayout = resolveContentLayout(options.contentLayout);
+  const validationFormat = contentFormatForLayout(contentLayout, validationFormat || 'Fakta singkat');
   const autoSourceTopic = options.topicSource === 'ai'
     && options.useSources === true
     && !String(options.requestedTopic || '').trim();
@@ -670,7 +673,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
   }, client);
 
   if (!Array.isArray(base?.slides) || !base.slides.length) throw Object.assign(new Error('Konten normal tidak memiliki slide terstruktur untuk diverifikasi sumber.'), { status: 422 });
-  base = { ...base, slides: normalizeFactSections(base.slides, options.contentFormat) };
+  base = { ...base, slides: contentLayout === 'default' ? normalizeFactSections(base.slides, validationFormat) : base.slides };
 
   const topic = options.requestedTopic || options.mainTopic || base.topic || '';
   const bank = extractFactBank(sources, topic);
@@ -684,7 +687,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
       model: config.aiModel,
       messages: [
         { role: 'system', content: 'Anda memfilter fakta carousel. Sumber hanya untuk verifikasi fakta; jangan mengganti struktur konten.' },
-        { role: 'user', content: verifierPrompt({ base, draft, bank, topic, format: options.contentFormat, errors, autoSourceTopic }) }
+        { role: 'user', content: verifierPrompt({ base, draft, bank, topic, format: validationFormat, errors, autoSourceTopic }) }
       ],
       response_format: { type: 'json_object' }
     });
@@ -694,14 +697,14 @@ async function generateFilteredContent({ content, previousTopics = [], options =
 
     const checked = validateVerifiedContent(base, candidate, {
       contentService: content,
-      format: options.contentFormat,
+      format: validationFormat,
       manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
       sources,
       autoSourceTopic
     });
     if (!checked.errors.length) {
-      const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
-      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, options.contentFormat);
+      const semanticReady = pruneUnneededClaims(checked.content, validationFormat);
+      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, validationFormat);
       if (!semanticErrors.length) {
         const groundingErrors = finalSourceGroundingErrors(autoSourceTopic, content, checked.content, options, sources);
         if (!groundingErrors.length) return checked.content;
@@ -713,13 +716,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
       if (reduced) {
         const reducedChecked = validateVerifiedContent(base, { slides: reduced.slides }, {
           contentService: content,
-          format: options.contentFormat,
+          format: validationFormat,
           manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
           sources,
           autoSourceTopic
         });
         if (!reducedChecked.errors.length) {
-          const remainingSemanticErrors = await auditClaimSemantics(openai, reducedChecked.content, topic, options.contentFormat);
+          const remainingSemanticErrors = await auditClaimSemantics(openai, reducedChecked.content, topic, validationFormat);
           if (!remainingSemanticErrors.length) {
             const groundingErrors = finalSourceGroundingErrors(autoSourceTopic, content, reducedChecked.content, options, sources);
             if (!groundingErrors.length) return reducedChecked.content;
@@ -756,7 +759,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
       model: config.aiModel,
       messages: [
         { role: 'system', content: 'Anda melakukan recovery field secara ketat. Jangan mengarang dan jangan mengubah struktur carousel.' },
-        { role: 'user', content: safeRecoveryPrompt({ base, draft, bank, topic, format: options.contentFormat, errors, autoSourceTopic }) }
+        { role: 'user', content: safeRecoveryPrompt({ base, draft, bank, topic, format: validationFormat, errors, autoSourceTopic }) }
       ],
       response_format: { type: 'json_object' }
     });
@@ -767,7 +770,7 @@ async function generateFilteredContent({ content, previousTopics = [], options =
 
     const checked = validateVerifiedContent(base, candidate, {
       contentService: content,
-      format: options.contentFormat,
+      format: validationFormat,
       manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
       sources,
       autoSourceTopic
@@ -778,8 +781,8 @@ async function generateFilteredContent({ content, previousTopics = [], options =
       continue;
     }
 
-    const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
-    const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, options.contentFormat);
+    const semanticReady = pruneUnneededClaims(checked.content, validationFormat);
+    const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, validationFormat);
     if (!semanticErrors.length) {
       const groundingErrors = finalSourceGroundingErrors(autoSourceTopic, content, checked.content, options, sources);
       if (!groundingErrors.length) return checked.content;
@@ -792,13 +795,13 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     if (reduced) {
       const reducedChecked = validateVerifiedContent(base, { slides: reduced.slides }, {
         contentService: content,
-        format: options.contentFormat,
+        format: validationFormat,
         manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
         sources,
         autoSourceTopic
       });
       if (!reducedChecked.errors.length) {
-        const remainingSemanticErrors = await auditClaimSemantics(openai, pruneUnneededClaims(reducedChecked.content, options.contentFormat), topic, options.contentFormat);
+        const remainingSemanticErrors = await auditClaimSemantics(openai, pruneUnneededClaims(reducedChecked.content, validationFormat), topic, validationFormat);
         if (!remainingSemanticErrors.length) {
           const groundingErrors = finalSourceGroundingErrors(autoSourceTopic, content, reducedChecked.content, options, sources);
           if (!groundingErrors.length) return reducedChecked.content;
@@ -838,14 +841,14 @@ async function generateFilteredContent({ content, previousTopics = [], options =
     });
     const checked = validateVerifiedContent(base, { slides }, {
       contentService: content,
-      format: options.contentFormat,
+      format: validationFormat,
       manualTopic: options.topicSource === 'manual' ? options.requestedTopic : '',
       sources,
       autoSourceTopic
     });
     if (!checked.errors.length) {
-      const semanticReady = pruneUnneededClaims(checked.content, options.contentFormat);
-      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, options.contentFormat);
+      const semanticReady = pruneUnneededClaims(checked.content, validationFormat);
+      const semanticErrors = await auditClaimSemantics(openai, semanticReady, topic, validationFormat);
       if (!semanticErrors.length) {
         const groundingErrors = finalSourceGroundingErrors(autoSourceTopic, content, checked.content, options, sources);
         if (!groundingErrors.length) return checked.content;
