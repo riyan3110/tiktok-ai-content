@@ -586,7 +586,9 @@ function promptFor(text, requestedSlideCount, contentLayout = 'default') {
       ? 'PEMBUKA CERITA → SITUASI → PERKEMBANGAN → PENYELESAIAN. Slide 2–4 berupa paragraf naratif. points kosong atau maksimal satu PARAGRAF NARATIF lanjutan; BUKAN bullet/list.'
       : 'HEADLINE → FAKTA UTAMA → KONTEKS/DETAIL → PERKEMBANGAN. Slide 2–3: body ringkasan + 1–2 points sebagai KARTU FAKTA, bukan bullet. Slide 4 tanpa points. Gunakan piramida terbalik.';
 
-  return `TRANSFORM-ONLY. Susun TEXT_INPUT menjadi tepat 4 slide sesuai layout ${layout.toUpperCase()}.
+  return `TRANSFORM-ONLY.
+TATA LETAK DIPILIH USER: ${layout.toUpperCase()}
+Susun TEXT_INPUT menjadi tepat 4 slide sesuai tata letak tersebut.
 
 TEXT_INPUT:
 <<<
