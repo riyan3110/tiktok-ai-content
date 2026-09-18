@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { LAYOUTS, LAYOUT_IDS, resolveContentLayout, layoutInstruction, layoutRendererStyle } = require('../src/services/contentLayouts');
+const { LAYOUTS, LAYOUT_IDS, resolveContentLayout, layoutInstruction, layoutRendererStyle, contentFormatForLayout, layoutSections, validateLayoutSlides } = require('../src/services/contentLayouts');
+const { manualSourceSeed } = require('../src/services/generation');
 const { generateContent, validateSlides } = require('../src/services/content');
 const { buildStructuredLayout, buildSlideLayouts } = require('../src/services/images');
 
@@ -89,9 +90,9 @@ test('CERITA: instruksi naratif diteruskan tanpa nomor langkah', async () => {
     { section: 'PEMBUKA CERITA', title: 'Sering Gagal Isi Daya?', body: 'Port charger HP-nya penuh debu sampai kabelnya gagal terpasang.', points: [] },
     { section: 'SITUASI', title: 'Debu Masuk Tanpa Disadari', body: 'Setiap kali HP disimpan, debu menyusup ke port charger.', points: [] },
     { section: 'KEJADIAN', title: 'Pengisian Daya Melambat', body: 'Lambat laun pengisian daya makin lama sampai gagal.', points: [] },
-    { section: 'PEYELESAIAN', title: 'Dibersihkan dan Lancar', body: 'Setelah dibersihkan dengan alat aman, daya kembali terisi.', points: [] }
+    { section: 'PENYELESAIAN', title: 'Dibersihkan dan Lancar', body: 'Setelah dibersihkan dengan alat aman, daya kembali terisi.', points: [] }
   ] });
-  const output = await generateContent([], { topicSource: 'manual', requestedTopic: 'Membersihkan port charger HP', contentFormat: 'Fakta singkat', contentLayout: 'story' }, client);
+  const output = await generateContent([], { topicSource: 'manual', requestedTopic: 'Membersihkan port charger HP', contentFormat: 'Tutorial langkah', contentLayout: 'story' }, client);
   const prompt = requests[0].messages[1].content;
   assert.match(prompt, /TATA LETAK CERITA/);
   assert.match(prompt, /menyambung dari slide ke slide/);
@@ -113,7 +114,7 @@ test('BERITA: instruksi headline + fakta + detail diteruskan', async () => {
     { section: 'DETAIL', title: 'Cek dan Bersihkan', body: 'Pemilik bisa memeriksa lubang port charger sebelum ke tukang servis.', points: [] },
     { section: 'PERKEMBANGAN', title: 'Kapan Harus Servis', body: 'Jika pengisian tetap gagal setelah dibersihkan, pin charger perlu diganti.', points: [] }
   ] });
-  const output = await generateContent([], { topicSource: 'manual', requestedTopic: 'Membersihkan port charger HP', contentFormat: 'Fakta singkat', contentLayout: 'news' }, client);
+  const output = await generateContent([], { topicSource: 'manual', requestedTopic: 'Membersihkan port charger HP', contentFormat: 'Tutorial langkah', contentLayout: 'news' }, client);
   const prompt = requests[0].messages[1].content;
   assert.match(prompt, /TATA LETAK BERITA/);
   assert.match(prompt, /HEADLINE utama/);
@@ -159,11 +160,31 @@ test('UI: pemilih tata letak memakai empat tombol dan default aktif', () => {
   assert.match(css, /grid-template-columns:repeat\(2,1fr\)/, 'mobile memakai grid 2x2');
 });
 
-test('validator: struktur layout baru tetap lolos validator format lama', () => {
-  assert.deepEqual(validateSlides(BASE_RESULT.slides, { format: 'Tutorial langkah' }), []);
-  assert.equal(generateContentPlaceholder(), undefined);
+test('layout override: format legacy tersembunyi tidak memaksa Cerita/Berita menjadi tutorial', () => {
+  assert.equal(contentFormatForLayout('default', 'Masalah dan solusi'), 'Masalah dan solusi');
+  assert.equal(contentFormatForLayout('tutorial', 'Fakta singkat'), 'Tutorial langkah');
+  assert.equal(contentFormatForLayout('story', 'Tutorial langkah'), 'Fakta singkat');
+  assert.equal(contentFormatForLayout('news', 'Tutorial langkah'), 'Fakta singkat');
+
+  assert.deepEqual(layoutSections('story', 4), ['PEMBUKA CERITA', 'SITUASI', 'PERKEMBANGAN', 'PENYELESAIAN']);
+  assert.deepEqual(layoutSections('news', 4), ['HEADLINE', 'FAKTA UTAMA', 'KONTEKS/DETAIL', 'PERKEMBANGAN']);
+  assert.deepEqual(validateLayoutSlides('story', [
+    { section: 'PEMBUKA CERITA', title: 'Awal', body: 'Situasi dimulai.', points: [] },
+    { section: 'SITUASI', title: 'Situasi', body: 'Konteks berkembang.', points: [] },
+    { section: 'PERKEMBANGAN', title: 'Perkembangan', body: 'Kejadian bergerak.', points: [] },
+    { section: 'PENYELESAIAN', title: 'Akhir', body: 'Cerita selesai.', points: [] }
+  ]), []);
 });
-function generateContentPlaceholder() { return undefined; }
+
+test('source seed mengikuti tata letak sebelum URL finalizer menulis ulang copy', () => {
+  assert.deepEqual(manualSourceSeed('Topik', 'Fakta singkat', 'story').slides.map(slide => slide.section), ['PEMBUKA CERITA', 'SITUASI', 'PERKEMBANGAN', 'PENYELESAIAN']);
+  assert.deepEqual(manualSourceSeed('Topik', 'Fakta singkat', 'news').slides.map(slide => slide.section), ['HEADLINE', 'FAKTA UTAMA', 'KONTEKS/DETAIL', 'PERKEMBANGAN']);
+  assert.deepEqual(manualSourceSeed('Topik', 'Tutorial langkah', 'tutorial').slides.map(slide => slide.section), ['PEMBUKA', 'LANGKAH 1', 'LANGKAH 2', 'HASIL/PENUTUP']);
+});
+
+test('validator legacy Default tetap tidak berubah', () => {
+  assert.deepEqual(validateSlides(BASE_RESULT.slides, { format: 'Tutorial langkah' }), []);
+});
 
 function outputLayouts(slides, layout) {
   return buildSlideLayouts({ slides, contentFormat: 'Tutorial langkah', contentLayout: layout, verificationStatus: undefined });
