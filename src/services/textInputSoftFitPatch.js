@@ -171,8 +171,13 @@ async function createTextInputSlides(id, content) {
         ? (prepared.background.slideBackgrounds?.[index] || prepared.background)
         : prepared.background;
       let svg = images.renderLayout(layouts[index], index + 1, layouts.length, prepared.watermark, background);
-      if (index === 0) svg = shiftContentText(svg, -TEXT_INPUT_HOOK_RAISE);
-      else svg = shiftContentText(svg, lowerShiftForLayout(layouts[index]));
+      // Custom templates own their vertical composition. Preserve the legacy
+      // text-input shift only for Default so Tutorial/Cerita/Berita decorations
+      // and text stay aligned.
+      if (layouts[index].layoutStyle === 'default') {
+        if (index === 0) svg = shiftContentText(svg, -TEXT_INPUT_HOOK_RAISE);
+        else svg = shiftContentText(svg, lowerShiftForLayout(layouts[index]));
+      }
       svg = emphasizeRoleText(svg, index, layouts.length);
       await sharp(Buffer.from(svg))
         .resize(images.WIDTH, images.HEIGHT)
