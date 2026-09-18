@@ -242,7 +242,15 @@ function flattenPastedSlideCopy(slides) {
   return slides.slice(1).flatMap(slide => [slide.title, slide.body, ...slide.points]).filter(Boolean).join('\n');
 }
 
-async function composeVerbatim({ text, contentLayout = 'default' } = {}) {
+async function composeVerbatim({ text, client, contentLayout = 'default' } = {}) {
+  const layout = resolveContentLayout(contentLayout);
+  // Default remains copy-locked exactly as before. When the user explicitly
+  // chooses Tutorial/Cerita/Berita, hand the pasted text to the original AI
+  // composer so the selected button changes the writing structure as well as
+  // the renderer. The original composer is transform-only and cannot add facts.
+  if (layout !== 'default' && typeof originalCompose === 'function') {
+    return originalCompose({ text, client, contentLayout: layout });
+  }
   const parsed = parseStructuredText(text);
   const [hook, fact, detail, closing] = parsed.slides;
   return {
@@ -264,7 +272,7 @@ async function composeVerbatim({ text, contentLayout = 'default' } = {}) {
     hook_pattern: 'text-input-verbatim',
     verificationStatus: 'text_input_only',
     unsupportedClaims: [],
-    contentLayout: resolveContentLayout(contentLayout),
+    contentLayout: layout,
     slides: parsed.slides
   };
 }
