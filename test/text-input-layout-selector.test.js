@@ -215,3 +215,34 @@ test('Pakai URL menerima layout sebagai instruksi AI, bukan dekorasi', () => {
   });
   assert.match(defaultPrompt, /bullet fakta berbeda/);
 });
+
+
+test('custom layout Generate dari Teks hanya memanggil model satu kali', async () => {
+  let calls = 0;
+  const source = 'Kegagalan dapat mengambil hasil yang diharapkan, tetapi masih ada ruang untuk bertindak. Perhatian dapat diarahkan pada hal yang masih bisa dilakukan setelah hasil mengecewakan. Membedakan yang sudah terjadi dari tindakan berikutnya membantu menyusun arah.';
+  const payload = {
+    topic: 'Ruang Bertindak Setelah Kegagalan',
+    caption: 'Kegagalan dapat mengambil hasil yang diharapkan, tetapi masih ada ruang untuk bertindak setelahnya. Perhatian dapat diarahkan pada hal yang masih bisa dilakukan tanpa menyangkal hasil yang sudah terjadi.',
+    hashtags: ['#Kegagalan', '#Tindakan', '#Pilihan'],
+    slides: [
+      { section: 'PEMBUKA CERITA', title: 'Hasil Gagal Bukan Akhir Semua Pilihan', body: '', points: [] },
+      { section: 'SITUASI', title: 'Hasil Tidak Sesuai Harapan', body: 'Kegagalan dapat mengambil hasil yang diharapkan, tetapi masih ada ruang untuk bertindak.', points: [] },
+      { section: 'PERKEMBANGAN', title: 'Perhatian Kembali pada Tindakan', body: 'Perhatian dapat diarahkan pada hal yang masih bisa dilakukan setelah hasil mengecewakan.', points: [] },
+      { section: 'PENYELESAIAN', title: 'Arah Masih Dapat Disusun', body: 'Membedakan yang sudah terjadi dari tindakan berikutnya membantu menyusun arah.', points: [] }
+    ]
+  };
+  const client = {
+    chat: {
+      completions: {
+        create: async () => {
+          calls += 1;
+          return { choices: [{ message: { content: JSON.stringify(payload) } }] };
+        }
+      }
+    }
+  };
+  const result = await textInputComposer.compose({ text: source, client, contentLayout: 'story' });
+  assert.equal(calls, 1);
+  assert.equal(result.contentLayout, 'story');
+  assert.equal(result.slides.length, 4);
+});
