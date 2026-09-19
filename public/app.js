@@ -1,11 +1,10 @@
-const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
 const root = document.documentElement;
 const savedTheme = localStorage.getItem('ai-ads-lab-theme');
 root.dataset.theme = savedTheme === 'light' ? 'light' : 'dark';
 const themeToggle = document.querySelector('#theme-toggle');
 const syncThemeButton = () => {
   const light = root.dataset.theme === 'light';
-  themeToggle.innerHTML = `<span aria-hidden="true">${light ? ic('moon') : ic('sun')}</span>`;
+  themeToggle.innerHTML = `<span aria-hidden="true">${light ? '☾' : '☀'}</span>`;
   themeToggle.setAttribute('aria-label', light ? 'Gunakan tema gelap' : 'Gunakan tema terang');
 };
 themeToggle.onclick = () => {
@@ -50,30 +49,12 @@ document.addEventListener('touchend', event => {
 setMenu(drawerMedia.matches && localStorage.getItem(drawerStorageKey) === 'true', false);
 document.querySelectorAll('.side-nav a').forEach(link => link.onclick = () => { document.querySelectorAll('.side-nav a').forEach(item => item.classList.remove('active')); link.classList.add('active'); closeMenu(); });
 const loadingState = label => `<div class="loading-state"><span class="spinner" aria-hidden="true"></span><p>${label}</p></div>`;
-const emptyState = (title, detail) => `<div class="empty-state"><span class="state-icon" aria-hidden="true">${ic('sparkles')}</span><strong>${title}</strong><p>${detail}</p></div>`;
-const errorState = message => `<div class="error-state"><span class="state-icon" aria-hidden="true">${ic('circle-alert')}</span><strong>Data gagal dimuat</strong><p>${escapeHtml(message)}</p></div>`;
+const emptyState = (title, detail) => `<div class="empty-state"><span class="state-icon" aria-hidden="true">✦</span><strong>${title}</strong><p>${detail}</p></div>`;
+const errorState = message => `<div class="error-state"><span class="state-icon" aria-hidden="true">!</span><strong>Data gagal dimuat</strong><p>${escapeHtml(message)}</p></div>`;
 
 document.querySelector('#history').innerHTML = loadingState('Memuat riwayat…');
 let current;
 const $ = (s) => document.querySelector(s);
-
-// Content layout selector: default keeps the legacy structure untouched, and
-// switching layouts only affects the next generation, never existing input.
-let selectedLayout = 'default';
-const layoutButtons = () => [...document.querySelectorAll('#layout-picker .layout-option')];
-function initLayoutPicker() {
-  layoutButtons().forEach((button) => {
-    button.addEventListener('click', () => {
-      selectedLayout = button.dataset.layout || 'default';
-      layoutButtons().forEach((other) => {
-        const active = other === button;
-        other.classList.toggle('active', active);
-        other.setAttribute('aria-checked', active ? 'true' : 'false');
-      });
-    });
-  });
-}
-initLayoutPicker();
 async function api(url, options) {
   const r = await fetch(url, options);
   const data = await r.json().catch(() => ({}));
@@ -126,7 +107,7 @@ $('#slide-preview').onclick = event => { if (event.target === $('#slide-preview'
 async function history() {
   const rows = await api('/history');
   $('#delete-all').classList.toggle('hidden', !rows.length);
-  $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><div class="history-content"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span>${x.trend_reference_id ? ` <span class="badge trend-badge">Tren Manual</span> ${x.trend_keywords_used.map(k => `<span class="badge">${escapeHtml(k)}</span>`).join('')} <small>Referensi ${new Date(x.created_at).toLocaleDateString('id-ID')}</small>` : ''}</div><button class="delete-item danger" aria-label="Hapus ${escapeHtml(x.topic)}">${ic('trash-2')} Hapus</button></article>`).join('') : emptyState('Belum ada konten', 'Konten yang Anda buat akan tersimpan dan tampil di sini.');
+  $('#history').innerHTML = rows.length ? rows.map(x => `<article class="history-item" data-id="${x.id}"><div class="history-content"><b>${escapeHtml(x.topic)}</b><p>${escapeHtml(x.caption)}</p><span class="badge source-${escapeHtml(x.topic_source)}">${sourceLabels[x.topic_source] || 'AI'}</span> <span class="badge">${escapeHtml(x.content_category)}</span> <span class="badge">${escapeHtml(x.content_format)}</span> <span class="badge">${escapeHtml(x.publish_status)}</span>${x.trend_reference_id ? ` <span class="badge trend-badge">Tren Manual</span> ${x.trend_keywords_used.map(k => `<span class="badge">${escapeHtml(k)}</span>`).join('')} <small>Referensi ${new Date(x.created_at).toLocaleDateString('id-ID')}</small>` : ''}</div><button class="delete-item danger" aria-label="Hapus ${escapeHtml(x.topic)}">🗑 Hapus</button></article>`).join('') : emptyState('Belum ada konten', 'Konten yang Anda buat akan tersimpan dan tampil di sini.');
   document.querySelectorAll('.history-content').forEach((el, i) => { el.onclick = () => show(rows[i]); });
   document.querySelectorAll('.delete-item').forEach((button, i) => { button.onclick = async () => {
     if (!window.confirm('Hapus konten ini beserta seluruh gambar slide-nya?')) return;
@@ -214,32 +195,11 @@ function cleanSourceUrls() { const seen = new Set(); return sourceUrls.map(v => 
 function validateSourceUrls() { $('#source-url-error').textContent = ''; if (!sourceModeEnabled()) return []; const urls = cleanSourceUrls(); if (!urls.length) { $('#source-url-error').textContent = 'Minimal 1 URL sumber wajib diisi.'; return null; } if (urls.length > 3) { $('#source-url-error').textContent = 'Maksimal 3 URL sumber.'; return null; } for (const url of urls) { try { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { $('#source-url-error').textContent = `URL tidak valid: ${url}`; return null; } } return urls; }
 function renderSourcePreview(item) { const meta = item.render_source || {}; const sources = meta.sources || []; const host = $('#source-preview'); host.classList.toggle('hidden', !sources.length); if (!sources.length) return; const status = meta.verificationStatus === 'needs_review' ? 'Perlu ditinjau — sumber tidak cukup atau saling berbeda' : 'Berbasis sumber — tetap periksa sebelum dipublikasikan'; host.innerHTML = `<h3>Dibuat berdasarkan sumber</h3><p>${status} · ${sources.length} sumber</p><small>Klaim faktual diperiksa terhadap kutipan sumber.</small><ul>${sources.map(src => { let domain = src.finalUrl || src.url; try { domain = new URL(domain).hostname; } catch {} return `<li><a href="${escapeHtml(src.finalUrl || src.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(src.title || domain)}</a><br><small>${escapeHtml(domain)} · diambil ${escapeHtml(new Date(src.fetchedAt).toLocaleString('id-ID'))}</small></li>`; }).join('')}</ul>`; }
 let sourceUrls = [''];
-function ensureManualCarouselInput() {
-  const field = $('#manual-topic-field');
-  const current = $('#manual-topic');
-  if (!field || !current) return current;
-  let input = current;
-  if (current.tagName !== 'TEXTAREA') {
-    input = document.createElement('textarea');
-    input.id = 'manual-topic';
-    input.value = current.value || '';
-    input.name = current.name || '';
-    input.autocomplete = current.autocomplete || 'off';
-    current.replaceWith(input);
-  }
-  input.rows = 6;
-  input.maxLength = 20000;
-  input.placeholder = 'Tempel text content di sini';
-  input.setAttribute('aria-label', 'Teks carousel siap tempel');
-  field.replaceChildren(document.createTextNode('Teks carousel siap tempel'), input);
-  return input;
-}
-ensureManualCarouselInput();
 document.querySelectorAll('input[name="topic-source"]').forEach((input) => input.onchange = () => { const manual = input.value === 'manual' && input.checked; $('#manual-topic-wrap').classList.toggle('hidden', !manual); renderSourceUrlFields(); });
 document.querySelectorAll('input[name="source-mode"]').forEach(input => input.onchange = renderSourceUrlFields); $('#add-source-url').onclick = () => { if (sourceUrls.length < 3) sourceUrls.push(''); renderSourceUrlFields(); }; renderSourceUrlFields();
 let lastGenerationRequest;
 let studioAssets = [];
-function renderStudioAssets() { $('#studio-assets').innerHTML = studioAssets.length ? studioAssets.map(asset => `<span class="selected-asset"><img src="${escapeHtml(asset.previewUrl)}" alt=""><b>${escapeHtml(asset.name)}</b><button type="button" data-remove-studio-asset="${escapeHtml(asset.id)}" aria-label="Hapus asset">${ic('x')}</button></span>`).join('') : '<small>No reference assets attached</small>'; document.querySelectorAll('[data-remove-studio-asset]').forEach(button => button.onclick = () => { studioAssets = studioAssets.filter(asset => asset.id !== button.dataset.removeStudioAsset); renderStudioAssets(); }); }
+function renderStudioAssets() { $('#studio-assets').innerHTML = studioAssets.length ? studioAssets.map(asset => `<span class="selected-asset"><img src="${escapeHtml(asset.previewUrl)}" alt=""><b>${escapeHtml(asset.name)}</b><button type="button" data-remove-studio-asset="${escapeHtml(asset.id)}">×</button></span>`).join('') : '<small>No reference assets attached</small>'; document.querySelectorAll('[data-remove-studio-asset]').forEach(button => button.onclick = () => { studioAssets = studioAssets.filter(asset => asset.id !== button.dataset.removeStudioAsset); renderStudioAssets(); }); }
 $('#studio-select-assets').onclick = async () => { const chosen = await window.AssetManager.select({ selectedIds: studioAssets.map(asset => asset.id), multiple: true }); if (chosen) { studioAssets = chosen; renderStudioAssets(); } };
 renderStudioAssets();
 const BACKGROUND_DRAFT_KEY = 'content-studio-carousel-background';
@@ -289,7 +249,7 @@ async function generate(request) {
     $('#message').textContent = error.message; $('#retry-generate').classList.remove('hidden');
   }
 }
-$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const requestedTopic = topicSource === 'manual' ? $('#manual-topic').value : ''; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; const isManualWithoutUrl = topicSource === 'manual' && !sourceModeEnabled(); if (!isManualWithoutUrl && contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); const useSources = (topicSource === 'manual' || topicSource === 'ai') && sourceModeEnabled(); const sourceUrlsPayload = useSources ? validateSourceUrls() : []; if (sourceUrlsPayload === null) return; await generate({ topicSource, requestedTopic, useSources, sourceUrls: sourceUrlsPayload, contentCategory, customCategory, contentFormat, assetIds: studioAssets.map(asset => asset.id), useTrendReference: $('#use-trend-reference').checked, contentLayout: selectedLayout, forceNewAngle: false, watermarkEnabled: watermarkEnabled(), background: carouselBackground }); };
+$('#generate').onclick = async () => { const topicSource = document.querySelector('input[name="topic-source"]:checked').value; const isManualWithoutUrl = topicSource === 'manual' && !sourceModeEnabled(); const requestedTopic = topicSource === 'manual' ? (isManualWithoutUrl ? $('#manual-text-input').value : $('#manual-topic').value) : ''; const contentCategory = $('#content-category').value; const customCategory = $('#custom-category').value; const contentFormat = $('#content-format').value; if (!isManualWithoutUrl && contentCategory === 'Custom' && !customCategory.trim()) return void ($('#message').textContent = 'Kategori custom wajib diisi'); if (topicSource === 'manual' && !requestedTopic.trim()) return void ($('#message').textContent = 'Topik manual wajib diisi'); const useSources = (topicSource === 'manual' || topicSource === 'ai') && sourceModeEnabled(); const sourceUrlsPayload = useSources ? validateSourceUrls() : []; if (sourceUrlsPayload === null) return; await generate({ topicSource, requestedTopic, useSources, sourceUrls: sourceUrlsPayload, contentCategory, customCategory, contentFormat, assetIds: studioAssets.map(asset => asset.id), useTrendReference: $('#use-trend-reference').checked, forceNewAngle: false, watermarkEnabled: watermarkEnabled(), background: carouselBackground }); };
 $('#retry-generate').onclick = () => generate({ ...lastGenerationRequest, forceNewAngle: true });
 function renderPublishStatus(data, message = '') {
   const details = [`Status: ${data.status}`, `Fail reason: ${data.fail_reason || '-'}`, `Downloaded bytes: ${data.downloaded_bytes ?? '-'}`];
