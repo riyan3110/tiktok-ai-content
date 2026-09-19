@@ -1,7 +1,6 @@
 const path = require('node:path');
 
 const connector = require('../ai/connector');
-const PROVIDER_NAMES = Object.freeze({ '9router': '9Router', orcarouter: 'OrcaRouter', 'google-flow': 'Google Flow', 'google-veo': 'Google Veo', 'google-imagen': 'Google Imagen', 'google-gemini': 'Google Gemini', 'openai-images': 'OpenAI Images', vidu: 'Vidu', zark: 'Zark', nanobanana: 'NanoBanana', omni: 'Omni' });
 
 const decodeDataUrl = value => {
   const match = String(value || '').match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
@@ -13,7 +12,14 @@ const wait = milliseconds => new Promise(resolve => setTimeout(resolve, millisec
 
 class ContentStudioService {
   constructor({ db, storage, fetcher = fetch } = {}) { this.db = db; this.storage = storage; this.fetcher = fetcher; }
-  providers() { const rows = connector.configuredProviders(this.db); return rows.map(row => ({ id: row.provider, name: PROVIDER_NAMES[row.provider], types: connector.CAPABILITIES[row.provider], defaultCapabilities: connector.defaultCapabilities(this.db, row.provider), models: { text: row.text_model || row.default_model, image: row.image_model || row.default_model, video: row.video_model || row.default_model } })); }
+  providers() {
+    return connector.configuredProviders(this.db).map(row => ({
+      id: row.provider, name: row.name, types: row.roles,
+      defaultCapabilities: row.defaults,
+      models: { text: row.text_model, image: row.image_model }
+    }));
+  }
+
   generatedAssetIndex() {
     const index = new Map();
     for (const asset of this.storage.repository.list()) {
@@ -43,7 +49,7 @@ class ContentStudioService {
     return { metadata: nextMetadata, media: nextMedia };
   }
   list(query = {}) {
-    const rows = this.db.prepare('SELECT * FROM ai_generations ORDER BY created_at DESC LIMIT 500').all();
+    const rows = this.db.prepare("SELECT * FROM ai_generations WHERE media_type IN ('image','video') ORDER BY created_at DESC LIMIT 500").all();
     const generatedByJob = this.generatedAssetIndex();
     const search = String(query.search || '').trim().toLowerCase(); const type = String(query.type || ''); const status = String(query.status || ''); const provider = String(query.provider || '');
     return rows.map(row => this.serialize(row, generatedByJob)).filter(item => (!search || `${item.prompt} ${item.provider} ${item.model}`.toLowerCase().includes(search)) && (!type || item.media_type === type) && (!status || item.status === status) && (!provider || item.provider === provider));
@@ -54,7 +60,7 @@ class ContentStudioService {
     const asset = this.resolveResultAsset(row, metadata, media, generatedByJob);
     ({ metadata, media } = this.linkResultAsset(row, metadata, media, asset));
     const status = ['Queued', 'Completed', 'Failed', 'Cancelled'].includes(row.status) ? row.status : 'Running';
-    const resultMissing = row.status === 'Completed' && !asset;
+    const resultMissing = ['image','video'].includes(row.media_type) && row.status === 'Completed' && !asset;
     const resultUrl = resultMissing ? '' : (row.media_type === 'image' && asset ? this.previewUrl(asset.id) : metadata.resultUrl || media[0]?.url || '');
     return { ...row, status, provider_stage: row.status, assets: JSON.parse(row.assets || '[]'), media, metadata, negative_prompt: metadata.negativePrompt || '', resolution: metadata.resolution || '', progress: this.progress(row.status), asset_id: asset?.id || null, file_size: metadata.fileSize || asset?.size || 0, result_url: resultUrl, result_missing: resultMissing, error_type: resultMissing ? (row.error_type || 'ResultAssetMissing') : row.error_type, error_code: resultMissing ? (row.error_code || 'RESULT_ASSET_MISSING') : row.error_code, error_message: resultMissing ? (row.error_message || 'File hasil tidak ditemukan di Asset Manager.') : row.error_message };
   }
@@ -71,7 +77,7 @@ class ContentStudioService {
     if (inline?.data?.length) return inline;
     if (!source.url) return null;
 
-    const attempts = item.provider === 'nanobanana' ? 4 : 1;
+    const attempts = 4;
     let lastError = null;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
@@ -101,7 +107,7 @@ class ContentStudioService {
     if (!item.media.length) throw Object.assign(new Error('Provider selesai tetapi URL/file hasil belum tersedia'), { code: 'RESULT_MEDIA_MISSING' });
 
     this.db.prepare("UPDATE ai_generations SET status='Downloading media',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='Completed'").run(id);
-    const orcaImage = item.provider === 'orcarouter' && item.media_type === 'image';
+    const orcaImage = item.media_type === 'image';
     const source = item.media[0];
     const payload = await this.fetchResultPayload(item, source, orcaImage);
     if (!payload?.data?.length) throw Object.assign(new Error('File hasil provider kosong'), { code: 'EMPTY_PROVIDER_RESULT' });
@@ -123,4 +129,4 @@ class ContentStudioService {
   async download(id) { const item = this.get(id); if (!item?.asset_id) return null; const asset = this.storage.repository.get(item.asset_id); if (!asset) return null; const file = await this.storage.preview(asset); return { ...file, name: path.basename(asset.name) }; }
 }
 
-module.exports = { ContentStudioService, PROVIDER_NAMES };
+module.exports = { ContentStudioService };

@@ -224,7 +224,7 @@ async function compose({ options = {}, sources = [], discovery = null, client } 
     });
   }
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let writerRaw;
   try {
     writerRaw = await callJson(openai, 'Anda penulis carousel Indonesia. Jaga cakupan dua entitas tetap seimbang dan buang side-note artikel.', writerPrompt({ topic, format, packets }));

@@ -203,7 +203,13 @@ function frame(inner, number, total, watermark, background = {}) {
 
 function buildStructuredLayout(slide, index, total, format = '', options = {}) {
   const textInputOnly = options.textInputOnly === true;
-  const tutorial = !textInputOnly && (/tutorial/i.test(format) || /LANGKAH/i.test(slide.section));
+  const layoutStyle = options.layoutStyle === 'tutorial' || options.layoutStyle === 'story' || options.layoutStyle === 'news' ? options.layoutStyle : 'default';
+  // Generate-dari-Teks normally suppresses legacy tutorial numbering, but an
+  // explicit Tutorial layout selection must still be visible in the renderer.
+  const tutorial = layoutStyle === 'tutorial' || (!textInputOnly && (/tutorial/i.test(format) || /LANGKAH/i.test(slide.section)));
+  const tutorialNumbers = tutorial && layoutStyle === 'tutorial';
+  const storyLabel = layoutStyle === 'story';
+  const newsLabel = layoutStyle === 'news';
   const titleFit = slide.title ? autoFitText(slide.title, { maxWidth: SAFE_WIDTH, maxHeight: 250, maxLines: 3, startSize: 76, minSize: 46, lineHeight: 1.08 }) : null;
   const bodyFit = slide.body ? autoFitText(slide.body, { maxWidth: SAFE_WIDTH, maxHeight: 220, maxLines: 4, startSize: 42, minSize: 34, lineHeight: 1.24 }) : null;
   if (slide.title && !titleFit) throw new Error('Judul tidak muat dalam maksimal tiga baris.');
@@ -214,19 +220,30 @@ function buildStructuredLayout(slide, index, total, format = '', options = {}) {
     pointSpacing = Math.max(12, pointSpacing - 1);
     points = slide.points.slice(0, 3).map((point, pointIndex) => {
       const clean = String(point).replace(textInputOnly ? /^(?:[-•*]\s*|\d+[.)]\s+)/ : /^[-•*\d.)\s]+/, '').trim();
-      const prefix = tutorial ? `${pointIndex + 1}.` : '•';
+      const prefix = (tutorial && !storyLabel) ? `${pointIndex + 1}.` : '•';
       return { text: `${prefix} ${clean}`, lines: wrapText(`${prefix} ${clean}`, SAFE_WIDTH, pointSize, false) };
     });
     lineCount = (titleFit?.lines.length || 0) + (bodyFit?.lines.length || 0) + points.reduce((sum, point) => sum + point.lines.length, 0);
     height = (titleFit?.height || 0) + (bodyFit ? bodyFit.height + pointSpacing : 0) + points.reduce((sum, point) => sum + point.lines.length * pointSize * 1.22 + pointSpacing, 0);
   } while ((lineCount > 9 || height > CONTENT_BOTTOM - CONTENT_TOP) && pointSize > 32);
   return {
-    type: 'structured', title: slide.section || `SLIDE ${index + 1}`,
+    type: 'structured', title: structuredSectionLabel(slide, index, layoutStyle), layoutStyle,
     content: { title: slide.title, body: slide.body, points },
     fit: { kind: height < 320 ? 'short' : height < 560 ? 'medium' : 'long', height, lineCount, titleFit, bodyFit, pointSize, pointSpacing, lines: [] },
     isOnlyTitle: Boolean(slide.title && !slide.body && !points.length),
     textInputHook: Boolean(textInputOnly && index === 0 && slide.title && !slide.body && !points.length), total
   };
+}
+
+// Section labels are derived from the AI section when present so stored
+// content keeps its original labels; layout styles only supply friendly
+// fallbacks when the model omitted the section.
+function structuredSectionLabel(slide, index, layoutStyle) {
+  if (slide.section) return slide.section;
+  if (layoutStyle === 'story') return index === 0 ? 'PEMBUKA CERITA' : 'ALUR CERITA';
+  if (layoutStyle === 'news') return index === 0 ? 'HEADLINE' : 'FAKTA & DETAIL';
+  if (layoutStyle === 'tutorial') return index === 0 ? 'PEMBUKA TUTORIAL' : 'LANGKAH';
+  return `SLIDE ${index + 1}`;
 }
 
 function wordChunks(value, maximum) {
@@ -266,12 +283,14 @@ function fitStructuredSlides(input, format = '', options = {}) {
   return canKeepOriginal ? normalized : repairStructuredSlides(input);
 }
 
+const { resolveContentLayout, layoutRendererStyle } = require('./contentLayouts');
+
 function buildSlideLayouts(content) {
   if (Array.isArray(content.slides)) {
     // Generate dari Teks has its own fixed carousel structure. Keep its hook
     // and bullets independent from the UI format selector without changing URL mode.
     const textInputOnly = content.verificationStatus === 'text_input_only';
-    const layoutOptions = { textInputOnly };
+    const layoutOptions = { textInputOnly, layoutStyle: layoutRendererStyle(content.contentLayout) };
     // Do not summarize or bulletize copy that already fits the native canvas.
     const slides = fitStructuredSlides(content.slides, content.contentFormat, layoutOptions);
     // Source-filtered copy has already passed its own evidence-aware validation.
@@ -459,6 +478,201 @@ function validateVisualLayout(layout, { slideIndex } = {}) {
   return true;
 }
 
+
+function positionedText(lines, { x = SAFE_AREA.left, y, fontSize, lineHeight = 1.2, weight = 700, fill = 'white', anchor = 'start', italic = false }) {
+  return `<text x="${x}" y="${y}" fill="${fill}" font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="${weight}" text-anchor="${anchor}"${italic ? ' font-style="italic"' : ''} filter="url(#shadow)">${lines.map((line, index) => `<tspan x="${x}" dy="${index ? fontSize * lineHeight : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`;
+}
+
+function cleanLayoutPointText(point) {
+  return String(point?.text || '')
+    .replace(/^(?:[-•*]\s*|\d+[.)]\s*)/, '')
+    .trim();
+}
+
+function fitVariantText(text, maxWidth, maxHeight, startSize, minSize, maxLines, bold = false) {
+  const value = String(text || '').trim();
+  if (!value) return null;
+  for (let size = startSize; size >= minSize; size -= 2) {
+    const lines = wrapText(value, maxWidth, size, bold);
+    const lineHeight = 1.18;
+    const height = lines.length * size * lineHeight;
+    if (lines.length <= maxLines && height <= maxHeight) return { lines, fontSize: size, lineHeight, height };
+  }
+  const fallbackLines = wrapText(value, maxWidth, minSize, bold).slice(0, maxLines);
+  return { lines: fallbackLines, fontSize: minSize, lineHeight: 1.18, height: fallbackLines.length * minSize * 1.18 };
+}
+
+function renderStructuredVariant(layout) {
+  const style = layout.layoutStyle || 'default';
+  if (style === 'default') return '';
+
+  const accent = style === 'tutorial' ? '#d97706' : style === 'story' ? '#7c3aed' : '#dc2626';
+  const titleText = String(layout.content?.title || '').trim();
+  const bodyText = String(layout.content?.body || '').trim();
+  const pointTexts = (layout.content?.points || []).map(cleanLayoutPointText).filter(Boolean);
+  const section = String(layout.title || '').trim();
+  const parts = [`<g data-layout="${style}">`];
+
+  if (style === 'tutorial') {
+    const stepMatch = section.match(/LANGKAH\s*(\d+)/i);
+    const isResultSlide = /HASIL|PENUTUP/i.test(section);
+    const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (isResultSlide ? 'HASIL' : 'TUTORIAL');
+    const cardRight = 70;
+    const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+    const titleTextWidth = isResultSlide ? cardWidth - 260 : cardWidth - 220;
+    const bodyTextWidth = isResultSlide ? cardWidth - 200 : cardWidth - 130;
+    const actionTextWidth = cardWidth - 210;
+
+    parts.push(
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">TUTORIAL</text>`,
+      `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(stepLabel)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
+    );
+
+    let y = CONTENT_TOP + 90;
+    const titleFit = fitVariantText(titleText, titleTextWidth, 340, isResultSlide ? 66 : 72, 44, 4, true);
+    if (titleFit) {
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
+    }
+
+    const bodyFit = fitVariantText(bodyText, bodyTextWidth, isResultSlide ? 270 : 230, isResultSlide ? 36 : 40, 30, isResultSlide ? 6 : 5, false);
+    if (bodyFit) {
+      const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.26;
+      const bodyBoxHeight = Math.max(isResultSlide ? 180 : 150, bodyHeight + (isResultSlide ? 104 : 86));
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
+        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 500, fill: '#f3e8ff' })
+      );
+      y += bodyBoxHeight + 18;
+    }
+
+    pointTexts.slice(0, 2).forEach((point, index) => {
+      const pointFit = fitVariantText(point, actionTextWidth, 250, 34, 28, 5, true);
+      if (!pointFit) return;
+      const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
+      const boxHeight = Math.max(175, pointHeight + 104);
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".035" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+        `<rect x="${SAFE_AREA.left + 22}" y="${y - 12}" width="54" height="54" rx="13" fill="${accent}"/>`,
+        `<text x="${SAFE_AREA.left + 49}" y="${y + 24}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`,
+        positionedText(pointFit.lines, { x: SAFE_AREA.left + 96, y: y + 24, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
+      );
+      y += boxHeight + 28;
+    });
+  }
+  if (style === 'story') {
+    const isEndingSlide = /PENYELESAIAN|PENUTUP|AKHIR/i.test(section);
+    const cardRight = 70;
+    const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+    const titleTextWidth = isEndingSlide ? cardWidth - 260 : cardWidth - 220;
+    const bodyTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 150;
+    const continuationTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 180;
+    const narrative = [bodyText, ...pointTexts].filter(Boolean).slice(0, 2);
+
+    parts.push(
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA</text>`,
+      `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
+    );
+
+    let y = CONTENT_TOP + 90;
+    const titleFit = fitVariantText(titleText, titleTextWidth, 340, isEndingSlide ? 66 : 72, 44, 4, true);
+    if (titleFit) {
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
+    }
+
+    narrative.forEach((paragraph, index) => {
+      const maxWidth = index === 0 ? bodyTextWidth : continuationTextWidth;
+      const paragraphFit = fitVariantText(
+        paragraph,
+        maxWidth,
+        isEndingSlide ? 300 : 270,
+        isEndingSlide ? (index === 0 ? 36 : 34) : (index === 0 ? 40 : 36),
+        29,
+        isEndingSlide ? 7 : 6,
+        false
+      );
+      if (!paragraphFit) return;
+      const paragraphHeight = paragraphFit.lines.length * paragraphFit.fontSize * 1.28;
+      const boxHeight = Math.max(
+        isEndingSlide ? (index === 0 ? 190 : 175) : (index === 0 ? 170 : 155),
+        paragraphHeight + (isEndingSlide ? 110 : 88)
+      );
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="${accent}" fill-opacity="${index === 0 ? '.075' : '.045'}" ${index === 0 ? '' : `stroke="${accent}" stroke-opacity=".24" stroke-width="2"`}/>`,
+        positionedText(paragraphFit.lines, {
+          x: SAFE_AREA.left + (isEndingSlide ? 30 : 24),
+          y: y + 8,
+          fontSize: paragraphFit.fontSize,
+          lineHeight: 1.28,
+          weight: index === 0 ? 500 : 600,
+          fill: '#f3e8ff',
+          italic: false
+        })
+      );
+      y += boxHeight + 24;
+    });
+  }
+
+  if (style === 'news') {
+    // News uses a slightly wider reading column than the generic TikTok safe
+    // area so the body/fact cards can hold normal sentences without clipping.
+    const newsRight = 70;
+    const newsWidth = WIDTH - SAFE_AREA.left - newsRight;
+    // Headline/title needs its own conservative width because the bold
+    // browser font renders substantially wider than our lightweight estimator.
+    // Keep a large safety margin so long titles wrap before reaching the right edge.
+    const newsTitleTextWidth = newsWidth - 220;
+    const newsBodyTextWidth = newsWidth - 130;
+    // Fact cards need a conservative wrap width for the same reason.
+    const newsFactTextWidth = newsWidth - 200;
+    parts.push(
+      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">BERITA</text>`,
+      `<text x="${WIDTH - newsRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
+      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - newsRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
+    );
+
+    let y = CONTENT_TOP + 90;
+    const titleFit = fitVariantText(titleText, newsTitleTextWidth, 330, 72, 46, 4, true);
+    if (titleFit) {
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
+    }
+
+    const bodyFit = fitVariantText(bodyText, newsBodyTextWidth, 220, 43, 34, 5, false);
+    if (bodyFit) {
+      const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.27;
+      const bodyBoxHeight = Math.max(150, bodyHeight + 86);
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${newsWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
+        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.27, weight: 500, fill: '#f3e8ff' })
+      );
+      y += bodyBoxHeight + 18;
+    }
+
+    pointTexts.slice(0, 2).forEach((point, index) => {
+      const pointFit = fitVariantText(point, newsFactTextWidth, 250, 34, 28, 5, true);
+      if (!pointFit) return;
+      const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
+      const boxHeight = Math.max(175, pointHeight + 104);
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${newsWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+        `<text x="${SAFE_AREA.left + 22}" y="${y - 10}" fill="${accent}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="1.1">FAKTA ${index + 1}</text>`,
+        positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 36, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
+      );
+      y += boxHeight + 28;
+    });
+  }
+
+  parts.push('</g>');
+  return parts.join('');
+}
+
 function renderLayout(layout, number, total, watermark, background) {
   validateVisualLayout(layout);
   const heading = textElement([layout.title], { y: LABEL_Y, fontSize: 34, lineHeight: 1.15, fill: '#f9a8d4' });
@@ -482,7 +696,7 @@ function renderLayout(layout, number, total, watermark, background) {
       parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
       y += point.lines.length * layout.fit.pointSize * 1.22;
     }
-    return frame(heading + parts.join(''), number, total, watermark, background);
+    return frame((layout.layoutStyle === 'default' ? heading : '') + parts.join(''), number, total, watermark, background);
   }
   if (layout.type === 'steps') {
     let y = startY;

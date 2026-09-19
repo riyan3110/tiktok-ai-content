@@ -282,7 +282,7 @@ async function compose({ options = {}, sources = [], discovery = null, client } 
     throw Object.assign(new Error(`Auto Source hanya menemukan ${packets.length} fakta unik yang cukup kuat; butuh ${SLIDE_COUNT}.`), { status: 422 });
   }
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let writerRaw;
   try {
     writerRaw = await callJson(

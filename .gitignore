@@ -4,3 +4,5 @@ data/*.db*
 public/generated/*.png
 !public/generated/.gitkeep
 npm-debug.log*
+
+data/.provider-encryption-key

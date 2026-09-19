@@ -264,7 +264,7 @@ async function rewriteAllSourcesWithAi({ generated, sources = [], topic = '', fo
     throw Object.assign(new Error('Auto Source belum memiliki evidence per-source yang cukup untuk membentuk semua slide.'), { status: 422 });
   }
 
-  const openai = client || new OpenAI({ apiKey: config.aiApiKey, baseURL: config.aiBaseUrl });
+  const openai = client || require('./textProviderRuntime').client();
   let errors = [];
   let previousSlides = generated?.slides || [];
 

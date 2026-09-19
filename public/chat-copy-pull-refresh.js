@@ -1,17 +1,18 @@
 (() => {
   'use strict';
-  if (window.__AIADS_CHAT_COPY_PULL_REFRESH__) return;
-  window.__AIADS_CHAT_COPY_PULL_REFRESH__ = true;
+  if (window.__AIADS_CHAT_COPY_PULL_REFRESH_V2__) return;
+  window.__AIADS_CHAT_COPY_PULL_REFRESH_V2__ = true;
 
   const COPY_REQUEST = /(?:\b(?:buat(?:kan)?|bikin(?:in)?|tulis(?:kan)?|susun|rapikan|generate|kasih|beri)\b[\s\S]{0,100}\b(?:prompt|teks|text|caption|script|skrip|kode|code|template|deskripsi|judul|bio|tagar|hashtag|pesan|email|surat)\b|\b(?:prompt|teks|text|caption|script|skrip|kode|code|template)\b[\s\S]{0,80}\b(?:copy|salin)\b|\b(?:bisa|biar|agar)\s+(?:di\s*)?(?:copy|salin)\b)/i;
   const COPY_RESPONSE = /(?:```[\s\S]*```|(?:^|\n)\s*(?:\*\*)?(?:prompt(?:\s+(?:gambar|video|iklan))?|caption|script|skrip|kode|code|template|teks|text)(?:\*\*)?\s*:|^[\s\t]*["“'][\s\S]{60,}["”'][\s\t]*$)/i;
 
   const style = document.createElement('style');
   style.textContent = `
+    html,body{overscroll-behavior-y:contain}
     .aiads-chat-bubble.assistant.aiads-copyable{position:relative;padding-bottom:42px}
     .aiads-chat-copy{position:absolute;right:9px;bottom:8px;border:1px solid rgba(255,255,255,.16);background:rgba(10,10,14,.72);color:#f5f3ff;border-radius:9px;padding:6px 9px;font:600 11px/1 system-ui,-apple-system,sans-serif;cursor:pointer;backdrop-filter:blur(8px)}
     .aiads-chat-copy:active{transform:scale(.96)}
-    .aiads-pull-refresh{position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));z-index:10020;transform:translate(-50%,-70px);opacity:0;pointer-events:none;background:rgba(18,18,24,.94);color:#f5f3ff;border:1px solid rgba(139,92,246,.38);border-radius:999px;padding:8px 13px;font:600 12px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.35);transition:opacity .16s ease,transform .16s ease}
+    .aiads-pull-refresh{position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));z-index:10020;transform:translate(-50%,-70px);opacity:0;pointer-events:none;background:rgba(18,18,24,.94);color:#f5f3ff;border:1px solid rgba(139,92,246,.38);border-radius:999px;padding:8px 13px;font:600 12px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.35);transition:opacity .12s ease,transform .12s ease}
     .aiads-pull-refresh.visible{opacity:1}
   `;
   document.head.appendChild(style);
@@ -65,20 +66,20 @@
       button.type = 'button';
       button.className = 'aiads-chat-copy';
       button.dataset.aiadsCopy = '1';
-      button.textContent = 'Copy';
+      button.innerHTML = `${window.Icons?.svg ? window.Icons.svg('copy') : ''} Copy`;
       button.setAttribute('aria-label', 'Copy teks');
       button.addEventListener('click', async event => {
         event.stopPropagation();
         const text = cleanBubbleText(bubble);
         if (!text) return;
-        const original = button.textContent;
+        const original = button.innerHTML;
         try {
           await copyText(text);
-          button.textContent = 'Copied ✓';
+          button.innerHTML = `${window.Icons?.svg ? window.Icons.svg('check') : ''} Copied`;
         } catch (_) {
           button.textContent = 'Gagal copy';
         }
-        setTimeout(() => { button.textContent = original; }, 1400);
+        setTimeout(() => { button.innerHTML = original; }, 1400);
       });
       bubble.appendChild(button);
     });
@@ -93,7 +94,7 @@
       }
     }
   });
-  copyObserver.observe(document.body, { childList: true, subtree: true });
+  if (document.body) copyObserver.observe(document.body, { childList: true, subtree: true });
 
   const indicator = document.createElement('div');
   indicator.className = 'aiads-pull-refresh';
@@ -102,8 +103,8 @@
 
   let tracking = false;
   let startY = 0;
-  let distance = 0;
-  const threshold = 82;
+  let rawDistance = 0;
+  const threshold = 58;
 
   function blockedTarget(target) {
     return Boolean(target?.closest?.('.aiads-chat-panel,input,textarea,select,button,a,[contenteditable="true"]'));
@@ -112,37 +113,43 @@
   function resetPull() {
     tracking = false;
     startY = 0;
-    distance = 0;
+    rawDistance = 0;
     indicator.classList.remove('visible');
     indicator.style.transform = 'translate(-50%,-70px)';
     indicator.textContent = 'Tarik untuk refresh';
   }
 
   document.addEventListener('touchstart', event => {
-    if (event.touches.length !== 1 || window.scrollY > 0 || blockedTarget(event.target)) return;
+    if (event.touches.length !== 1 || window.scrollY > 2 || blockedTarget(event.target)) return;
     tracking = true;
     startY = event.touches[0].clientY;
-    distance = 0;
+    rawDistance = 0;
   }, { passive: true });
 
   document.addEventListener('touchmove', event => {
     if (!tracking || event.touches.length !== 1) return;
     const delta = event.touches[0].clientY - startY;
-    if (delta <= 0 || window.scrollY > 0) {
+    if (delta <= 0 || window.scrollY > 2) {
       resetPull();
       return;
     }
-    if (delta < 8) return;
-    distance = Math.min(120, delta * 0.58);
-    const ready = distance >= threshold;
+    if (delta < 4) return;
+
+    // Take ownership of the downward gesture at the top of the page so Android
+    // does not consume it as native browser overscroll/pull-to-refresh.
+    if (event.cancelable) event.preventDefault();
+
+    rawDistance = Math.min(140, delta);
+    const ready = rawDistance >= threshold;
+    const visualDistance = Math.min(88, rawDistance * 0.68);
     indicator.classList.add('visible');
     indicator.textContent = ready ? 'Lepas untuk refresh' : 'Tarik untuk refresh';
-    indicator.style.transform = `translate(-50%,${Math.min(18, -42 + distance * 0.58)}px)`;
-  }, { passive: true });
+    indicator.style.transform = `translate(-50%,${Math.min(14, -38 + visualDistance * 0.62)}px)`;
+  }, { passive: false });
 
   document.addEventListener('touchend', () => {
     if (!tracking) return;
-    const reload = distance >= threshold;
+    const reload = rawDistance >= threshold;
     if (!reload) {
       resetPull();
       return;
@@ -151,7 +158,7 @@
     indicator.classList.add('visible');
     indicator.textContent = 'Memuat ulang…';
     indicator.style.transform = 'translate(-50%,10px)';
-    setTimeout(() => window.location.reload(), 90);
+    setTimeout(() => window.location.reload(), 80);
   }, { passive: true });
 
   document.addEventListener('touchcancel', resetPull, { passive: true });

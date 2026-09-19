@@ -5,6 +5,7 @@
 
   const root = document.documentElement;
   const $ = selector => document.querySelector(selector);
+  const Icons = window.Icons || {}; const ic = name => Icons.svg ? Icons.svg(name) : '';
 
   // Keep the app chrome usable without loading the large Text Content bundle.
   try {
@@ -16,7 +17,7 @@
     const button = $('#theme-toggle');
     if (!button) return;
     const light = root.dataset.theme === 'light';
-    button.innerHTML = `<span aria-hidden="true">${light ? '☾' : '☀'}</span>`;
+    button.innerHTML = `<span aria-hidden="true">${light ? ic('moon') : ic('sun')}</span>`;
     button.setAttribute('aria-label', light ? 'Gunakan tema gelap' : 'Gunakan tema terang');
   }
 
@@ -36,7 +37,7 @@
     const upload = options.querySelector('.background-upload-option');
     const black = document.createElement('label');
     black.className = 'background-option background-black-option';
-    black.innerHTML = '<input type="radio" name="carousel-background" value="#0B0B0D"><span class="background-swatch" style="--swatch:#0B0B0D"><i>✓</i></span><b>Hitam</b>';
+    black.innerHTML = `<input type="radio" name="carousel-background" value="#0B0B0D"><span class="background-swatch" style="--swatch:#0B0B0D"><i>${ic('check')}</i></span><b>Hitam</b>`;
     if (upload) upload.before(black); else options.appendChild(black);
   }
 
@@ -120,9 +121,13 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeDomShell, { once: true });
   else initializeDomShell();
 
-  // The service worker preserves the upload compatibility route and caches only
-  // versioned/static GET assets. Registration itself must never block startup.
+  // The service worker keeps upload compatibility and caches media/fonts only.
+  // A versioned registration URL forces browsers to install the current worker.
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js?v=global-perf-20260825b').catch(() => {}), { once: true });
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js?v=ui-20260912e')
+        .then(registration => registration.update().catch(() => {}))
+        .catch(() => {});
+    }, { once: true });
   }
 })();

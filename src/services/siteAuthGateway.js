@@ -2,6 +2,18 @@ const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 
+const CACHE_BUST_VERSION = 'cache-20260914-image-protocol-contrast';
+
+function stripLegacyProviderUi(html) {
+  let output = String(html || '');
+  output = output.replace(
+    /<section id="ai-providers"[\s\S]*?(?=<section id="generation-queue")/,
+    '<section id="ai-providers" class="page-view hidden"></section>\n'
+  );
+  output = output.replace(/\s*<script\s+src="\/ai-providers\.js(?:\?[^\"]*)?"\s*><\/script>/g, '');
+  return output;
+}
+
 function createSiteAuthGateway(innerApp, config) {
   const gateway = express();
   gateway.set('trust proxy', 1);
@@ -44,15 +56,17 @@ function createSiteAuthGateway(innerApp, config) {
     return res.sendStatus(401);
   });
 
-  gateway.post('/api/ai/providers/nanobanana/callback', express.json({ limit: '1mb' }), (req, res) => {
-    res.set('Cache-Control', 'no-store');
-    return res.sendStatus(204);
-  });
-
   gateway.use(auth.requireAuth);
 
-  // Automatic Text Content scheduling is temporarily suspended. Keep the
-  // underlying rows untouched, but do not expose live scheduling operations.
+  gateway.use((req, res, next) => {
+    if (req.method === 'GET' && /\.(?:html|js|css)$/.test(req.path)) {
+      res.set('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
+    }
+    next();
+  });
+
   gateway.get('/automation/today', (req, res) => res.json([]));
   const rejectSuspendedAutomation = (req, res) => res.status(503).json({ error: 'Jadwal otomatis sementara dinonaktifkan.' });
   gateway.post('/automation/schedules', rejectSuspendedAutomation);
@@ -62,11 +76,17 @@ function createSiteAuthGateway(innerApp, config) {
   const sendAppShell = async (req, res, next) => {
     try {
       const file = `${config.root}/public/index.html`;
-      let html = await fs.readFile(file, 'utf8');
+      let html = stripLegacyProviderUi(await fs.readFile(file, 'utf8'));
+      html = html.replace(/((?:src|href)=\")(\/[^\"]+\.(?:js|css))(?:\?[^\"]*)?(\")/g, `$1$2?v=${CACHE_BUST_VERSION}$3`);
 
-      // Keep only the truly global shell eager. Feature/page bundles are loaded
-      // by lazy-modules.js on first use, then remain cached for later navigation.
+      // Keep the new shell, but restore the user's saved light/dark choice before
+      // deferred theme assets run so the old light shell cannot flash over it.
+      html = html.replace('<html lang="id">', '<html lang="id" class="aiads-neo-theme">');
+      const criticalThemeScript = '<script>(()=>{try{const t=localStorage.getItem("ai-ads-lab-theme");document.documentElement.dataset.theme=t==="light"?"light":"dark"}catch{document.documentElement.dataset.theme="dark"}})()</script>';
+      const criticalThemeStyles = '<style>html.aiads-neo-theme[data-theme="light"]{background:#f7f7f2}html.aiads-neo-theme[data-theme="light"] body{background:#f7f7f2;color:#151b2b}html.aiads-neo-theme[data-theme="dark"]{background:#0b0e14}html.aiads-neo-theme[data-theme="dark"] body{background:#0b0e14;color:#eef2f8}</style>';
+
       const eagerPaths = new Set([
+        '/icons.js',
         '/backend-foundation.js',
         '/workspace.js'
       ]);
@@ -78,41 +98,54 @@ function createSiteAuthGateway(innerApp, config) {
         return '';
       });
 
-      // Stable UI layers are eager so refreshes and responsive breakpoints do not
-      // depend on opening a lazy feature first.
-      const compactStyles = '<link rel="stylesheet" href="/asset-compact.css?v=compact-20260825b" data-asset-compact>';
-      const stabilityStyles = '<link rel="stylesheet" href="/ui-stability.css?v=ui-stability-20260825a">';
-      const responsiveStyles = '<link rel="stylesheet" href="/responsive-professional.css?v=responsive-20260826c">';
-      const performanceScript = '<script defer src="/performance-shell.js?v=global-perf-20260825b"></script>';
-      const lazyScript = '<script defer src="/lazy-modules.js?v=global-perf-20260825b"></script>';
-      const chatScript = '<script defer src="/floating-chat.js?v=floating-chat-20260825a"></script>';
-      const themeScript = '<script defer src="/floating-chat-theme.js?v=neo-dashboard-20260825g"></script>';
-      const polishScript = '<script defer src="/neo-home-polish.js?v=home-polish-20260826i"></script>';
-      const finalLayoutScript = '<script defer src="/neo-layout-final.js?v=neo-layout-final-20260826d"></script>';
-      const providerMobileHostFixScript = '<script defer src="/provider-mobile-host-fix.js?v=provider-host-20260826c"></script>';
-      const providerLegalFixScript = '<script defer src="/provider-legal-fix.js?v=provider-legal-20260826a"></script>';
-      const tiktokControlFixScript = '<script defer src="/tiktok-control-fix.js?v=tiktok-control-20260826a"></script>';
-      const automationSuspendScript = '<script defer src="/automation-suspend.js?v=automation-suspend-20260826a"></script>';
+      const compactStyles = `<link rel="stylesheet" href="/asset-compact.css?v=${CACHE_BUST_VERSION}" data-asset-compact>`;
+      const stabilityStyles = `<link rel="stylesheet" href="/ui-stability.css?v=${CACHE_BUST_VERSION}">`;
+      const responsiveStyles = `<link rel="stylesheet" href="/responsive-professional.css?v=${CACHE_BUST_VERSION}">`;
+      const preservedStyles = `<link rel="stylesheet" href="/google-studio-preserved.css?v=${CACHE_BUST_VERSION}">`;
+      const performanceScript = `<script defer src="/performance-shell.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const lazyScript = `<script defer src="/lazy-modules.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const providerSimpleScript = `<script defer src="/ai-providers-simple.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const chatScript = `<script defer src="/floating-chat.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const themeScript = `<script defer src="/floating-chat-theme.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const pullRefreshScript = `<script defer src="/chat-copy-pull-refresh.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const polishScript = `<script defer src="/neo-home-polish.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const finalLayoutScript = `<script defer src="/neo-layout-final.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const providerMobileHostFixScript = `<script defer src="/provider-mobile-host-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const providerLegalFixScript = `<script defer src="/provider-legal-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const tiktokControlFixScript = `<script defer src="/tiktok-control-fix.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const preservedScript = `<script defer src="/google-studio-preserved.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const automationSuspendScript = `<script defer src="/automation-suspend.js?v=${CACHE_BUST_VERSION}"></script>`;
+      const runtimeUiFixScript = `<script defer src="/runtime-ui-fixes.js?v=${CACHE_BUST_VERSION}"></script>`;
       const startupScripts = [
+        criticalThemeScript,
+        criticalThemeStyles,
         compactStyles,
         stabilityStyles,
         responsiveStyles,
+        preservedStyles,
+        eagerScripts.get('/icons.js'),
         eagerScripts.get('/backend-foundation.js'),
         performanceScript,
         lazyScript,
         eagerScripts.get('/workspace.js'),
+        providerSimpleScript,
         chatScript,
         themeScript,
+        pullRefreshScript,
         polishScript,
         finalLayoutScript,
         providerMobileHostFixScript,
         providerLegalFixScript,
         tiktokControlFixScript,
-        automationSuspendScript
+        preservedScript,
+        automationSuspendScript,
+        runtimeUiFixScript
       ].filter(Boolean).join('\n');
       html = html.replace('</head>', `${startupScripts}\n</head>`);
 
-      res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+      res.set('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
       res.type('html').send(html);
     } catch (error) { next(error); }
   };
@@ -123,4 +156,4 @@ function createSiteAuthGateway(innerApp, config) {
   return gateway;
 }
 
-module.exports = { createSiteAuthGateway };
+module.exports = { createSiteAuthGateway, stripLegacyProviderUi };

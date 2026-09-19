@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'aiads-static-global-perf-20260825b';
+const STATIC_CACHE = 'aiads-static-ui-20260912e';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil((async () => {
@@ -47,7 +47,9 @@ async function forwardAssetUpload(request) {
 function cacheableStatic(url, request) {
   if (request.method !== 'GET' || url.origin !== self.location.origin) return false;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.pathname.startsWith('/generated/')) return false;
-  return /\.(?:js|css|png|svg|webp|ico|woff2?)$/i.test(url.pathname);
+  // UI JS/CSS must always come from the network during active development.
+  // Cache only immutable-ish media/font assets so a deploy can never leave stale UI logic behind.
+  return /\.(?:png|svg|webp|ico|woff2?)$/i.test(url.pathname);
 }
 
 async function staticResponse(request) {

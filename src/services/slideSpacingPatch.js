@@ -24,23 +24,29 @@ function install() {
       y += point.lines.length * layout.fit.pointSize * 1.22;
     }`;
 
-  const replacement = `    if (layout.fit.bodyFit) {
-      // Keep the title anchored in its existing position, but give the body a
-      // little more breathing room so title and paragraph do not look stacked.
-      y += Math.max(36, layout.fit.pointSpacing + 18);
-      parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
-      y += layout.fit.bodyFit.height;
-    }
-    let pointIndex = 0;
-    for (const point of layout.content.points) {
-      // Add a distinct gap before the bullet group. Spacing between bullets
-      // themselves stays unchanged so the list still reads as one group.
-      y += pointIndex === 0 && layout.fit.bodyFit
-        ? Math.max(28, layout.fit.pointSpacing + 10)
-        : layout.fit.pointSpacing;
-      parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
-      y += point.lines.length * layout.fit.pointSize * 1.22;
-      pointIndex += 1;
+  const replacement = `    const selectedLayoutStyle = layout.layoutStyle || 'default';
+    if (selectedLayoutStyle !== 'default') {
+      // Non-default models own the whole composition. Remove the default
+      // title/body that was already queued and render the selected template.
+      parts.length = 0;
+      parts.push(renderStructuredVariant(layout));
+    } else {
+      if (layout.fit.bodyFit) {
+        // Default keeps the exact established look, only with the existing
+        // spacing improvement between title, body, and bullet group.
+        y += Math.max(36, layout.fit.pointSpacing + 18);
+        parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
+        y += layout.fit.bodyFit.height;
+      }
+      let pointIndex = 0;
+      for (const point of layout.content.points) {
+        y += pointIndex === 0 && layout.fit.bodyFit
+          ? Math.max(28, layout.fit.pointSpacing + 10)
+          : layout.fit.pointSpacing;
+        parts.push(textElement(point.lines, { y, fontSize: layout.fit.pointSize, lineHeight: 1.22, weight: 600 }));
+        y += point.lines.length * layout.fit.pointSize * 1.22;
+        pointIndex += 1;
+      }
     }`;
 
   if (!source.includes(original)) {

@@ -1,3 +1,4 @@
+require('./services/legacyTextEnvironment').retire({ root: require('node:path').resolve(__dirname, '..') });
 const { install: installSlideSpacingPatch } = require('./services/slideSpacingPatch');
 installSlideSpacingPatch();
 const cron = require('node-cron');
@@ -26,27 +27,49 @@ const { install: installInsertedImagePatch } = require('./services/insertedImage
 const { install: installAssetUploadPatch } = require('./services/assetUploadPatch');
 const { install: installTikTokPullResiliencePatch } = require('./services/tiktokPullResiliencePatch');
 const { install: installFloatingChatPatch } = require('./services/floatingChatPatch');
-const { install: installPresenterVideoPatch } = require('./services/presenterVideoPatch');
 const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
 const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
+const { install: installPromptNotes } = require('./services/promptNotes');
+const dynamicAiProviders = require('./services/dynamicAiProviders');
+const providerTransport = require('./services/providerTransportCompatibility');
+const providerStorageCleanup = require('./services/providerStorageCleanup');
+const { install: installStrictProviderDelete } = require('./services/strictProviderDelete');
+const { install: installDynamicTextBridge } = require('./services/dynamicTextBridge');
 
 // Temporary product decision: automatic Text Content scheduling is suspended.
 // Keep schedule/job rows intact so the feature can be restored later without data loss.
 const AUTOMATION_SUSPENDED = true;
 
 const db = createDatabase();
+dynamicAiProviders.ensureSchema(db);
+const providerCleanup = providerStorageCleanup.run(db);
+if (providerCleanup.migrated) {
+  console.info('[Provider Cleanup] Konfigurasi/provider/model lama dibersihkan.', {
+    rows: providerCleanup.clearedRows,
+    encryptionKeyRemoved: providerCleanup.encryptionKeyRemoved,
+    storageVersion: providerCleanup.version
+  });
+}
 useVpsLocalStorage(db);
 installVpsLocalStorageLock();
 installVpsStorageUiPatch();
 const temporaryStorage = new StorageService({ db });
 const innerApp = createApp({ db });
+installStrictProviderDelete({ app: innerApp, db, dynamicAi: dynamicAiProviders });
+dynamicAiProviders.install({ app: innerApp, db, transport: providerTransport });
+innerApp.use('/api/dynamic-ai', (error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const status = Number(error?.status) || (error?.name === 'AbortError' ? 504 : 500);
+  return res.status(status).json({ error: error?.message || 'Provider AI gagal.' });
+});
+installDynamicTextBridge({ app: innerApp, db, content, dynamicAi: dynamicAiProviders });
 installLocalMediaPreviewPatch({ app: innerApp, db });
 installTikTokCancelPatch({ app: innerApp, db, tiktok });
 installTikTokPullResiliencePatch({ tiktok, db });
 installInsertedImagePatch({ app: innerApp, db, images });
 installAssetUploadPatch({ app: innerApp, db });
 installFloatingChatPatch({ app: innerApp, db });
-installPresenterVideoPatch({ app: innerApp, db });
+installPromptNotes({ app: innerApp, db });
 const app = createSiteAuthGateway(innerApp, config);
 
 if (config.enableCron) cron.schedule(config.cronSchedule, async () => { try { await generateAndSave({ db, content, images, trending, mode: config.dailyTopicMode, requestedTopic: config.dailyManualTopic }); } catch (e) { console.error('Cron gagal:', e); } }, { timezone: config.cronTimezone });
