@@ -53,13 +53,8 @@
     if (legend) legend.textContent = manualMode ? 'Mode Konten' : 'Sumber URL';
     originalField.classList.toggle('hidden', textMode);
     textField.classList.toggle('hidden', !textMode);
-    if (textMode) {
-      originalInput.id = 'manual-topic-url';
-      textInput.id = 'manual-topic';
-    } else {
-      textInput.id = 'manual-text-input';
-      originalInput.id = 'manual-topic';
-    }
+    originalInput.id = 'manual-topic';
+    textInput.id = 'manual-text-input';
   };
 
   document.querySelectorAll('input[name="source-mode"],input[name="topic-source"]').forEach(input => input.addEventListener('change', sync));
