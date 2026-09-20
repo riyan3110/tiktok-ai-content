@@ -148,7 +148,7 @@
       <div class="neo-project-label">Projects & Workspace</div>`;
     workspace.prepend(dashboard);
     dashboard.addEventListener('click',event=>{const target=event.target.closest('[data-neo-target]');if(target)navigate(target.dataset.neoTarget);const news=event.target.closest('[data-news-url]');if(news)window.LiveNewsDashboard?.copy(news.dataset.newsUrl,dashboard.querySelector('[data-news-toast]'));});
-    window.LiveNewsDashboard?.load(dashboard.querySelector('[data-news-track]'));
+    (function loadNews(tries){const track=dashboard.querySelector('[data-news-track]');if(window.LiveNewsDashboard&&track){window.LiveNewsDashboard.load(track);}else if(tries<50){setTimeout(()=>loadNews(tries+1),100);}})(0);
   }
 
   function mountBottomNav(){
