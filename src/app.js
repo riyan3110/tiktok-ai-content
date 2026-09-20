@@ -19,6 +19,7 @@ const normalizeContentStudioInput = body => body;
 const templateService = require('./services/templates');
 const { StorageService } = require('./storage/service');
 const { ContentStudioService } = require('./services/contentStudio');
+const liveNews = require('./services/liveNews');
 
 function createApp({ db, content = contentService, images = imageService, tiktok = tiktokService, trending = trendingService, sourceFetcher = sourceFetcherService, manualSourceRoleGuard = null, automation = automationService, aiTransport, storageTransport } = {}) {
   require('./services/dynamicAiProviders').ensureSchema(db);
@@ -51,6 +52,7 @@ function createApp({ db, content = contentService, images = imageService, tiktok
   app.post('/api/projects', (req, res, next) => { try { const value = projectPayload(req.body); const id = String(req.body?.id || crypto.randomUUID()); const createdAt = req.body?.createdAt || new Date().toISOString(); db.prepare('INSERT INTO projects(id,name,brand,product,category,description,status,prompt_count,storyboard_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id, value.name, value.brand, value.product, value.category, value.description, value.status, Number(req.body?.promptCount) || 0, Number(req.body?.storyboardCount) || 0, createdAt, req.body?.updatedAt || createdAt); res.status(201).json(projectJson(db.prepare('SELECT * FROM projects WHERE id=?').get(id))); } catch (e) { next(e); } });
   app.patch('/api/projects/:id', (req, res, next) => { try { const value = projectPayload(req.body); const result = db.prepare('UPDATE projects SET name=?,brand=?,product=?,category=?,description=?,status=?,updated_at=? WHERE id=?').run(value.name, value.brand, value.product, value.category, value.description, value.status, new Date().toISOString(), req.params.id); if (!result.changes) return res.status(404).json({ error: 'Project tidak ditemukan' }); res.json(projectJson(db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id))); } catch (e) { next(e); } });
   app.delete('/api/projects/:id', (req, res, next) => { try { const deleted = db.transaction(id => db.prepare('DELETE FROM projects WHERE id=?').run(id).changes)(req.params.id); if (!deleted) return res.status(404).json({ error: 'Project tidak ditemukan' }); res.json({ deleted: true }); } catch (e) { next(e); } });
+  app.get('/api/live-news', async (req, res, next) => { try { res.json({ items: await liveNews.listLiveNews() }); } catch (e) { next(e); } });
   app.get('/api/storage/settings', (req, res) => res.json(storage.publicSettings()));
   app.get('/api/content-studio/providers', (req, res) => res.json(studio.providers()));
   app.get('/api/content-studio/jobs', (req, res) => res.json(studio.list(req.query)));
