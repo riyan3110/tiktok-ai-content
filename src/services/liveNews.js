@@ -3,7 +3,10 @@ const http = require('node:http');
 
 const FEEDS = [
   'https://www.antaranews.com/rss/terkini.xml',
-  'https://rss.detik.com/index.php/detikcom'
+  'https://rss.detik.com/index.php/detikcom',
+  'https://www.cnnindonesia.com/nasional/rss',
+  'https://www.cnnindonesia.com/teknologi/rss',
+  'https://inet.detik.com/rss'
 ];
 const CACHE_MS = 5 * 60 * 1000;
 let cache = { expiresAt: 0, items: [] };
@@ -44,10 +47,19 @@ function request(url) {
 async function listLiveNews() {
   if (cache.expiresAt > Date.now()) return cache.items;
   const results = await Promise.allSettled(FEEDS.map(request));
+  const feeds = results.map(result => result.status === 'fulfilled' ? parseFeedXml(result.value) : []);
   const seen = new Set();
-  const items = results.flatMap(result => result.status === 'fulfilled' ? parseFeedXml(result.value) : [])
-    .filter(item => { if (seen.has(item.url)) return false; seen.add(item.url); return true; })
-    .slice(0, 12);
+  const items = [];
+  const maxLen = feeds.reduce((max, feed) => Math.max(max, feed.length), 0);
+  for (let round = 0; round < maxLen && items.length < 12; round += 1) {
+    for (const feed of feeds) {
+      const item = feed[round];
+      if (!item || seen.has(item.url)) continue;
+      seen.add(item.url);
+      items.push(item);
+      if (items.length >= 12) break;
+    }
+  }
   if (items.length) cache = { items, expiresAt: Date.now() + CACHE_MS };
   return cache.items;
 }
