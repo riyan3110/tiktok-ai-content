@@ -22,7 +22,8 @@ test('dashboard replaces the two feature cards with a swipeable live news carous
   assert.match(theme, /LiveNewsDashboard/);
   assert.match(liveNews, /api\/live-news/);
   assert.match(liveNews, /navigator\.clipboard/);
-  assert.match(theme, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(theme, /scroll-snap-type:x mandatory/);
+  assert.match(theme, /grid-auto-columns:calc\(50% - 5px\)/);
   assert.match(theme, /data-news-url/);
 });
 
