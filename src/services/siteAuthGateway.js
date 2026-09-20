@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
+const liveNews = require('./liveNews');
 
 const CACHE_BUST_VERSION = 'cache-20260914-image-protocol-contrast';
 
@@ -54,6 +55,12 @@ function createSiteAuthGateway(innerApp, config) {
   gateway.get('/api/auth/check', (req, res) => {
     if (auth.authenticated(req)) return res.sendStatus(204);
     return res.sendStatus(401);
+  });
+
+  // Public: live news is non-sensitive and must load before/without login so the
+  // dashboard card is not stuck behind the auth wall.
+  gateway.get('/api/live-news', async (req, res, next) => {
+    try { res.json({ items: await liveNews.listLiveNews() }); } catch (e) { next(e); }
   });
 
   gateway.use(auth.requireAuth);

@@ -31,3 +31,12 @@ test('live news endpoint is wired without changing existing feature routes', () 
   assert.match(app, /\/api\/live-news/);
   assert.match(app, /liveNews/);
 });
+
+test('live news is served publicly before the auth wall so it never 401s', () => {
+  const gateway = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'siteAuthGateway.js'), 'utf8');
+  const publicRouteIdx = gateway.indexOf("gateway.get('/api/live-news'");
+  const authWallIdx = gateway.indexOf('gateway.use(auth.requireAuth)');
+  assert.ok(publicRouteIdx !== -1, 'public /api/live-news route missing');
+  assert.ok(authWallIdx !== -1, 'auth wall missing');
+  assert.ok(publicRouteIdx < authWallIdx, 'live-news must be registered before requireAuth');
+});
