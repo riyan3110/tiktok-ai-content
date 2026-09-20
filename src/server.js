@@ -108,4 +108,6 @@ async function runStorageCleanup() {
 runStorageCleanup();
 setInterval(runStorageCleanup, 15 * 60 * 1000).unref();
 
+try { require('./services/liveNews').warmLiveNews(); } catch (e) { console.error('Live news warmup gagal:', e); }
+
 app.listen(config.port, () => console.log(`TikTok AI Content aktif di http://localhost:${config.port}`));

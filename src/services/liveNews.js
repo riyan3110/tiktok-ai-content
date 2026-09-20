@@ -9,7 +9,9 @@ const FEEDS = [
   'https://inet.detik.com/rss'
 ];
 const CACHE_MS = 5 * 60 * 1000;
+const FEED_TIMEOUT_MS = 4000;
 let cache = { expiresAt: 0, items: [] };
+let inflight = null;
 
 function decode(value) {
   return String(value || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
@@ -40,12 +42,11 @@ function request(url) {
       response.on('data', chunk => chunks.push(chunk));
       response.on('end', () => resolve(chunks.join('')));
     });
-    request.setTimeout(8000, () => request.destroy(new Error('RSS timeout')));
+    request.setTimeout(FEED_TIMEOUT_MS, () => request.destroy(new Error('RSS timeout')));
     request.on('error', reject);
   });
 }
-async function listLiveNews() {
-  if (cache.expiresAt > Date.now()) return cache.items;
+async function refresh() {
   const results = await Promise.allSettled(FEEDS.map(request));
   const feeds = results.map(result => result.status === 'fulfilled' ? parseFeedXml(result.value) : []);
   const seen = new Set();
@@ -63,4 +64,20 @@ async function listLiveNews() {
   if (items.length) cache = { items, expiresAt: Date.now() + CACHE_MS };
   return cache.items;
 }
-module.exports = { FEEDS, parseFeedXml, listLiveNews };
+async function listLiveNews() {
+  const fresh = cache.expiresAt > Date.now();
+  if (fresh) return cache.items;
+  // Serve stale cache instantly while refreshing in the background.
+  if (cache.items.length) {
+    if (!inflight) inflight = refresh().catch(() => cache.items).finally(() => { inflight = null; });
+    return cache.items;
+  }
+  // No cache yet (cold start): wait for the first fetch.
+  if (!inflight) inflight = refresh().finally(() => { inflight = null; });
+  return inflight;
+}
+function warmLiveNews() {
+  if (!inflight) inflight = refresh().catch(() => cache.items).finally(() => { inflight = null; });
+  return inflight;
+}
+module.exports = { FEEDS, parseFeedXml, listLiveNews, warmLiveNews };
