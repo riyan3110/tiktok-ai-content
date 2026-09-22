@@ -489,18 +489,37 @@ function cleanLayoutPointText(point) {
     .trim();
 }
 
+// The Arial width estimator (measureTextWidth) systematically UNDER-estimates
+// real glyph advances by ~9–12%, so wrapping computed against a nominal card
+// width can still render past the card's right edge (see reference: text flush
+// against / crossing the box border). Wrap the card text against a deliberately
+// tightened width so the real rendered line always finishes inside the card's
+// designed padding. Only the card renderer (tutorial/story/news) uses
+// fitVariantText, so the Default layout is untouched.
+const CARD_TEXT_WIDTH_SAFETY = 0.88;
+
 function fitVariantText(text, maxWidth, maxHeight, startSize, minSize, maxLines, bold = false) {
   const value = String(text || '').trim();
   if (!value) return null;
+  const safeWidth = Math.max(120, Math.floor(maxWidth * CARD_TEXT_WIDTH_SAFETY));
   for (let size = startSize; size >= minSize; size -= 2) {
-    const lines = wrapText(value, maxWidth, size, bold);
+    const lines = wrapText(value, safeWidth, size, bold);
     const lineHeight = 1.18;
     const height = lines.length * size * lineHeight;
     if (lines.length <= maxLines && height <= maxHeight) return { lines, fontSize: size, lineHeight, height };
   }
-  const fallbackLines = wrapText(value, maxWidth, minSize, bold).slice(0, maxLines);
+  const fallbackLines = wrapText(value, safeWidth, minSize, bold).slice(0, maxLines);
   return { lines: fallbackLines, fontSize: minSize, lineHeight: 1.18, height: fallbackLines.length * minSize * 1.18 };
 }
+
+// Vertical safety: the card renderers stack title + body + point cards from
+// CONTENT_TOP downward. Long copy (or a full set of pasted bullets) can push the
+// last card past the TikTok bottom-safe line, so its text ends up outside the
+// card. renderStructuredVariant therefore renders at a shrinking "density":
+// font sizes, box paddings, and gaps are scaled together until the whole stack
+// finishes within CONTENT_BOTTOM. density = 1 reproduces the original design, so
+// content that already fits looks identical.
+const CARD_DENSITY_STEPS = [1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.64, 0.58];
 
 function renderStructuredVariant(layout) {
   const style = layout.layoutStyle || 'default';
@@ -509,126 +528,135 @@ function renderStructuredVariant(layout) {
   const accent = style === 'tutorial' ? '#d97706' : style === 'story' ? '#7c3aed' : '#dc2626';
   const titleText = String(layout.content?.title || '').trim();
   const bodyText = String(layout.content?.body || '').trim();
+  // Copy-lock: render every pasted bullet in order. Nothing is dropped here so
+  // the on-image copy always matches what the user pasted.
   const pointTexts = (layout.content?.points || []).map(cleanLayoutPointText).filter(Boolean);
   const section = String(layout.title || '').trim();
-  const parts = [`<g data-layout="${style}">`];
 
-  if (style === 'tutorial') {
-    const stepMatch = section.match(/LANGKAH\s*(\d+)/i);
-    const isResultSlide = /HASIL|PENUTUP/i.test(section);
-    const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (isResultSlide ? 'HASIL' : 'TUTORIAL');
-    const cardRight = 70;
-    const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
-    const titleTextWidth = isResultSlide ? cardWidth - 260 : cardWidth - 220;
-    const bodyTextWidth = isResultSlide ? cardWidth - 200 : cardWidth - 130;
-    const actionTextWidth = cardWidth - 210;
+  // Render at decreasing density until the composition ends inside the safe
+  // area; keep the last (tightest) attempt as a floor so text is never clipped
+  // by leaving a card mid-way. Returns { parts, endY }.
+  function compose(density) {
+    const parts = [`<g data-layout="${style}">`];
+    const scale = value => Math.round(value * density);
+    const gap = value => Math.round(value * density);
 
-    parts.push(
-      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
-      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">TUTORIAL</text>`,
-      `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(stepLabel)}</text>`,
-      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
-    );
+    if (style === 'tutorial') {
+      const stepMatch = section.match(/LANGKAH\s*(\d+)/i);
+      const isResultSlide = /HASIL|PENUTUP/i.test(section);
+      const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (isResultSlide ? 'HASIL' : 'TUTORIAL');
+      const cardRight = 70;
+      const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+      const titleTextWidth = isResultSlide ? cardWidth - 260 : cardWidth - 220;
+      const bodyTextWidth = isResultSlide ? cardWidth - 200 : cardWidth - 130;
+      const actionTextWidth = cardWidth - 210;
 
-    let y = CONTENT_TOP + 90;
-    const titleFit = fitVariantText(titleText, titleTextWidth, 340, isResultSlide ? 66 : 72, 44, 4, true);
-    if (titleFit) {
-      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
-      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
+      parts.push(
+        `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+        `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">TUTORIAL</text>`,
+        `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(stepLabel)}</text>`,
+        `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
+      );
+
+      let y = CONTENT_TOP + 90;
+      const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isResultSlide ? 66 : 72), scale(40), isResultSlide ? 5 : 4, true);
+      if (titleFit) {
+        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+        y += titleFit.lines.length * titleFit.fontSize * 1.04 + gap(42);
+      }
+
+      const bodyFit = fitVariantText(bodyText, bodyTextWidth, isResultSlide ? 320 : 280, scale(isResultSlide ? 36 : 40), scale(27), isResultSlide ? 7 : 6, false);
+      if (bodyFit) {
+        const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.26;
+        const bodyBoxHeight = Math.max(scale(isResultSlide ? 180 : 150), bodyHeight + gap(isResultSlide ? 104 : 86));
+        parts.push(
+          `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
+          positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 500, fill: '#f3e8ff' })
+        );
+        y += bodyBoxHeight + gap(18);
+      }
+
+      pointTexts.forEach((point, index) => {
+        const pointFit = fitVariantText(point, actionTextWidth, 300, scale(34), scale(24), 6, true);
+        if (!pointFit) return;
+        const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
+        const boxHeight = Math.max(scale(175), pointHeight + gap(104));
+        parts.push(
+          `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".035" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+          `<rect x="${SAFE_AREA.left + 22}" y="${y - 12}" width="54" height="54" rx="13" fill="${accent}"/>`,
+          `<text x="${SAFE_AREA.left + 49}" y="${y + 24}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`,
+          positionedText(pointFit.lines, { x: SAFE_AREA.left + 96, y: y + 24, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
+        );
+        y += boxHeight + gap(28);
+      });
+      parts.push('</g>');
+      return { parts: parts.join(''), endY: y };
     }
 
-    const bodyFit = fitVariantText(bodyText, bodyTextWidth, isResultSlide ? 270 : 230, isResultSlide ? 36 : 40, 30, isResultSlide ? 6 : 5, false);
-    if (bodyFit) {
-      const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.26;
-      const bodyBoxHeight = Math.max(isResultSlide ? 180 : 150, bodyHeight + (isResultSlide ? 104 : 86));
+    if (style === 'story') {
+      const isEndingSlide = /PENYELESAIAN|PENUTUP|AKHIR/i.test(section);
+      const cardRight = 70;
+      const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+      const titleTextWidth = isEndingSlide ? cardWidth - 260 : cardWidth - 220;
+      const bodyTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 150;
+      const continuationTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 180;
+      // Copy-lock: keep body plus every pasted continuation paragraph in order.
+      const narrative = [bodyText, ...pointTexts].filter(Boolean);
+
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
-        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 500, fill: '#f3e8ff' })
+        `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+        `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA</text>`,
+        `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
+        `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
       );
-      y += bodyBoxHeight + 18;
+
+      let y = CONTENT_TOP + 90;
+      const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isEndingSlide ? 66 : 72), scale(40), isEndingSlide ? 5 : 4, true);
+      if (titleFit) {
+        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
+        y += titleFit.lines.length * titleFit.fontSize * 1.04 + gap(42);
+      }
+
+      narrative.forEach((paragraph, index) => {
+        const maxWidth = index === 0 ? bodyTextWidth : continuationTextWidth;
+        const paragraphFit = fitVariantText(
+          paragraph,
+          maxWidth,
+          isEndingSlide ? 340 : 310,
+          scale(isEndingSlide ? (index === 0 ? 36 : 34) : (index === 0 ? 40 : 36)),
+          scale(26),
+          isEndingSlide ? 8 : 7,
+          false
+        );
+        if (!paragraphFit) return;
+        const paragraphHeight = paragraphFit.lines.length * paragraphFit.fontSize * 1.28;
+        const boxHeight = Math.max(
+          scale(isEndingSlide ? (index === 0 ? 190 : 175) : (index === 0 ? 170 : 155)),
+          paragraphHeight + gap(isEndingSlide ? 110 : 88)
+        );
+        parts.push(
+          `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="${accent}" fill-opacity="${index === 0 ? '.075' : '.045'}" ${index === 0 ? '' : `stroke="${accent}" stroke-opacity=".24" stroke-width="2"`}/>`,
+          positionedText(paragraphFit.lines, {
+            x: SAFE_AREA.left + (isEndingSlide ? 30 : 24),
+            y: y + 8,
+            fontSize: paragraphFit.fontSize,
+            lineHeight: 1.28,
+            weight: index === 0 ? 500 : 600,
+            fill: '#f3e8ff',
+            italic: false
+          })
+        );
+        y += boxHeight + gap(24);
+      });
+      parts.push('</g>');
+      return { parts: parts.join(''), endY: y };
     }
 
-    pointTexts.slice(0, 2).forEach((point, index) => {
-      const pointFit = fitVariantText(point, actionTextWidth, 250, 34, 28, 5, true);
-      if (!pointFit) return;
-      const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
-      const boxHeight = Math.max(175, pointHeight + 104);
-      parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".035" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
-        `<rect x="${SAFE_AREA.left + 22}" y="${y - 12}" width="54" height="54" rx="13" fill="${accent}"/>`,
-        `<text x="${SAFE_AREA.left + 49}" y="${y + 24}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`,
-        positionedText(pointFit.lines, { x: SAFE_AREA.left + 96, y: y + 24, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
-      );
-      y += boxHeight + 28;
-    });
-  }
-  if (style === 'story') {
-    const isEndingSlide = /PENYELESAIAN|PENUTUP|AKHIR/i.test(section);
-    const cardRight = 70;
-    const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
-    const titleTextWidth = isEndingSlide ? cardWidth - 260 : cardWidth - 220;
-    const bodyTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 150;
-    const continuationTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 180;
-    const narrative = [bodyText, ...pointTexts].filter(Boolean).slice(0, 2);
-
-    parts.push(
-      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
-      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA</text>`,
-      `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
-      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
-    );
-
-    let y = CONTENT_TOP + 90;
-    const titleFit = fitVariantText(titleText, titleTextWidth, 340, isEndingSlide ? 66 : 72, 44, 4, true);
-    if (titleFit) {
-      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
-      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
-    }
-
-    narrative.forEach((paragraph, index) => {
-      const maxWidth = index === 0 ? bodyTextWidth : continuationTextWidth;
-      const paragraphFit = fitVariantText(
-        paragraph,
-        maxWidth,
-        isEndingSlide ? 300 : 270,
-        isEndingSlide ? (index === 0 ? 36 : 34) : (index === 0 ? 40 : 36),
-        29,
-        isEndingSlide ? 7 : 6,
-        false
-      );
-      if (!paragraphFit) return;
-      const paragraphHeight = paragraphFit.lines.length * paragraphFit.fontSize * 1.28;
-      const boxHeight = Math.max(
-        isEndingSlide ? (index === 0 ? 190 : 175) : (index === 0 ? 170 : 155),
-        paragraphHeight + (isEndingSlide ? 110 : 88)
-      );
-      parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="${accent}" fill-opacity="${index === 0 ? '.075' : '.045'}" ${index === 0 ? '' : `stroke="${accent}" stroke-opacity=".24" stroke-width="2"`}/>`,
-        positionedText(paragraphFit.lines, {
-          x: SAFE_AREA.left + (isEndingSlide ? 30 : 24),
-          y: y + 8,
-          fontSize: paragraphFit.fontSize,
-          lineHeight: 1.28,
-          weight: index === 0 ? 500 : 600,
-          fill: '#f3e8ff',
-          italic: false
-        })
-      );
-      y += boxHeight + 24;
-    });
-  }
-
-  if (style === 'news') {
-    // News uses a slightly wider reading column than the generic TikTok safe
-    // area so the body/fact cards can hold normal sentences without clipping.
+    // style === 'news'
     const newsRight = 70;
     const newsWidth = WIDTH - SAFE_AREA.left - newsRight;
-    // Headline/title needs its own conservative width because the bold
-    // browser font renders substantially wider than our lightweight estimator.
-    // Keep a large safety margin so long titles wrap before reaching the right edge.
     const newsTitleTextWidth = newsWidth - 220;
     const newsBodyTextWidth = newsWidth - 130;
-    // Fact cards need a conservative wrap width for the same reason.
     const newsFactTextWidth = newsWidth - 200;
     parts.push(
       `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
@@ -638,39 +666,47 @@ function renderStructuredVariant(layout) {
     );
 
     let y = CONTENT_TOP + 90;
-    const titleFit = fitVariantText(titleText, newsTitleTextWidth, 330, 72, 46, 4, true);
+    const titleFit = fitVariantText(titleText, newsTitleTextWidth, 330, scale(72), scale(42), 5, true);
     if (titleFit) {
       parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
-      y += titleFit.lines.length * titleFit.fontSize * 1.04 + 42;
+      y += titleFit.lines.length * titleFit.fontSize * 1.04 + gap(42);
     }
 
-    const bodyFit = fitVariantText(bodyText, newsBodyTextWidth, 220, 43, 34, 5, false);
+    const bodyFit = fitVariantText(bodyText, newsBodyTextWidth, 280, scale(43), scale(30), 6, false);
     if (bodyFit) {
       const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.27;
-      const bodyBoxHeight = Math.max(150, bodyHeight + 86);
+      const bodyBoxHeight = Math.max(scale(150), bodyHeight + gap(86));
       parts.push(
         `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${newsWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
         positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.27, weight: 500, fill: '#f3e8ff' })
       );
-      y += bodyBoxHeight + 18;
+      y += bodyBoxHeight + gap(18);
     }
 
-    pointTexts.slice(0, 2).forEach((point, index) => {
-      const pointFit = fitVariantText(point, newsFactTextWidth, 250, 34, 28, 5, true);
+    pointTexts.forEach((point, index) => {
+      const pointFit = fitVariantText(point, newsFactTextWidth, 300, scale(34), scale(24), 6, true);
       if (!pointFit) return;
       const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
-      const boxHeight = Math.max(175, pointHeight + 104);
+      const boxHeight = Math.max(scale(175), pointHeight + gap(104));
       parts.push(
         `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${newsWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
         `<text x="${SAFE_AREA.left + 22}" y="${y - 10}" fill="${accent}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="1.1">FAKTA ${index + 1}</text>`,
         positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 36, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
       );
-      y += boxHeight + 28;
+      y += boxHeight + gap(28);
     });
+    parts.push('</g>');
+    return { parts: parts.join(''), endY: y };
   }
 
-  parts.push('</g>');
-  return parts.join('');
+  let result = compose(1);
+  for (const density of CARD_DENSITY_STEPS) {
+    result = compose(density);
+    // -48 accounts for the fact that the last box's baseline y already advanced
+    // past its content; keep the whole stack above the TikTok bottom-safe line.
+    if (result.endY - 48 <= CONTENT_BOTTOM) break;
+  }
+  return result.parts;
 }
 
 function renderLayout(layout, number, total, watermark, background) {

@@ -166,8 +166,29 @@ test('AI prompt berubah sesuai tombol tata letak dan Default tetap identik denga
   assert.match(news, /piramida terbalik/i);
 });
 
-test('patch runtime: non-default memakai AI composer', () => {
+test('patch runtime: copy-lock berlaku untuk semua tata letak (tidak memanggil AI composer)', () => {
   const { execFileSync } = require('node:child_process');
+  const structured = [
+    'HOOK: Judul hook yang cukup panjang untuk uji copy-lock',
+    '',
+    'SLIDE 2 — FAKTA UTAMA: Judul fakta utama',
+    '',
+    'Body fakta utama tetap seperti yang ditempel pengguna.',
+    '',
+    '• Poin fakta satu',
+    '• Poin fakta dua',
+    '',
+    'SLIDE 3 — DETAIL: Judul detail',
+    '',
+    'Body detail tetap seperti yang ditempel pengguna.',
+    '',
+    '• Poin detail satu',
+    '• Poin detail dua',
+    '',
+    'SLIDE 4 — PENUTUP: Judul penutup',
+    '',
+    'Kalimat penutup tetap berada di slide empat.'
+  ].join('\n');
   const script = [
     "const composer = require('./src/services/textInputComposer');",
     "const calls = [];",
@@ -176,15 +197,18 @@ test('patch runtime: non-default memakai AI composer', () => {
     "const patch = require('./src/services/textInputVerbatimPatch');",
     "patch.install();",
     "(async () => {",
-    "  const story = await composer.compose({ text: 'teks bebas yang cukup panjang', contentLayout: 'story' });",
+    `  const structured = ${JSON.stringify(structured)};`,
+    "  const story = await composer.compose({ text: structured, contentLayout: 'story' });",
     "  process.stdout.write(JSON.stringify({ story, calls }));",
     "})().catch(error => { console.error(error); process.exit(1); });"
   ].join('\n');
   const output = execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
   const parsed = JSON.parse(output);
-  assert.equal(parsed.story.delegated, true);
-  assert.equal(parsed.story.layout, 'story');
-  assert.equal(parsed.calls[0].contentLayout, 'story');
+  // Copy-lock: verbatim compose ditempel apa adanya, tidak mendelegasikan ke AI composer.
+  assert.notEqual(parsed.story.delegated, true);
+  assert.equal(parsed.calls.length, 0);
+  assert.equal(parsed.story.contentLayout, 'story');
+  assert.ok(Array.isArray(parsed.story.slides) && parsed.story.slides.length === 4);
 });
 
 test('Pakai URL menerima layout sebagai instruksi AI, bukan dekorasi', () => {

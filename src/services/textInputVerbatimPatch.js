@@ -244,13 +244,12 @@ function flattenPastedSlideCopy(slides) {
 
 async function composeVerbatim({ text, client, contentLayout = 'default' } = {}) {
   const layout = resolveContentLayout(contentLayout);
-  // Default remains copy-locked exactly as before. When the user explicitly
-  // chooses Tutorial/Cerita/Berita, hand the pasted text to the original AI
-  // composer so the selected button changes the writing structure as well as
-  // the renderer. The original composer is transform-only and cannot add facts.
-  if (layout !== 'default' && typeof originalCompose === 'function') {
-    return originalCompose({ text, client, contentLayout: layout });
-  }
+  // COPY-LOCK untuk SEMUA tata letak (default, tutorial, cerita, berita).
+  // Aturan tetap: AI tidak boleh menulis ulang, meringkas, memotong, atau
+  // menambah kalimat yang ditempel pengguna. Kalimat hanya DITEMPATKAN pada
+  // background sesuai urutannya. Pilihan tata letak hanya mengubah gaya visual
+  // (kartu/label) lewat contentLayout, bukan isi teks. Karena itu paste path
+  // tidak lagi memanggil composer AI untuk Tutorial/Cerita/Berita.
   const parsed = parseStructuredText(text);
   const [hook, fact, detail, closing] = parsed.slides;
   return {
