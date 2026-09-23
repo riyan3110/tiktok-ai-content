@@ -561,8 +561,8 @@ function renderStructuredVariant(layout) {
       let y = CONTENT_TOP + 90;
       const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isResultSlide ? 66 : 72), scale(40), isResultSlide ? 5 : 4, true);
       if (titleFit) {
-        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
-        y += titleFit.lines.length * titleFit.fontSize * 1.04 + gap(42);
+        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
+        y += titleFit.lines.length * titleFit.fontSize * 1.18 + gap(42);
       }
 
       const bodyFit = fitVariantText(bodyText, bodyTextWidth, isResultSlide ? 320 : 280, scale(isResultSlide ? 36 : 40), scale(27), isResultSlide ? 7 : 6, false);
@@ -613,8 +613,8 @@ function renderStructuredVariant(layout) {
       let y = CONTENT_TOP + 90;
       const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isEndingSlide ? 66 : 72), scale(40), isEndingSlide ? 5 : 4, true);
       if (titleFit) {
-        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
-        y += titleFit.lines.length * titleFit.fontSize * 1.04 + gap(42);
+        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
+        y += titleFit.lines.length * titleFit.fontSize * 1.18 + gap(42);
       }
 
       narrative.forEach((paragraph, index) => {
@@ -668,8 +668,8 @@ function renderStructuredVariant(layout) {
     let y = CONTENT_TOP + 90;
     const titleFit = fitVariantText(titleText, newsTitleTextWidth, 330, scale(72), scale(42), 5, true);
     if (titleFit) {
-      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.02, weight: 900 }));
-      y += titleFit.lines.length * titleFit.fontSize * 1.04 + gap(42);
+      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
+      y += titleFit.lines.length * titleFit.fontSize * 1.18 + gap(42);
     }
 
     const bodyFit = fitVariantText(bodyText, newsBodyTextWidth, 280, scale(43), scale(30), 6, false);

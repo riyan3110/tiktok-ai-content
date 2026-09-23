@@ -5,7 +5,16 @@ const config = require('../config');
 const { StorageService } = require('../storage/service');
 
 const PATCHED = Symbol.for('aiads.insertedImagePatch');
-const INSERT_BOX = Object.freeze({ left: 50, top: 900, width: 980, height: 920 });
+const WIDTH = 1080;
+const HEIGHT = 1920;
+// Smaller, centered, tidy card for the slide-1 inserted photo. The box sits
+// well BELOW the headline block (news/story/tutorial headline can run to ~935px
+// at 5 lines) so the picture never touches the title. Centered horizontally
+// (left = (1080-720)/2) with rounded corners so it reads as a neat framed
+// thumbnail instead of a full-bleed image.
+const INSERT_BOX = Object.freeze({ left: 180, top: 1025, width: 720, height: 600 });
+const INSERT_RADIUS = 34;
+const INSERT_PAD = 16;
 
 function parseRecord(row) {
   if (!row) return null;
@@ -40,19 +49,45 @@ async function imageAsset(storage, assetId) {
 async function overlaySlideOne(file, input) {
   const target = generatedPath(file);
   if (!target) throw Object.assign(new Error('Slide pertama tidak valid.'), { status: 422 });
-  const overlay = await sharp(input)
+
+  const innerW = INSERT_BOX.width - INSERT_PAD * 2;
+  const innerH = INSERT_BOX.height - INSERT_PAD * 2;
+
+  // Fit the photo inside the inner box (contain, no crop) then round its corners
+  // so it reads as a neat framed thumbnail rather than a raw full-bleed image.
+  const photo = await sharp(input)
     .rotate()
-    .resize(INSERT_BOX.width, INSERT_BOX.height, {
-      fit: 'contain',
-      position: 'centre',
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
-    })
+    .resize(innerW, innerH, { fit: 'contain', position: 'centre', background: { r: 15, g: 12, b: 26, alpha: 1 } })
     .png()
     .toBuffer();
+  const meta = await sharp(photo).metadata();
+  const photoW = meta.width || innerW;
+  const photoH = meta.height || innerH;
+  const roundedMask = Buffer.from(
+    `<svg width="${photoW}" height="${photoH}"><rect x="0" y="0" width="${photoW}" height="${photoH}" rx="${INSERT_RADIUS}" ry="${INSERT_RADIUS}"/></svg>`
+  );
+  const roundedPhoto = await sharp(photo)
+    .composite([{ input: roundedMask, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+
+  // Center the rounded photo within the frame; draw a soft rounded frame behind
+  // it so the picture always looks deliberately placed and tidy.
+  const photoLeft = INSERT_BOX.left + Math.round((INSERT_BOX.width - photoW) / 2);
+  const photoTop = INSERT_BOX.top + Math.round((INSERT_BOX.height - photoH) / 2);
+  const frame = Buffer.from(
+    `<svg width="${WIDTH}" height="${HEIGHT}">` +
+    `<rect x="${INSERT_BOX.left}" y="${INSERT_BOX.top}" width="${INSERT_BOX.width}" height="${INSERT_BOX.height}" rx="${INSERT_RADIUS + INSERT_PAD}" ry="${INSERT_RADIUS + INSERT_PAD}" fill="#000000" fill-opacity="0.28" stroke="#ffffff" stroke-opacity="0.55" stroke-width="3"/>` +
+    `</svg>`
+  );
+
   const temporary = `${target}.insert-${process.pid}-${Date.now()}.jpg`;
   try {
     await sharp(target)
-      .composite([{ input: overlay, left: INSERT_BOX.left, top: INSERT_BOX.top }])
+      .composite([
+        { input: frame, left: 0, top: 0 },
+        { input: roundedPhoto, left: photoLeft, top: photoTop }
+      ])
       .flatten({ background: '#ffffff' })
       .toColourspace('srgb')
       .jpeg({ quality: 90 })
