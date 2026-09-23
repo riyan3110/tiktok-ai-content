@@ -32,8 +32,8 @@ function install() {
       parts.push(renderStructuredVariant(layout));
     } else {
       if (layout.fit.bodyFit) {
-        // Default keeps the exact established look, only with the existing
-        // spacing improvement between title, body, and bullet group.
+        // Default is intentionally preserved. Its existing visual behavior is
+        // not changed by this patch.
         y += Math.max(36, layout.fit.pointSpacing + 18);
         parts.push(textElement(layout.fit.bodyFit.lines, { y, fontSize: layout.fit.bodyFit.fontSize, lineHeight: layout.fit.bodyFit.lineHeight, weight: 400, fill: '#f3e8ff' }));
         y += layout.fit.bodyFit.height;
@@ -54,6 +54,45 @@ function install() {
   }
 
   source = source.replace(original, replacement);
+
+  // Non-default title rules: use the full available title width (no 0.88
+  // safety reduction), and keep the title inside the fixed Default image top
+  // boundary. This lets Slide 1 keep the exact Default image size/position
+  // instead of moving the image down and clipping its bottom edge.
+  source = source.replace(
+    'const CARD_TEXT_WIDTH_SAFETY = 0.88;',
+    'const CARD_TEXT_WIDTH_SAFETY = 0.88;\nconst CARD_TITLE_TEXT_WIDTH_SAFETY = 1;\nconst INSERTED_IMAGE_TOP = 900;\nconst INSERTED_IMAGE_TITLE_MAX_HEIGHT = 174;'
+  );
+  source = source.replace(
+    'function fitVariantText(text, maxWidth, maxHeight, startSize, minSize, maxLines, bold = false) {',
+    'function fitVariantText(text, maxWidth, maxHeight, startSize, minSize, maxLines, bold = false, widthSafety = CARD_TEXT_WIDTH_SAFETY) {'
+  );
+  source = source.replace(
+    'const safeWidth = Math.max(120, Math.floor(maxWidth * CARD_TEXT_WIDTH_SAFETY));',
+    'const safeWidth = Math.max(120, Math.floor(maxWidth * widthSafety));'
+  );
+
+  const titleCalls = [
+    'const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isResultSlide ? 66 : 72), scale(40), isResultSlide ? 5 : 4, true);',
+    'const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isEndingSlide ? 66 : 72), scale(40), isEndingSlide ? 5 : 4, true);',
+    'const titleFit = fitVariantText(titleText, newsTitleTextWidth, 330, scale(72), scale(42), 5, true);'
+  ];
+  const titleReplacements = [
+    'const titleFit = fitVariantText(titleText, titleTextWidth, INSERTED_IMAGE_TITLE_MAX_HEIGHT, scale(isResultSlide ? 66 : 72), scale(40), 3, true, CARD_TITLE_TEXT_WIDTH_SAFETY);',
+    'const titleFit = fitVariantText(titleText, titleTextWidth, INSERTED_IMAGE_TITLE_MAX_HEIGHT, scale(isEndingSlide ? 66 : 72), scale(40), 3, true, CARD_TITLE_TEXT_WIDTH_SAFETY);',
+    'const titleFit = fitVariantText(titleText, newsTitleTextWidth, INSERTED_IMAGE_TITLE_MAX_HEIGHT, scale(72), scale(42), 3, true, CARD_TITLE_TEXT_WIDTH_SAFETY);'
+  ];
+  titleCalls.forEach((call, index) => {
+    if (!source.includes(call)) throw new Error(`Target non-default title renderer ${index + 1} tidak ditemukan; patch dibatalkan.`);
+    source = source.replace(call, titleReplacements[index]);
+  });
+
+  // Keep the image renderer's fixed Default geometry authoritative. The
+  // inserted-image patch reads this marker through the exported constants and
+  // therefore never needs to move the image down for a long title.
+  if (!source.includes('const INSERTED_IMAGE_TOP = 900;')) {
+    throw new Error('Kontrak posisi gambar Slide 1 tidak terpasang.');
+  }
 
   const patchedModule = new Module(filename, module.parent);
   patchedModule.filename = filename;
