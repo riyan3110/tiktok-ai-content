@@ -128,20 +128,23 @@
   min-width:0;
 }
 
-/* Grid */
+/* Grid — Reference #5: uniform small SQUARE tiles (image-only). Caption is
+   hidden on the grid; tapping a tile opens the full preview with its details. */
 #asset-manager .asset-grid{
   grid-template-columns:repeat(auto-fill,minmax(128px,1fr));
   gap:8px;
 }
 #asset-manager .asset-card{
+  position:relative;
   min-width:0;
+  aspect-ratio:1;
   border-radius:10px;
   overflow:hidden;
 }
 #asset-manager .asset-preview{
   width:100%;
-  height:auto!important;
-  aspect-ratio:1/1!important;
+  height:100%!important;
+  aspect-ratio:auto!important;
   border-radius:0!important;
   background:#111113;
 }
@@ -151,36 +154,31 @@
   object-fit:cover;
 }
 #asset-manager .asset-card-meta{
-  display:flex;
-  align-items:center;
-  gap:5px;
-  min-width:0;
-  padding:6px!important;
-}
-#asset-manager .asset-card-meta .badge{
-  flex:0 0 auto;
-  margin:0;
-  padding:3px 6px;
-  font-size:.56rem;
-}
-#asset-manager .asset-card-meta small{
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  color:var(--muted);
-  font-size:.57rem;
+  display:none!important;
 }
 #asset-manager .asset-card-check{
   top:5px;
   right:5px;
   width:21px;
   height:21px;
-  border-radius:6px;
+  border-radius:50%;
 }
 #asset-manager .asset-card-check input{
-  width:14px;
-  height:14px;
+  -webkit-appearance:none!important;
+  appearance:none!important;
+  min-width:0!important;
+  min-height:0!important;
+  width:13px!important;
+  height:13px!important;
+  padding:0!important;
+  border-radius:50%!important;
+  border:2px solid #fff!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+#asset-manager .asset-card-check input:checked{
+  background:var(--neo-lime,#c7f53c)!important;
+  border-color:var(--neo-lime,#c7f53c)!important;
 }
 
 /* Selection toolbar compact */
@@ -318,19 +316,34 @@
     margin:14px 0 7px;
   }
   #asset-manager .asset-grid{
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:7px;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:6px;
+  }
+  /* Reference #5: Asset Library as uniform, small, SQUARE tiles — same look as
+     the asset picker. Each card is a pure square image; the type/size caption is
+     hidden on the grid and still available by tapping a tile to open its preview. */
+  #asset-manager .asset-card{
+    position:relative;
+    aspect-ratio:1;
+    border-radius:8px;
+  }
+  #asset-manager .asset-preview{
+    height:100%!important;
+    aspect-ratio:auto!important;
+    border-radius:0!important;
   }
   #asset-manager .asset-card-meta{
-    padding:5px!important;
-    gap:3px;
+    display:none!important;
   }
-  #asset-manager .asset-card-meta .badge{
-    padding:2px 5px;
-    font-size:.52rem;
+  #asset-manager .asset-card-check{
+    top:4px;
+    right:4px;
+    width:19px;
+    height:19px;
   }
-  #asset-manager .asset-card-meta small{
-    font-size:.52rem;
+  #asset-manager .asset-card-check input{
+    width:13px;
+    height:13px;
   }
 
   .asset-selector-shell{
