@@ -547,7 +547,9 @@ function renderStructuredVariant(layout) {
       const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (isResultSlide ? 'HASIL' : 'TUTORIAL');
       const cardRight = 70;
       const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
-      const titleTextWidth = isResultSlide ? cardWidth - 260 : cardWidth - 220;
+      // Judul memakai lebar penuh garis pemisah agar kalimat melebar horizontal
+      // dan tidak menumpuk menjadi banyak baris pendek (shrink-to-fit via fitVariantText).
+      const titleTextWidth = cardWidth;
       const bodyTextWidth = isResultSlide ? cardWidth - 200 : cardWidth - 130;
       const actionTextWidth = cardWidth - 210;
 
@@ -597,7 +599,9 @@ function renderStructuredVariant(layout) {
       const isEndingSlide = /PENYELESAIAN|PENUTUP|AKHIR/i.test(section);
       const cardRight = 70;
       const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
-      const titleTextWidth = isEndingSlide ? cardWidth - 260 : cardWidth - 220;
+      // Judul memakai lebar penuh garis pemisah agar kalimat melebar horizontal
+      // dan tidak menumpuk menjadi banyak baris pendek (shrink-to-fit via fitVariantText).
+      const titleTextWidth = cardWidth;
       const bodyTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 150;
       const continuationTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 180;
       // Copy-lock: keep body plus every pasted continuation paragraph in order.
@@ -655,7 +659,9 @@ function renderStructuredVariant(layout) {
     // style === 'news'
     const newsRight = 70;
     const newsWidth = WIDTH - SAFE_AREA.left - newsRight;
-    const newsTitleTextWidth = newsWidth - 220;
+    // Judul memakai lebar penuh garis pemisah agar kalimat melebar horizontal
+    // dan tidak menumpuk menjadi banyak baris pendek (shrink-to-fit via fitVariantText).
+    const newsTitleTextWidth = newsWidth;
     const newsBodyTextWidth = newsWidth - 130;
     const newsFactTextWidth = newsWidth - 200;
     parts.push(
