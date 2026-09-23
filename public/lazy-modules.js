@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260923-judul-lebar-gambar-besar';
+  const VERSION = 'cache-20260924-slide1-title-safe';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
