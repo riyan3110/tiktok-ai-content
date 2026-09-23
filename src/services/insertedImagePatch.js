@@ -7,16 +7,17 @@ const { StorageService } = require('../storage/service');
 const PATCHED = Symbol.for('aiads.insertedImagePatch');
 const WIDTH = 1080;
 const HEIGHT = 1920;
-// Gambar besar dengan margin kecil di kiri, kanan, dan bawah (~5% lebar kanvas = 54px).
-// Posisi vertikal untuk layout non-default dihitung dari judul slide 1 agar foto
-// tidak menimpa teks, tetapi ukuran kotak gambar TETAP sama seperti Default.
-// Tidak ada frame/border/kartu — hanya sudut membulat agar tepi terlihat rapi.
+// Default is the visual source of truth for inserted Slide 1 images.
+// Non-default layouts must use the exact same image geometry: same left/right
+// margins, same top position, same box size, and therefore the same bottom
+// background. Long titles are fitted above the image instead of moving it.
 const MARGIN = 54;
 const BASE_INSERT_TOP = 900;
 const INSERT_BOX_WIDTH = WIDTH - MARGIN * 2;
 const INSERT_BOX_HEIGHT = HEIGHT - BASE_INSERT_TOP - MARGIN;
 const TITLE_GAP = 56;
 const INSERT_RADIUS = 28;
+const TITLE_MAX_HEIGHT = BASE_INSERT_TOP - (670 + TITLE_GAP);
 
 function parseRecord(row) {
   if (!row) return null;
@@ -57,11 +58,13 @@ function titleFitForInsert(images, renderSource) {
   const title = String(renderSource?.slides?.[0]?.title || '').trim();
   if (!title || style === 'default') return null;
 
-  const maxWidth = (WIDTH - 90 - 70) * 0.88;
+  // Match the non-default renderer: full available content width, no artificial
+  // 0.88 narrowing, and a maximum height that ends before the fixed image top.
+  const maxWidth = WIDTH - 90 - 70;
   const startSize = 72;
   const minSize = style === 'news' ? 42 : 40;
-  const maxLines = style === 'news' ? 5 : 4;
-  const maxHeight = style === 'news' ? 330 : 340;
+  const maxLines = 3;
+  const maxHeight = TITLE_MAX_HEIGHT;
 
   for (let size = startSize; size >= minSize; size -= 2) {
     const lines = images.wrapText(title, maxWidth, size, true);
@@ -73,15 +76,13 @@ function titleFitForInsert(images, renderSource) {
 }
 
 function resolveInsertBox(images, renderSource = {}) {
-  const fit = titleFitForInsert(images, renderSource);
-  // Variant renderer starts its title at CONTENT_TOP + 90 = 670px.
-  // Default keeps the historical 900px position. Other layouts may move the
-  // image box downward, but NEVER shrink the image box to make room for text.
-  const titleBottom = fit ? 670 + fit.height : 0;
-  const top = Math.max(BASE_INSERT_TOP, Math.ceil(titleBottom + TITLE_GAP));
+  // Never move or shrink the image to accommodate a longer non-default title.
+  // The title renderer is responsible for fitting the title into the area above
+  // this fixed box. This keeps the image and bottom background identical to Default.
+  titleFitForInsert(images, renderSource);
   return Object.freeze({
     left: MARGIN,
-    top,
+    top: BASE_INSERT_TOP,
     width: INSERT_BOX_WIDTH,
     height: INSERT_BOX_HEIGHT
   });
@@ -91,10 +92,9 @@ async function overlaySlideOne(file, input, insertBox) {
   const target = generatedPath(file);
   if (!target) throw Object.assign(new Error('Slide pertama tidak valid.'), { status: 422 });
 
-  // Selalu render foto ke kotak Default 972x966. Padding transparan dari
-  // `contain` dipotong sebelum composite supaya kotak boleh bergerak turun
-  // tanpa membuat buffer overlay keluar dari kanvas. Ukuran foto aktual tetap
-  // sama seperti Default untuk semua layout.
+  // Always render into the exact Default 972x966 box. Padding from `contain`
+  // is trimmed before compositing, preserving the source aspect ratio without
+  // cropping the image.
   const fittedPhoto = await sharp(input)
     .rotate()
     .resize(INSERT_BOX_WIDTH, INSERT_BOX_HEIGHT, {
@@ -116,8 +116,6 @@ async function overlaySlideOne(file, input, insertBox) {
     .png()
     .toBuffer();
 
-  // Pertahankan offset tengah yang sama seperti Default. Karena ukuran foto
-  // aktual tidak berubah, layout lain hanya menggeser posisi vertikalnya.
   const photoLeft = insertBox.left + Math.round((insertBox.width - photoW) / 2);
   const photoTop = insertBox.top + Math.round((insertBox.height - photoH) / 2);
 
@@ -184,5 +182,6 @@ module.exports = {
   INSERT_BOX_HEIGHT,
   resolveInsertBox,
   titleFitForInsert,
-  generatedPath
+  generatedPath,
+  TITLE_MAX_HEIGHT
 };

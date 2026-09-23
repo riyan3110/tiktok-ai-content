@@ -2,54 +2,56 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const images = require('../src/services/images');
-const { resolveInsertBox, titleFitForInsert } = require('../src/services/insertedImagePatch');
+const { resolveInsertBox, titleFitForInsert, TITLE_MAX_HEIGHT } = require('../src/services/insertedImagePatch');
 
 const DEFAULT_IMAGE_WIDTH = 972;
 const DEFAULT_IMAGE_HEIGHT = 966;
+const DEFAULT_IMAGE_TOP = 900;
+const DEFAULT_IMAGE_LEFT = 54;
 
-test('slide-1 tutorial menurunkan foto di bawah judul panjang tanpa mengecilkan ukuran gambar', () => {
-  const title = 'Hubungkan Server ke GitLab Menggunakan SSH Tanpa Password Berulang';
-  const box = resolveInsertBox(images, {
-    contentLayout: 'tutorial',
-    slides: [{ title }]
+for (const contentLayout of ['tutorial', 'story', 'news']) {
+  test(`slide-1 ${contentLayout} mempertahankan geometry gambar Default dan tidak menggeser gambar karena judul`, () => {
+    const title = contentLayout === 'tutorial'
+      ? 'Hubungkan Server ke GitLab Menggunakan SSH Tanpa Password Berulang'
+      : contentLayout === 'story'
+        ? 'Kalau hasilnya gagal, apa yang sebenarnya masih kita punya?'
+        : 'Belum Ada Kabar Terverifikasi tentang Kapal Virgo';
+    const box = resolveInsertBox(images, {
+      contentLayout,
+      slides: [{ title }]
+    });
+    const titleFit = titleFitForInsert(images, {
+      contentLayout,
+      slides: [{ title }]
+    });
+
+    assert.equal(box.left, DEFAULT_IMAGE_LEFT);
+    assert.equal(box.top, DEFAULT_IMAGE_TOP);
+    assert.equal(box.width, DEFAULT_IMAGE_WIDTH);
+    assert.equal(box.height, DEFAULT_IMAGE_HEIGHT);
+    assert.ok(titleFit);
+    assert.ok(titleFit.lines.length <= 3);
+    assert.ok(titleFit.height <= TITLE_MAX_HEIGHT);
   });
+}
 
-  assert.ok(titleFitForInsert(images, { contentLayout: 'tutorial', slides: [{ title }] }).lines.length >= 3);
-  assert.ok(box.top > 900);
-  assert.equal(box.left, 54);
-  assert.equal(box.width, DEFAULT_IMAGE_WIDTH);
-  assert.equal(box.height, DEFAULT_IMAGE_HEIGHT);
-});
-
-test('slide-1 story dengan judul panjang tidak boleh menempel ke foto dan ukuran tetap seperti default', () => {
-  const title = 'Kalau hasilnya gagal, apa yang sebenarnya masih kita punya?';
-  const box = resolveInsertBox(images, {
-    contentLayout: 'story',
-    slides: [{ title }]
-  });
-
-  assert.ok(box.top > 900);
-  assert.equal(box.width, DEFAULT_IMAGE_WIDTH);
-  assert.equal(box.height, DEFAULT_IMAGE_HEIGHT);
-});
-
-test('semua layout memakai ukuran gambar Default dan margin horizontal yang sama', () => {
-  const layouts = ['default', 'tutorial', 'story', 'news'];
-  for (const contentLayout of layouts) {
+test('semua layout memakai ukuran dan posisi gambar Default, termasuk Default sendiri', () => {
+  for (const contentLayout of ['default', 'tutorial', 'story', 'news']) {
     const box = resolveInsertBox(images, {
       contentLayout,
       slides: [{ title: 'Judul singkat' }]
     });
-    assert.equal(box.left, 54);
+    assert.equal(box.left, DEFAULT_IMAGE_LEFT);
+    assert.equal(box.top, DEFAULT_IMAGE_TOP);
     assert.equal(box.width, DEFAULT_IMAGE_WIDTH);
     assert.equal(box.height, DEFAULT_IMAGE_HEIGHT);
-    assert.ok(box.top >= 900);
   }
 });
 
-test('tanpa title render_source, posisi fallback tetap 900px dengan ukuran Default', () => {
+test('tanpa title render_source, posisi fallback tetap sama seperti Default', () => {
   const box = resolveInsertBox(images, {});
-  assert.equal(box.top, 900);
+  assert.equal(box.left, DEFAULT_IMAGE_LEFT);
+  assert.equal(box.top, DEFAULT_IMAGE_TOP);
   assert.equal(box.width, DEFAULT_IMAGE_WIDTH);
   assert.equal(box.height, DEFAULT_IMAGE_HEIGHT);
 });
