@@ -7,14 +7,13 @@ const { StorageService } = require('../storage/service');
 const PATCHED = Symbol.for('aiads.insertedImagePatch');
 const WIDTH = 1080;
 const HEIGHT = 1920;
-// Smaller, centered, tidy card for the slide-1 inserted photo. The box sits
-// well BELOW the headline block (news/story/tutorial headline can run to ~935px
-// at 5 lines) so the picture never touches the title. Centered horizontally
-// (left = (1080-720)/2) with rounded corners so it reads as a neat framed
-// thumbnail instead of a full-bleed image.
-const INSERT_BOX = Object.freeze({ left: 180, top: 1025, width: 720, height: 600 });
-const INSERT_RADIUS = 34;
-const INSERT_PAD = 16;
+// Gambar besar dengan margin kecil di kiri, kanan, dan bawah (~5% lebar kanvas = 54px)
+// agar sedikit latar belakang tetap terlihat di sekeliling gambar.
+// Tidak ada frame/border/kartu — hanya sudut membulat agar tepi terlihat rapi.
+// Top = 900 agar gambar berada di bawah blok judul slide 1.
+const MARGIN = 54; // ~5% dari 1080
+const INSERT_BOX = Object.freeze({ left: MARGIN, top: 900, width: WIDTH - MARGIN * 2, height: HEIGHT - 900 - MARGIN });
+const INSERT_RADIUS = 28;
 
 function parseRecord(row) {
   if (!row) return null;
@@ -50,19 +49,21 @@ async function overlaySlideOne(file, input) {
   const target = generatedPath(file);
   if (!target) throw Object.assign(new Error('Slide pertama tidak valid.'), { status: 422 });
 
-  const innerW = INSERT_BOX.width - INSERT_PAD * 2;
-  const innerH = INSERT_BOX.height - INSERT_PAD * 2;
-
-  // Fit the photo inside the inner box (contain, no crop) then round its corners
-  // so it reads as a neat framed thumbnail rather than a raw full-bleed image.
+  // Fit foto ke dalam kotak besar (contain, tanpa crop) lalu bulatkan sudutnya.
+  // Tidak ada frame, border, atau panel latar — hanya gambar dengan sudut membulat
+  // agar tepi terlihat rapi tanpa menutupi seluruh latar belakang.
   const photo = await sharp(input)
     .rotate()
-    .resize(innerW, innerH, { fit: 'contain', position: 'centre', background: { r: 15, g: 12, b: 26, alpha: 1 } })
+    .resize(INSERT_BOX.width, INSERT_BOX.height, {
+      fit: 'contain',
+      position: 'centre',
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    })
     .png()
     .toBuffer();
   const meta = await sharp(photo).metadata();
-  const photoW = meta.width || innerW;
-  const photoH = meta.height || innerH;
+  const photoW = meta.width || INSERT_BOX.width;
+  const photoH = meta.height || INSERT_BOX.height;
   const roundedMask = Buffer.from(
     `<svg width="${photoW}" height="${photoH}"><rect x="0" y="0" width="${photoW}" height="${photoH}" rx="${INSERT_RADIUS}" ry="${INSERT_RADIUS}"/></svg>`
   );
@@ -71,23 +72,14 @@ async function overlaySlideOne(file, input) {
     .png()
     .toBuffer();
 
-  // Center the rounded photo within the frame; draw a soft rounded frame behind
-  // it so the picture always looks deliberately placed and tidy.
+  // Tempatkan foto di tengah kotak INSERT_BOX; tidak ada frame di belakangnya.
   const photoLeft = INSERT_BOX.left + Math.round((INSERT_BOX.width - photoW) / 2);
   const photoTop = INSERT_BOX.top + Math.round((INSERT_BOX.height - photoH) / 2);
-  const frame = Buffer.from(
-    `<svg width="${WIDTH}" height="${HEIGHT}">` +
-    `<rect x="${INSERT_BOX.left}" y="${INSERT_BOX.top}" width="${INSERT_BOX.width}" height="${INSERT_BOX.height}" rx="${INSERT_RADIUS + INSERT_PAD}" ry="${INSERT_RADIUS + INSERT_PAD}" fill="#000000" fill-opacity="0.28" stroke="#ffffff" stroke-opacity="0.55" stroke-width="3"/>` +
-    `</svg>`
-  );
 
   const temporary = `${target}.insert-${process.pid}-${Date.now()}.jpg`;
   try {
     await sharp(target)
-      .composite([
-        { input: frame, left: 0, top: 0 },
-        { input: roundedPhoto, left: photoLeft, top: photoTop }
-      ])
+      .composite([{ input: roundedPhoto, left: photoLeft, top: photoTop }])
       .flatten({ background: '#ffffff' })
       .toColourspace('srgb')
       .jpeg({ quality: 90 })

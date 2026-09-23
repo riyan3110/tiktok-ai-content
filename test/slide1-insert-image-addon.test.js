@@ -6,6 +6,7 @@ const path = require('node:path');
 const addon = fs.readFileSync(path.join(__dirname, '../public/legacy-carousel-addon.js'), 'utf8');
 const insertion = fs.readFileSync(path.join(__dirname, '../src/services/insertedImagePatch.js'), 'utf8');
 const server = fs.readFileSync(path.join(__dirname, '../src/server.js'), 'utf8');
+const imagesSource = fs.readFileSync(path.join(__dirname, '../src/services/images.js'), 'utf8');
 
 test('legacy carousel selector is repurposed as one optional inserted image, not an AI reference', () => {
   assert.match(addon, /heading\.textContent = 'Sisipkan gambar'/);
@@ -16,12 +17,19 @@ test('legacy carousel selector is repurposed as one optional inserted image, not
   assert.match(addon, /\/contents\/\$\{encodeURIComponent\(generated\.id\)\}\/insert-image/);
 });
 
-test('selected image stays fully visible in the tidy centered slide-one frame below the hook', () => {
-  assert.match(insertion, /INSERT_BOX = Object\.freeze\(\{ left: 180, top: 1025, width: 720, height: 600 \}\)/);
+test('gambar slide-1 besar dengan margin kecil, tanpa frame/border, sudut membulat', () => {
+  // Kotak besar: margin ~5% (54px) di kiri, kanan, bawah; top = 900 di bawah judul.
+  assert.match(insertion, /MARGIN = 54/);
+  assert.match(insertion, /INSERT_BOX = Object\.freeze\(\{ left: MARGIN, top: 900, width: WIDTH - MARGIN \* 2, height: HEIGHT - 900 - MARGIN \}\)/);
+  // Contain tanpa crop, latar transparan (tidak ada panel latar di belakang gambar).
   assert.match(insertion, /fit: 'contain'/);
   assert.match(insertion, /position: 'centre'/);
   assert.doesNotMatch(insertion, /fit: 'cover'/);
+  // Sudut membulat via mask SVG, tanpa frame/stroke/border.
   assert.match(insertion, /blend: 'dest-in'/);
+  assert.doesNotMatch(insertion, /stroke="#ffffff"/);
+  assert.doesNotMatch(insertion, /fill-opacity="0\.28"/);
+  assert.doesNotMatch(insertion, /INSERT_PAD/);
   assert.match(insertion, /await overlaySlideOne\(files\[0\], file\.data\)/);
   assert.match(insertion, /await overlaySlideOne\(slides\[0\], file\.data\)/);
   assert.doesNotMatch(insertion, /overlaySlideOne\(files\[i\]/);
@@ -100,5 +108,23 @@ test('Kategori Konten and Format Konten visibility rules in app.js', () => {
   assert.match(indexHtml, /id="category-format-grid"/);
   assert.match(appJs, /syncCategoryFormatVisibility/);
   assert.match(appJs, /const shouldHide = topicSource === 'manual' && isWithoutUrl/);
+});
+
+test('judul Tutorial/Cerita/Berita memakai lebar penuh garis pemisah (bukan dipersempit)', () => {
+  // Tutorial: titleTextWidth harus = cardWidth (bukan cardWidth - 220 atau sejenisnya)
+  assert.match(imagesSource, /const titleTextWidth = cardWidth;/);
+  // Cerita: sama, titleTextWidth = cardWidth
+  // (ada dua blok berbeda, keduanya harus memakai cardWidth)
+  const tutorialBlock = imagesSource.split("if (style === 'tutorial')")[1].split("if (style === 'story')")[0];
+  const storyBlock = imagesSource.split("if (style === 'story')")[1].split("// style === 'news'")[0];
+  const newsBlock = imagesSource.split("// style === 'news'")[1].split('let result = compose')[0];
+  assert.match(tutorialBlock, /const titleTextWidth = cardWidth;/);
+  assert.match(storyBlock, /const titleTextWidth = cardWidth;/);
+  // Berita: newsTitleTextWidth harus = newsWidth (bukan newsWidth - 220)
+  assert.match(newsBlock, /const newsTitleTextWidth = newsWidth;/);
+  // Tidak boleh ada pengurangan lebar untuk judul
+  assert.doesNotMatch(tutorialBlock, /titleTextWidth = (?:isResultSlide \? cardWidth - \d+ : )?cardWidth - \d+/);
+  assert.doesNotMatch(storyBlock, /titleTextWidth = (?:isEndingSlide \? cardWidth - \d+ : )?cardWidth - \d+/);
+  assert.doesNotMatch(newsBlock, /newsTitleTextWidth = newsWidth - \d+/);
 });
 

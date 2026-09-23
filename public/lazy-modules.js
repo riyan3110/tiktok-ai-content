@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260915-prompt-actions-notes';
+  const VERSION = 'cache-20260923-judul-lebar-gambar-besar';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
