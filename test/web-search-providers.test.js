@@ -107,34 +107,34 @@ test('save validates with a REAL search and rejects empty results', async () => 
   );
 });
 
-test('ROUTER: single provider -> plan single', async () => {
+test('ROUTER: single provider -> returns its results (failover plan)', async () => {
   const db = createDatabase(':memory:');
   const transport = multiTransport([]);
   await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
   const out = await webSearch.routeSearch(db, 'kabar terbaru', transport, 5);
-  assert.equal(out.plan, 'single');
+  assert.equal(out.plan, 'failover');
   assert.equal(out.providers.length, 1);
   assert.ok(out.results.length >= 1);
 });
 
-test('ROUTER: two providers, ordinary query -> primary only (cost-aware)', async () => {
+test('ROUTER: two providers, ordinary query -> primary answers first, verify NOT called (cost-aware)', async () => {
   const db = createDatabase(':memory:');
   const transport = multiTransport([]);
-  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);           // primary
-  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom' }, transport); // verify
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key', role: 'primary' }, transport);
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom', role: 'verify' }, transport);
   const calls = [];
   const traced = (url, opt) => { calls.push(String(url)); return transport(url, opt); };
   const out = await webSearch.routeSearch(db, 'apa yang viral hari ini', traced, 5);
-  assert.equal(out.plan, 'primary');
+  assert.equal(out.plan, 'failover');
   assert.deepEqual(out.providers, ['Tavily']);
-  assert.ok(calls.every(u => u.includes('tavily.com')), 'ordinary query must not call the verify provider');
+  assert.ok(calls.every(u => u.includes('tavily.com')), 'ordinary query stops at the first working provider');
 });
 
 test('ROUTER: verification query -> both providers, merged + deduped, tagged by source', async () => {
   const db = createDatabase(':memory:');
   const transport = multiTransport([]);
-  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
-  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom' }, transport);
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key', role: 'primary' }, transport);
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom', role: 'verify' }, transport);
   const out = await webSearch.routeSearch(db, 'tolong verifikasi klaim ini benar atau hoaks', transport, 6);
   assert.equal(out.plan, 'both');
   assert.deepEqual(out.providers.sort(), ['Tavily', 'Ydc Index']);
@@ -146,18 +146,24 @@ test('ROUTER: verification query -> both providers, merged + deduped, tagged by 
   assert.equal(urls.length, new Set(urls.map(u => u.toLowerCase())).size);
 });
 
-test('ROUTER: escalates to verify when primary returns too few results', async () => {
+test('ROUTER: primary empty -> automatically falls over to the verify provider', async () => {
   const db = createDatabase(':memory:');
+  const probe = async (url) => {
+    const u = new URL(String(url));
+    if (u.hostname.includes('tavily.com')) return jsonRes({ results: [{ title: 'probe', url: 'https://t/p', content: 'x' }] });
+    return jsonRes({ hits: [{ title: 'probe', url: 'https://y/p', snippets: ['s'] }] });
+  };
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key', role: 'primary' }, probe);
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom', role: 'verify' }, probe);
+  // Live: primary returns ZERO results, verify returns some.
   const transport = async (url, options = {}) => {
     const u = new URL(String(url));
-    if (u.hostname.includes('tavily.com')) return jsonRes({ results: [{ title: 'lone', url: 'https://tav.example/lone', content: 'x' }] }); // 1 result < MIN
+    if (u.hostname.includes('tavily.com')) return jsonRes({ results: [] });
     if (u.hostname.includes('ydc-index.io')) return jsonRes({ hits: [{ title: 'You A', url: 'https://you.example/a', snippets: ['s'] }] });
     return new Response('nf', { status: 404 });
   };
-  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
-  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom' }, transport);
   const out = await webSearch.routeSearch(db, 'query biasa singkat', transport, 6);
-  assert.equal(out.plan, 'escalated');
+  assert.equal(out.plan, 'failover');
   assert.ok(out.providers.includes('Ydc Index'));
 });
 
@@ -183,6 +189,48 @@ test('per-provider enable/disable + role via HTTP routes', async t => {
   assert.equal(roled.providers[0].role, 'verify');
   const disabled = await fetch(`${base}/api/web-search/providers/${id}/enabled`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) }).then(r => r.json());
   assert.equal(disabled.providers[0].enabled, false);
+});
+
+test('ROUTER failover: primary provider errors -> automatically uses the other provider', async () => {
+  const db = createDatabase(':memory:');
+  // Save two providers using a transport that returns results (for the probe).
+  const okProbe = async (url, options = {}) => {
+    const u = new URL(String(url));
+    if (u.hostname.includes('tavily.com')) return jsonRes({ results: [{ title: 'T', url: 'https://t/1', content: 'x' }] });
+    return jsonRes({ results: { web: [{ title: 'Y', url: 'https://y/1', description: 'x' }] } });
+  };
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key', role: 'primary' }, okProbe);
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', role: 'verify' }, okProbe);
+
+  // Now the live transport: Tavily (primary) is DOWN (500), You.com works.
+  const failover = async (url, options = {}) => {
+    const u = new URL(String(url));
+    if (u.hostname.includes('tavily.com')) return new Response('err', { status: 500 });
+    if (u.hostname.includes('ydc-index.io')) return jsonRes({ results: { web: [
+      { title: 'You result', url: 'https://you.example/a', description: 'berita terbaru' }
+    ] } });
+    return new Response('nf', { status: 404 });
+  };
+  const out = await webSearch.routeSearch(db, 'kabar terbaru', failover, 5, true);
+  assert.ok(out.results.length >= 1, 'must return results from the working provider');
+  assert.ok(out.providers.includes('Ydc Index'), 'failover must use the second provider');
+  assert.equal(out.plan, 'failover');
+});
+
+test('ROUTER failover: throws a combined named error only when ALL providers fail', async () => {
+  const db = createDatabase(':memory:');
+  const okProbe = async (url) => {
+    const u = new URL(String(url));
+    if (u.hostname.includes('tavily.com')) return jsonRes({ results: [{ title: 'T', url: 'https://t/1', content: 'x' }] });
+    return jsonRes({ results: { web: [{ title: 'Y', url: 'https://y/1', description: 'x' }] } });
+  };
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key', role: 'primary' }, okProbe);
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', role: 'verify' }, okProbe);
+  const allDown = async () => new Response('err', { status: 500 });
+  await assert.rejects(
+    () => webSearch.routeSearch(db, 'kabar', allDown, 5, true),
+    /Semua provider Web Search gagal/
+  );
 });
 
 test('ROUTER force: searches even when master toggle off / providers disabled (explicit button press)', async () => {

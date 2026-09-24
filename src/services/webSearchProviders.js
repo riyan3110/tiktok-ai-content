@@ -339,42 +339,56 @@ async function runProviders(rows, query, transport, limit) {
   return { results: merged, used: [...new Set(used)], errors };
 }
 
-// The ROUTER. Decides how many providers to hit for a query (cost-aware).
-// `force` (used when the user explicitly presses the search button) searches
-// even if the master toggle is off and ignores per-provider disable so an
-// explicit action never silently does nothing.
+// The ROUTER with automatic failover. Tries providers in priority order and
+// returns as soon as one yields usable results. If a provider errors or returns
+// nothing, it automatically falls back to the next provider. Only throws when
+// EVERY provider failed — and then reports each provider's specific error.
+// `force` (search button / AI-invoked) searches even if the master toggle is
+// off and ignores per-provider disable so an explicit action never no-ops.
 async function routeSearch(db, query, transport = fetch, limit = 5, force = false) {
   const rows = activeProviderRows(db, force);
   if (!rows.length) return { results: [], enabled: false, providers: [], plan: 'off' };
-  if (rows.length === 1) {
-    const { results, used, errors } = await runProviders(rows, query, transport, limit);
-    if (!results.length && errors.length) throw Object.assign(new Error(errors[0].message), { status: 502 });
-    return { results, enabled: true, providers: used, plan: 'single' };
-  }
 
+  // Priority order: primary hint first, then verify, then the rest.
   const current = stateRow(db);
-  const primary = rows.find(r => r.role === 'primary')
-    || rows.find(r => r.id === current.selected_provider_id)
-    || rows[0];
-  const verify = rows.find(r => r.role === 'verify' && r.id !== primary.id)
-    || rows.find(r => r.id !== primary.id);
-
-  const needBoth = VERIFY_SIGNAL.test(String(query || '')) || String(query || '').length > 140;
-  if (needBoth && verify) {
-    const { results, used, errors } = await runProviders([primary, verify], query, transport, limit);
-    if (!results.length && errors.length) throw Object.assign(new Error(errors[0].message), { status: 502 });
-    return { results, enabled: true, providers: used, plan: 'both' };
+  const ordered = [...rows].sort((a, b) => rank(a) - rank(b));
+  function rank(row) {
+    if (row.role === 'primary') return 0;
+    if (row.id === current.selected_provider_id) return 1;
+    if (row.role === 'verify') return 2;
+    return 3;
   }
 
-  // Cheap path: primary only. Escalate to verify only if primary is thin.
-  const first = await runProviders([primary], query, transport, limit);
-  if (first.results.length >= MIN_PRIMARY_RESULTS || !verify) {
-    if (!first.results.length && first.errors.length) throw Object.assign(new Error(first.errors[0].message), { status: 502 });
-    return { results: first.results, enabled: true, providers: first.used, plan: 'primary' };
+  const q = String(query || '');
+  const wantVerify = VERIFY_SIGNAL.test(q) || q.length > 140;
+
+  // Verify/deep queries: try to combine the top two providers for richer,
+  // cross-checked results. If that combo yields nothing, fall through to
+  // sequential single-provider failover below.
+  const allErrors = [];
+  if (wantVerify && ordered.length >= 2) {
+    const combo = await runProviders(ordered.slice(0, 2), q, transport, limit);
+    if (combo.results.length) return { results: combo.results, enabled: true, providers: combo.used, plan: 'both' };
+    allErrors.push(...combo.errors);
   }
-  const escalated = await runProviders([primary, verify], query, transport, limit);
-  if (!escalated.results.length && escalated.errors.length) throw Object.assign(new Error(escalated.errors[0].message), { status: 502 });
-  return { results: escalated.results, enabled: true, providers: escalated.used, plan: 'escalated' };
+
+  // Sequential failover: walk every provider in priority order until one
+  // returns results. This is the behaviour the user asked for — if one Web
+  // Search is down/disabled/erroring, automatically use the next one.
+  for (const row of ordered) {
+    const single = await runProviders([row], q, transport, limit);
+    if (single.results.length) return { results: single.results, enabled: true, providers: single.used, plan: 'failover' };
+    allErrors.push(...single.errors);
+  }
+
+  // Everyone failed — surface a combined, provider-named error.
+  if (allErrors.length) {
+    const seen = new Set();
+    const detail = allErrors.filter(e => { const k = `${e.name}:${e.message}`; if (seen.has(k)) return false; seen.add(k); return true; })
+      .map(e => `${e.name}: ${e.message}`).join(' | ');
+    throw Object.assign(new Error(`Semua provider Web Search gagal — ${detail}`), { status: 502 });
+  }
+  return { results: [], enabled: true, providers: [], plan: 'empty' };
 }
 
 // Backward-compatible entry used by the AI Chat.

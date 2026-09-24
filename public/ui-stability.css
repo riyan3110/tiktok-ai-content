@@ -108,4 +108,12 @@
   visibility:visible!important;
   opacity:1!important;
 }
+/* When the chat panel is open (or a config screen needs the space), the JS adds
+   this class — it must win over the display:grid!important above. */
+.aiads-chat-launcher.aiads-launcher-hidden{
+  display:none!important;
+  visibility:hidden!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}
 .aiads-chat-panel{z-index:2147482999!important}
