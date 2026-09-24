@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260925-chat-failover-copyfix';
+  const VERSION = 'cache-20260925-sw-force-reload';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();

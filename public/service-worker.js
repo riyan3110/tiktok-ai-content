@@ -1,10 +1,14 @@
-const STATIC_CACHE = 'aiads-static-ui-20260925c';
+const STATIC_CACHE = 'aiads-static-ui-20260925d';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil((async () => {
+  // Nuke ALL caches (not just old static caches) to force fresh JS/CSS on version bump.
   const names = await caches.keys();
-  await Promise.all(names.filter(name => name.startsWith('aiads-static-') && name !== STATIC_CACHE).map(name => caches.delete(name)));
+  await Promise.all(names.map(name => caches.delete(name)));
   await self.clients.claim();
+  // Force all open tabs to reload with fresh assets.
+  const clients = await self.clients.matchAll({ type: 'window' });
+  for (const client of clients) client.navigate(client.url);
 })()));
 
 function decodeBase64(value) {
