@@ -300,7 +300,13 @@ function install({ app, db, transport } = {}) {
 
       const history = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT ?').all(session.id, MAX_HISTORY_MESSAGES).reverse();
       const urls = extractUrls(content);
-      const wantSearch = req.body?.webSearch === true;
+      // Search runs when EITHER the user pressed the search button (webSearch=true)
+      // OR the master toggle "Aktifkan Web Search di AI Chat" is on — that toggle
+      // promises "AI Chat akan mencari web sebelum menjawab", so every message
+      // must search, not only magnifier-button presses.
+      let masterSearchOn = false;
+      try { masterSearchOn = Boolean(webSearch.publicState(db).enabled); } catch (_) { /* web search optional */ }
+      const wantSearch = req.body?.webSearch === true || masterSearchOn;
       let sourceContext = '';
       let visionAssets = [];
       let searchCitations = [];

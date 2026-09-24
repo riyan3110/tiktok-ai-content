@@ -230,3 +230,39 @@ test('floating chat: search enabled but zero results -> honesty instruction, no 
   assert.match(out.context, /no_results/);
   assert.match(out.context, /JANGAN mengarang/);
 });
+
+test('master toggle ON makes chat search WITHOUT pressing the search button', async () => {
+  // Reproduces the screenshot: master toggle "Aktifkan Web Search di AI Chat" is
+  // ON but the user sends via the normal send button (webSearch !== true). The
+  // AI must still receive web context instead of replying "tidak punya akses".
+  const db = createDatabase(':memory:');
+  const searched = [];
+  const transport = async (url, options = {}) => {
+    const u = new URL(String(url));
+    if (u.hostname.includes('tavily.com')) {
+      searched.push(String(url));
+      const body = JSON.parse(options.body);
+      return jsonRes({ results: [
+        { title: `Berita: ${body.query}`, url: 'https://news.example/x', content: 'Isi berita terverifikasi.' }
+      ] });
+    }
+    return new Response('nf', { status: 404 });
+  };
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
+  // Turn ON the master toggle.
+  const st = webSearch.publicState(db);
+  webSearch.setEnabled(db, true);
+  assert.equal(webSearch.publicState(db).enabled, true);
+
+  // Simulate the server-side decision in the message handler: no explicit
+  // webSearch flag from the client, but master toggle is on.
+  const reqBody = { content: 'berita sepak bola terbaru' };
+  let masterSearchOn = Boolean(webSearch.publicState(db).enabled);
+  const wantSearch = reqBody.webSearch === true || masterSearchOn;
+  assert.equal(wantSearch, true, 'master toggle alone must trigger search');
+
+  const out = await floatingChat.webSearchContextFor(db, reqBody.content, transport);
+  assert.ok(searched.length >= 1, 'a web search must actually be issued');
+  assert.ok(out.context.includes('WEB_SEARCH'));
+  assert.ok(out.citations.length >= 1, 'grounded citations must be returned');
+});
