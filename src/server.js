@@ -27,6 +27,7 @@ const { install: installInsertedImagePatch } = require('./services/insertedImage
 const { install: installAssetUploadPatch } = require('./services/assetUploadPatch');
 const { install: installTikTokPullResiliencePatch } = require('./services/tiktokPullResiliencePatch');
 const { install: installFloatingChatPatch } = require('./services/floatingChatPatch');
+const { install: installWebSearchProviders } = require('./services/webSearchProviders');
 const { install: installVpsStorageUiPatch } = require('./services/vpsStorageUiPatch');
 const { install: installLocalMediaPreviewPatch } = require('./services/localMediaPreviewPatch');
 const { install: installPromptNotes } = require('./services/promptNotes');
@@ -69,6 +70,7 @@ installTikTokPullResiliencePatch({ tiktok, db });
 installInsertedImagePatch({ app: innerApp, db, images });
 installAssetUploadPatch({ app: innerApp, db });
 installFloatingChatPatch({ app: innerApp, db });
+installWebSearchProviders({ app: innerApp, db });
 installPromptNotes({ app: innerApp, db });
 const app = createSiteAuthGateway(innerApp, config);
 

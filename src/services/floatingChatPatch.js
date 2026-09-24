@@ -3,12 +3,14 @@ const aiConnector = require('../ai/connector');
 const dynamicAi = require('./dynamicAiProviders');
 const { StorageService } = require('../storage/service');
 const sourceFetcher = require('./sourceFetcher');
+const webSearch = require('./webSearchProviders');
 
 const MAX_HISTORY_MESSAGES = 16;
 const MAX_CONTEXT_CHARS = 12000;
 const MAX_MESSAGE_CHARS = 12000;
 const MAX_VISION_IMAGES = 4;
 const MAX_VISION_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_SEARCH_RESULTS = 5;
 
 function ensureColumn(db, table, name, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
@@ -159,6 +161,45 @@ async function webContextFor(content, transport) {
   }
 }
 
+// Web Search router: when enabled, search the web for the user's question,
+// fetch the top result pages, and return grounded source context + a citation
+// list. Mirrors the reference diagram: cari di web -> ambil hasil + sumber ->
+// AI merangkum -> jawaban + citation/link sumber. Degrades to '' on any error
+// so the chat still answers from model knowledge.
+async function webSearchContextFor(db, content, transport) {
+  let searchResult;
+  try {
+    searchResult = await webSearch.searchForChat(db, content, transport, MAX_SEARCH_RESULTS);
+  } catch (error) {
+    return { context: `<SEARCH_ERROR>${String(error.message || 'Pencarian gagal').slice(0, 300)}</SEARCH_ERROR>`, citations: [] };
+  }
+  if (!searchResult.enabled || !searchResult.results.length) return { context: '', citations: [] };
+
+  const citations = searchResult.results.map((row, index) => ({ index: index + 1, title: row.title, url: row.url, snippet: row.snippet }));
+  const topUrls = citations.slice(0, 3).map(c => c.url);
+  let pageContext = '';
+  try {
+    const sources = await sourceFetcher.fetchSources(topUrls, transport ? { fetchImpl: transport } : {});
+    pageContext = sourceFetcher.buildSourceContext(sources);
+  } catch (_) {
+    // Fetching full pages can fail (paywall/anti-bot); fall back to snippets.
+    pageContext = '';
+  }
+
+  const resultBlock = citations
+    .map(c => `[${c.index}] ${c.title || c.url}\nURL: ${c.url}${c.snippet ? `\nRINGKASAN: ${c.snippet}` : ''}`)
+    .join('\n\n');
+  const context = [
+    `<WEB_SEARCH provider="${searchResult.provider || 'web'}">`,
+    resultBlock,
+    pageContext ? `\n[ISI HALAMAN TERAMBIL]\n${pageContext}` : '',
+    '</WEB_SEARCH>',
+    '\nInstruksi: Jawab pertanyaan memakai hasil pencarian di atas. Sertakan sitasi berupa nomor [n] di kalimat yang relevan, lalu di akhir jawaban tulis daftar "Sumber:" berisi nomor beserta link URL-nya.'
+  ].filter(Boolean).join('\n');
+
+  return { context: context.slice(0, MAX_CONTEXT_CHARS), citations };
+}
+
 async function executeTextProvider(db, providerId, model, messages, transport, assets = []) {
   modelFor(pickProvider(db, providerId), model);
   const parts = assets.map(asset => ({ type: 'image_url', image_url: { url: `data:${asset.mimeType};base64,${asset.data}` } }));
@@ -181,7 +222,12 @@ function install({ app, db, transport } = {}) {
   app.get('/api/floating-chat/providers', (req, res) => {
     const providers = textProviders(db);
     const defaultId = dynamicAi.publicState(db).defaults.text.providerId;
-    res.json({ providers, defaultProvider: defaultId });
+    let search = { enabled: false, configured: false };
+    try {
+      const searchState = webSearch.publicState(db);
+      search = { enabled: Boolean(searchState.enabled), configured: Boolean(searchState.selectedProviderId) };
+    } catch (_) { /* web search optional */ }
+    res.json({ providers, defaultProvider: defaultId, search });
   });
 
   app.get('/api/floating-chat/providers/:provider/models', async (req, res) => {
@@ -234,14 +280,19 @@ function install({ app, db, transport } = {}) {
 
       const history = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT ?').all(session.id, MAX_HISTORY_MESSAGES).reverse();
       const urls = extractUrls(content);
+      const wantSearch = req.body?.webSearch === true;
       let sourceContext = '';
       let visionAssets = [];
-      if (urls.length || assetIds.length) {
-        [sourceContext, visionAssets] = await Promise.all([
-          urls.length ? webContextFor(content, transport) : Promise.resolve(''),
-          assetIds.length ? prepareVisionAssets(storage, assetIds) : Promise.resolve([])
-        ]);
-      }
+      let searchCitations = [];
+      const [urlContext, visionResult, searchResult] = await Promise.all([
+        urls.length ? webContextFor(content, transport) : Promise.resolve(''),
+        assetIds.length ? prepareVisionAssets(storage, assetIds) : Promise.resolve([]),
+        wantSearch && !urls.length ? webSearchContextFor(db, content, transport) : Promise.resolve({ context: '', citations: [] })
+      ]);
+      visionAssets = visionResult;
+      searchCitations = searchResult.citations || [];
+      // Prefer explicit URL context; otherwise use web-search context when enabled.
+      sourceContext = [urlContext, searchResult.context].filter(Boolean).join('\n\n');
 
       const messages = buildConversationMessages(history, sourceContext);
       const result = await executeTextProvider(
@@ -261,10 +312,11 @@ function install({ app, db, transport } = {}) {
       res.json({
         session: sessionJson(getSession(db, session.id)),
         user: messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(userResult.lastInsertRowid)),
-        assistant: messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(assistantResult.lastInsertRowid))
+        assistant: messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(assistantResult.lastInsertRowid)),
+        citations: searchCitations
       });
     } catch (error) { sendError(res, error); }
   });
 }
 
-module.exports = { install, ensureSchema, buildConversationMessages, buildConversationPrompt, textProviders, executeTextProvider, sendError, messageJson };
+module.exports = { install, ensureSchema, buildConversationMessages, buildConversationPrompt, textProviders, executeTextProvider, sendError, messageJson, webSearchContextFor };

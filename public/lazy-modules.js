@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260924-slide1-title-safe';
+  const VERSION = 'cache-20260924-websearch-router';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
@@ -17,7 +17,7 @@
     consistency: ['/consistency.js'],
     generator: [],
     notes: ['/notes.js'],
-    providers: ['/ai-providers-simple.js'],
+    providers: ['/ai-providers-simple.js', '/web-search-providers.js'],
     queue: ['/generation-queue.js'],
     integration: ['/ai-integration.js'],
     profile: ['/account-workspace.js'],
