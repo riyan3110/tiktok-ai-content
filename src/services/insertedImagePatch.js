@@ -92,37 +92,37 @@ async function overlaySlideOne(file, input, insertBox) {
   const target = generatedPath(file);
   if (!target) throw Object.assign(new Error('Slide pertama tidak valid.'), { status: 422 });
 
-  // Always render into the exact Default 972x966 box. Padding from `contain`
-  // is trimmed before compositing, preserving the source aspect ratio without
-  // cropping the image.
-  const fittedPhoto = await sharp(input)
+  // Reference #2 geometry: the photo ALWAYS occupies the fixed 972x966 box at
+  // left=54, top=900 (margins 54/54/54). `contain` preserves aspect ratio
+  // without cropping; letterbox padding stays transparent so the purple slide
+  // shows through symmetrically. We must NOT trim()+re-center here: trim() eats
+  // the source's own uniform borders (e.g. white character-sheet backgrounds),
+  // shrinking the photo below the box and producing uneven left/right margins
+  // and a too-large bottom gap. Compositing the full box buffer at the fixed
+  // origin guarantees identical margins and a photo that never shrinks because
+  // the title got longer.
+  const boxPhoto = await sharp(input)
     .rotate()
-    .resize(INSERT_BOX_WIDTH, INSERT_BOX_HEIGHT, {
+    .resize(insertBox.width, insertBox.height, {
       fit: 'contain',
       position: 'centre',
       background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
     .png()
     .toBuffer();
-  const photo = await sharp(fittedPhoto).trim().png().toBuffer();
-  const meta = await sharp(photo).metadata();
-  const photoW = meta.width || INSERT_BOX_WIDTH;
-  const photoH = meta.height || INSERT_BOX_HEIGHT;
+
   const roundedMask = Buffer.from(
-    `<svg width="${photoW}" height="${photoH}"><rect x="0" y="0" width="${photoW}" height="${photoH}" rx="${INSERT_RADIUS}" ry="${INSERT_RADIUS}"/></svg>`
+    `<svg width="${insertBox.width}" height="${insertBox.height}"><rect x="0" y="0" width="${insertBox.width}" height="${insertBox.height}" rx="${INSERT_RADIUS}" ry="${INSERT_RADIUS}"/></svg>`
   );
-  const roundedPhoto = await sharp(photo)
+  const roundedPhoto = await sharp(boxPhoto)
     .composite([{ input: roundedMask, blend: 'dest-in' }])
     .png()
     .toBuffer();
 
-  const photoLeft = insertBox.left + Math.round((insertBox.width - photoW) / 2);
-  const photoTop = insertBox.top + Math.round((insertBox.height - photoH) / 2);
-
   const temporary = `${target}.insert-${process.pid}-${Date.now()}.jpg`;
   try {
     await sharp(target)
-      .composite([{ input: roundedPhoto, left: photoLeft, top: photoTop }])
+      .composite([{ input: roundedPhoto, left: insertBox.left, top: insertBox.top }])
       .flatten({ background: '#ffffff' })
       .toColourspace('srgb')
       .jpeg({ quality: 90 })
@@ -177,6 +177,7 @@ function install({ app, db, images }) {
 
 module.exports = {
   install,
+  overlaySlideOne,
   INSERT_RADIUS,
   INSERT_BOX_WIDTH,
   INSERT_BOX_HEIGHT,
