@@ -55,13 +55,16 @@ function install() {
 
   source = source.replace(original, replacement);
 
-  // Non-default title rules: use the full available title width (no 0.88
-  // safety reduction), and keep the title inside the fixed Default image top
-  // boundary. This lets Slide 1 keep the exact Default image size/position
-  // instead of moving the image down and clipping its bottom edge.
+  // Non-default title rules: cap the title wrap width so the REAL rendered
+  // glyph run finishes before the red separator line (not past it / off-canvas).
+  // measureTextWidth under-estimates Arial advances by up to ~12.5%, so a
+  // safety of 1.0 let long titles render ~1015-1041px wide (past the 1010 line
+  // and the 1080 canvas edge). 0.85 keeps the real line inside the red line
+  // while still using most of the width (wide, 2-3 lines, never stacked/clipped).
+  // Title height is also bounded so it always ends above the fixed image top.
   source = source.replace(
     'const CARD_TEXT_WIDTH_SAFETY = 0.88;',
-    'const CARD_TEXT_WIDTH_SAFETY = 0.88;\nconst CARD_TITLE_TEXT_WIDTH_SAFETY = 1;\nconst INSERTED_IMAGE_TOP = 900;\nconst INSERTED_IMAGE_TITLE_MAX_HEIGHT = 174;'
+    'const CARD_TEXT_WIDTH_SAFETY = 0.88;\nconst CARD_TITLE_TEXT_WIDTH_SAFETY = 0.85;\nconst INSERTED_IMAGE_TOP = 900;\nconst INSERTED_IMAGE_TITLE_MAX_HEIGHT = 174;'
   );
   source = source.replace(
     'function fitVariantText(text, maxWidth, maxHeight, startSize, minSize, maxLines, bold = false) {',
