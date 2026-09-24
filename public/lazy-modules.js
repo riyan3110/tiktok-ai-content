@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260925-chat-always-search';
+  const VERSION = 'cache-20260925-chat-two-buttons';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();

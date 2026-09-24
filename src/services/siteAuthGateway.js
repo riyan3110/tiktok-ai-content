@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 const liveNews = require('./liveNews');
 
-const CACHE_BUST_VERSION = 'cache-20260925-chat-always-search-no-toggle';
+const CACHE_BUST_VERSION = 'cache-20260925-chat-two-buttons';
 
 function stripLegacyProviderUi(html) {
   let output = String(html || '');

@@ -89,8 +89,8 @@
     const toggleNote = $('#ws-enabled-note', root);
     if (toggleNote) {
       const active = state.activeCount || state.providers.filter(p => p.enabled).length;
-      toggleNote.textContent = !state.providers.length ? 'Simpan minimal satu provider agar AI Chat bisa mencari web.'
-        : (active > 1 ? `Web Search AKTIF permanen di AI Chat. Router memakai ${active} provider — 1 untuk query biasa, gabung untuk verifikasi/riset (hemat kredit).` : 'Web Search AKTIF permanen di AI Chat — setiap jawaban dicari dulu faktanya di web.');
+      toggleNote.textContent = !state.providers.length ? 'Simpan minimal satu provider agar tombol 🔍 di AI Chat bisa mencari web.'
+        : (active > 1 ? `Provider siap. Di AI Chat, tekan tombol 🔍 untuk minta AI browsing — router memakai ${active} provider (1 untuk query biasa, gabung untuk verifikasi/riset, hemat kredit). Tombol kirim biasa = obrolan tanpa browsing.` : 'Provider siap. Di AI Chat, tekan tombol 🔍 untuk minta AI mencari fakta di web dulu; tombol kirim biasa untuk obrolan tanpa browsing.');
     }
     root.querySelectorAll('#web-search-root button, #web-search-root input, #web-search-root select').forEach(node => { node.disabled = busy; });
 
