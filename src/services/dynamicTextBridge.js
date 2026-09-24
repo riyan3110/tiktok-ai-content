@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { StorageService } = require('../storage/service');
 const sourceFetcher = require('./sourceFetcher');
 const floatingChat = require('./floatingChatPatch');
+const webSearch = require('./webSearchProviders');
 
 const MAX_HISTORY_MESSAGES = 16;
 const MAX_MESSAGE_CHARS = 12000;
@@ -13,14 +14,26 @@ function extractUrls(text = '') {
   return [...new Set(matches.map(value => value.replace(/[.,!?;:]+$/, '')))].slice(0, 3);
 }
 
-async function sourceContextFor(content, transport) {
+// AI Chat has web search permanently ON (no toggle). For every message:
+//  - if the user pasted URLs, read those pages;
+//  - otherwise always run the web-search router (force mode) so the AI answers
+//    from fresh, cited sources instead of saying it has no web access.
+// Returns { context, citations }.
+async function sourceContextFor(db, content, transport) {
   const urls = extractUrls(content);
-  if (!urls.length) return '';
+  if (urls.length) {
+    try {
+      const sources = await sourceFetcher.fetchSources(urls, transport ? { fetchImpl: transport } : {});
+      return { context: sourceFetcher.buildSourceContext(sources), citations: [] };
+    } catch (error) {
+      return { context: `<SOURCE_ERROR>${String(error?.message || 'URL tidak dapat dibaca').slice(0, 500)}</SOURCE_ERROR>`, citations: [] };
+    }
+  }
+  // No URL -> always search the web (force=true inside webSearchContextFor).
   try {
-    const sources = await sourceFetcher.fetchSources(urls, transport ? { fetchImpl: transport } : {});
-    return sourceFetcher.buildSourceContext(sources);
+    return await floatingChat.webSearchContextFor(db, content, transport);
   } catch (error) {
-    return `<SOURCE_ERROR>${String(error?.message || 'URL tidak dapat dibaca').slice(0, 500)}</SOURCE_ERROR>`;
+    return { context: `<SEARCH_ERROR>${String(error?.message || 'Pencarian gagal').slice(0, 300)}</SEARCH_ERROR>`, citations: [] };
   }
 }
 
@@ -140,7 +153,7 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
 
       const history = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT ?')
         .all(session.id, MAX_HISTORY_MESSAGES).reverse();
-      const sourceContext = await sourceContextFor(content, transport);
+      const { context: sourceContext, citations: searchCitations = [] } = await sourceContextFor(db, content, transport);
       const messages = floatingChat.buildConversationMessages(history, sourceContext);
       if (prepared.parts.length) {
         for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -166,7 +179,8 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
         aiMetadata: { provider: result.provider, providerId: result.providerId, model: result.model, responseTime: result.responseTime },
         session: sessionJson(db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(session.id)),
         user: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(userResult.lastInsertRowid)),
-        assistant: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(assistantResult.lastInsertRowid))
+        assistant: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(assistantResult.lastInsertRowid)),
+        citations: searchCitations
       });
     } catch (error) { floatingChat.sendError(res, error); }
   });
@@ -179,4 +193,4 @@ function install({ app, db, content, dynamicAi, transport } = {}) {
   installChatBridge({ app, db, dynamicAi, transport });
 }
 
-module.exports = { install };
+module.exports = { install, sourceContextFor };

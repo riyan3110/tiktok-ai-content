@@ -86,14 +86,11 @@
     if (!root) return;
     const list = $('#ws-provider-list', root);
     if (list) list.innerHTML = providerList();
-    const toggle = $('#ws-enabled', root);
-    if (toggle) toggle.checked = Boolean(state.enabled);
     const toggleNote = $('#ws-enabled-note', root);
     if (toggleNote) {
       const active = state.activeCount || state.providers.filter(p => p.enabled).length;
-      toggleNote.textContent = !state.providers.length ? 'Simpan minimal satu provider dulu.'
-        : state.enabled ? (active > 1 ? `Router aktif: ${active} provider. AI Chat memakai 1 provider untuk query biasa, dan menggabungkan keduanya untuk verifikasi/riset (hemat kredit).` : 'AI Chat akan mencari web sebelum menjawab.')
-        : 'Aktifkan agar AI Chat mencari web.';
+      toggleNote.textContent = !state.providers.length ? 'Simpan minimal satu provider agar AI Chat bisa mencari web.'
+        : (active > 1 ? `Web Search AKTIF permanen di AI Chat. Router memakai ${active} provider — 1 untuk query biasa, gabung untuk verifikasi/riset (hemat kredit).` : 'Web Search AKTIF permanen di AI Chat — setiap jawaban dicari dulu faktanya di web.');
     }
     root.querySelectorAll('#web-search-root button, #web-search-root input, #web-search-root select').forEach(node => { node.disabled = busy; });
 
@@ -163,7 +160,6 @@
       <section class="ws-card">
         <h2>Provider pencarian tersimpan</h2>
         <div id="ws-provider-list" class="ws-list"></div>
-        <label class="ws-toggle"><input id="ws-enabled" type="checkbox"><span>Aktifkan Web Search di AI Chat</span></label>
         <p id="ws-enabled-note" class="ws-note"></p>
       </section>
     </div></div>`;
@@ -206,14 +202,6 @@
         status.textContent = 'Provider pencarian tersimpan & aktif.';
         toast('Web Search provider tersimpan.');
       } catch (error) { status.textContent = `Gagal menyimpan: ${error.message}`; toast(error.message, true); }
-      finally { busy = false; render(); }
-    };
-
-    $('#ws-enabled', section).onchange = async event => {
-      const enabled = event.target.checked;
-      busy = true; render();
-      try { state = normalize(await request('/api/web-search/enabled', { method: 'PUT', body: JSON.stringify({ enabled }) })); toast(enabled ? 'Web Search diaktifkan.' : 'Web Search dimatikan.'); }
-      catch (error) { toast(error.message, true); event.target.checked = !enabled; }
       finally { busy = false; render(); }
     };
 
