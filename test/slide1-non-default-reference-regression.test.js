@@ -25,25 +25,25 @@ test('non-default Slide 1 title uses full width and fits above the fixed Default
 });
 
 test('runtime renderer keeps Default untouched while non-default titles are widened and constrained', () => {
-  const script = `
-    require('./src/services/slideSpacingPatch').install();
-    const images = require('./src/services/images');
-    const slide = {
-      section: 'HEADLINE',
-      title: 'Belum Ada Kabar Terverifikasi tentang Kapal Virgo',
-      body: 'Isi singkat untuk memeriksa komposisi.',
-      points: ['Fakta pertama yang relevan']
-    };
-    for (const style of ['default', 'tutorial', 'story', 'news']) {
-      const layout = images.buildStructuredLayout(slide, 0, 4, 'Fakta singkat', {
-        textInputOnly: true,
-        layoutStyle: style
-      });
-      process.stdout.write(`STYLE:${style}\\n`);
-      process.stdout.write(images.renderLayout(layout, 1, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));
-      process.stdout.write('\\nEND\\n');
-    }
-  `;
+  const script = [
+    "require('./src/services/slideSpacingPatch').install();",
+    "const images = require('./src/services/images');",
+    "const slide = {",
+    "  section: 'HEADLINE',",
+    "  title: 'Belum Ada Kabar Terverifikasi tentang Kapal Virgo',",
+    "  body: 'Isi singkat untuk memeriksa komposisi.',",
+    "  points: ['Fakta pertama yang relevan']",
+    "};",
+    "for (const style of ['default', 'tutorial', 'story', 'news']) {",
+    "  const layout = images.buildStructuredLayout(slide, 0, 4, 'Fakta singkat', {",
+    "    textInputOnly: true,",
+    "    layoutStyle: style",
+    "  });",
+    "  process.stdout.write('STYLE:' + style + '\\n');",
+    "  process.stdout.write(images.renderLayout(layout, 1, 4, { enabled: false }, { color: '#f5efe4', textColor: '#000000' }));",
+    "  process.stdout.write('\\nEND\\n');",
+    "}"
+  ].join('\n');
   const output = execFileSync(process.execPath, ['-e', script], {
     cwd: path.join(__dirname, '..'),
     encoding: 'utf8'
@@ -56,7 +56,11 @@ test('runtime renderer keeps Default untouched while non-default titles are wide
     const svg = output.split(`STYLE:${style}\n`)[1].split('\nEND')[0];
     assert.match(svg, new RegExp(`data-layout="${style}"`));
     assert.match(svg, /width="920"/);
-    const titleLines = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)]
+    // Title is the bold 900 text block; body/point tspans use lower weights.
+    const titleBlocks = [...svg.matchAll(/font-weight="900"[^>]*>(.*?)<\/text>/gs)];
+    assert.ok(titleBlocks.length >= 1, `${style} has no title block`);
+    const titleLines = titleBlocks
+      .flatMap(match => [...match[1].matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)])
       .map(match => match[1].trim())
       .filter(Boolean);
     assert.ok(titleLines.length >= 1 && titleLines.length <= 3, `${style} title rendered in ${titleLines.length} lines`);
