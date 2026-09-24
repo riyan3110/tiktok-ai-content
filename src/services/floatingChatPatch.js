@@ -173,7 +173,15 @@ async function webSearchContextFor(db, content, transport) {
   } catch (error) {
     return { context: `<SEARCH_ERROR>${String(error.message || 'Pencarian gagal').slice(0, 300)}</SEARCH_ERROR>`, citations: [] };
   }
-  if (!searchResult.enabled || !searchResult.results.length) return { context: '', citations: [] };
+  if (!searchResult.enabled) return { context: '', citations: [] };
+  if (!searchResult.results.length) {
+    // Search ran but found nothing usable — tell the model to be honest instead
+    // of answering from memory and pretending it verified via the web.
+    return {
+      context: '<WEB_SEARCH status="no_results">\nPencarian web dijalankan tetapi tidak menemukan hasil yang bisa dipakai untuk pertanyaan ini.\n</WEB_SEARCH>\nInstruksi: Katakan dengan jujur bahwa pencarian web tidak menemukan hasil relevan. JANGAN mengarang fakta, tanggal, atau angka. Minta detail lebih spesifik dari pengguna bila perlu.',
+      citations: []
+    };
+  }
 
   const citations = searchResult.results.map((row, index) => ({ index: index + 1, title: row.title, url: row.url, snippet: row.snippet, source: row.source }));
   const topUrls = citations.slice(0, 3).map(c => c.url);

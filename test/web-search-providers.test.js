@@ -199,3 +199,19 @@ test('floating chat wires router context + citations (with source tags)', async 
   assert.ok(out.context.includes('https://tav.example/a'));
   assert.ok(out.citations.length >= 1);
 });
+
+test('floating chat: search enabled but zero results -> honesty instruction, no fabrication', async () => {
+  const db = createDatabase(':memory:');
+  // provider saves fine (probe returns results) then live query returns empty.
+  let probed = false;
+  const transport = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : {};
+    if (!probed) { probed = true; return jsonRes({ results: [{ title: 'probe', url: 'https://x.com/1', content: 'ok' }] }); }
+    return jsonRes({ results: [] }); // real query: nothing found
+  };
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
+  const out = await floatingChat.webSearchContextFor(db, 'kapal virgo berita terbaru', transport);
+  assert.equal(out.citations.length, 0);
+  assert.match(out.context, /no_results/);
+  assert.match(out.context, /JANGAN mengarang/);
+});
