@@ -89,56 +89,57 @@ async function detectPhotoMargins(jpgPath) {
   };
 }
 
-// Foto yang mengisi box penuh (persegi / wide berlatar solid) harus tampil di
-// kotak 972x966 dengan margin kiri=kanan=bawah=54 (geometry referensi #2),
-// dan tidak menyusut ke tengah dengan bawah yang terlalu lebar.
-test('foto persegi mengisi box tetap 972x966 dengan margin 54/54/54 (referensi #2)', async () => {
+// Foto persegi 1:1 (input standar user: 1536x1536, panel 2x2) harus MENGISI
+// PENUH box 972x966 dengan margin 54/54/54 dan tanpa gap ungu di sisi
+// (fit: cover). Ini geometry referensi #2.
+test('foto persegi 1:1 mengisi penuh box 972x966 dengan margin 54/54/54 (referensi #2)', async () => {
   const dir = path.resolve(config.root, 'public/generated');
   const name = `__test_insert_${process.pid}_${Date.now()}.jpg`;
   const abs = path.join(dir, name);
   const rel = `/generated/${name}`;
   assert.ok(generatedPath(rel), 'path uji harus valid');
 
-  // slide ungu penuh sebagai target
   await sharp({ create: { width: SLIDE_W, height: SLIDE_H, channels: 3, background: PURPLE } }).jpeg().toFile(abs);
-  // sumber: gambar persegi full-bleed (isi box penuh)
-  const square = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: { r: 22, g: 160, b: 133 } } }).png().toBuffer();
+  // sumber persegi 1536x1536 warna solid (mewakili panel 2x2 user)
+  const square = await sharp({ create: { width: 1536, height: 1536, channels: 3, background: { r: 22, g: 160, b: 133 } } }).png().toBuffer();
 
   try {
     await overlaySlideOne(rel, square, resolveInsertBox(images, { contentLayout: 'news', slides: [{ title: 'Judul' }] }));
     const m = await detectPhotoMargins(abs);
-    // toleransi kecil untuk pembulatan + sudut membulat (rx=28)
     assert.ok(Math.abs(m.left - DEFAULT_IMAGE_LEFT) <= 6, `margin kiri ${m.left} != ~54`);
     assert.ok(Math.abs(m.right - DEFAULT_IMAGE_LEFT) <= 6, `margin kanan ${m.right} != ~54`);
     assert.ok(Math.abs(m.bottom - DEFAULT_IMAGE_LEFT) <= 6, `margin bawah ${m.bottom} != ~54`);
     assert.ok(Math.abs(m.left - m.right) <= 4, `kiri(${m.left}) & kanan(${m.right}) harus setara`);
-    // foto harus mengisi hampir seluruh lebar box, bukan menyusut
-    assert.ok(m.width >= DEFAULT_IMAGE_WIDTH - 12, `lebar foto ${m.width} terlalu kecil (harus ~972)`);
+    // cover => box terisi penuh: lebar ~972, tinggi ~966
+    assert.ok(m.width >= DEFAULT_IMAGE_WIDTH - 8, `lebar foto ${m.width} harus penuh ~972`);
+    assert.ok(m.height >= DEFAULT_IMAGE_HEIGHT - 8, `tinggi foto ${m.height} harus penuh ~966`);
   } finally {
     fs.rmSync(abs, { force: true });
   }
 });
 
-// Gambar wide (16:9) berlatar solid: letterbox contain -> lebar penuh 972,
-// margin kiri=kanan=54, dan tidak di-trim jadi mengapung di tengah.
-test('foto wide 16:9 mengisi lebar penuh 972 dengan margin kiri=kanan (tidak menyusut)', async () => {
+// Gambar potret / non-square tetap MENGISI PENUH box (cover, no gap), dan judul
+// yang panjang TIDAK menekan/menggeser foto ke bawah (top tetap 900).
+test('foto non-square mengisi penuh box & judul panjang tidak menggeser foto ke bawah', async () => {
   const dir = path.resolve(config.root, 'public/generated');
-  const name = `__test_insert_wide_${process.pid}_${Date.now()}.jpg`;
+  const name = `__test_insert_portrait_${process.pid}_${Date.now()}.jpg`;
   const abs = path.join(dir, name);
   const rel = `/generated/${name}`;
 
   await sharp({ create: { width: SLIDE_W, height: SLIDE_H, channels: 3, background: PURPLE } }).jpeg().toFile(abs);
-  const wide = await sharp({ create: { width: 1600, height: 900, channels: 3, background: { r: 192, g: 57, b: 43 } } }).png().toBuffer();
+  // potret 1122x1402 (seperti asset produksi yang bikin gap sebelumnya)
+  const portrait = await sharp({ create: { width: 1122, height: 1402, channels: 3, background: { r: 192, g: 57, b: 43 } } }).png().toBuffer();
 
   try {
-    await overlaySlideOne(rel, wide, resolveInsertBox(images, { contentLayout: 'tutorial', slides: [{ title: 'Judul panjang sekali untuk menguji' }] }));
+    const longTitle = 'Belum Ada Perkembangan Terverifikasi tentang Kapal Virgo yang Sangat Panjang';
+    await overlaySlideOne(rel, portrait, resolveInsertBox(images, { contentLayout: 'tutorial', slides: [{ title: longTitle }] }));
     const m = await detectPhotoMargins(abs);
     assert.ok(Math.abs(m.left - DEFAULT_IMAGE_LEFT) <= 6, `margin kiri ${m.left} != ~54`);
     assert.ok(Math.abs(m.right - DEFAULT_IMAGE_LEFT) <= 6, `margin kanan ${m.right} != ~54`);
     assert.ok(Math.abs(m.left - m.right) <= 4, `kiri(${m.left}) & kanan(${m.right}) harus setara`);
-    assert.ok(m.width >= DEFAULT_IMAGE_WIDTH - 12, `lebar foto ${m.width} harus mengisi penuh ~972`);
-    // top foto tidak boleh di atas box (judul tidak menekan foto ke atas)
-    assert.ok(m.top >= DEFAULT_IMAGE_TOP - 6, `foto atas ${m.top} naik di atas box top 900`);
+    assert.ok(m.width >= DEFAULT_IMAGE_WIDTH - 8, `lebar foto ${m.width} harus penuh ~972 (tanpa gap ungu)`);
+    // judul panjang tidak boleh menggeser foto turun: top harus tetap di ~900
+    assert.ok(Math.abs(m.top - DEFAULT_IMAGE_TOP) <= 6, `top foto ${m.top} harus tetap ~900 (judul tidak menekan)`);
   } finally {
     fs.rmSync(abs, { force: true });
   }

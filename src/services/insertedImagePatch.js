@@ -92,21 +92,21 @@ async function overlaySlideOne(file, input, insertBox) {
   const target = generatedPath(file);
   if (!target) throw Object.assign(new Error('Slide pertama tidak valid.'), { status: 422 });
 
-  // Reference #2 geometry: the photo ALWAYS occupies the fixed 972x966 box at
-  // left=54, top=900 (margins 54/54/54). `contain` preserves aspect ratio
-  // without cropping; letterbox padding stays transparent so the purple slide
-  // shows through symmetrically. We must NOT trim()+re-center here: trim() eats
-  // the source's own uniform borders (e.g. white character-sheet backgrounds),
-  // shrinking the photo below the box and producing uneven left/right margins
-  // and a too-large bottom gap. Compositing the full box buffer at the fixed
-  // origin guarantees identical margins and a photo that never shrinks because
-  // the title got longer.
+  // Reference #2 geometry: the photo ALWAYS fills the fixed 972x966 box at
+  // left=54, top=900 (margins 54/54/54). Use `cover` so the box is filled edge
+  // to edge with NO purple gaps on the sides — this is what reference #2 shows.
+  // The user's standard input is a square 1:1 (e.g. 1536x1536, 2x2 panel), which
+  // covers a near-square box with only a ~0.6% center crop (imperceptible).
+  // We do NOT trim()+re-center: trim() ate the source's own uniform borders
+  // (white character-sheet backgrounds), which shrank the photo below the box
+  // and produced uneven margins + a too-large bottom gap. Compositing the
+  // box-sized buffer at the fixed origin guarantees identical 54/54/54 margins
+  // and a photo whose top never moves below y=900 no matter how long the title.
   const boxPhoto = await sharp(input)
     .rotate()
     .resize(insertBox.width, insertBox.height, {
-      fit: 'contain',
-      position: 'centre',
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
+      fit: 'cover',
+      position: 'centre'
     })
     .png()
     .toBuffer();

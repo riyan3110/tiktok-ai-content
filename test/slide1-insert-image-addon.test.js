@@ -23,13 +23,19 @@ test('gambar slide-1 besar, margin rapi, tanpa frame/border, dan aman terhadap j
   assert.match(insertion, /const TITLE_GAP = 56/);
   assert.match(insertion, /function titleFitForInsert\(images, renderSource\)/);
   assert.match(insertion, /function resolveInsertBox\(images, renderSource = \{\}\)/);
-  assert.match(insertion, /fit: 'contain'/);
+  // Foto mengisi PENUH box 972x966 (referensi #2) -> fit: cover, bukan contain.
+  assert.match(insertion, /fit: 'cover'/);
   assert.match(insertion, /position: 'centre'/);
-  assert.doesNotMatch(insertion, /fit: 'cover'/);
+  assert.doesNotMatch(insertion, /fit: 'contain'/);
+  // Tidak boleh ada sharp trim()+re-center (bikin foto menyusut & margin timpang).
+  assert.doesNotMatch(insertion, /\.trim\(\)\.png\(\)/);
+  assert.doesNotMatch(insertion, /const photoLeft =/);
   assert.match(insertion, /blend: 'dest-in'/);
   assert.doesNotMatch(insertion, /stroke="#ffffff"/);
   assert.doesNotMatch(insertion, /fill-opacity="0\.28"/);
   assert.doesNotMatch(insertion, /INSERT_PAD/);
+  // Foto dikomposit di origin tetap (left/top box), bukan photoLeft/photoTop hasil trim.
+  assert.match(insertion, /left: insertBox\.left, top: insertBox\.top/);
   assert.match(insertion, /await overlaySlideOne\(files\[0\], file\.data, resolveInsertBox\(images, renderSource\)\)/);
   assert.match(insertion, /await overlaySlideOne\(slides\[0\], file\.data, resolveInsertBox\(images, renderSource\)\)/);
   assert.doesNotMatch(insertion, /overlaySlideOne\(files\[i\]/);
