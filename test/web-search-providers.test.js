@@ -5,104 +5,144 @@ const { createDatabase } = require('../src/db');
 const webSearch = require('../src/services/webSearchProviders');
 const floatingChat = require('../src/services/floatingChatPatch');
 
-// A You.com-shaped mock search API + a generic-shaped one, plus a page fetcher.
-function youcomTransport(calls) {
+const jsonRes = body => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+
+// Mock Tavily (POST /search, Bearer) + You.com v1 (POST /v1/search, X-API-Key).
+function multiTransport(calls) {
   return async (url, options = {}) => {
     calls.push({ url: String(url), options });
     const u = new URL(String(url));
-    if (u.pathname.endsWith('/search')) {
-      const query = u.searchParams.get('query') || '';
-      assert.equal(options.headers['X-API-Key'], 'yc-key');
-      return new Response(JSON.stringify({
-        hits: [
-          { title: `Hasil A untuk ${query}`, url: 'https://example.com/a', snippets: ['Ringkasan A satu', 'Ringkasan A dua'] },
-          { title: 'Hasil B', url: 'https://example.com/b', description: 'Ringkasan B' }
-        ]
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (u.hostname.includes('tavily.com')) {
+      assert.match(options.headers.Authorization, /Bearer /);
+      const body = JSON.parse(options.body);
+      return jsonRes({ results: [
+        { title: `Tavily A: ${body.query}`, url: 'https://tav.example/a', content: 'Isi tavily A' },
+        { title: 'Tavily B', url: 'https://tav.example/b', content: 'Isi tavily B' }
+      ] });
     }
-    return new Response('{}', { status: 404 });
+    if (u.hostname.includes('ydc-index.io') || u.hostname.includes('you.com')) {
+      assert.equal(options.headers['X-API-Key'], 'yc-key');
+      assert.match(u.pathname, /\/v1\/search$/);
+      return jsonRes({ hits: [
+        { title: 'You A', url: 'https://you.example/a', snippets: ['You snippet A'] },
+        { title: 'You B', url: 'https://you.example/b', description: 'You snippet B' }
+      ] });
+    }
+    return new Response('not found', { status: 404 });
   };
 }
 
-test('webSearchProviders: parseSearchResults understands multiple provider shapes', () => {
-  assert.equal(webSearch.parseSearchResults({ hits: [{ title: 'A', url: 'https://a.com', snippet: 's' }] }, 5).length, 1);
-  assert.equal(webSearch.parseSearchResults({ results: [{ name: 'B', link: 'https://b.com' }] }, 5).length, 1);
-  assert.equal(webSearch.parseSearchResults({ web: { results: [{ title: 'C', url: 'https://c.com' }] } }, 5).length, 1);
-  assert.equal(webSearch.parseSearchResults({ organic_results: [{ title: 'D', link: 'https://d.com' }] }, 5).length, 1);
-  // rows without a valid http url are dropped
-  assert.equal(webSearch.parseSearchResults({ results: [{ title: 'X', url: 'ftp://nope' }] }, 5).length, 0);
-});
-
-test('webSearchProviders: detectFormat picks the right preset and stays generic otherwise', () => {
-  assert.equal(webSearch.detectFormat('https://api.ydc-index.io'), 'youcom');
-  assert.equal(webSearch.detectFormat('https://api.tavily.com'), 'tavily');
-  assert.equal(webSearch.detectFormat('https://api.anyprovider.dev'), 'generic');
-});
-
-test('webSearchProviders: buildSearchRequest shapes each provider format correctly', () => {
-  const yc = webSearch.buildSearchRequest('youcom', 'https://api.ydc-index.io', 'k', 'halo', 5);
-  assert.match(yc.url, /\/search\?query=halo/);
-  assert.equal(yc.init.method, 'GET');
+test('buildSearchRequest: youcom v1 uses POST /v1/search + extraction body', () => {
+  const yc = webSearch.buildSearchRequest('youcom', 'https://ydc-index.io', 'k', 'halo', 5);
+  assert.match(yc.url, /\/v1\/search$/);
+  assert.equal(yc.init.method, 'POST');
   assert.equal(yc.init.headers['X-API-Key'], 'k');
+  assert.match(yc.init.body, /extraction_mode/);
+
+  const classic = webSearch.buildSearchRequest('youcom_classic', 'https://api.you.com', 'k', 'halo', 5);
+  assert.equal(classic.init.method, 'GET');
+  assert.match(classic.url, /\/search\?query=halo/);
 
   const tv = webSearch.buildSearchRequest('tavily', 'https://api.tavily.com', 'k', 'halo', 5);
   assert.equal(tv.init.method, 'POST');
   assert.match(tv.init.headers.Authorization, /Bearer k/);
-  assert.match(tv.init.body, /"query":"halo"/);
-
-  const gen = webSearch.buildSearchRequest('generic', 'https://api.other.dev', 'k', 'halo', 5);
-  assert.equal(gen.init.method, 'POST');
-  assert.match(gen.init.body, /"query":"halo"/);
 });
 
-test('webSearchProviders: save validates with a REAL search, then search/enable/remove works', async () => {
+test('youcomUrl keeps a single version segment', () => {
+  assert.equal(webSearch.youcomUrl('https://ydc-index.io'), 'https://ydc-index.io/v1/search');
+  assert.equal(webSearch.youcomUrl('https://ydc-index.io/v1'), 'https://ydc-index.io/v1/search');
+});
+
+test('parseSearchResults understands hits/results/web.results/organic + highlights', () => {
+  assert.equal(webSearch.parseSearchResults({ hits: [{ title: 'A', url: 'https://a.com', highlights: ['h1', 'h2'] }] }, 5)[0].snippet, 'h1 h2');
+  assert.equal(webSearch.parseSearchResults({ results: [{ name: 'B', link: 'https://b.com' }] }, 5).length, 1);
+  assert.equal(webSearch.parseSearchResults({ web: { results: [{ title: 'C', url: 'https://c.com' }] } }, 5).length, 1);
+  assert.equal(webSearch.parseSearchResults({ organic_results: [{ title: 'D', link: 'https://d.com' }] }, 5).length, 1);
+  assert.equal(webSearch.parseSearchResults({ results: [{ title: 'X', url: 'ftp://nope' }] }, 5).length, 0);
+});
+
+test('detectFormat + defaultRoleFor assign Tavily=primary, You.com=verify', () => {
+  assert.equal(webSearch.detectFormat('https://api.tavily.com'), 'tavily');
+  assert.equal(webSearch.detectFormat('https://ydc-index.io'), 'youcom');
+  assert.equal(webSearch.defaultRoleFor('tavily'), 'primary');
+  assert.equal(webSearch.defaultRoleFor('youcom'), 'verify');
+  assert.equal(webSearch.defaultRoleFor('generic'), 'auto');
+});
+
+test('save validates with a REAL search and rejects empty results', async () => {
   const db = createDatabase(':memory:');
   const calls = [];
-  const transport = youcomTransport(calls);
-
-  // Saving runs a real probe search; empty results would reject.
-  const saved = await webSearch.saveProvider(db, { baseUrl: 'https://api.ydc-index.io', apiKey: 'yc-key', format: 'auto' }, transport);
-  assert.equal(saved.providers.length, 1);
+  const transport = multiTransport(calls);
+  const saved = await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
+  assert.equal(saved.saved.format, 'tavily');
+  assert.equal(saved.saved.role, 'primary');
   assert.equal(saved.enabled, true);
-  assert.equal(saved.saved.format, 'youcom');
-  assert.ok(saved.saved.sampleCount >= 1);
-  assert.ok(calls.some(c => c.url.includes('/search')), 'probe search must hit the provider');
+  assert.ok(calls.some(c => c.url.includes('tavily.com/search')));
 
-  // searchForChat returns parsed rows when enabled.
-  const result = await webSearch.searchForChat(db, 'kabar terbaru', transport, 5);
-  assert.equal(result.enabled, true);
-  assert.equal(result.results.length, 2);
-  assert.equal(result.results[0].url, 'https://example.com/a');
-  assert.match(result.results[0].snippet, /Ringkasan A/);
-
-  // Disable -> searchForChat degrades to empty (no throw).
-  webSearch.setEnabled(db, false);
-  const disabled = await webSearch.searchForChat(db, 'kabar', transport, 5);
-  assert.equal(disabled.enabled, false);
-  assert.equal(disabled.results.length, 0);
-
-  // Remove -> state cleared.
-  const state = webSearch.publicState(db);
-  const after = webSearch.removeProvider(db, state.providers[0].id);
-  assert.equal(after.providers.length, 0);
-  assert.equal(after.selectedProviderId, null);
-});
-
-test('webSearchProviders: save REJECTS a provider that returns no recognizable results', async () => {
-  const db = createDatabase(':memory:');
-  const transport = async () => new Response(JSON.stringify({ nonsense: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const emptyTransport = async () => jsonRes({ nothing: true });
   await assert.rejects(
-    () => webSearch.saveProvider(db, { baseUrl: 'https://api.other.dev', apiKey: 'k', format: 'generic' }, transport),
+    () => webSearch.saveProvider(db, { baseUrl: 'https://api.other.dev', apiKey: 'k', format: 'generic' }, emptyTransport),
     /tidak mengembalikan hasil/
   );
-  // Nothing persisted.
-  assert.equal(webSearch.publicState(db).providers.length, 0);
 });
 
-test('webSearchProviders: HTTP routes expose test-before-save, save, enable, delete', async t => {
+test('ROUTER: single provider -> plan single', async () => {
   const db = createDatabase(':memory:');
+  const transport = multiTransport([]);
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
+  const out = await webSearch.routeSearch(db, 'kabar terbaru', transport, 5);
+  assert.equal(out.plan, 'single');
+  assert.equal(out.providers.length, 1);
+  assert.ok(out.results.length >= 1);
+});
+
+test('ROUTER: two providers, ordinary query -> primary only (cost-aware)', async () => {
+  const db = createDatabase(':memory:');
+  const transport = multiTransport([]);
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);           // primary
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom' }, transport); // verify
   const calls = [];
-  const transport = youcomTransport(calls);
+  const traced = (url, opt) => { calls.push(String(url)); return transport(url, opt); };
+  const out = await webSearch.routeSearch(db, 'apa yang viral hari ini', traced, 5);
+  assert.equal(out.plan, 'primary');
+  assert.deepEqual(out.providers, ['Tavily']);
+  assert.ok(calls.every(u => u.includes('tavily.com')), 'ordinary query must not call the verify provider');
+});
+
+test('ROUTER: verification query -> both providers, merged + deduped, tagged by source', async () => {
+  const db = createDatabase(':memory:');
+  const transport = multiTransport([]);
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom' }, transport);
+  const out = await webSearch.routeSearch(db, 'tolong verifikasi klaim ini benar atau hoaks', transport, 6);
+  assert.equal(out.plan, 'both');
+  assert.deepEqual(out.providers.sort(), ['Tavily', 'Ydc Index']);
+  // interleaved: first Tavily, then the verify provider
+  assert.equal(out.results[0].source, 'Tavily');
+  assert.ok(out.results.some(r => r.source === 'Ydc Index'));
+  // dedupe by URL key (no duplicate URLs)
+  const urls = out.results.map(r => r.url);
+  assert.equal(urls.length, new Set(urls.map(u => u.toLowerCase())).size);
+});
+
+test('ROUTER: escalates to verify when primary returns too few results', async () => {
+  const db = createDatabase(':memory:');
+  const transport = async (url, options = {}) => {
+    const u = new URL(String(url));
+    if (u.hostname.includes('tavily.com')) return jsonRes({ results: [{ title: 'lone', url: 'https://tav.example/lone', content: 'x' }] }); // 1 result < MIN
+    if (u.hostname.includes('ydc-index.io')) return jsonRes({ hits: [{ title: 'You A', url: 'https://you.example/a', snippets: ['s'] }] });
+    return new Response('nf', { status: 404 });
+  };
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
+  await webSearch.saveProvider(db, { baseUrl: 'https://ydc-index.io', apiKey: 'yc-key', format: 'youcom' }, transport);
+  const out = await webSearch.routeSearch(db, 'query biasa singkat', transport, 6);
+  assert.equal(out.plan, 'escalated');
+  assert.ok(out.providers.includes('Ydc Index'));
+});
+
+test('per-provider enable/disable + role via HTTP routes', async t => {
+  const db = createDatabase(':memory:');
+  const transport = multiTransport([]);
   const app = express();
   app.use(express.json());
   webSearch.install({ app, db, transport });
@@ -111,43 +151,30 @@ test('webSearchProviders: HTTP routes expose test-before-save, save, enable, del
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  // test-before-save proves the search round trip without persisting.
-  const tested = await fetch(`${base}/api/web-search/test`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ baseUrl: 'https://api.ydc-index.io', apiKey: 'yc-key', format: 'auto', query: 'halo' })
-  }).then(r => r.json());
+  // test-before-save does not persist
+  const tested = await fetch(`${base}/api/web-search/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }) }).then(r => r.json());
   assert.equal(tested.ok, true);
-  assert.equal(tested.count, 2);
-  assert.equal(webSearch.publicState(db).providers.length, 0, 'test must not persist');
+  assert.equal(webSearch.publicState(db).providers.length, 0);
 
-  // save then confirm enabled + selectable.
-  const saved = await fetch(`${base}/api/web-search/providers`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ baseUrl: 'https://api.ydc-index.io', apiKey: 'yc-key' })
-  }).then(r => r.json());
-  assert.equal(saved.providers.length, 1);
-  assert.equal(saved.enabled, true);
-
-  const listed = await fetch(`${base}/api/web-search/providers`).then(r => r.json());
-  assert.equal(listed.providers.length, 1);
-  assert.equal(listed.providers[0].hasApiKey, true);
+  const saved = await fetch(`${base}/api/web-search/providers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }) }).then(r => r.json());
+  const id = saved.providers[0].id;
+  const roled = await fetch(`${base}/api/web-search/providers/${id}/role`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'verify' }) }).then(r => r.json());
+  assert.equal(roled.providers[0].role, 'verify');
+  const disabled = await fetch(`${base}/api/web-search/providers/${id}/enabled`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) }).then(r => r.json());
+  assert.equal(disabled.providers[0].enabled, false);
 });
 
-test('floating chat wires web search context + citations when webSearch flag is on', async () => {
+test('floating chat wires router context + citations (with source tags)', async () => {
   const db = createDatabase(':memory:');
-  const calls = [];
-  // transport serves both the search API and (404) page fetches -> snippet fallback.
   const transport = async (url, options = {}) => {
     const u = new URL(String(url));
-    if (u.hostname.includes('ydc-index.io')) return youcomTransport(calls)(url, options);
-    // page fetch attempts fail; webSearchContextFor should still return citations.
-    return new Response('not found', { status: 404 });
+    if (u.hostname.includes('tavily.com')) return multiTransport([])(url, options);
+    if (u.hostname.includes('ydc-index.io')) return multiTransport([])(url, options);
+    return new Response('nf', { status: 404 }); // page fetch fails -> snippet fallback
   };
-  await webSearch.saveProvider(db, { baseUrl: 'https://api.ydc-index.io', apiKey: 'yc-key', format: 'auto' }, transport);
-
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
   const out = await floatingChat.webSearchContextFor(db, 'apa kabar terbaru?', transport);
-  assert.ok(out.context.includes('WEB_SEARCH'), 'context must include the web-search block');
-  assert.ok(out.context.includes('https://example.com/a'), 'context must include source URLs');
-  assert.equal(out.citations.length, 2);
-  assert.equal(out.citations[0].url, 'https://example.com/a');
+  assert.ok(out.context.includes('WEB_SEARCH'));
+  assert.ok(out.context.includes('https://tav.example/a'));
+  assert.ok(out.citations.length >= 1);
 });

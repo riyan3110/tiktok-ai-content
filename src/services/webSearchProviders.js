@@ -3,15 +3,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const config = require('../config');
 
-// Web Search router — mirrors the dynamic AI provider pattern: a base URL + API
-// key is saved per provider, validated with a REAL search call before it is
-// stored, and any provider can be added (not hard-locked to two). Two presets
-// (You.com and Tavily) ship as known formats; "generic" flexibly parses common
-// OpenAI-style / REST search payloads so other providers work by just filling
-// Base URL + API key. Flow (per reference diagram):
-//   Kamu -> AI Chat -> Web Search API -> cari di web -> ambil hasil + sumber
-//        -> AI merangkum -> jawaban + citation/link sumber
+// Web Search ROUTER — mirrors the reference spec:
+//   1) Tavily untuk pencarian awal (primary)
+//   2) You.com untuk research/verifikasi (verify)
+//   3) Gabungkan hasil  4) AI Chat menyusun jawaban  5) Tampilkan sumber
+// Cost-aware: JANGAN selalu panggil dua-duanya. Router memutuskan kapan cukup
+// satu provider (primary) dan kapan perlu keduanya (verifikasi/mendalam atau
+// saat hasil primary kurang). Tidak dikunci ke 2 provider: You.com & Tavily
+// jadi preset, "generic"/"auto" membaca payload REST/OpenAI-style umum, jadi
+// provider lain jalan cukup isi Base URL + API key.
 const initialized = new WeakSet();
+const MIN_PRIMARY_RESULTS = 2;
+
+// Sinyal query yang layak "eskalasi" ke verifikasi (panggil provider ke-2).
+const VERIFY_SIGNAL = /(verifikasi|cek fakta|cek\s|benarkah|faktanya|fakta\b|hoaks?|klaim|konfirmasi|apakah benar|fact.?check|verify|research|riset|mendalam|detail|bandingkan|akurat|valid|pastikan|sumber terpercaya|beneran|betulkah)/i;
 
 function encryptionKey(create = false) {
   const directory = path.dirname(config.databasePath);
@@ -43,10 +48,16 @@ function decrypt(value) {
   return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }
 
-const FORMATS = new Set(['auto', 'youcom', 'tavily', 'generic']);
+const FORMATS = new Set(['auto', 'youcom', 'youcom_classic', 'tavily', 'generic']);
 function normalizeFormat(raw) {
   const value = String(raw || 'auto').toLowerCase().trim();
   return FORMATS.has(value) ? value : 'auto';
+}
+
+const ROLES = new Set(['primary', 'verify', 'auto']);
+function normalizeRole(raw) {
+  const value = String(raw || 'auto').toLowerCase().trim();
+  return ROLES.has(value) ? value : 'auto';
 }
 
 function normalizeBaseUrl(raw) {
@@ -55,7 +66,7 @@ function normalizeBaseUrl(raw) {
   try { url = new URL(value); } catch { throw Object.assign(new Error('Base URL tidak valid.'), { status: 422 }); }
   if (!/^https?:$/.test(url.protocol)) throw Object.assign(new Error('Base URL harus memakai http:// atau https://.'), { status: 422 });
   if (url.username || url.password || url.hash) throw Object.assign(new Error('Base URL tidak boleh berisi kredensial atau fragment.'), { status: 422 });
-  // Strip a trailing /search so both "host" and "host/search" inputs work.
+  // Strip a trailing /search so both "host" and "host/.../search" inputs work.
   url.pathname = url.pathname.replace(/\/+search\/?$/i, '').replace(/\/+$/, '');
   url.search = '';
   return url.toString().replace(/\/+$/, '');
@@ -66,6 +77,14 @@ function detectFormat(baseUrl) {
   if (/ydc-index\.io|you\.com/.test(host)) return 'youcom';
   if (/tavily\.com/.test(host)) return 'tavily';
   return 'generic';
+}
+
+// Default role by provider type, per the reference:
+// Tavily = pencarian awal (primary), You.com = verifikasi (verify).
+function defaultRoleFor(effectiveFormat) {
+  if (effectiveFormat === 'tavily') return 'primary';
+  if (effectiveFormat === 'youcom' || effectiveFormat === 'youcom_classic') return 'verify';
+  return 'auto';
 }
 
 function providerId(baseUrl, format) {
@@ -84,15 +103,34 @@ function join(baseUrl, endpoint) {
   return `${String(baseUrl).replace(/\/+$/, '')}/${String(endpoint).replace(/^\/+/, '')}`;
 }
 
+// You.com v1 search endpoint (POST). Ensures the path carries a version segment.
+function youcomUrl(baseUrl) {
+  const base = String(baseUrl).replace(/\/+$/, '');
+  return /\/v\d+$/.test(base) ? `${base}/search` : `${base}/v1/search`;
+}
+
 // Build the HTTP request for a given format. Returns { url, init }.
 function buildSearchRequest(effectiveFormat, baseUrl, apiKey, query, limit) {
   const q = String(query || '').trim();
   if (effectiveFormat === 'youcom') {
+    // Real You.com API (per docs): POST /v1/search, X-API-Key, extraction body.
+    return {
+      url: youcomUrl(baseUrl),
+      init: {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ query: q, extraction: { extraction_mode: 'highlights' } })
+      }
+    };
+  }
+  if (effectiveFormat === 'youcom_classic') {
+    // Older You.com Search API: GET /search?query=, X-API-Key.
     const url = new URL(join(baseUrl, 'search'));
     url.searchParams.set('query', q);
     return { url: url.toString(), init: { method: 'GET', headers: { 'X-API-Key': apiKey, Accept: 'application/json' } } };
   }
   if (effectiveFormat === 'tavily') {
+    // Real Tavily API (per docs): POST /search, Authorization Bearer.
     return {
       url: join(baseUrl, 'search'),
       init: {
@@ -126,7 +164,7 @@ function parseSearchResults(payload, limit) {
   const candidates = [
     payload.hits, payload.results, payload.web?.results, payload.data,
     payload.organic, payload.organic_results, payload.items, payload.documents,
-    payload.result?.results, payload.result?.hits
+    payload.result?.results, payload.result?.hits, payload.answer?.results
   ];
   const list = candidates.find(Array.isArray) || [];
   const rows = [];
@@ -134,7 +172,8 @@ function parseSearchResults(payload, limit) {
     if (!item || typeof item !== 'object') continue;
     const url = firstString(item.url, item.link, item.href, item.source_url, item.document_url);
     if (!url || !/^https?:\/\//i.test(url)) continue;
-    const snippetArray = Array.isArray(item.snippets) ? item.snippets.filter(v => typeof v === 'string').join(' ') : '';
+    const snippetArray = Array.isArray(item.snippets) ? item.snippets.filter(v => typeof v === 'string').join(' ')
+      : Array.isArray(item.highlights) ? item.highlights.filter(v => typeof v === 'string').join(' ') : '';
     const snippet = firstString(item.snippet, item.description, item.content, item.text, snippetArray, item.summary);
     const title = firstString(item.title, item.name, item.heading, url);
     rows.push({ title, url, snippet });
@@ -167,6 +206,11 @@ async function runSearch({ baseUrl, apiKey, format, query, limit = 5 }, transpor
   } finally { clearTimeout(timer); }
 }
 
+function ensureColumn(db, table, name, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
+  if (!columns.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+}
+
 function ensureSchema(db) {
   if (initialized.has(db)) return;
   db.exec(`
@@ -176,6 +220,8 @@ function ensureSchema(db) {
       base_url TEXT NOT NULL,
       api_key_encrypted TEXT NOT NULL,
       format TEXT NOT NULL DEFAULT 'auto',
+      role TEXT NOT NULL DEFAULT 'auto',
+      enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -187,6 +233,9 @@ function ensureSchema(db) {
     );
     INSERT OR IGNORE INTO web_search_state(id) VALUES(1);
   `);
+  // Migrate older deployments that predate the router (no role/enabled columns).
+  ensureColumn(db, 'web_search_providers', 'role', "TEXT NOT NULL DEFAULT 'auto'");
+  ensureColumn(db, 'web_search_providers', 'enabled', 'INTEGER NOT NULL DEFAULT 1');
   initialized.add(db);
 }
 
@@ -195,7 +244,8 @@ function stateRow(db) { ensureSchema(db); return db.prepare('SELECT * FROM web_s
 function providers(db) {
   ensureSchema(db);
   return db.prepare('SELECT * FROM web_search_providers ORDER BY created_at,id').all().map(row => ({
-    id: row.id, name: row.name, baseUrl: row.base_url, format: row.format, hasApiKey: Boolean(row.api_key_encrypted), updatedAt: row.updated_at
+    id: row.id, name: row.name, baseUrl: row.base_url, format: row.format, role: row.role,
+    enabled: Boolean(row.enabled), hasApiKey: Boolean(row.api_key_encrypted), updatedAt: row.updated_at
   }));
 }
 
@@ -203,27 +253,99 @@ function publicState(db) {
   const current = stateRow(db);
   const all = providers(db);
   const selected = all.find(item => item.id === current.selected_provider_id) || null;
-  return { providers: all, selectedProviderId: selected?.id || null, enabled: Boolean(current.enabled) };
+  const activeCount = all.filter(item => item.enabled).length;
+  return { providers: all, selectedProviderId: selected?.id || null, enabled: Boolean(current.enabled), activeCount };
 }
 
-function selectedProviderRow(db) {
+function activeProviderRows(db) {
   const current = stateRow(db);
-  if (!current.selected_provider_id) return null;
-  return db.prepare('SELECT * FROM web_search_providers WHERE id=?').get(current.selected_provider_id) || null;
+  if (!current.enabled) return [];
+  return db.prepare('SELECT * FROM web_search_providers WHERE enabled=1 ORDER BY created_at,id').all();
 }
 
-// Public search entry used by the AI Chat: returns [] when disabled/unconfigured
-// so callers can degrade gracefully instead of erroring the whole chat.
+function providerRow(db, id) {
+  return db.prepare('SELECT * FROM web_search_providers WHERE id=?').get(id) || null;
+}
+
+function normalizeUrlKey(url) {
+  try { const u = new URL(url); return `${u.hostname.toLowerCase()}${u.pathname.replace(/\/+$/, '')}`.toLowerCase(); }
+  catch { return String(url).toLowerCase().replace(/\/+$/, ''); }
+}
+
+// Run a set of provider rows, merge + dedupe by URL, tag each row with source.
+async function runProviders(rows, query, transport, limit) {
+  const settled = await Promise.allSettled(rows.map(row =>
+    runSearch({ baseUrl: row.base_url, apiKey: decrypt(row.api_key_encrypted), format: row.format, query, limit }, transport)
+      .then(result => ({ name: row.name, results: result.results }))
+  ));
+  const merged = [];
+  const seen = new Set();
+  const used = [];
+  const errors = [];
+  // Interleave results from each provider so both voices show up before the cap.
+  const perProvider = [];
+  settled.forEach((entry, index) => {
+    if (entry.status === 'fulfilled') { used.push(entry.value.name); perProvider.push({ name: entry.value.name, rows: entry.value.results }); }
+    else errors.push({ name: rows[index].name, message: entry.reason?.message || 'gagal' });
+  });
+  let added = true;
+  for (let i = 0; added && merged.length < limit; i += 1) {
+    added = false;
+    for (const provider of perProvider) {
+      const row = provider.rows[i];
+      if (!row) continue;
+      added = true;
+      const key = normalizeUrlKey(row.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({ ...row, source: provider.name });
+      if (merged.length >= limit) break;
+    }
+  }
+  return { results: merged, used: [...new Set(used)], errors };
+}
+
+// The ROUTER. Decides how many providers to hit for a query (cost-aware).
+async function routeSearch(db, query, transport = fetch, limit = 5) {
+  const rows = activeProviderRows(db);
+  if (!rows.length) return { results: [], enabled: false, providers: [], plan: 'off' };
+  if (rows.length === 1) {
+    const { results, used, errors } = await runProviders(rows, query, transport, limit);
+    if (!results.length && errors.length) throw Object.assign(new Error(errors[0].message), { status: 502 });
+    return { results, enabled: true, providers: used, plan: 'single' };
+  }
+
+  const current = stateRow(db);
+  const primary = rows.find(r => r.role === 'primary')
+    || rows.find(r => r.id === current.selected_provider_id)
+    || rows[0];
+  const verify = rows.find(r => r.role === 'verify' && r.id !== primary.id)
+    || rows.find(r => r.id !== primary.id);
+
+  const needBoth = VERIFY_SIGNAL.test(String(query || '')) || String(query || '').length > 140;
+  if (needBoth && verify) {
+    const { results, used, errors } = await runProviders([primary, verify], query, transport, limit);
+    if (!results.length && errors.length) throw Object.assign(new Error(errors[0].message), { status: 502 });
+    return { results, enabled: true, providers: used, plan: 'both' };
+  }
+
+  // Cheap path: primary only. Escalate to verify only if primary is thin.
+  const first = await runProviders([primary], query, transport, limit);
+  if (first.results.length >= MIN_PRIMARY_RESULTS || !verify) {
+    if (!first.results.length && first.errors.length) throw Object.assign(new Error(first.errors[0].message), { status: 502 });
+    return { results: first.results, enabled: true, providers: first.used, plan: 'primary' };
+  }
+  const escalated = await runProviders([primary, verify], query, transport, limit);
+  if (!escalated.results.length && escalated.errors.length) throw Object.assign(new Error(escalated.errors[0].message), { status: 502 });
+  return { results: escalated.results, enabled: true, providers: escalated.used, plan: 'escalated' };
+}
+
+// Backward-compatible entry used by the AI Chat.
 async function searchForChat(db, query, transport = fetch, limit = 5) {
-  const current = stateRow(db);
-  if (!current.enabled) return { results: [], enabled: false };
-  const row = selectedProviderRow(db);
-  if (!row) return { results: [], enabled: false };
-  const { results } = await runSearch({ baseUrl: row.base_url, apiKey: decrypt(row.api_key_encrypted), format: row.format, query, limit }, transport);
-  return { results, enabled: true, provider: row.name };
+  return routeSearch(db, query, transport, limit);
 }
 
-function saveProvider(db, { baseUrl, apiKey, format }, transport = fetch) {
+function saveProvider(db, { baseUrl, apiKey, format, role }, transport = fetch) {
   return (async () => {
     ensureSchema(db);
     const normalizedBase = normalizeBaseUrl(baseUrl);
@@ -235,38 +357,58 @@ function saveProvider(db, { baseUrl, apiKey, format }, transport = fetch) {
     if (!probe.results.length) throw Object.assign(new Error('Provider terhubung tetapi tidak mengembalikan hasil pencarian yang dikenali. Periksa Base URL/format.'), { status: 422 });
     const id = providerId(normalizedBase, fmt);
     const name = inferName(normalizedBase);
-    db.prepare(`INSERT INTO web_search_providers(id,name,base_url,api_key_encrypted,format,updated_at)
-      VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name,base_url=excluded.base_url,api_key_encrypted=excluded.api_key_encrypted,format=excluded.format,updated_at=CURRENT_TIMESTAMP`)
-      .run(id, name, normalizedBase, encrypt(key), fmt);
-    db.prepare('UPDATE web_search_state SET selected_provider_id=?,enabled=1,updated_at=CURRENT_TIMESTAMP WHERE id=1').run(id);
-    return { ...publicState(db), saved: { id, name, format: probe.format, sampleCount: probe.results.length } };
+    const existing = providerRow(db, id);
+    const resolvedRole = role ? normalizeRole(role) : (existing?.role || defaultRoleFor(probe.format));
+    db.prepare(`INSERT INTO web_search_providers(id,name,base_url,api_key_encrypted,format,role,enabled,updated_at)
+      VALUES(?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,base_url=excluded.base_url,api_key_encrypted=excluded.api_key_encrypted,format=excluded.format,role=excluded.role,enabled=1,updated_at=CURRENT_TIMESTAMP`)
+      .run(id, name, normalizedBase, encrypt(key), fmt, resolvedRole);
+    // First provider also becomes the selected primary hint + turns the feature on.
+    const current = stateRow(db);
+    if (!current.selected_provider_id) db.prepare('UPDATE web_search_state SET selected_provider_id=? WHERE id=1').run(id);
+    db.prepare('UPDATE web_search_state SET enabled=1,updated_at=CURRENT_TIMESTAMP WHERE id=1').run();
+    return { ...publicState(db), saved: { id, name, format: probe.format, role: resolvedRole, sampleCount: probe.results.length } };
   })();
 }
 
 function removeProvider(db, id) {
   ensureSchema(db);
-  const row = db.prepare('SELECT id FROM web_search_providers WHERE id=?').get(id);
-  if (!row) throw Object.assign(new Error('Provider pencarian tidak ditemukan.'), { status: 404 });
+  if (!providerRow(db, id)) throw Object.assign(new Error('Provider pencarian tidak ditemukan.'), { status: 404 });
   db.transaction(() => {
     db.prepare('DELETE FROM web_search_providers WHERE id=?').run(id);
-    db.prepare('UPDATE web_search_state SET selected_provider_id=CASE WHEN selected_provider_id=? THEN NULL ELSE selected_provider_id END, enabled=CASE WHEN selected_provider_id=? THEN 0 ELSE enabled END, updated_at=CURRENT_TIMESTAMP WHERE id=1').run(id, id);
+    db.prepare('UPDATE web_search_state SET selected_provider_id=CASE WHEN selected_provider_id=? THEN NULL ELSE selected_provider_id END, updated_at=CURRENT_TIMESTAMP WHERE id=1').run(id);
   })();
+  // If no providers remain, switch the master toggle off.
+  if (!providers(db).length) db.prepare('UPDATE web_search_state SET enabled=0 WHERE id=1').run();
   return publicState(db);
 }
 
 function setSelected(db, id) {
   ensureSchema(db);
-  const row = db.prepare('SELECT id FROM web_search_providers WHERE id=?').get(id);
-  if (!row) throw Object.assign(new Error('Provider pencarian tidak ditemukan.'), { status: 404 });
+  if (!providerRow(db, id)) throw Object.assign(new Error('Provider pencarian tidak ditemukan.'), { status: 404 });
   db.prepare('UPDATE web_search_state SET selected_provider_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=1').run(id);
+  return publicState(db);
+}
+
+function setRole(db, id, role) {
+  ensureSchema(db);
+  if (!providerRow(db, id)) throw Object.assign(new Error('Provider pencarian tidak ditemukan.'), { status: 404 });
+  db.prepare('UPDATE web_search_providers SET role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(normalizeRole(role), id);
+  return publicState(db);
+}
+
+function setProviderEnabled(db, id, enabled) {
+  ensureSchema(db);
+  if (!providerRow(db, id)) throw Object.assign(new Error('Provider pencarian tidak ditemukan.'), { status: 404 });
+  if (typeof enabled !== 'boolean') throw Object.assign(new Error('Nilai enabled harus boolean.'), { status: 422 });
+  db.prepare('UPDATE web_search_providers SET enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(Number(enabled), id);
   return publicState(db);
 }
 
 function setEnabled(db, enabled) {
   ensureSchema(db);
   if (typeof enabled !== 'boolean') throw Object.assign(new Error('Nilai enabled harus boolean.'), { status: 422 });
-  if (enabled && !selectedProviderRow(db)) throw Object.assign(new Error('Simpan provider pencarian terlebih dahulu sebelum mengaktifkan.'), { status: 422 });
+  if (enabled && !providers(db).some(p => p.enabled)) throw Object.assign(new Error('Simpan & aktifkan minimal satu provider pencarian dulu.'), { status: 422 });
   db.prepare('UPDATE web_search_state SET enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=1').run(Number(enabled));
   return publicState(db);
 }
@@ -277,7 +419,7 @@ function install({ app, db, transport = fetch }) {
   app.get('/api/web-search/providers', (req, res) => res.json(publicState(db)));
 
   app.post('/api/web-search/providers', async (req, res, next) => {
-    try { res.status(201).json(await saveProvider(db, { baseUrl: req.body?.baseUrl, apiKey: req.body?.apiKey, format: req.body?.format }, transport)); }
+    try { res.status(201).json(await saveProvider(db, { baseUrl: req.body?.baseUrl, apiKey: req.body?.apiKey, format: req.body?.format, role: req.body?.role }, transport)); }
     catch (error) { next(error); }
   });
 
@@ -303,6 +445,14 @@ function install({ app, db, transport = fetch }) {
     try { res.json(setEnabled(db, req.body?.enabled)); } catch (error) { next(error); }
   });
 
+  app.put('/api/web-search/providers/:id/role', (req, res, next) => {
+    try { res.json(setRole(db, req.params.id, req.body?.role)); } catch (error) { next(error); }
+  });
+
+  app.put('/api/web-search/providers/:id/enabled', (req, res, next) => {
+    try { res.json(setProviderEnabled(db, req.params.id, req.body?.enabled)); } catch (error) { next(error); }
+  });
+
   app.delete('/api/web-search/providers/:id', (req, res, next) => {
     try { res.json(removeProvider(db, req.params.id)); } catch (error) { next(error); }
   });
@@ -321,12 +471,17 @@ module.exports = {
   saveProvider,
   removeProvider,
   setSelected,
+  setRole,
+  setProviderEnabled,
   setEnabled,
   searchForChat,
+  routeSearch,
   runSearch,
   parseSearchResults,
   detectFormat,
+  defaultRoleFor,
   normalizeBaseUrl,
   buildSearchRequest,
+  youcomUrl,
   FORMATS
 };

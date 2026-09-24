@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260924-websearch-router';
+  const VERSION = 'cache-20260924-websearch-router2';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();

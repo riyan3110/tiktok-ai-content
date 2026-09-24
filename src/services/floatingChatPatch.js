@@ -175,7 +175,7 @@ async function webSearchContextFor(db, content, transport) {
   }
   if (!searchResult.enabled || !searchResult.results.length) return { context: '', citations: [] };
 
-  const citations = searchResult.results.map((row, index) => ({ index: index + 1, title: row.title, url: row.url, snippet: row.snippet }));
+  const citations = searchResult.results.map((row, index) => ({ index: index + 1, title: row.title, url: row.url, snippet: row.snippet, source: row.source }));
   const topUrls = citations.slice(0, 3).map(c => c.url);
   let pageContext = '';
   try {
@@ -187,10 +187,11 @@ async function webSearchContextFor(db, content, transport) {
   }
 
   const resultBlock = citations
-    .map(c => `[${c.index}] ${c.title || c.url}\nURL: ${c.url}${c.snippet ? `\nRINGKASAN: ${c.snippet}` : ''}`)
+    .map(c => `[${c.index}] ${c.title || c.url}${c.source ? ` (via ${c.source})` : ''}\nURL: ${c.url}${c.snippet ? `\nRINGKASAN: ${c.snippet}` : ''}`)
     .join('\n\n');
+  const providersUsed = Array.isArray(searchResult.providers) ? searchResult.providers.join(' + ') : 'web';
   const context = [
-    `<WEB_SEARCH provider="${searchResult.provider || 'web'}">`,
+    `<WEB_SEARCH provider="${providersUsed}" plan="${searchResult.plan || 'single'}">`,
     resultBlock,
     pageContext ? `\n[ISI HALAMAN TERAMBIL]\n${pageContext}` : '',
     '</WEB_SEARCH>',

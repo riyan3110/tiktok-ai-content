@@ -18,7 +18,8 @@
     return data;
   };
 
-  let state = { providers: [], selectedProviderId: null, enabled: false };
+  const ROLE_LABEL = { primary: 'Pencarian awal', verify: 'Verifikasi/research', auto: 'Otomatis' };
+  let state = { providers: [], selectedProviderId: null, enabled: false, activeCount: 0 };
   let busy = false;
 
   const toast = (message, error = false) => {
@@ -38,7 +39,7 @@
       .ws-card{display:grid;gap:14px;padding:18px;border:2px solid var(--ink,var(--border,#252b3a));border-radius:20px;background:var(--surface,#fff)}
       .ws-card h2{margin:0;font-size:1.15rem}
       .ws-card p.ws-note{margin:0;font-size:.86rem;opacity:.72;line-height:1.5}
-      .ws-flow{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem;line-height:1.5;white-space:pre;background:#0b0b0e;color:#e7e7ea;border-radius:14px;padding:14px 16px;overflow:auto}
+      .ws-flow{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;line-height:1.5;white-space:pre;background:#0b0b0e;color:#e7e7ea;border-radius:14px;padding:14px 16px;overflow:auto}
       .ws-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
       .ws-card label{display:grid;gap:7px;font-weight:700}
       .ws-card input,.ws-card select{width:100%;min-width:0;font-size:16px}
@@ -47,14 +48,16 @@
       .ws-status{font-size:.9rem;min-height:20px}
       .ws-toggle{display:flex;align-items:center;gap:12px;font-weight:700}
       .ws-toggle input{width:22px;height:22px;flex:0 0 auto;accent-color:var(--neo-purple,#a78bfa)}
-      .ws-list{display:grid;gap:8px}
-      .ws-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:2px solid var(--ink,var(--border,#252b3a));border-radius:14px}
-      .ws-item.active{outline:3px solid var(--ink,var(--text,#1f2937));outline-offset:-3px}
-      .ws-item span{display:grid;gap:2px;min-width:0}.ws-item small{opacity:.68;overflow-wrap:anywhere}
-      .ws-item .ws-item-actions{display:flex;gap:8px;flex:0 0 auto}
+      .ws-list{display:grid;gap:10px}
+      .ws-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px 14px;border:2px solid var(--ink,var(--border,#252b3a));border-radius:14px}
+      .ws-item.off{opacity:.55}
+      .ws-item .ws-meta{display:grid;gap:2px;min-width:0}.ws-item small{opacity:.68;overflow-wrap:anywhere}
+      .ws-item .ws-ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+      .ws-item select{width:auto;font-size:14px;padding:6px 8px}
+      .ws-badge{font-size:.72rem;font-weight:800;padding:2px 8px;border-radius:999px;background:#ede9fe;color:#5b21b6}
       .ws-empty{opacity:.7;padding:6px 2px}
       .ws-results{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem;border:1px dashed var(--border,#252b3a);border-radius:12px;padding:10px 12px;min-height:20px}
-      @media(max-width:760px){.ws-fields{grid-template-columns:1fr}.ws-actions{grid-template-columns:1fr}}
+      @media(max-width:760px){.ws-fields{grid-template-columns:1fr}.ws-actions{grid-template-columns:1fr}.ws-item{grid-template-columns:1fr}.ws-item .ws-ctl{justify-content:flex-start}}
     `;
     document.head.appendChild(style);
   }
@@ -62,10 +65,18 @@
   function providerList() {
     if (!state.providers.length) return '<div class="ws-empty">Belum ada provider pencarian tersimpan.</div>';
     return state.providers.map(p => `
-      <div class="ws-item ${p.id === state.selectedProviderId ? 'active' : ''}">
-        <span><b>${safe(p.name)}</b><small>${safe(p.baseUrl)} · format: ${safe(p.format)}</small></span>
-        <div class="ws-item-actions">
-          <button type="button" class="outline" data-ws-select="${safe(p.id)}">${p.id === state.selectedProviderId ? 'Aktif' : 'Pilih'}</button>
+      <div class="ws-item ${p.enabled ? '' : 'off'}">
+        <div class="ws-meta">
+          <b>${safe(p.name)} ${p.id === state.selectedProviderId ? '<span class="ws-badge">primary hint</span>' : ''}</b>
+          <small>${safe(p.baseUrl)} · format: ${safe(p.format)}</small>
+        </div>
+        <div class="ws-ctl">
+          <select data-ws-role="${safe(p.id)}" aria-label="Peran provider ${safe(p.name)}">
+            <option value="auto" ${p.role === 'auto' ? 'selected' : ''}>Otomatis</option>
+            <option value="primary" ${p.role === 'primary' ? 'selected' : ''}>Pencarian awal</option>
+            <option value="verify" ${p.role === 'verify' ? 'selected' : ''}>Verifikasi</option>
+          </select>
+          <button type="button" class="outline" data-ws-toggle="${safe(p.id)}">${p.enabled ? 'Aktif' : 'Nonaktif'}</button>
           <button type="button" class="outline" data-ws-delete="${safe(p.id)}">Hapus</button>
         </div>
       </div>`).join('');
@@ -79,25 +90,27 @@
     const toggle = $('#ws-enabled', root);
     if (toggle) toggle.checked = Boolean(state.enabled);
     const toggleNote = $('#ws-enabled-note', root);
-    if (toggleNote) toggleNote.textContent = state.selectedProviderId ? (state.enabled ? 'AI Chat akan mencari web sebelum menjawab.' : 'Aktifkan agar AI Chat mencari web.') : 'Simpan minimal satu provider dulu.';
-    root.querySelectorAll('#web-search-root button, #web-search-root input').forEach(node => { node.disabled = busy; });
+    if (toggleNote) {
+      const active = state.activeCount || state.providers.filter(p => p.enabled).length;
+      toggleNote.textContent = !state.providers.length ? 'Simpan minimal satu provider dulu.'
+        : state.enabled ? (active > 1 ? `Router aktif: ${active} provider. AI Chat memakai 1 provider untuk query biasa, dan menggabungkan keduanya untuk verifikasi/riset (hemat kredit).` : 'AI Chat akan mencari web sebelum menjawab.')
+        : 'Aktifkan agar AI Chat mencari web.';
+    }
+    root.querySelectorAll('#web-search-root button, #web-search-root input, #web-search-root select').forEach(node => { node.disabled = busy; });
 
-    root.querySelectorAll('[data-ws-select]').forEach(button => {
-      button.onclick = async () => {
-        busy = true; render();
-        try { state = normalize(await request('/api/web-search/selected', { method: 'PUT', body: JSON.stringify({ providerId: button.dataset.wsSelect }) })); toast('Provider pencarian dipilih.'); }
-        catch (error) { toast(error.message, true); }
-        finally { busy = false; render(); }
-      };
+    const act = async (fn, ok) => { busy = true; render(); try { state = normalize(await fn()); if (ok) toast(ok); } catch (error) { toast(error.message, true); } finally { busy = false; render(); } };
+    root.querySelectorAll('[data-ws-role]').forEach(sel => {
+      sel.onchange = () => act(() => request(`/api/web-search/providers/${encodeURIComponent(sel.dataset.wsRole)}/role`, { method: 'PUT', body: JSON.stringify({ role: sel.value }) }), 'Peran provider diperbarui.');
+    });
+    root.querySelectorAll('[data-ws-toggle]').forEach(button => {
+      const provider = state.providers.find(p => p.id === button.dataset.wsToggle);
+      button.onclick = () => act(() => request(`/api/web-search/providers/${encodeURIComponent(button.dataset.wsToggle)}/enabled`, { method: 'PUT', body: JSON.stringify({ enabled: !(provider?.enabled) }) }), provider?.enabled ? 'Provider dinonaktifkan.' : 'Provider diaktifkan.');
     });
     root.querySelectorAll('[data-ws-delete]').forEach(button => {
-      button.onclick = async () => {
+      button.onclick = () => {
         const provider = state.providers.find(p => p.id === button.dataset.wsDelete);
         if (!provider || !confirm(`Hapus provider pencarian ${provider.name}?`)) return;
-        busy = true; render();
-        try { state = normalize(await request(`/api/web-search/providers/${encodeURIComponent(button.dataset.wsDelete)}`, { method: 'DELETE' })); toast(`${provider.name} dihapus.`); }
-        catch (error) { toast(error.message, true); }
-        finally { busy = false; render(); }
+        act(() => request(`/api/web-search/providers/${encodeURIComponent(button.dataset.wsDelete)}`, { method: 'DELETE' }), `${provider.name} dihapus.`);
       };
     });
   }
@@ -106,45 +119,48 @@
     return {
       providers: Array.isArray(payload.providers) ? payload.providers : [],
       selectedProviderId: payload.selectedProviderId ?? null,
-      enabled: Boolean(payload.enabled)
+      enabled: Boolean(payload.enabled),
+      activeCount: Number(payload.activeCount || 0)
     };
   }
 
   function mount() {
     const section = $('#ai-providers');
     if (!section || $('#web-search-root')) return;
-    // Only mount after the provider UI has rendered its root.
     if (!$('#simple-provider-root', section)) return;
     installStyles();
     const host = document.createElement('div');
     host.innerHTML = `<div id="web-search-root"><div class="ws-shell">
       <section class="ws-card">
-        <h2>AI Web Search</h2>
-        <p class="ws-note">Router pencarian web untuk AI Chat. Isi Base URL + API key provider apa pun (You.com, Tavily, atau lainnya). Sistem menguji pencarian nyata sebelum menyimpan. Alur:</p>
-        <div class="ws-flow">Kamu
-  ↓
-AI Chat AI Ads Lab
-  ↓
-Web Search API (provider)
-  ↓
-Cari berita di web
-  ↓
-Ambil hasil + sumber
-  ↓
-AI Chat menganalisis/merangkum
-  ↓
-Jawaban + citation/link sumber</div>
+        <h2>AI Web Search (router)</h2>
+        <p class="ws-note">Isi Base URL + API key provider pencarian apa pun (Tavily, You.com, atau lainnya). Sistem menguji pencarian nyata sebelum menyimpan. Router hemat kredit: tidak selalu memanggil semua provider sekaligus.</p>
+        <div class="ws-flow">1. Tavily → pencarian awal
+2. You.com → research/verifikasi
+3. Gabungkan hasil
+4. AI Chat menyusun jawaban
+5. Tampilkan sumber + link
+──────────────
+Router: query biasa → 1 provider.
+Verifikasi/riset/mendalam → gabung 2.</div>
         <form id="ws-form">
           <div class="ws-fields">
-            <label>Base URL Web Search<input id="ws-base-url" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" required placeholder="https://api.ydc-index.io"></label>
-            <label>API Key<input id="ws-api-key" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="new-password" required placeholder="Masukkan API key provider"></label>
+            <label>Base URL Web Search<input id="ws-base-url" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" required placeholder="https://api.tavily.com atau https://ydc-index.io"></label>
+            <label>API Key<input id="ws-api-key" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="new-password" required placeholder="tvly-... / YDC key / API key provider"></label>
           </div>
-          <label>Format API<select id="ws-format">
-            <option value="auto">Auto-deteksi (rekomendasi)</option>
-            <option value="youcom">You.com (X-API-Key, GET /search)</option>
-            <option value="tavily">Tavily (POST /search)</option>
-            <option value="generic">Generic OpenAI-style (POST /search)</option>
-          </select></label>
+          <div class="ws-fields">
+            <label>Format API<select id="ws-format">
+              <option value="auto">Auto-deteksi (rekomendasi)</option>
+              <option value="tavily">Tavily (POST /search, Bearer)</option>
+              <option value="youcom">You.com v1 (POST /v1/search, X-API-Key)</option>
+              <option value="youcom_classic">You.com klasik (GET /search, X-API-Key)</option>
+              <option value="generic">Generic REST (POST /search)</option>
+            </select></label>
+            <label>Peran di router<select id="ws-role">
+              <option value="auto">Otomatis (dari format)</option>
+              <option value="primary">Pencarian awal</option>
+              <option value="verify">Verifikasi/research</option>
+            </select></label>
+          </div>
           <div id="ws-status" class="ws-status" role="status" aria-live="polite"></div>
           <div id="ws-results" class="ws-results"></div>
           <div class="ws-actions">
@@ -166,7 +182,8 @@ Jawaban + citation/link sumber</div>
     const readInputs = () => ({
       baseUrl: $('#ws-base-url', section).value.trim(),
       apiKey: $('#ws-api-key', section).value.trim(),
-      format: $('#ws-format', section).value
+      format: $('#ws-format', section).value,
+      role: $('#ws-role', section).value
     });
 
     $('#ws-test', section).onclick = async () => {
@@ -187,12 +204,12 @@ Jawaban + citation/link sumber</div>
     form.onsubmit = async event => {
       event.preventDefault();
       if (busy) return;
-      const { baseUrl, apiKey, format } = readInputs();
+      const { baseUrl, apiKey, format, role } = readInputs();
       if (!baseUrl || !apiKey) return toast('Base URL dan API Key wajib diisi.', true);
       const status = $('#ws-status', section);
       busy = true; render(); status.textContent = 'Menguji lalu menyimpan…';
       try {
-        state = normalize(await request('/api/web-search/providers', { method: 'POST', body: JSON.stringify({ baseUrl, apiKey, format }) }));
+        state = normalize(await request('/api/web-search/providers', { method: 'POST', body: JSON.stringify({ baseUrl, apiKey, format, role }) }));
         const key = $('#ws-api-key', section);
         if (key.value.trim() === apiKey) key.value = '';
         status.textContent = 'Provider pencarian tersimpan & aktif.';
