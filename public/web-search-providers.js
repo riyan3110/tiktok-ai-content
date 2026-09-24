@@ -35,7 +35,7 @@
     const style = document.createElement('style');
     style.id = 'web-search-styles';
     style.textContent = `
-      .ws-shell{display:grid;gap:16px;max-width:980px;margin:22px auto 0}
+      .ws-shell{display:grid;gap:16px;max-width:980px;margin:22px auto 0;padding-bottom:150px}
       .ws-card{display:grid;gap:14px;padding:18px;border:2px solid var(--ink,var(--border,#252b3a));border-radius:20px;background:var(--surface,#fff)}
       .ws-card h2{margin:0;font-size:1.15rem}
       .ws-card p.ws-note{margin:0;font-size:.86rem;opacity:.72;line-height:1.5}
@@ -225,9 +225,30 @@
     catch (error) { toast(`Gagal memuat web search: ${error.message}`, true); }
   }
 
+  // The global floating chat launcher (yellow bubble) is position:fixed and
+  // overlaps this config form. Hide it while the AI Web Search card is on
+  // screen, restore it when the user scrolls/navigates away.
+  function watchLauncherOverlap(root) {
+    const setHidden = hidden => {
+      const launcher = document.querySelector('.aiads-chat-launcher');
+      const panel = document.querySelector('.aiads-chat-panel');
+      const chatOpen = panel && !panel.classList.contains('hidden');
+      if (launcher) launcher.style.display = (hidden && !chatOpen) ? 'none' : '';
+    };
+    if (!('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver(entries => {
+      const visible = entries.some(e => e.isIntersecting);
+      setHidden(visible);
+    }, { threshold: 0 });
+    io.observe(root);
+    window.addEventListener('pagehide', () => { io.disconnect(); setHidden(false); }, { once: true });
+  }
+
   const start = () => {
     mount();
-    const observer = new MutationObserver(() => mount());
+    const rootNow = $('#web-search-root');
+    if (rootNow) watchLauncherOverlap(rootNow);
+    const observer = new MutationObserver(() => { const wasMounted = Boolean($('#web-search-root')); mount(); const root = $('#web-search-root'); if (root && !wasMounted) watchLauncherOverlap(root); });
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
   };

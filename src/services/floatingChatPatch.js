@@ -169,11 +169,19 @@ async function webContextFor(content, transport) {
 async function webSearchContextFor(db, content, transport) {
   let searchResult;
   try {
-    searchResult = await webSearch.searchForChat(db, content, transport, MAX_SEARCH_RESULTS);
+    // force=true: the user explicitly pressed search, so run even if the master
+    // toggle is off / providers are individually disabled.
+    searchResult = await webSearch.searchForChat(db, content, transport, MAX_SEARCH_RESULTS, true);
   } catch (error) {
     return { context: `<SEARCH_ERROR>${String(error.message || 'Pencarian gagal').slice(0, 300)}</SEARCH_ERROR>`, citations: [] };
   }
-  if (!searchResult.enabled) return { context: '', citations: [] };
+  if (!searchResult.enabled && !searchResult.providers?.length && searchResult.plan === 'off') {
+    // No search provider saved at all.
+    return {
+      context: '<WEB_SEARCH status="no_provider">\nBelum ada provider pencarian web yang tersimpan.\n</WEB_SEARCH>\nInstruksi: Beritahu pengguna bahwa Web Search belum dikonfigurasi (isi Base URL + API key di menu Provider AI). JANGAN mengarang fakta.',
+      citations: []
+    };
+  }
   if (!searchResult.results.length) {
     // Search ran but found nothing usable — tell the model to be honest instead
     // of answering from memory and pretending it verified via the web.
@@ -234,7 +242,10 @@ function install({ app, db, transport } = {}) {
     let search = { enabled: false, configured: false };
     try {
       const searchState = webSearch.publicState(db);
-      search = { enabled: Boolean(searchState.enabled), configured: Boolean(searchState.selectedProviderId) };
+      // "configured" = at least one search provider is saved. The search button
+      // uses force mode, so it works even if the master toggle is off or the
+      // provider is individually disabled — gate the button on saved-ness only.
+      search = { enabled: Boolean(searchState.enabled), configured: (searchState.providers || []).length > 0 };
     } catch (_) { /* web search optional */ }
     res.json({ providers, defaultProvider: defaultId, search });
   });

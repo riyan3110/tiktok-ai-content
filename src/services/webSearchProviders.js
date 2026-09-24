@@ -286,10 +286,15 @@ function publicState(db) {
   return { providers: all, selectedProviderId: selected?.id || null, enabled: Boolean(current.enabled), activeCount };
 }
 
-function activeProviderRows(db) {
+function activeProviderRows(db, force = false) {
   const current = stateRow(db);
-  if (!current.enabled) return [];
-  return db.prepare('SELECT * FROM web_search_providers WHERE enabled=1 ORDER BY created_at,id').all();
+  if (!force && !current.enabled) return [];
+  const enabled = db.prepare('SELECT * FROM web_search_providers WHERE enabled=1 ORDER BY created_at,id').all();
+  if (enabled.length) return enabled;
+  // Master toggle is on (or search was explicitly forced) but no provider is
+  // individually enabled — fall back to every saved provider so search still
+  // works instead of silently returning nothing.
+  return db.prepare('SELECT * FROM web_search_providers ORDER BY created_at,id').all();
 }
 
 function providerRow(db, id) {
@@ -335,8 +340,11 @@ async function runProviders(rows, query, transport, limit) {
 }
 
 // The ROUTER. Decides how many providers to hit for a query (cost-aware).
-async function routeSearch(db, query, transport = fetch, limit = 5) {
-  const rows = activeProviderRows(db);
+// `force` (used when the user explicitly presses the search button) searches
+// even if the master toggle is off and ignores per-provider disable so an
+// explicit action never silently does nothing.
+async function routeSearch(db, query, transport = fetch, limit = 5, force = false) {
+  const rows = activeProviderRows(db, force);
   if (!rows.length) return { results: [], enabled: false, providers: [], plan: 'off' };
   if (rows.length === 1) {
     const { results, used, errors } = await runProviders(rows, query, transport, limit);
@@ -370,8 +378,8 @@ async function routeSearch(db, query, transport = fetch, limit = 5) {
 }
 
 // Backward-compatible entry used by the AI Chat.
-async function searchForChat(db, query, transport = fetch, limit = 5) {
-  return routeSearch(db, query, transport, limit);
+async function searchForChat(db, query, transport = fetch, limit = 5, force = false) {
+  return routeSearch(db, query, transport, limit, force);
 }
 
 function saveProvider(db, { baseUrl, apiKey, format, role }, transport = fetch) {

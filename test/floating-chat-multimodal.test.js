@@ -58,3 +58,11 @@ test('floating chat assistant bubbles are selectable and carry a small copy butt
   assert.match(source, /navigator\.clipboard/);
   assert.match(source, /execCommand\('copy'\)/);
 });
+
+test('legacy chat-copy module no longer injects its own overlapping copy button', () => {
+  const legacy = fs.readFileSync(path.join(__dirname, '..', 'public', 'chat-copy-pull-refresh.js'), 'utf8');
+  // The duplicate copy button was removed; only pull-to-refresh remains.
+  assert.doesNotMatch(legacy, /enhanceCopyButtons/);
+  assert.doesNotMatch(legacy, /class = 'aiads-chat-copy'/);
+  assert.match(legacy, /aiads-pull-refresh/);
+});

@@ -185,6 +185,21 @@ test('per-provider enable/disable + role via HTTP routes', async t => {
   assert.equal(disabled.providers[0].enabled, false);
 });
 
+test('ROUTER force: searches even when master toggle off / providers disabled (explicit button press)', async () => {
+  const db = createDatabase(':memory:');
+  const transport = multiTransport([]);
+  await webSearch.saveProvider(db, { baseUrl: 'https://api.tavily.com', apiKey: 'tv-key' }, transport);
+  // Simulate the state from the screenshot: master toggle ON but provider disabled.
+  const state = webSearch.publicState(db);
+  webSearch.setProviderEnabled(db, state.providers[0].id, false);
+  // Without force, a disabled provider yields nothing usable...
+  const normal = await webSearch.routeSearch(db, 'kabar', transport, 5, false);
+  // ...but force mode falls back to all saved providers and returns results.
+  const forced = await webSearch.routeSearch(db, 'kabar', transport, 5, true);
+  assert.ok(forced.results.length >= 1, 'force mode must search saved providers even when disabled');
+  assert.ok(forced.providers.includes('Tavily'));
+});
+
 test('floating chat wires router context + citations (with source tags)', async () => {
   const db = createDatabase(':memory:');
   const transport = async (url, options = {}) => {
