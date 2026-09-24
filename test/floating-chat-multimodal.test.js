@@ -45,3 +45,16 @@ test('floating chat UI remains text chat with image upload and no media generati
   assert.doesNotMatch(source, /detectIntent/);
   assert.doesNotMatch(source, /\/api\/content-studio\/generate/);
 });
+
+test('floating chat assistant bubbles are selectable and carry a small copy button', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'floating-chat.js'), 'utf8');
+  // Copy button is rendered only for assistant messages with content.
+  assert.match(source, /data-chat-copy/);
+  assert.match(source, /copyBtnHtml/);
+  // Text stays selectable and the button is small/positioned so it never covers text.
+  assert.match(source, /user-select:text/);
+  assert.match(source, /\.aiads-chat-copy\{position:absolute/);
+  // Copy handler uses the clipboard API with an execCommand fallback.
+  assert.match(source, /navigator\.clipboard/);
+  assert.match(source, /execCommand\('copy'\)/);
+});

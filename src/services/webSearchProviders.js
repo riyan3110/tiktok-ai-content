@@ -113,13 +113,14 @@ function youcomUrl(baseUrl) {
 function buildSearchRequest(effectiveFormat, baseUrl, apiKey, query, limit) {
   const q = String(query || '').trim();
   if (effectiveFormat === 'youcom') {
-    // Real You.com API (per docs): POST /v1/search, X-API-Key, extraction body.
+    // Real You.com API (per docs): POST /v1/search, X-API-Key.
+    // Body: query + count; extraction:highlights gives token-efficient snippets.
     return {
       url: youcomUrl(baseUrl),
       init: {
         method: 'POST',
         headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ query: q, extraction: { extraction_mode: 'highlights' } })
+        body: JSON.stringify({ query: q, count: Math.min(Math.max(limit, 1), 20), extraction: { extraction_mode: 'highlights' } })
       }
     };
   }
@@ -158,23 +159,51 @@ function firstString(...values) {
   return '';
 }
 
-// Flexibly pull {title, url, snippet} rows from any of the common shapes.
-function parseSearchResults(payload, limit) {
+// Collect the raw result rows from any provider payload shape.
+function collectRows(payload) {
   if (!payload || typeof payload !== 'object') return [];
+  // You.com v1 POST /search: `results` is an OBJECT with web/news/knowledge arrays.
+  const r = payload.results;
+  if (r && typeof r === 'object' && !Array.isArray(r)) {
+    const grouped = [...(Array.isArray(r.web) ? r.web : []), ...(Array.isArray(r.news) ? r.news : []), ...(Array.isArray(r.knowledge) ? r.knowledge : [])];
+    if (grouped.length) return grouped;
+  }
   const candidates = [
     payload.hits, payload.results, payload.web?.results, payload.data,
     payload.organic, payload.organic_results, payload.items, payload.documents,
-    payload.result?.results, payload.result?.hits, payload.answer?.results
+    payload.result?.results, payload.result?.hits, payload.answer?.results,
+    Array.isArray(payload.web) ? payload.web : null, Array.isArray(payload.news) ? payload.news : null
   ];
-  const list = candidates.find(Array.isArray) || [];
+  return candidates.find(Array.isArray) || [];
+}
+
+function extractSnippet(item) {
+  const contents = item.contents && typeof item.contents === 'object' ? item.contents : null;
+  const highlightsArr = Array.isArray(item.highlights) ? item.highlights
+    : contents && Array.isArray(contents.highlights) ? contents.highlights : null;
+  const snippetsArr = Array.isArray(item.snippets) ? item.snippets : null;
+  const joined = arr => (arr || []).filter(v => typeof v === 'string' && v.trim()).join(' ');
+  return firstString(
+    item.snippet,
+    item.description,
+    joined(highlightsArr),
+    joined(snippetsArr),
+    item.content,
+    contents && (contents.markdown || contents.text),
+    item.text,
+    item.summary
+  );
+}
+
+// Flexibly pull {title, url, snippet} rows from any of the common shapes.
+function parseSearchResults(payload, limit) {
+  const list = collectRows(payload);
   const rows = [];
   for (const item of list) {
     if (!item || typeof item !== 'object') continue;
     const url = firstString(item.url, item.link, item.href, item.source_url, item.document_url);
     if (!url || !/^https?:\/\//i.test(url)) continue;
-    const snippetArray = Array.isArray(item.snippets) ? item.snippets.filter(v => typeof v === 'string').join(' ')
-      : Array.isArray(item.highlights) ? item.highlights.filter(v => typeof v === 'string').join(' ') : '';
-    const snippet = firstString(item.snippet, item.description, item.content, item.text, snippetArray, item.summary);
+    const snippet = extractSnippet(item);
     const title = firstString(item.title, item.name, item.heading, url);
     rows.push({ title, url, snippet });
     if (rows.length >= limit) break;

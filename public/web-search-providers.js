@@ -39,7 +39,6 @@
       .ws-card{display:grid;gap:14px;padding:18px;border:2px solid var(--ink,var(--border,#252b3a));border-radius:20px;background:var(--surface,#fff)}
       .ws-card h2{margin:0;font-size:1.15rem}
       .ws-card p.ws-note{margin:0;font-size:.86rem;opacity:.72;line-height:1.5}
-      .ws-flow{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;line-height:1.5;white-space:pre;background:#0b0b0e;color:#e7e7ea;border-radius:14px;padding:14px 16px;overflow:auto}
       .ws-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
       .ws-card label{display:grid;gap:7px;font-weight:700}
       .ws-card input,.ws-card select{width:100%;min-width:0;font-size:16px}
@@ -133,15 +132,7 @@
     host.innerHTML = `<div id="web-search-root"><div class="ws-shell">
       <section class="ws-card">
         <h2>AI Web Search (router)</h2>
-        <p class="ws-note">Isi Base URL + API key provider pencarian apa pun (Tavily, You.com, atau lainnya). Sistem menguji pencarian nyata sebelum menyimpan. Router hemat kredit: tidak selalu memanggil semua provider sekaligus.</p>
-        <div class="ws-flow">1. Tavily → pencarian awal
-2. You.com → research/verifikasi
-3. Gabungkan hasil
-4. AI Chat menyusun jawaban
-5. Tampilkan sumber + link
-──────────────
-Router: query biasa → 1 provider.
-Verifikasi/riset/mendalam → gabung 2.</div>
+        <p class="ws-note">Isi Base URL + API key provider pencarian apa pun (Tavily, You.com, atau lainnya). Sistem menguji pencarian nyata sebelum menyimpan. Router hemat kredit: query biasa cukup 1 provider, verifikasi/riset menggabungkan 2.</p>
         <form id="ws-form">
           <div class="ws-fields">
             <label>Base URL Web Search<input id="ws-base-url" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" required placeholder="https://api.tavily.com atau https://ydc-index.io"></label>

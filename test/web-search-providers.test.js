@@ -23,10 +23,15 @@ function multiTransport(calls) {
     if (u.hostname.includes('ydc-index.io') || u.hostname.includes('you.com')) {
       assert.equal(options.headers['X-API-Key'], 'yc-key');
       assert.match(u.pathname, /\/v1\/search$/);
-      return jsonRes({ hits: [
-        { title: 'You A', url: 'https://you.example/a', snippets: ['You snippet A'] },
-        { title: 'You B', url: 'https://you.example/b', description: 'You snippet B' }
-      ] });
+      // Real You.com v1 POST shape: results is an OBJECT with web/news arrays,
+      // each web row carries contents.highlights (extraction_mode: highlights).
+      return jsonRes({ results: {
+        web: [
+          { title: 'You A', url: 'https://you.example/a', contents: { highlights: ['You highlight A1', 'You highlight A2'] } },
+          { title: 'You B', url: 'https://you.example/b', description: 'You desc B' }
+        ],
+        news: [ { title: 'You News', url: 'https://you.example/news', description: 'berita' } ]
+      } });
     }
     return new Response('not found', { status: 404 });
   };
@@ -59,6 +64,22 @@ test('parseSearchResults understands hits/results/web.results/organic + highligh
   assert.equal(webSearch.parseSearchResults({ web: { results: [{ title: 'C', url: 'https://c.com' }] } }, 5).length, 1);
   assert.equal(webSearch.parseSearchResults({ organic_results: [{ title: 'D', link: 'https://d.com' }] }, 5).length, 1);
   assert.equal(webSearch.parseSearchResults({ results: [{ title: 'X', url: 'ftp://nope' }] }, 5).length, 0);
+});
+
+test('parseSearchResults understands the REAL You.com v1 POST shape (results.web + contents.highlights)', () => {
+  const payload = { results: {
+    web: [
+      { title: 'W1', url: 'https://w.com/1', contents: { highlights: ['hi one', 'hi two'] } },
+      { title: 'W2', url: 'https://w.com/2', description: 'plain desc', snippets: ['snip'] }
+    ],
+    news: [ { title: 'N1', url: 'https://n.com/1', description: 'news desc' } ],
+    knowledge: [ { title: 'K1', url: 'https://k.com/1', description: 'kb' } ]
+  } };
+  const rows = webSearch.parseSearchResults(payload, 10);
+  assert.equal(rows.length, 4); // web(2) + news(1) + knowledge(1)
+  assert.equal(rows[0].snippet, 'hi one hi two'); // highlights preferred
+  assert.equal(rows[1].snippet, 'plain desc');    // description over snippets when present
+  assert.equal(rows[2].url, 'https://n.com/1');
 });
 
 test('detectFormat + defaultRoleFor assign Tavily=primary, You.com=verify', () => {
