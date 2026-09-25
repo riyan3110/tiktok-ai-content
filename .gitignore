@@ -6,3 +6,12 @@ public/generated/*.png
 npm-debug.log*
 
 data/.provider-encryption-key
+.env.*
+!.env.example
+public/generated/*.jpg
+public/generated/*.jpeg
+public/generated/*.webp
+public/generated/*.txt
+data/assets/
+data/asset-thumbnails/
+package-lock.vps-backup.json

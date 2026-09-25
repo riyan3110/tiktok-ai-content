@@ -6,7 +6,7 @@ const { normalizeSlides, validateSlides: validateContentSlides } = require('./co
 
 const WIDTH = 1080;
 const HEIGHT = 1920;
-const JPEG_QUALITY = 98;
+const JPEG_QUALITY = 86;
 // TikTok overlays occupy the search/header region, the action rail at the
 // right, and the caption/navigation region at the bottom. Keep all meaningful
 // copy inside this deliberately asymmetric canvas.
@@ -546,24 +546,25 @@ function renderStructuredVariant(layout) {
       const isResultSlide = /HASIL|PENUTUP/i.test(section);
       const stepLabel = stepMatch ? `LANGKAH ${stepMatch[1]}` : (isResultSlide ? 'HASIL' : 'TUTORIAL');
       const cardRight = 70;
-      const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+      const cardLeft = 54;
+      const cardWidth = WIDTH - cardLeft - cardRight;
       // Judul memakai lebar penuh garis pemisah agar kalimat melebar horizontal
       // dan tidak menumpuk menjadi banyak baris pendek (shrink-to-fit via fitVariantText).
       const titleTextWidth = cardWidth;
-      const bodyTextWidth = isResultSlide ? cardWidth - 200 : cardWidth - 130;
-      const actionTextWidth = cardWidth - 210;
+      const bodyTextWidth = cardWidth - 60;
+      const actionTextWidth = cardWidth - 140;
 
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
-        `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">TUTORIAL</text>`,
+        `<rect x="${cardLeft}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+        `<text x="${cardLeft + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">TUTORIAL</text>`,
         `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(stepLabel)}</text>`,
-        `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
+        `<line x1="${cardLeft}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
       );
 
       let y = CONTENT_TOP + 90;
       const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isResultSlide ? 66 : 72), scale(40), isResultSlide ? 5 : 4, true);
       if (titleFit) {
-        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
+        parts.push(positionedText(titleFit.lines, { x: cardLeft + 24, y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
         y += titleFit.lines.length * titleFit.fontSize * 1.18 + gap(42);
       }
 
@@ -572,8 +573,8 @@ function renderStructuredVariant(layout) {
         const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.26;
         const bodyBoxHeight = Math.max(scale(isResultSlide ? 180 : 150), bodyHeight + gap(isResultSlide ? 104 : 86));
         parts.push(
-          `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
-          positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 500, fill: '#f3e8ff' })
+          `<rect x="${cardLeft}" y="${y - 48}" width="${cardWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
+          positionedText(bodyFit.lines, { x: cardLeft + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.26, weight: 500, fill: '#f3e8ff' })
         );
         y += bodyBoxHeight + gap(18);
       }
@@ -584,10 +585,10 @@ function renderStructuredVariant(layout) {
         const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
         const boxHeight = Math.max(scale(175), pointHeight + gap(104));
         parts.push(
-          `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".035" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
-          `<rect x="${SAFE_AREA.left + 22}" y="${y - 12}" width="54" height="54" rx="13" fill="${accent}"/>`,
-          `<text x="${SAFE_AREA.left + 49}" y="${y + 24}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`,
-          positionedText(pointFit.lines, { x: SAFE_AREA.left + 96, y: y + 24, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
+          `<rect x="${cardLeft}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".035" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+          `<rect x="${cardLeft + 22}" y="${y - 12}" width="54" height="54" rx="13" fill="${accent}"/>`,
+          `<text x="${cardLeft + 49}" y="${y + 24}" fill="#ffffff" font-family="Arial,sans-serif" font-size="25" font-weight="900" text-anchor="middle">${index + 1}</text>`,
+          positionedText(pointFit.lines, { x: cardLeft + 96, y: y + 24, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
         );
         y += boxHeight + gap(28);
       });
@@ -598,26 +599,27 @@ function renderStructuredVariant(layout) {
     if (style === 'story') {
       const isEndingSlide = /PENYELESAIAN|PENUTUP|AKHIR/i.test(section);
       const cardRight = 70;
-      const cardWidth = WIDTH - SAFE_AREA.left - cardRight;
+      const cardLeft = 54;
+      const cardWidth = WIDTH - cardLeft - cardRight;
       // Judul memakai lebar penuh garis pemisah agar kalimat melebar horizontal
       // dan tidak menumpuk menjadi banyak baris pendek (shrink-to-fit via fitVariantText).
       const titleTextWidth = cardWidth;
-      const bodyTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 150;
-      const continuationTextWidth = isEndingSlide ? cardWidth - 220 : cardWidth - 180;
+      const bodyTextWidth = cardWidth - 60;
+      const continuationTextWidth = cardWidth - 60;
       // Copy-lock: keep body plus every pasted continuation paragraph in order.
       const narrative = [bodyText, ...pointTexts].filter(Boolean);
 
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
-        `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA</text>`,
+        `<rect x="${cardLeft}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+        `<text x="${cardLeft + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">CERITA</text>`,
         `<text x="${WIDTH - cardRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
-        `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
+        `<line x1="${cardLeft}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - cardRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
       );
 
       let y = CONTENT_TOP + 90;
       const titleFit = fitVariantText(titleText, titleTextWidth, 340, scale(isEndingSlide ? 66 : 72), scale(40), isEndingSlide ? 5 : 4, true);
       if (titleFit) {
-        parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
+        parts.push(positionedText(titleFit.lines, { x: cardLeft + 24, y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
         y += titleFit.lines.length * titleFit.fontSize * 1.18 + gap(42);
       }
 
@@ -639,9 +641,9 @@ function renderStructuredVariant(layout) {
           paragraphHeight + gap(isEndingSlide ? 110 : 88)
         );
         parts.push(
-          `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="${accent}" fill-opacity="${index === 0 ? '.075' : '.045'}" ${index === 0 ? '' : `stroke="${accent}" stroke-opacity=".24" stroke-width="2"`}/>`,
+          `<rect x="${cardLeft}" y="${y - 48}" width="${cardWidth}" height="${boxHeight}" rx="20" fill="${accent}" fill-opacity="${index === 0 ? '.075' : '.045'}" ${index === 0 ? '' : `stroke="${accent}" stroke-opacity=".24" stroke-width="2"`}/>`,
           positionedText(paragraphFit.lines, {
-            x: SAFE_AREA.left + (isEndingSlide ? 30 : 24),
+            x: cardLeft + 24,
             y: y + 8,
             fontSize: paragraphFit.fontSize,
             lineHeight: 1.28,
@@ -658,23 +660,24 @@ function renderStructuredVariant(layout) {
 
     // style === 'news'
     const newsRight = 70;
-    const newsWidth = WIDTH - SAFE_AREA.left - newsRight;
+    const newsLeft = 54;
+    const newsWidth = WIDTH - newsLeft - newsRight;
     // Judul memakai lebar penuh garis pemisah agar kalimat melebar horizontal
     // dan tidak menumpuk menjadi banyak baris pendek (shrink-to-fit via fitVariantText).
     const newsTitleTextWidth = newsWidth;
-    const newsBodyTextWidth = newsWidth - 130;
-    const newsFactTextWidth = newsWidth - 200;
+    const newsBodyTextWidth = newsWidth - 50;
+    const newsFactTextWidth = newsWidth - 50;
     parts.push(
-      `<rect x="${SAFE_AREA.left}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
-      `<text x="${SAFE_AREA.left + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">BERITA</text>`,
+      `<rect x="${newsLeft}" y="${CONTENT_TOP - 76}" width="184" height="50" rx="8" fill="${accent}"/>`,
+      `<text x="${newsLeft + 20}" y="${CONTENT_TOP - 42}" fill="#ffffff" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1.6">BERITA</text>`,
       `<text x="${WIDTH - newsRight}" y="${CONTENT_TOP - 42}" fill="${accent}" font-family="Arial,sans-serif" font-size="22" font-weight="850" text-anchor="end">${escapeXml(section)}</text>`,
-      `<line x1="${SAFE_AREA.left}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - newsRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
+      `<line x1="${newsLeft}" y1="${CONTENT_TOP - 10}" x2="${WIDTH - newsRight}" y2="${CONTENT_TOP - 10}" stroke="${accent}" stroke-width="7"/>`
     );
 
     let y = CONTENT_TOP + 90;
     const titleFit = fitVariantText(titleText, newsTitleTextWidth, 330, scale(72), scale(42), 5, true);
     if (titleFit) {
-      parts.push(positionedText(titleFit.lines, { y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
+      parts.push(positionedText(titleFit.lines, { x: newsLeft + 24, y, fontSize: titleFit.fontSize, lineHeight: 1.16, weight: 900 }));
       y += titleFit.lines.length * titleFit.fontSize * 1.18 + gap(42);
     }
 
@@ -683,8 +686,8 @@ function renderStructuredVariant(layout) {
       const bodyHeight = bodyFit.lines.length * bodyFit.fontSize * 1.27;
       const bodyBoxHeight = Math.max(scale(150), bodyHeight + gap(86));
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${newsWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
-        positionedText(bodyFit.lines, { x: SAFE_AREA.left + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.27, weight: 500, fill: '#f3e8ff' })
+        `<rect x="${newsLeft}" y="${y - 48}" width="${newsWidth}" height="${bodyBoxHeight}" rx="20" fill="${accent}" fill-opacity=".075"/>`,
+        positionedText(bodyFit.lines, { x: newsLeft + 24, y: y + 4, fontSize: bodyFit.fontSize, lineHeight: 1.27, weight: 500, fill: '#f3e8ff' })
       );
       y += bodyBoxHeight + gap(18);
     }
@@ -695,9 +698,9 @@ function renderStructuredVariant(layout) {
       const pointHeight = pointFit.lines.length * pointFit.fontSize * 1.22;
       const boxHeight = Math.max(scale(175), pointHeight + gap(104));
       parts.push(
-        `<rect x="${SAFE_AREA.left}" y="${y - 48}" width="${newsWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
-        `<text x="${SAFE_AREA.left + 22}" y="${y - 10}" fill="${accent}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="1.1">FAKTA ${index + 1}</text>`,
-        positionedText(pointFit.lines, { x: SAFE_AREA.left + 22, y: y + 36, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
+        `<rect x="${newsLeft}" y="${y - 48}" width="${newsWidth}" height="${boxHeight}" rx="20" fill="#000000" fill-opacity=".04" stroke="${accent}" stroke-opacity=".30" stroke-width="2"/>`,
+        `<text x="${newsLeft + 24}" y="${y - 10}" fill="${accent}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="1.1">FAKTA ${index + 1}</text>`,
+        positionedText(pointFit.lines, { x: newsLeft + 24, y: y + 36, fontSize: pointFit.fontSize, lineHeight: 1.22, weight: 700 })
       );
       y += boxHeight + gap(28);
     });
@@ -770,7 +773,7 @@ async function createSlides(id, content) {
     for (let i = 0; i < layouts.length; i++) {
       const name = `${id}-${i + 1}.jpg`;
       const background = content.background?.applyToAllSlides === false ? (content.background.slideBackgrounds?.[i] || content.background) : content.background;
-      await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark, background))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY, chromaSubsampling: '4:4:4' }).toFile(path.join(dir, name));
+      await sharp(Buffer.from(renderLayout(layouts[i], i + 1, layouts.length, content.watermark, background))).resize(WIDTH, HEIGHT).flatten({ background: '#ffffff' }).toColourspace('srgb').removeAlpha().jpeg({ quality: JPEG_QUALITY, chromaSubsampling: '4:4:4', mozjpeg: true }).toFile(path.join(dir, name));
       files.push(`/generated/${name}`);
     }
     return files;

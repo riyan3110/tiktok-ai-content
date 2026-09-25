@@ -16,7 +16,7 @@ const BASE_INSERT_TOP = 900;
 const INSERT_BOX_WIDTH = WIDTH - MARGIN * 2;
 const INSERT_BOX_HEIGHT = HEIGHT - BASE_INSERT_TOP - MARGIN;
 const TITLE_GAP = 56;
-const INSERT_RADIUS = 28;
+const INSERT_RADIUS = 0;
 const TITLE_MAX_HEIGHT = BASE_INSERT_TOP - (670 + TITLE_GAP);
 
 function parseRecord(row) {
@@ -111,13 +111,15 @@ async function overlaySlideOne(file, input, insertBox) {
     .png()
     .toBuffer();
 
-  const roundedMask = Buffer.from(
-    `<svg width="${insertBox.width}" height="${insertBox.height}"><rect x="0" y="0" width="${insertBox.width}" height="${insertBox.height}" rx="${INSERT_RADIUS}" ry="${INSERT_RADIUS}"/></svg>`
-  );
-  const roundedPhoto = await sharp(boxPhoto)
-    .composite([{ input: roundedMask, blend: 'dest-in' }])
-    .png()
-    .toBuffer();
+  const roundedPhoto = INSERT_RADIUS > 0
+    ? await sharp(boxPhoto)
+        .composite([{
+          input: Buffer.from(`<svg width="${insertBox.width}" height="${insertBox.height}"><rect x="0" y="0" width="${insertBox.width}" height="${insertBox.height}" rx="${INSERT_RADIUS}" ry="${INSERT_RADIUS}"/></svg>`),
+          blend: 'dest-in'
+        }])
+        .png()
+        .toBuffer()
+    : boxPhoto;
 
   const temporary = `${target}.insert-${process.pid}-${Date.now()}.jpg`;
   try {
@@ -125,7 +127,7 @@ async function overlaySlideOne(file, input, insertBox) {
       .composite([{ input: roundedPhoto, left: insertBox.left, top: insertBox.top }])
       .flatten({ background: '#ffffff' })
       .toColourspace('srgb')
-      .jpeg({ quality: 90 })
+      .jpeg({ quality: 86, chromaSubsampling: '4:4:4', mozjpeg: true })
       .toFile(temporary);
     await fs.rename(temporary, target);
   } catch (error) {
