@@ -221,7 +221,7 @@
       const launcher = document.querySelector('.aiads-chat-launcher');
       const panel = document.querySelector('.aiads-chat-panel');
       const chatOpen = panel && !panel.classList.contains('hidden');
-      if (launcher) launcher.style.display = (hidden && !chatOpen) ? 'none' : '';
+      if (launcher) launcher.classList.toggle('aiads-launcher-hidden', hidden && !chatOpen);
     };
     if (!('IntersectionObserver' in window)) return;
     const io = new IntersectionObserver(entries => {

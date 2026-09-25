@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260925-sw-force-reload';
+  const VERSION = 'cache-20260926-ws-launcher-fix';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();

@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 const liveNews = require('./liveNews');
 
-const CACHE_BUST_VERSION = 'cache-20260925-sw-force-reload';
+const CACHE_BUST_VERSION = 'cache-20260926-ws-launcher-fix';
 
 function stripLegacyProviderUi(html) {
   let output = String(html || '');
