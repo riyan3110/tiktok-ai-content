@@ -345,20 +345,50 @@ async function runProviders(rows, query, transport, limit) {
 // keep the leading ask, strip instruction-list boilerplate, drop citations.
 const MAX_QUERY_CHARS = 280;
 
+// Indonesian chat boilerplate that pollutes search queries. Phrases like
+// "yang benar-benar aktual, penting, dan memiliki informasi baru" make
+// Tavily return dictionary pages ("arti berita aktual") instead of news.
+const QUERY_NOISE = [
+  // Full template tail: "yang benar-benar aktual, penting, dan memiliki informasi baru"
+  /yang benar-benar \w+([,;:]\s*penting)?([,;]?\s*dan\s+)?(memiliki\s+informasi\s+(baru|terbaru))?/gi,
+  /yang (aktual|terbaru|terkini|faktual|valid)([,]?\s*penting)?([,]?\s*dan\s+)?(memiliki\s+informasi\s+(baru|terbaru))?/gi,
+  /memiliki informasi (baru|terbaru)/gi,
+  /(penting|baru|terbaru|terkini),? dan /gi,
+  /^(tolong|coba|silakan|silahkan|mohon|bisakah|bisa) (cari|carikan|cukup|tolong)?\b/i,
+  /^(apa|apakah) (kabar|berita) (tentang|soal|perihal) /i,
+  /\bberi?(tahu|kan) (aku|saya|ku)\b/gi,
+  /\bHARI INI\b/gi
+];
+
 function distillQuery(raw) {
-  let text = String(raw || '').replace(/\s+/g, ' ').trim();
+  const original = String(raw || '');
+  let text = original.replace(/\s+/g, ' ').trim();
   if (!text) return text;
-  if (text.length <= MAX_QUERY_CHARS) return text.slice(0, MAX_QUERY_CHARS).trim();
-  // Cut at a list/instruction boundary if one shows up early (chat briefs are
-  // "question" followed by "WAJIB: - item - item ...").
-  const cutAt = [text.search(/ WAJIB[:, ]/i), text.search(/\s[-•]\s/), text.search(/Instruksi|instruction/i)]
-    .filter(index => index > 40 && index < MAX_QUERY_CHARS);
-  if (cutAt.length) text = text.slice(0, Math.min(...cutAt));
-  else {
-    const lastSpace = text.lastIndexOf(' ', MAX_QUERY_CHARS);
-    text = text.slice(0, lastSpace > 80 ? lastSpace : MAX_QUERY_CHARS);
+  // Always cut at instruction-list boilerplate ("WAJIB:", "Instruksi:", or a
+  // leading list item) — it is never part of the actual search intent.
+  const boundaries = [text.search(/ WAJIB[:, ]/i), text.search(/\s[-•]\s/), text.search(/Instruksi|instruction/i)]
+    .filter(index => index > 20);
+  const boundary = boundaries.length ? Math.min(...boundaries) : -1;
+  if (boundary > 0) text = text.slice(0, boundary);
+  // Normalize quotes around the topic: “ X ” / " X " -> X
+  text = text.replace(/[“”"'']+ */g, ' ').replace(/ *[“”"'']+/g, ' ').replace(/\s+/g, ' ').trim();
+  // Strip conversational noise so the search engine sees the TOPIC, not the
+  // requirements about what the results should be like.
+  for (const pattern of QUERY_NOISE) text = text.replace(pattern, ' ');
+  // Orphaned fragments left behind by noise removal
+  text = text.replace(/\s*,?\s*(dan|atau|serta|penting)\s*,?\s*$/i, '');
+  text = text.replace(/^[\s,;:.\-–—]+/, '').replace(/[\s,;:.\-–—?!]+$/, '').replace(/\s+/g, ' ').trim();
+  // Keep just the topic when a "tentang/soal/about X" tail remains, but
+  // preserve the news intent: "Cari berita terbaru tentang X" -> "X berita terbaru"
+  const tentang = text.match(/(?:tentang|soal|perihal|mengenai|about|for)\s+(.+)$/i);
+  if (tentang && tentang[1].trim().length >= 3) {
+    const topic = tentang[1].trim();
+    const wantsNews = /berita|news|kabar|informasi|terbaru|terkini|aktual/i.test(text);
+    text = wantsNews && !/berita|news|terbaru|terkini/i.test(topic) ? `${topic} berita terbaru` : topic;
   }
-  return text.replace(/[\s,;:.]+$/, '').trim();
+  // Leading verb "cari/carikan" with the object directly ("cari X")
+  text = text.replace(/^cari(lah|kan)?\s+/i, '');
+  return text.slice(0, MAX_QUERY_CHARS).replace(/[\s,;:.?!]+$/, '').trim();
 }
 
 // The ROUTER with automatic failover. Tries providers in priority order and

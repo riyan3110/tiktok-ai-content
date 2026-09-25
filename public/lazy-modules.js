@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260926-search-copy-row';
+  const VERSION = 'cache-20260926-copy-right-noise';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();
