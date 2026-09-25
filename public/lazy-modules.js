@@ -2,7 +2,7 @@
   'use strict';
   if (window.AIAdsLazyModules) return;
 
-  const VERSION = 'cache-20260926-ws-launcher-fix';
+  const VERSION = 'cache-20260926-search-copy-row';
   const loaded = new Set();
   const pending = new Map();
   const prefetched = new Set();

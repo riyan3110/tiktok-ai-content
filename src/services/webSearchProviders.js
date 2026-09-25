@@ -339,6 +339,28 @@ async function runProviders(rows, query, transport, limit) {
   return { results: merged, used: [...new Set(used)], errors };
 }
 
+// Chat messages can be huge (thousands of chars: briefs, "WAJIB:" instructions).
+// Search APIs reject long queries (YDC returns HTTP 422, Tavily silently
+// downgrades). Distill the query to a compact, self-contained search string:
+// keep the leading ask, strip instruction-list boilerplate, drop citations.
+const MAX_QUERY_CHARS = 280;
+
+function distillQuery(raw) {
+  let text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!text) return text;
+  if (text.length <= MAX_QUERY_CHARS) return text.slice(0, MAX_QUERY_CHARS).trim();
+  // Cut at a list/instruction boundary if one shows up early (chat briefs are
+  // "question" followed by "WAJIB: - item - item ...").
+  const cutAt = [text.search(/ WAJIB[:, ]/i), text.search(/\s[-•]\s/), text.search(/Instruksi|instruction/i)]
+    .filter(index => index > 40 && index < MAX_QUERY_CHARS);
+  if (cutAt.length) text = text.slice(0, Math.min(...cutAt));
+  else {
+    const lastSpace = text.lastIndexOf(' ', MAX_QUERY_CHARS);
+    text = text.slice(0, lastSpace > 80 ? lastSpace : MAX_QUERY_CHARS);
+  }
+  return text.replace(/[\s,;:.]+$/, '').trim();
+}
+
 // The ROUTER with automatic failover. Tries providers in priority order and
 // returns as soon as one yields usable results. If a provider errors or returns
 // nothing, it automatically falls back to the next provider. Only throws when
@@ -359,7 +381,8 @@ async function routeSearch(db, query, transport = fetch, limit = 5, force = fals
     return 3;
   }
 
-  const q = String(query || '');
+  const q = distillQuery(query);
+  if (!q) return { results: [], enabled: true, providers: [], plan: 'empty' };
   const wantVerify = VERIFY_SIGNAL.test(q) || q.length > 140;
 
   // Verify/deep queries: try to combine the top two providers for richer,
