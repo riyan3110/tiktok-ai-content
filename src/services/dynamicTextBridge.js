@@ -3,6 +3,28 @@ const { StorageService } = require('../storage/service');
 const sourceFetcher = require('./sourceFetcher');
 const floatingChat = require('./floatingChatPatch');
 const webSearch = require('./webSearchProviders');
+const { resolveContentLayout, LAYOUTS } = require('./contentLayouts');
+
+// Detect a "summarize into carousel mode" request (Default/Tutorial/Cerita/Berita)
+// and reuse the carousel's own layout prompt so the chat output stays clean and
+// on-format: no extra greeting, closing, commentary, emoji, or stray symbols.
+const SUMMARIZE_SIGNAL = /(rangkum|ringkas|ringkasan|buatkan?\s+(konten|materi|carousel|slide)|jadikan?\s+(konten|slide|carousel)|susun\s+(konten|materi|slide))/i;
+const LAYOUT_KEYWORDS = [
+  { id: 'tutorial', re: /\btutorial\b/i },
+  { id: 'story', re: /\b(cerita|story|storytelling|naratif|kisah)\b/i },
+  { id: 'news', re: /\b(berita|news|kabar|warta)\b/i },
+  { id: 'default', re: /\b(default|standar|biasa)\b/i }
+];
+
+function summarizeInstructionFor(content) {
+  const text = String(content || '');
+  if (!SUMMARIZE_SIGNAL.test(text)) return '';
+  const hit = LAYOUT_KEYWORDS.find(entry => entry.re.test(text));
+  const layout = LAYOUTS[resolveContentLayout(hit ? hit.id : 'default')] || LAYOUTS.default;
+  const clean = 'Tulis rangkuman rapi sesuai permintaan. JANGAN menambah kalimat pembuka/penutup, sapaan, komentar, catatan, emoji, atau simbol dekoratif yang tidak diminta. Keluarkan hanya isi rangkuman itu sendiri.';
+  const layoutRule = layout.id === 'default' ? '' : ` ${layout.structureInstruction} ${layout.writerInstruction}`;
+  return `[INSTRUKSI RANGKUMAN — mode ${layout.label}] ${clean}${layoutRule}`;
+}
 
 const MAX_HISTORY_MESSAGES = 16;
 const MAX_MESSAGE_CHARS = 12000;
@@ -157,6 +179,17 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
       const wantSearch = req.body?.webSearch === true;
       const { context: sourceContext, citations: searchCitations = [] } = await sourceContextFor(db, content, transport, wantSearch);
       const messages = floatingChat.buildConversationMessages(history, sourceContext);
+      // If the user asked to summarize into a carousel mode (Default/Tutorial/
+      // Cerita/Berita), prepend the matching layout prompt so the answer follows
+      // the mode structure with no extra intro/outro, emoji, or stray symbols.
+      const summarizeInstruction = summarizeInstructionFor(content);
+      if (summarizeInstruction) {
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+          if (messages[index].role !== 'user') continue;
+          messages[index] = { ...messages[index], content: `${summarizeInstruction}\n\n${String(messages[index].content || '')}` };
+          break;
+        }
+      }
       if (prepared.parts.length) {
         for (let index = messages.length - 1; index >= 0; index -= 1) {
           if (messages[index].role !== 'user') continue;
