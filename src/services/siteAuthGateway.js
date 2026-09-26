@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const { createSiteAuth } = require('./siteAuth');
 const liveNews = require('./liveNews');
 
-const CACHE_BUST_VERSION = 'cache-20260926-copy-right-noise';
+const CACHE_BUST_VERSION = 'cache-20260926-aurora-bg';
 
 function stripLegacyProviderUi(html) {
   let output = String(html || '');
@@ -90,7 +90,7 @@ function createSiteAuthGateway(innerApp, config) {
       // deferred theme assets run so the old light shell cannot flash over it.
       html = html.replace('<html lang="id">', '<html lang="id" class="aiads-neo-theme">');
       const criticalThemeScript = '<script>(()=>{try{const t=localStorage.getItem("ai-ads-lab-theme");document.documentElement.dataset.theme=t==="light"?"light":"dark"}catch{document.documentElement.dataset.theme="dark"}})()</script>';
-      const criticalThemeStyles = '<style>html.aiads-neo-theme[data-theme="light"]{background:#f7f7f2}html.aiads-neo-theme[data-theme="light"] body{background:#f7f7f2;color:#151b2b}html.aiads-neo-theme[data-theme="dark"]{background:#0b0e14}html.aiads-neo-theme[data-theme="dark"] body{background:#0b0e14;color:#eef2f8}</style>';
+      const criticalThemeStyles = '<style>html.aiads-neo-theme[data-theme="light"]{background:#f7f7f2}html.aiads-neo-theme[data-theme="light"] body{background:#f7f7f2;color:#151b2b}html.aiads-neo-theme[data-theme="dark"]{background:#080a0e}html.aiads-neo-theme[data-theme="dark"] body{background-color:#080a0e;background-image:radial-gradient(ellipse 68% 52% at 12% 7%,rgba(226,66,96,.24) 0%,transparent 60%),radial-gradient(ellipse 74% 58% at 89% 5%,rgba(129,78,216,.26) 0%,transparent 62%),radial-gradient(ellipse 62% 54% at 97% 43%,rgba(48,122,192,.22) 0%,transparent 60%),radial-gradient(ellipse 58% 54% at 93% 73%,rgba(40,172,177,.20) 0%,transparent 60%),radial-gradient(ellipse 68% 58% at 9% 63%,rgba(37,152,112,.20) 0%,transparent 62%),radial-gradient(ellipse 84% 52% at 44% 101%,rgba(152,202,62,.22) 0%,transparent 60%),radial-gradient(ellipse 54% 48% at 91% 99%,rgba(212,202,72,.20) 0%,transparent 58%),radial-gradient(ellipse 58% 50% at 50% 46%,rgba(5,7,11,.72) 0%,transparent 72%);background-attachment:fixed;background-repeat:no-repeat;color:#eef2f8}</style>';
 
       const eagerPaths = new Set([
         '/icons.js',

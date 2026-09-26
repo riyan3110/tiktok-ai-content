@@ -67,8 +67,31 @@
       background:var(--neo-paper)!important;
     }
     html.aiads-neo-theme[data-theme="dark"] body{
-      background:var(--neo-paper)!important;
+      background-color:#080a0e!important;
+      background-image:
+        radial-gradient(ellipse 68% 52% at 12% 7%, rgba(226,66,96,.24) 0%, transparent 60%),
+        radial-gradient(ellipse 74% 58% at 89% 5%, rgba(129,78,216,.26) 0%, transparent 62%),
+        radial-gradient(ellipse 62% 54% at 97% 43%, rgba(48,122,192,.22) 0%, transparent 60%),
+        radial-gradient(ellipse 58% 54% at 93% 73%, rgba(40,172,177,.20) 0%, transparent 60%),
+        radial-gradient(ellipse 68% 58% at 9% 63%, rgba(37,152,112,.20) 0%, transparent 62%),
+        radial-gradient(ellipse 84% 52% at 44% 101%, rgba(152,202,62,.22) 0%, transparent 60%),
+        radial-gradient(ellipse 54% 48% at 91% 99%, rgba(212,202,72,.20) 0%, transparent 58%),
+        radial-gradient(ellipse 58% 50% at 50% 46%, rgba(5,7,11,.72) 0%, transparent 72%)!important;
+      background-attachment:fixed!important;
+      background-repeat:no-repeat!important;
       color:var(--neo-ink)!important;
+    }
+    /* Glassmorphism ringan agar gradient aurora tembus di sela kartu (gaya ref #1) */
+    html.aiads-neo-theme[data-theme="dark"] .neo-feature-card,
+    html.aiads-neo-theme[data-theme="dark"] .neo-shortcut,
+    html.aiads-neo-theme[data-theme="dark"] .neo-home-banner,
+    html.aiads-neo-theme[data-theme="dark"] .history-item,
+    html.aiads-neo-theme[data-theme="dark"] #legacy-studio .actions,
+    html.aiads-neo-theme[data-theme="dark"] .content-studio-card,
+    html.aiads-neo-theme[data-theme="dark"] .simple-provider-panel{
+      background:rgba(21,26,35,.72)!important;
+      backdrop-filter:blur(14px)!important;
+      -webkit-backdrop-filter:blur(14px)!important;
     }
     html.aiads-neo-theme[data-theme="dark"] body::before{
       background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px)!important;
