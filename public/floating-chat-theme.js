@@ -81,7 +81,7 @@
 
     /* Text Content */
     .aiads-neo-theme #legacy-studio .hero{padding:15px 0 10px!important}.aiads-neo-theme #legacy-studio .hero h1{color:var(--neo-ink)!important}.aiads-neo-theme #legacy-studio .hero-stat{background:var(--neo-blue)!important;border:2px solid var(--neo-line)!important;border-radius:14px!important;padding:13px!important}
-    .aiads-neo-theme #legacy-studio .actions{background:#fffdf5!important}.aiads-neo-theme .segment-options span{background:var(--neo-white)!important;border:1.8px solid var(--neo-line)!important;color:var(--neo-ink)!important;border-radius:11px!important}.aiads-neo-theme .segment-options input:checked+span{background:var(--neo-lime)!important;color:var(--neo-ink)!important;border-color:var(--neo-line)!important;box-shadow:2px 3px 0 rgba(21,27,43,.12)!important}
+    .aiads-neo-theme #legacy-studio .actions{background:var(--glass)!important;backdrop-filter:blur(16px)!important;border:1.5px solid var(--glass-border)!important}.aiads-neo-theme .segment-options span{background:var(--neo-white)!important;border:1.8px solid var(--neo-line)!important;color:var(--neo-ink)!important;border-radius:11px!important}.aiads-neo-theme .segment-options input:checked+span{background:var(--neo-lime)!important;color:var(--neo-ink)!important;border-color:var(--neo-line)!important;box-shadow:2px 3px 0 rgba(21,27,43,.12)!important}
     .aiads-neo-theme .switch-control{background:#cfd4da!important;border:1.5px solid var(--neo-line)!important}.aiads-neo-theme .switch-row input:checked+.switch-control{background:var(--neo-lime)!important}.aiads-neo-theme .switch-control::after{background:var(--neo-white)!important;border:1px solid var(--neo-line)!important}
     .aiads-neo-theme .carousel-background{border:0!important;padding:0!important;background:transparent!important}.aiads-neo-theme .background-swatch{border:2px solid var(--neo-line)!important;border-radius:13px!important}.aiads-neo-theme .background-option input:checked+.background-swatch{border-color:var(--neo-line)!important;box-shadow:0 0 0 4px rgba(199,245,60,.55)!important}
     .aiads-neo-theme .slide-button{background:#fff!important;border:2px solid var(--neo-line)!important;border-radius:13px!important;box-shadow:2px 3px 0 rgba(21,27,43,.12)!important}
@@ -143,13 +143,27 @@
     .aiads-neo-theme .integration-card,.aiads-neo-theme .template-card,.aiads-neo-theme .template-layout>aside,.aiads-neo-theme .asset-card,.aiads-neo-theme .asset-layout aside,.aiads-neo-theme .asset-drop,
     .aiads-neo-theme .profile-hero,.aiads-neo-theme .profile-stats article,.aiads-neo-theme .profile-grid section,.aiads-neo-theme .account-status-grid article,.aiads-neo-theme .simple-provider-panel,
     .aiads-neo-theme .workspace-placeholder,.aiads-neo-theme .storage-settings form,.aiads-neo-theme .template-toolbar,.aiads-neo-theme .history-item,.aiads-neo-theme .schedule-card,.aiads-neo-theme .notification-panel,
-    .aiads-neo-theme .connection-status,.aiads-neo-theme .account-button,.aiads-neo-theme .icon-button{
+    .aiads-neo-theme .connection-status,.aiads-neo-theme .account-button,.aiads-neo-theme .icon-button,
+    .aiads-neo-theme .ws-card,.aiads-neo-theme .notes-heading,.aiads-neo-theme .notes-list,.aiads-neo-theme .notes-detail-header,.aiads-neo-theme .notes-detail-content,.aiads-neo-theme .notes-empty,
+    .aiads-neo-theme .provider-panel,.aiads-neo-theme .provider-card,.aiads-neo-theme .provider-shell,.aiads-neo-theme .provider-detail,.aiads-neo-theme .provider-empty,
+    .aiads-neo-theme .result-card,.aiads-neo-theme .result-preview,.aiads-neo-theme .result-placeholder,.aiads-neo-theme .viewer-preview,.aiads-neo-theme .active-job,.aiads-neo-theme .queue-summary article,
+    .aiads-neo-theme .generator-card,.aiads-neo-theme .analysis-grid,.aiads-neo-theme .field-pair,.aiads-neo-theme .preview-target,.aiads-neo-theme .mini-empty,
+    .aiads-neo-theme .card,.aiads-neo-theme .card-body,.aiads-neo-theme .studio-card,.aiads-neo-theme .studio-panel{
       background:var(--glass)!important;background-image:none!important;
       border:1.5px solid var(--glass-border)!important;
       color:var(--glass-ink)!important;
       backdrop-filter:blur(16px) saturate(1.2)!important;-webkit-backdrop-filter:blur(16px) saturate(1.2)!important;
       box-shadow:0 8px 30px rgba(0,0,0,.28)!important;
     }
+    /* Baris list & pre dalam kartu kaca → transparan biar nyatu */
+    .aiads-neo-theme .notes-list-item{border-bottom-color:var(--glass-border)!important;background:transparent!important;color:var(--glass-ink)!important}
+    .aiads-neo-theme .notes-list-item:hover,.aiads-neo-theme .notes-list-item:focus-visible{background:rgba(255,255,255,.06)!important}
+    .aiads-neo-theme .notes-detail-content pre{background:rgba(9,12,18,.5)!important;color:var(--glass-ink)!important;border:1.5px solid var(--glass-border)!important}
+    .aiads-neo-theme .provider-panel .provider-active,.aiads-neo-theme .simple-provider-active{color:var(--glass-ink)!important}
+    /* Badge nomor kuning notes tetap solid */
+    .aiads-neo-theme .notes-list-sequence,.aiads-neo-theme .notes-detail-edit-title{background:var(--neo-yellow)!important;color:#151b2b!important;border-color:var(--glass-border)!important}
+    /* Tab pill (Image/Batch/History), radio box, dropdown → kaca */
+    .aiads-neo-theme fieldset,.aiads-neo-theme .prompt-source,.aiads-neo-theme .basic-section,.aiads-neo-theme .prompt-section{background:rgba(255,255,255,.05)!important;border:1.5px solid var(--glass-border)!important;color:var(--glass-ink)!important}
     /* Header profil gradient → kaca gelap tipis */
     .aiads-neo-theme .neo-profile-top{background:rgba(255,255,255,.05)!important;border-bottom:1.5px solid var(--glass-border)!important}
     .aiads-neo-theme .neo-profile-stats span{border-right-color:var(--glass-border)!important}
