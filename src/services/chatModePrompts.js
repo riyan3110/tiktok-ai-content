@@ -321,7 +321,10 @@ function chatModePrompt(mode, topic) {
   const id = String(mode || '').trim().toLowerCase();
   const template = MODE_PROMPTS[id];
   if (!template) return '';
-  return template.replace(/\{\{TOPIC\}\}/g, String(topic || '').trim());
+  const filled = template.replace(/\{\{TOPIC\}\}/g, String(topic || '').trim());
+  // Hard rule appended to every mode: plain text only, no markdown symbols.
+  const noMarkdown = '\n\nPENTING: Tulis output sebagai teks polos. JANGAN gunakan format markdown atau simbol apa pun seperti tanda bintang (*), pagar (#), garis bawah (_), atau backtick (`) untuk menebalkan/memiringkan teks. Tulis label slide apa adanya tanpa tanda bintang.';
+  return filled + noMarkdown;
 }
 
 module.exports = { chatModePrompt, MODE_PROMPTS };

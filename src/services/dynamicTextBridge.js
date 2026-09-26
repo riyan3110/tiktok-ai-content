@@ -34,6 +34,13 @@ function stripCitationArtifacts(text) {
   out = out.replace(/\s*\[\d+\](?:\s*\[\d+\])*/g, '');
   // Remove any leftover bare URLs.
   out = out.replace(/https?:\/\/[^\s<>()\[\]{}"']+/gi, '');
+  // Strip markdown emphasis the user never asked for: **bold**, *italic*, __x__,
+  // _x_, `code`, and heading hashes at line start. Keep the plain text content.
+  out = out.replace(/\*\*([\s\S]*?)\*\*/g, '$1').replace(/__([\s\S]*?)__/g, '$1');
+  out = out.replace(/(^|[^*])\*(?!\s)([^*\n]+?)\*(?!\*)/g, '$1$2');
+  out = out.replace(/(^|[^_])_(?!\s)([^_\n]+?)_(?!_)/g, '$1$2');
+  out = out.replace(/`+/g, '');
+  out = out.replace(/^\s{0,3}#{1,6}\s+/gm, '');
   // Tidy whitespace left behind.
   out = out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ');
   return out.trim();
