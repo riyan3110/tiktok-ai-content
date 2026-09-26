@@ -157,12 +157,19 @@
     .aiads-neo-theme .topbar{background:rgba(12,15,22,.55)!important;border-bottom:1.5px solid var(--glass-border)!important;backdrop-filter:blur(18px)!important}
     .aiads-neo-theme .sidebar,.aiads-neo-theme .sidebar-brand,.aiads-neo-theme .sidebar>.tiktok-connection{background:rgba(14,18,27,.72)!important;backdrop-filter:blur(18px)!important;border-color:var(--glass-border)!important;color:var(--glass-ink)!important}
     .aiads-neo-theme .side-nav a{color:var(--glass-ink)!important}.aiads-neo-theme .side-nav a span:first-child{color:var(--glass-ink)!important}
-    /* Tile aksen berwarna → kaca warna transparan biar gradient tetap tembus */
-    .aiads-neo-theme .neo-shortcut,.aiads-neo-theme .neo-action-row,.aiads-neo-theme .neo-action-icon,.aiads-neo-theme .neo-coach-art,.aiads-neo-theme .neo-feature-card,
-    .aiads-neo-theme .neo-shortcut:nth-child(2n),.aiads-neo-theme .neo-shortcut:nth-child(3n),.aiads-neo-theme .neo-action-row:nth-child(3),.aiads-neo-theme .neo-action-row:nth-child(4),.aiads-neo-theme .neo-action-row:nth-child(5){
-      background:rgba(255,255,255,.07)!important;border:1.5px solid var(--glass-border)!important;color:var(--glass-ink)!important;box-shadow:none!important;
-    }
-    .aiads-neo-theme .neo-shortcut b,.aiads-neo-theme .neo-action-copy b,.aiads-neo-theme .neo-action-copy small,.aiads-neo-theme .neo-feature-card small,.aiads-neo-theme .neo-coach-copy small{color:var(--glass-ink)!important}
+    /* Tile aksen berwarna → TETAP pastel solid seperti foto referensi #1 (teks gelap) */
+    .aiads-neo-theme .neo-shortcut{background:var(--neo-white)!important;border:1.6px solid var(--neo-line)!important;color:var(--neo-ink)!important;box-shadow:none!important}
+    .aiads-neo-theme .neo-shortcut:nth-child(2n){background:var(--neo-blue)!important}
+    .aiads-neo-theme .neo-shortcut:nth-child(3n){background:var(--neo-mint)!important}
+    .aiads-neo-theme .neo-action-row{background:var(--neo-blue)!important;border:1.7px solid var(--neo-line)!important;color:var(--neo-ink)!important;box-shadow:none!important}
+    .aiads-neo-theme .neo-action-row:nth-child(3){background:var(--neo-pink)!important}
+    .aiads-neo-theme .neo-action-row:nth-child(4){background:var(--neo-mint)!important}
+    .aiads-neo-theme .neo-action-row:nth-child(5){background:var(--neo-peach)!important}
+    .aiads-neo-theme .neo-action-icon,.aiads-neo-theme .neo-coach-art{background:var(--neo-white)!important;border:1.5px solid var(--neo-line)!important;color:var(--neo-ink)!important}
+    .aiads-neo-theme .neo-coach-art{background:var(--neo-lime)!important}
+    .aiads-neo-theme .neo-feature-card{background:var(--neo-yellow)!important;border:2px solid var(--neo-line)!important;color:var(--neo-ink)!important}
+    .aiads-neo-theme .neo-feature-card:nth-child(2){background:var(--neo-purple)!important}
+    .aiads-neo-theme .neo-shortcut b,.aiads-neo-theme .neo-action-copy b,.aiads-neo-theme .neo-action-copy small,.aiads-neo-theme .neo-feature-card b,.aiads-neo-theme .neo-feature-card small,.aiads-neo-theme .neo-coach-copy b,.aiads-neo-theme .neo-coach-copy small,.aiads-neo-theme .neo-shortcut i,.aiads-neo-theme .neo-action-icon svg,.aiads-neo-theme .neo-action-go{color:var(--neo-ink)!important}
     /* Input/field → kaca gelap */
     .aiads-neo-theme input,.aiads-neo-theme select,.aiads-neo-theme textarea,.aiads-neo-theme .project-search,.aiads-neo-theme .factory-search,.aiads-neo-theme option{
       background:rgba(9,12,18,.5)!important;color:var(--glass-ink)!important;border:1.5px solid var(--glass-border)!important;
