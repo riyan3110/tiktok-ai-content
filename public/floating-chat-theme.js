@@ -130,6 +130,52 @@
       .aiads-chat-launcher{right:17px!important;bottom:calc(86px + env(safe-area-inset-bottom))!important;width:52px!important;height:52px!important;border-radius:15px!important}.aiads-chat-panel:not(.fullscreen){right:8px!important;bottom:calc(148px + env(safe-area-inset-bottom))!important;width:calc(100vw - 16px)!important;height:min(58vh,520px)!important}.aiads-chat-header-controls select{width:66px!important}.aiads-chat-icon{min-width:31px!important;height:31px!important;padding:0 6px!important}.aiads-chat-icon[data-chat-new]{font-size:0!important;width:31px!important}.aiads-chat-icon[data-chat-new]::after{content:'+';font-size:17px}.aiads-chat-panel.fullscreen{background:var(--neo-paper)!important}.aiads-chat-panel.fullscreen .aiads-chat-header-controls select{width:78px!important}
     }
     @media(max-width:390px){.neo-feature-grid{grid-template-columns:1fr 1fr}.neo-coach-copy small{display:none}.neo-arrow{min-width:54px!important}.neo-profile-stats span{font-size:.62rem}.neo-profile-stats b{font-size:.78rem}}
+
+    /* ===== GLASSMORPHISM: kartu transparan tembus gradient aurora (gaya foto referensi) ===== */
+    .aiads-neo-theme{--glass:rgba(20,25,36,.46);--glass-strong:rgba(16,20,30,.62);--glass-border:rgba(255,255,255,.16);--glass-ink:#f4f7fc;--glass-muted:#c3cbd9}
+    /* Teks jadi terang di atas kaca gelap */
+    .aiads-neo-theme,.aiads-neo-theme p,.aiads-neo-theme small,.aiads-neo-theme .topbar-title small{color:var(--glass-muted)!important}
+    .aiads-neo-theme h1,.aiads-neo-theme h2,.aiads-neo-theme h3,.aiads-neo-theme h4,.aiads-neo-theme strong,.aiads-neo-theme b,.aiads-neo-theme .eyebrow,.aiads-neo-theme .section-kicker,.aiads-neo-theme .topbar-title strong,.aiads-neo-theme label,.aiads-neo-theme legend{color:var(--glass-ink)!important}
+    /* Semua kartu/panel utama → kaca transparan berblur */
+    .aiads-neo-theme .neo-profile-card,.aiads-neo-theme .neo-coach-card,.aiads-neo-theme .neo-shortcut-shell,.aiads-neo-theme .neo-action-stack,.aiads-neo-theme .neo-news-carousel,
+    .aiads-neo-theme .actions,.aiads-neo-theme #editor,.aiads-neo-theme #schedule-dashboard,.aiads-neo-theme .history-section,.aiads-neo-theme .trend-reference,
+    .aiads-neo-theme .studio-card,.aiads-neo-theme .content-studio-card,.aiads-neo-theme .factory-panel,.aiads-neo-theme .workflow-builder,.aiads-neo-theme .workflow-summary,.aiads-neo-theme .workflow-history,
+    .aiads-neo-theme .integration-card,.aiads-neo-theme .template-card,.aiads-neo-theme .template-layout>aside,.aiads-neo-theme .asset-card,.aiads-neo-theme .asset-layout aside,.aiads-neo-theme .asset-drop,
+    .aiads-neo-theme .profile-hero,.aiads-neo-theme .profile-stats article,.aiads-neo-theme .profile-grid section,.aiads-neo-theme .account-status-grid article,.aiads-neo-theme .simple-provider-panel,
+    .aiads-neo-theme .workspace-placeholder,.aiads-neo-theme .storage-settings form,.aiads-neo-theme .template-toolbar,.aiads-neo-theme .history-item,.aiads-neo-theme .schedule-card,.aiads-neo-theme .notification-panel,
+    .aiads-neo-theme .connection-status,.aiads-neo-theme .account-button,.aiads-neo-theme .icon-button{
+      background:var(--glass)!important;background-image:none!important;
+      border:1.5px solid var(--glass-border)!important;
+      color:var(--glass-ink)!important;
+      backdrop-filter:blur(16px) saturate(1.2)!important;-webkit-backdrop-filter:blur(16px) saturate(1.2)!important;
+      box-shadow:0 8px 30px rgba(0,0,0,.28)!important;
+    }
+    /* Header profil gradient → kaca gelap tipis */
+    .aiads-neo-theme .neo-profile-top{background:rgba(255,255,255,.05)!important;border-bottom:1.5px solid var(--glass-border)!important}
+    .aiads-neo-theme .neo-profile-stats span{border-right-color:var(--glass-border)!important}
+    /* Topbar & sidebar ikut kaca */
+    .aiads-neo-theme .topbar{background:rgba(12,15,22,.55)!important;border-bottom:1.5px solid var(--glass-border)!important;backdrop-filter:blur(18px)!important}
+    .aiads-neo-theme .sidebar,.aiads-neo-theme .sidebar-brand,.aiads-neo-theme .sidebar>.tiktok-connection{background:rgba(14,18,27,.72)!important;backdrop-filter:blur(18px)!important;border-color:var(--glass-border)!important;color:var(--glass-ink)!important}
+    .aiads-neo-theme .side-nav a{color:var(--glass-ink)!important}.aiads-neo-theme .side-nav a span:first-child{color:var(--glass-ink)!important}
+    /* Tile aksen berwarna → kaca warna transparan biar gradient tetap tembus */
+    .aiads-neo-theme .neo-shortcut,.aiads-neo-theme .neo-action-row,.aiads-neo-theme .neo-action-icon,.aiads-neo-theme .neo-coach-art,.aiads-neo-theme .neo-feature-card,
+    .aiads-neo-theme .neo-shortcut:nth-child(2n),.aiads-neo-theme .neo-shortcut:nth-child(3n),.aiads-neo-theme .neo-action-row:nth-child(3),.aiads-neo-theme .neo-action-row:nth-child(4),.aiads-neo-theme .neo-action-row:nth-child(5){
+      background:rgba(255,255,255,.07)!important;border:1.5px solid var(--glass-border)!important;color:var(--glass-ink)!important;box-shadow:none!important;
+    }
+    .aiads-neo-theme .neo-shortcut b,.aiads-neo-theme .neo-action-copy b,.aiads-neo-theme .neo-action-copy small,.aiads-neo-theme .neo-feature-card small,.aiads-neo-theme .neo-coach-copy small{color:var(--glass-ink)!important}
+    /* Input/field → kaca gelap */
+    .aiads-neo-theme input,.aiads-neo-theme select,.aiads-neo-theme textarea,.aiads-neo-theme .project-search,.aiads-neo-theme .factory-search,.aiads-neo-theme option{
+      background:rgba(9,12,18,.5)!important;color:var(--glass-ink)!important;border:1.5px solid var(--glass-border)!important;
+    }
+    .aiads-neo-theme input::placeholder,.aiads-neo-theme textarea::placeholder{color:#9aa5b6!important}
+    /* Tombol kuning/aksi tetap solid (kontras aksi utama) */
+    .aiads-neo-theme .neo-arrow,.aiads-neo-theme .neo-card-button,.aiads-neo-theme .neo-home-banner button,.aiads-neo-theme .neo-profile-chip{background:var(--neo-yellow)!important;color:#151b2b!important;border:1.5px solid var(--glass-border)!important}
+    /* Banner gelap tetap gelap */
+    .aiads-neo-theme .neo-home-banner{background:rgba(10,13,20,.66)!important;backdrop-filter:blur(16px)!important;border:1.5px solid var(--glass-border)!important}
+    /* Bottom nav kaca */
+    .aiads-neo-theme .neo-bottom-nav{background:rgba(14,18,27,.78)!important;backdrop-filter:blur(18px)!important;border:1.5px solid var(--glass-border)!important}
+    .aiads-neo-theme .neo-bottom-nav button{color:var(--glass-ink)!important}
+    .aiads-neo-theme .neo-bottom-nav button.active{background:rgba(255,255,255,.16)!important;border-color:var(--glass-border)!important}
   `;
   document.head.appendChild(css);
 
