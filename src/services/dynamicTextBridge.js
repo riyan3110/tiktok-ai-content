@@ -253,7 +253,11 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
         }
       }
 
-      const result = await dynamicAi.executeMessages(db, messages, transport);
+      const cleanCarousel = fullModePrompt !== '';
+      // Carousel prompts produce 4 slides + caption + hashtags; give the model
+      // enough output budget so the answer isn't cut off mid-slide.
+      const execOptions = cleanCarousel ? { parameters: { max_tokens: 1600 } } : {};
+      const result = await dynamicAi.executeMessages(db, messages, transport, execOptions);
       let answer = String(result?.text || '').trim();
       if (!answer) throw Object.assign(new Error('Provider tidak mengembalikan jawaban.'), { status: 502 });
 
@@ -261,7 +265,6 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
       // prompt forbids citation markers, "Sumber:" lists, and URLs in the output.
       // The grounded context still tells the model to cite, so strip those artifacts
       // from the answer and suppress the separate citations list for these modes.
-      const cleanCarousel = fullModePrompt !== '';
       if (cleanCarousel) answer = stripCitationArtifacts(answer);
 
       const assistantResult = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model) VALUES(?,?,?,?,?)')
