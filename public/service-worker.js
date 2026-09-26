@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'aiads-static-ui-20260926p';
+const STATIC_CACHE = 'aiads-static-ui-20260926q';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil((async () => {

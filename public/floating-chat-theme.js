@@ -15,10 +15,25 @@
       --neo-line:#1b2435;--neo-muted:#667085;--neo-lime:#c7f53c;--neo-yellow:#ffe666;
       --neo-purple:#b7a1ff;--neo-blue:#dff2ff;--neo-mint:#d9f6e5;--neo-peach:#ffe8c9;
       --neo-pink:#ffdce5;--neo-danger:#ffb5bd;--neo-shadow:4px 5px 0 rgba(21,27,43,.13);
-      color-scheme:light!important;background:var(--neo-paper)!important;
+      color-scheme:light!important;background-color:#0b0d12!important;
     }
-    html.aiads-neo-theme body{background:var(--neo-paper)!important;color:var(--neo-ink)!important;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important}
-    html.aiads-neo-theme body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(rgba(21,27,43,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(21,27,43,.035) 1px,transparent 1px);background-size:22px 22px}
+    html.aiads-neo-theme body{
+      background-color:#0b0d12!important;
+      background-image:
+        radial-gradient(ellipse 68% 52% at 12% 7%, rgba(226,66,96,.20) 0%, transparent 60%),
+        radial-gradient(ellipse 74% 58% at 89% 5%, rgba(129,78,216,.22) 0%, transparent 62%),
+        radial-gradient(ellipse 62% 54% at 97% 43%, rgba(48,122,192,.18) 0%, transparent 60%),
+        radial-gradient(ellipse 58% 54% at 93% 73%, rgba(40,172,177,.17) 0%, transparent 60%),
+        radial-gradient(ellipse 68% 58% at 9% 63%, rgba(37,152,112,.17) 0%, transparent 62%),
+        radial-gradient(ellipse 84% 52% at 44% 101%, rgba(152,202,62,.19) 0%, transparent 60%),
+        radial-gradient(ellipse 54% 48% at 91% 99%, rgba(212,202,72,.17) 0%, transparent 58%),
+        radial-gradient(ellipse 58% 50% at 50% 46%, rgba(5,7,11,.66) 0%, transparent 72%)!important;
+      background-attachment:fixed!important;
+      background-repeat:no-repeat!important;
+      color:var(--neo-ink)!important;
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;
+    }
+    html.aiads-neo-theme body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:none}
     .aiads-neo-theme *{scrollbar-color:#b9bec7 transparent}
     .aiads-neo-theme p,.aiads-neo-theme small{color:var(--neo-muted)}
     .aiads-neo-theme h1,.aiads-neo-theme h2,.aiads-neo-theme h3,.aiads-neo-theme h4,.aiads-neo-theme strong,.aiads-neo-theme b{color:var(--neo-ink)}
