@@ -4,6 +4,7 @@ const sourceFetcher = require('./sourceFetcher');
 const floatingChat = require('./floatingChatPatch');
 const webSearch = require('./webSearchProviders');
 const { resolveContentLayout, LAYOUTS } = require('./contentLayouts');
+const { chatModePrompt } = require('./chatModePrompts');
 
 // The 🔍 search button pops a small menu: Default / Tutorial / Cerita / Berita /
 // Pencarian. The four layout modes compose the user's topic into that carousel
@@ -198,15 +199,30 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
       const wantSearch = req.body?.webSearch === true || menuUsed;
       const { context: sourceContext, citations: searchCitations = [] } = await sourceContextFor(db, content, transport, wantSearch);
       const messages = floatingChat.buildConversationMessages(history, sourceContext);
-      // Layout instruction: explicit menu mode wins; otherwise fall back to
-      // keyword detection on the typed message (backward compatible). "Pencarian"
-      // (and plain chat) get no layout instruction — just a grounded answer.
-      const layoutInstruction = menuUsed ? layoutInstructionForMode(mode) : summarizeInstructionFor(content);
-      if (layoutInstruction) {
+      // Layout instruction:
+      //  - Menu mode (default/tutorial/story/news): REPLACE the user message with
+      //    the full carousel prompt (exact SLIDE 1–4 + CAPTION + TAGAR structure),
+      //    with the typed text substituted as the TOPIC. This guarantees the output
+      //    matches the Text Content layout precisely, not a loose paraphrase.
+      //  - No menu / "pencarian": fall back to keyword detection (backward compatible).
+      const fullModePrompt = menuUsed ? chatModePrompt(mode, content) : '';
+      if (fullModePrompt) {
         for (let index = messages.length - 1; index >= 0; index -= 1) {
           if (messages[index].role !== 'user') continue;
-          messages[index] = { ...messages[index], content: `${layoutInstruction}\n\n${String(messages[index].content || '')}` };
+          // Preserve any appended [Retrieved web content] block from sourceContext.
+          const original = String(messages[index].content || '');
+          const retrieved = original.includes('[Retrieved web content]') ? original.slice(original.indexOf('[Retrieved web content]')) : '';
+          messages[index] = { ...messages[index], content: retrieved ? `${fullModePrompt}\n\n${retrieved}` : fullModePrompt };
           break;
+        }
+      } else {
+        const layoutInstruction = menuUsed ? layoutInstructionForMode(mode) : summarizeInstructionFor(content);
+        if (layoutInstruction) {
+          for (let index = messages.length - 1; index >= 0; index -= 1) {
+            if (messages[index].role !== 'user') continue;
+            messages[index] = { ...messages[index], content: `${layoutInstruction}\n\n${String(messages[index].content || '')}` };
+            break;
+          }
         }
       }
       if (prepared.parts.length) {
