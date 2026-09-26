@@ -5,9 +5,14 @@ const floatingChat = require('./floatingChatPatch');
 const webSearch = require('./webSearchProviders');
 const { resolveContentLayout, LAYOUTS } = require('./contentLayouts');
 
-// Detect a "summarize into carousel mode" request (Default/Tutorial/Cerita/Berita)
-// and reuse the carousel's own layout prompt so the chat output stays clean and
-// on-format: no extra greeting, closing, commentary, emoji, or stray symbols.
+// The 🔍 search button pops a small menu: Default / Tutorial / Cerita / Berita /
+// Pencarian. The four layout modes compose the user's topic into that carousel
+// layout; "Pencarian" returns a normal grounded answer. EVERY mode is grounded
+// in real web-search facts (see wantSearch below), so the output is never made up.
+const CLEAN_RULE = 'Susun jawaban HANYA berdasarkan fakta dari hasil pencarian web di atas; jangan mengarang. Jika sebuah detail tidak didukung sumber, jangan tulis. JANGAN menambah kalimat pembuka/penutup, sapaan, komentar, catatan, emoji, atau simbol dekoratif. Keluarkan hanya isi yang diminta.';
+
+// Build the layout instruction from an EXPLICIT mode id chosen via the menu.
+// Falls back to keyword detection for plain typed messages (backward compatible).
 const SUMMARIZE_SIGNAL = /(rangkum|ringkas|ringkasan|buatkan?\s+(konten|materi|carousel|slide)|jadikan?\s+(konten|slide|carousel)|susun\s+(konten|materi|slide))/i;
 const LAYOUT_KEYWORDS = [
   { id: 'tutorial', re: /\btutorial\b/i },
@@ -15,6 +20,15 @@ const LAYOUT_KEYWORDS = [
   { id: 'news', re: /\b(berita|news|kabar|warta)\b/i },
   { id: 'default', re: /\b(default|standar|biasa)\b/i }
 ];
+
+// Explicit mode from the menu button. 'pencarian' => grounded plain answer.
+function layoutInstructionForMode(mode) {
+  const raw = String(mode || '').trim().toLowerCase();
+  if (!raw || raw === 'pencarian' || raw === 'search') return '';
+  const layout = LAYOUTS[resolveContentLayout(raw)] || LAYOUTS.default;
+  const layoutRule = layout.id === 'default' ? '' : ` ${layout.structureInstruction} ${layout.writerInstruction}`;
+  return `[SUSUN TOPIK — mode ${layout.label}] ${CLEAN_RULE}${layoutRule}`;
+}
 
 function summarizeInstructionFor(content) {
   const text = String(content || '');
@@ -176,17 +190,22 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
 
       const history = db.prepare('SELECT role,content FROM floating_chat_messages WHERE session_id=? ORDER BY id DESC LIMIT ?')
         .all(session.id, MAX_HISTORY_MESSAGES).reverse();
-      const wantSearch = req.body?.webSearch === true;
+      // The 🔍 menu sends an explicit `mode` (default/tutorial/story/news/pencarian).
+      // Any menu choice means the user wants grounded facts, so force web search
+      // for every mode — including plain "Pencarian" — not just when webSearch=true.
+      const mode = String(req.body?.mode || '').trim().toLowerCase();
+      const menuUsed = Boolean(mode);
+      const wantSearch = req.body?.webSearch === true || menuUsed;
       const { context: sourceContext, citations: searchCitations = [] } = await sourceContextFor(db, content, transport, wantSearch);
       const messages = floatingChat.buildConversationMessages(history, sourceContext);
-      // If the user asked to summarize into a carousel mode (Default/Tutorial/
-      // Cerita/Berita), prepend the matching layout prompt so the answer follows
-      // the mode structure with no extra intro/outro, emoji, or stray symbols.
-      const summarizeInstruction = summarizeInstructionFor(content);
-      if (summarizeInstruction) {
+      // Layout instruction: explicit menu mode wins; otherwise fall back to
+      // keyword detection on the typed message (backward compatible). "Pencarian"
+      // (and plain chat) get no layout instruction — just a grounded answer.
+      const layoutInstruction = menuUsed ? layoutInstructionForMode(mode) : summarizeInstructionFor(content);
+      if (layoutInstruction) {
         for (let index = messages.length - 1; index >= 0; index -= 1) {
           if (messages[index].role !== 'user') continue;
-          messages[index] = { ...messages[index], content: `${summarizeInstruction}\n\n${String(messages[index].content || '')}` };
+          messages[index] = { ...messages[index], content: `${layoutInstruction}\n\n${String(messages[index].content || '')}` };
           break;
         }
       }
