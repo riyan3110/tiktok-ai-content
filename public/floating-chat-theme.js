@@ -174,9 +174,10 @@
     const provider=panel.querySelector('#aiads-chat-provider');
     const model=panel.querySelector('#aiads-chat-model');
     const input=panel.querySelector('#aiads-chat-input');
-    if(header&&actions&&provider&&model&&!header.querySelector('.aiads-chat-header-controls')){
-      const controls=document.createElement('div');controls.className='aiads-chat-header-controls';controls.append(provider,model);header.insertBefore(controls,actions);
-    }
+    // Provider & Model dropdowns are redundant (chat follows Default Text AI).
+    // Keep them in the DOM (JS still reads their values) but hidden — do NOT
+    // relocate them into the header.
+    if(provider)provider.closest('.aiads-chat-controls')?.setAttribute('hidden','');
     if(input)input.placeholder='Tulis pesan…';
     return true;
   }
