@@ -18,16 +18,16 @@
       color-scheme:light!important;background-color:#0b0d12!important;
     }
     html.aiads-neo-theme body{
-      background-color:#0b0d12!important;
+      background-color:#07080c!important;
       background-image:
-        radial-gradient(ellipse 68% 52% at 12% 7%, rgba(226,66,96,.20) 0%, transparent 60%),
-        radial-gradient(ellipse 74% 58% at 89% 5%, rgba(129,78,216,.22) 0%, transparent 62%),
-        radial-gradient(ellipse 62% 54% at 97% 43%, rgba(48,122,192,.18) 0%, transparent 60%),
-        radial-gradient(ellipse 58% 54% at 93% 73%, rgba(40,172,177,.17) 0%, transparent 60%),
-        radial-gradient(ellipse 68% 58% at 9% 63%, rgba(37,152,112,.17) 0%, transparent 62%),
-        radial-gradient(ellipse 84% 52% at 44% 101%, rgba(152,202,62,.19) 0%, transparent 60%),
-        radial-gradient(ellipse 54% 48% at 91% 99%, rgba(212,202,72,.17) 0%, transparent 58%),
-        radial-gradient(ellipse 58% 50% at 50% 46%, rgba(5,7,11,.66) 0%, transparent 72%)!important;
+        radial-gradient(ellipse 70% 54% at 10% 6%, rgba(240,40,80,.60) 0%, transparent 58%),
+        radial-gradient(ellipse 78% 60% at 90% 4%, rgba(140,60,240,.60) 0%, transparent 60%),
+        radial-gradient(ellipse 66% 56% at 99% 40%, rgba(40,110,230,.56) 0%, transparent 58%),
+        radial-gradient(ellipse 60% 56% at 95% 72%, rgba(30,200,210,.50) 0%, transparent 58%),
+        radial-gradient(ellipse 70% 60% at 7% 62%, rgba(30,190,130,.50) 0%, transparent 60%),
+        radial-gradient(ellipse 88% 54% at 42% 102%, rgba(170,230,50,.58) 0%, transparent 58%),
+        radial-gradient(ellipse 56% 50% at 92% 100%, rgba(235,225,60,.54) 0%, transparent 56%),
+        radial-gradient(ellipse 52% 46% at 50% 47%, rgba(4,5,9,.80) 0%, transparent 70%)!important;
       background-attachment:fixed!important;
       background-repeat:no-repeat!important;
       color:var(--neo-ink)!important;
