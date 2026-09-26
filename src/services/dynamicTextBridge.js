@@ -22,6 +22,23 @@ const LAYOUT_KEYWORDS = [
   { id: 'default', re: /\b(default|standar|biasa)\b/i }
 ];
 
+// Strip citation artifacts from a carousel-mode answer: inline [n]/[n][m] markers,
+// any trailing "Sumber:" / "Sources:" block, and bare URLs. The user's carousel
+// prompts forbid these in the output, but the grounded context asks the model to
+// cite — so we clean the model's answer for these modes.
+function stripCitationArtifacts(text) {
+  let out = String(text || '');
+  // Remove a trailing sources block ("Sumber:", "Sources:", "Referensi:") to end.
+  out = out.replace(/\n*\s*(sumber|sources?|referensi|daftar sumber)\s*:?[\s\S]*$/i, '');
+  // Remove inline citation markers like [1], [2][3], [12].
+  out = out.replace(/\s*\[\d+\](?:\s*\[\d+\])*/g, '');
+  // Remove any leftover bare URLs.
+  out = out.replace(/https?:\/\/[^\s<>()\[\]{}"']+/gi, '');
+  // Tidy whitespace left behind.
+  out = out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ');
+  return out.trim();
+}
+
 // Explicit mode from the menu button. 'pencarian' => grounded plain answer.
 function layoutInstructionForMode(mode) {
   const raw = String(mode || '').trim().toLowerCase();
@@ -237,8 +254,15 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
       }
 
       const result = await dynamicAi.executeMessages(db, messages, transport);
-      const answer = String(result?.text || '').trim();
+      let answer = String(result?.text || '').trim();
       if (!answer) throw Object.assign(new Error('Provider tidak mengembalikan jawaban.'), { status: 502 });
+
+      // Carousel menu modes (default/tutorial/story/news) must be CLEAN: the user's
+      // prompt forbids citation markers, "Sumber:" lists, and URLs in the output.
+      // The grounded context still tells the model to cite, so strip those artifacts
+      // from the answer and suppress the separate citations list for these modes.
+      const cleanCarousel = fullModePrompt !== '';
+      if (cleanCarousel) answer = stripCitationArtifacts(answer);
 
       const assistantResult = db.prepare('INSERT INTO floating_chat_messages(session_id,role,content,provider,model) VALUES(?,?,?,?,?)')
         .run(session.id, 'assistant', answer, result.providerId || provider.id, result.model || model);
@@ -250,7 +274,7 @@ function installChatBridge({ app, db, dynamicAi, transport }) {
         session: sessionJson(db.prepare('SELECT * FROM floating_chat_sessions WHERE id=?').get(session.id)),
         user: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(userResult.lastInsertRowid)),
         assistant: floatingChat.messageJson(db.prepare('SELECT * FROM floating_chat_messages WHERE id=?').get(assistantResult.lastInsertRowid)),
-        citations: searchCitations
+        citations: cleanCarousel ? [] : searchCitations
       });
     } catch (error) { floatingChat.sendError(res, error); }
   });
